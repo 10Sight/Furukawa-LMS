@@ -7,7 +7,7 @@ import { executeQuery } from "../db/mssqlHelper.js";
 import logAudit from "../utils/auditLogger.js";
 import { canActOnRow, matchesDaily5MRouting } from "../../shared/daily5mRouting.js";
 import { enforceRejectReasons, rowKey } from "../../shared/daily5mRowStatus.js";
-import { scope5MRequest, scope5MListAllRequest, canView5MRecord } from "../utils/daily5mScope.util.js";
+import { scope5MRequestFor, canView5MRecord, canViewAll5MRecords } from "../utils/daily5mScope.util.js";
 import { hasAnyPermission } from "../middlewares/roleAuth.middleware.js";
 import { formatLocalDate } from "../utils/istDate.util.js";
 
@@ -76,6 +76,47 @@ const check5MDates = ({ user, recordData, date, previous, adminRemarks }) => {
     return { sessionDate, approvedDateChanges, backdatedRows, isBackdatedSession };
 };
 
+// Write access to a 5M sheet of this department/section. Allowed for the user's own (assigned)
+// departments/sections - global admins cover all - and, unless `allowRouted` is false, for a source
+// department/section whose approvals are routed to the user. The dashboard's read-only access to
+// every department (daily5m:read) never grants writes.
+// Returns { allowed, reason, sourceDepartment, sourceSection } (the source objects are only loaded
+// when the routing check had to run).
+const check5MWriteAccess = async (user, departmentId, sectionId, { allowRouted = true } = {}) => {
+    if (canView5MRecord(user, { departmentId, sectionId })) return { allowed: true };
+
+    const denied = {
+        allowed: false,
+        reason: "You are not assigned to this sheet's department/section, so you can only view it. Ask an admin to assign you if you need to edit it."
+    };
+    if (!allowRouted) return denied;
+
+    const [sourceDepartment, sourceSection] = await Promise.all([
+        departmentId ? Department.findById(departmentId) : Promise.resolve(null),
+        sectionId ? Section.findById(sectionId) : Promise.resolve(null)
+    ]);
+    if (matchesDaily5MRouting(user, sourceDepartment, sourceSection)) {
+        return { allowed: true, sourceDepartment, sourceSection };
+    }
+    return { ...denied, sourceDepartment, sourceSection };
+};
+
+// Loads a record by id and enforces write access to it; responds 404/403 itself and returns null then.
+const load5MRecordForWrite = async (req, next, action) => {
+    const record = await Daily5MRecord.findById(req.params.id);
+    if (!record) {
+        next(new ApiError("Record not found", 404));
+        return null;
+    }
+    const access = await check5MWriteAccess(req.user, record.departmentId, record.sectionId);
+    if (!access.allowed) {
+        console.warn(`${action}: user ${req.user?.id} denied write access to 5M record ${record.id} (dept ${record.departmentId}, section ${record.sectionId})`);
+        next(new ApiError(access.reason, 403));
+        return null;
+    }
+    return { record, access };
+};
+
 // Create a new record
 export const create5MRecord = async (req, res, next) => {
     try {
@@ -93,7 +134,7 @@ export const create5MRecord = async (req, res, next) => {
         let previous = null;
         if (sessionId) {
             const [existingRows] = await executeQuery(
-                `SELECT TOP 1 recordData, submittedBy, date, status FROM daily_5m_records WHERE sessionId = ? ORDER BY createdAt DESC`,
+                `SELECT TOP 1 recordData, submittedBy, date, status, departmentId, sectionId FROM daily_5m_records WHERE sessionId = ? ORDER BY createdAt DESC`,
                 [sessionId]
             );
             if (existingRows && existingRows.length > 0 && existingRows[0].recordData) {
@@ -103,7 +144,34 @@ export const create5MRecord = async (req, res, next) => {
                 previousSubmittedBy = existingRows[0].submittedBy;
             }
             if (existingRows && existingRows.length > 0) {
-                previous = { recordData: previousRecordData || {}, date: existingRows[0].date, status: existingRows[0].status };
+                previous = {
+                    recordData: previousRecordData || {},
+                    date: existingRows[0].date,
+                    status: existingRows[0].status,
+                    departmentId: existingRows[0].departmentId,
+                    sectionId: existingRows[0].sectionId
+                };
+            }
+        }
+
+        // Write access: an existing session is checked against its stored department/section (not the
+        // client-sent one); routed approvers may save it. A new session - or a save that moves a session
+        // to another department/section - must target one the user is assigned to.
+        if (previous) {
+            const access = await check5MWriteAccess(req.user, previous.departmentId, previous.sectionId);
+            if (!access.allowed) {
+                console.warn(`create5MRecord: user ${userId} denied write access to 5M session ${sessionId} (dept ${previous.departmentId}, section ${previous.sectionId})`);
+                return next(new ApiError(access.reason, 403));
+            }
+        }
+        const sameTarget = previous
+            && String(previous.departmentId ?? "") === String(departmentId ?? "")
+            && String(previous.sectionId ?? "") === String(sectionId ?? "");
+        if (!sameTarget) {
+            const access = await check5MWriteAccess(req.user, departmentId, sectionId, { allowRouted: false });
+            if (!access.allowed) {
+                console.warn(`create5MRecord: user ${userId} denied creating/moving a 5M sheet into dept ${departmentId}, section ${sectionId}`);
+                return next(new ApiError(access.reason, 403));
             }
         }
 
@@ -227,9 +295,7 @@ export const get5MRecords = async (req, res, next) => {
         const limitInt = parseInt(limit) || 50;
         // scope=all: the dashboard's read-only Records List across every department
         const listAllDepartments = scope === 'all';
-        const scoped = listAllDepartments
-            ? scope5MListAllRequest(req.user, departmentId, sectionId)
-            : scope5MRequest(req.user, departmentId, sectionId);
+        const scoped = scope5MRequestFor(req.user, departmentId, sectionId, scope);
         if (scoped.forbidden) {
             return next(new ApiError(scoped.forbidden, 403));
         }
@@ -280,16 +346,21 @@ export const get5MRecordById = async (req, res, next) => {
         }
 
         // Users outside the record's own department/section may still open it when that source
-        // department (or section) routes its approvals to them. Their department/section lists
+        // department (or section) routes its approvals to them, or read-only when they hold
+        // daily5m:read (the dashboard lists every department). Their department/section lists
         // don't include the source, so send what the sheet needs to label it and check routing.
         let routedAccess = null;
+        let viewOnly = false;
         if (!canView5MRecord(req.user, record)) {
             const [sourceDepartment, sourceSection] = await Promise.all([
                 Department.findById(record.departmentId),
                 record.sectionId ? Section.findById(record.sectionId) : Promise.resolve(null)
             ]);
             if (!matchesDaily5MRouting(req.user, sourceDepartment, sourceSection)) {
-                return next(new ApiError("You do not have access to this record", 403));
+                if (!canViewAll5MRecords(req.user)) {
+                    return next(new ApiError("You do not have access to this record", 403));
+                }
+                viewOnly = true;
             }
             const routingSource = (source) => source && {
                 id: source.id,
@@ -302,14 +373,15 @@ export const get5MRecordById = async (req, res, next) => {
             routedAccess = { department: routingSource(sourceDepartment), section: routingSource(sourceSection) };
         }
 
-        logAudit(req.user?.id, "VIEW_DAILY_5M_RECORD_DETAILS", { recordId: id }, { resourceType: "DAILY_5M_RECORD", resourceId: id, req })
+        logAudit(req.user?.id, "VIEW_DAILY_5M_RECORD_DETAILS", { recordId: id, viewOnly }, { resourceType: "DAILY_5M_RECORD", resourceId: id, req })
             .catch(err => console.error("logAudit(VIEW_DAILY_5M_RECORD_DETAILS) failed:", err.message));
 
         res.status(200).json({
             success: true,
             message: "Record fetched successfully",
             data: record,
-            routedAccess
+            routedAccess,
+            viewOnly
         });
     } catch (error) {
         return next(new ApiError(error.message, 500));
@@ -379,11 +451,8 @@ export const delete5MRecord = async (req, res, next) => {
 export const submit5MRecord = async (req, res, next) => {
     try {
         const { id } = req.params;
-        const record = await Daily5MRecord.findById(id);
-
-        if (!record) {
-            return next(new ApiError("Record not found", 404));
-        }
+        const loaded = await load5MRecordForWrite(req, next, "submit5MRecord");
+        if (!loaded) return;
 
         // Update record status to 'SUBMITTED' in database
         await Daily5MRecord.updateStatus(id, 'SUBMITTED', req.user.id);
@@ -404,11 +473,9 @@ export const submit5MRecord = async (req, res, next) => {
 export const send5MEmail = async (req, res, next) => {
     try {
         const { id } = req.params;
-        const record = await Daily5MRecord.findById(id);
-
-        if (!record) {
-            return next(new ApiError("Record not found", 404));
-        }
+        const loaded = await load5MRecordForWrite(req, next, "send5MEmail");
+        if (!loaded) return;
+        const { record } = loaded;
 
         // Trigger Notification Service
         await NotificationService.sendFormReport("Daily 5M Recording Sheet", record.departmentId, {
@@ -434,11 +501,33 @@ export const send5MEmail = async (req, res, next) => {
     }
 };
 
+// Whole-record approve/decline: write access plus the same segregation-of-duties and approval
+// routing rule that row-level approvals use (canActOnRow). Responds itself and returns false on denial.
+const authorize5MRecordDecision = async (req, next, action) => {
+    const loaded = await load5MRecordForWrite(req, next, action);
+    if (!loaded) return false;
+    const { record, access } = loaded;
+    const [sourceDepartment, sourceSection] = access.sourceDepartment !== undefined
+        ? [access.sourceDepartment, access.sourceSection]
+        : await Promise.all([
+            Department.findById(record.departmentId),
+            record.sectionId ? Section.findById(record.sectionId) : Promise.resolve(null)
+        ]);
+    const { allowed, reason } = canActOnRow(req.user, record.submittedBy, sourceDepartment, sourceSection);
+    if (!allowed) {
+        next(new ApiError(reason, 403));
+        return false;
+    }
+    return true;
+};
+
 // Approve a record
 export const approve5MRecord = async (req, res, next) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
+
+        if (!await authorize5MRecordDecision(req, next, "approve5MRecord")) return;
 
         const success = await Daily5MRecord.updateStatus(id, 'APPROVED', userId);
 
@@ -463,6 +552,8 @@ export const decline5MRecord = async (req, res, next) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
+
+        if (!await authorize5MRecordDecision(req, next, "decline5MRecord")) return;
 
         const success = await Daily5MRecord.updateStatus(id, 'REJECTED', userId);
 
@@ -503,9 +594,9 @@ export const getApprovalStatus = async (req, res, next) => {
 export const getDaily5MStats = async (req, res, next) => {
     try {
         const { departmentId } = req.params;
-        const { sectionId, startDate, endDate, formType } = req.query;
+        const { sectionId, startDate, endDate, formType, scope } = req.query;
 
-        const scoped = scope5MRequest(req.user, departmentId, sectionId);
+        const scoped = scope5MRequestFor(req.user, departmentId, sectionId, scope);
         if (scoped.forbidden) {
             return next(new ApiError(scoped.forbidden, 403));
         }
@@ -533,9 +624,9 @@ export const getDaily5MStats = async (req, res, next) => {
 export const getDaily5MRowStats = async (req, res, next) => {
     try {
         const { departmentId } = req.params;
-        const { sectionId, startDate, endDate } = req.query;
+        const { sectionId, startDate, endDate, scope } = req.query;
 
-        const scoped = scope5MRequest(req.user, departmentId, sectionId);
+        const scoped = scope5MRequestFor(req.user, departmentId, sectionId, scope);
         if (scoped.forbidden) {
             return next(new ApiError(scoped.forbidden, 403));
         }

@@ -75,13 +75,16 @@ export const scope5MRequest = (user, departmentParam, sectionParam) => {
     };
 };
 
-// Read-only "every department" listing used by the 5M dashboard's Records List. Open to global admins
-// and anyone holding daily5m:read; it only widens what is listed and grants no edit/delete/approve rights.
+// True when the user may read 5M data of every department (global admins and daily5m:read holders).
+// Read access only: it never grants edit, delete or approval rights.
+export const canViewAll5MRecords = (user) =>
+    resolveUser5MScope(user).isGlobalAdmin || hasAnyPermission(user, ["daily5m:read"]);
+
+// Read-only "every department" scope used by the 5M dashboard (Records List and charts).
 //   { forbidden: string } -> caller should respond 403
 //   { departmentId, sectionId, allowedDepartmentIds: undefined, allowedSectionIds: undefined }
-export const scope5MListAllRequest = (user, departmentParam, sectionParam) => {
-    const { isGlobalAdmin } = resolveUser5MScope(user);
-    if (!isGlobalAdmin && !hasAnyPermission(user, ["daily5m:read"])) {
+export const scope5MAllDepartmentsRequest = (user, departmentParam, sectionParam) => {
+    if (!canViewAll5MRecords(user)) {
         return { forbidden: "You do not have permission to view all 5M records" };
     }
     return {
@@ -91,6 +94,13 @@ export const scope5MListAllRequest = (user, departmentParam, sectionParam) => {
         allowedSectionIds: undefined
     };
 };
+
+// Picks the dashboard's all-departments scope when the request asks for it (?scope=all),
+// otherwise the user's assignment scope.
+export const scope5MRequestFor = (user, departmentParam, sectionParam, scopeParam) =>
+    scopeParam === "all"
+        ? scope5MAllDepartmentsRequest(user, departmentParam, sectionParam)
+        : scope5MRequest(user, departmentParam, sectionParam);
 
 // True when the user may see a record belonging to this department/section.
 export const canView5MRecord = (user, record) => {

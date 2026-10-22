@@ -1322,6 +1322,9 @@ const Daily5MRecording = () => {
     // Source department/section of a sheet opened through approval routing by a user outside
     // that department (see get5MRecordById) - it is missing from their own dept/section lists.
     const [routedSource, setRoutedSource] = useState(null);
+    // Sheet of a department outside the user's assignment, opened read-only from the dashboard
+    const [viewOnlyAccess, setViewOnlyAccess] = useState(false);
+    const isReadOnly = viewMode || viewOnlyAccess;
 
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -1458,6 +1461,7 @@ const Daily5MRecording = () => {
     useEffect(() => {
         if (showFormList && routedSource) {
             setRoutedSource(null);
+            setViewOnlyAccess(false);
             setSelectedDepartment('');
             setSelectedSection('');
         }
@@ -1987,6 +1991,7 @@ const Daily5MRecording = () => {
                 const sectId = record.sectionId;
 
                 setRoutedSource(response.data.routedAccess || null);
+                setViewOnlyAccess(!!response.data.viewOnly);
                 setSelectedDepartment(deptId);
                 setSelectedSection(sectId);
                 setSelectedDate(record.date ? new Date(record.date).toLocaleDateString('en-CA') : new Date().toLocaleDateString('en-CA'));
@@ -3260,7 +3265,7 @@ const Daily5MRecording = () => {
                         </DialogContent>
                     </Dialog>
 
-                    {!viewMode && (
+                    {!isReadOnly && (
                         <div className="flex gap-2">
                             <Button
                                 onClick={() => handleSaveRecord(null, { showPreview: false })}
@@ -3780,8 +3785,12 @@ const Daily5MRecording = () => {
                                                 )}>
                                                     {recordStatus || 'PENDING'}
                                                 </Badge>
-                                                {viewMode && (
-                                                    <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] font-bold px-1.5 py-0">
+                                                {isReadOnly && (
+                                                    <Badge
+                                                        variant="outline"
+                                                        className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] font-bold px-1.5 py-0"
+                                                        title={viewOnlyAccess ? "This sheet belongs to a department you are not assigned to" : undefined}
+                                                    >
                                                         View Only
                                                     </Badge>
                                                 )}
@@ -3803,8 +3812,8 @@ const Daily5MRecording = () => {
                                 <div className="border-t border-slate-200/80 bg-slate-50/80 px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
                                     {/* Left: save / submit — in view mode (e.g. opened from the dashboard) offer to switch to edit */}
                                     <div className="flex flex-wrap items-center gap-2 min-w-0">
-                                        {viewMode ? (
-                                            hasEditPermission && (
+                                        {isReadOnly ? (
+                                            hasEditPermission && !viewOnlyAccess && (
                                                 <Button
                                                     onClick={() => {
                                                         const next = new URLSearchParams(searchParams);
@@ -3868,23 +3877,27 @@ const Daily5MRecording = () => {
                                         <Button variant="outline" onClick={() => window.print()} className="h-9">
                                             <IconPrinter className="w-4 h-4 mr-2" /> Print
                                         </Button>
-                                        <div className="h-7 w-px bg-slate-200 mx-1" />
-                                        <Button
-                                            variant="outline"
-                                            onClick={() => {
-                                                setEditingFormType(null);
-                                                setIsEditing(true);
-                                            }}
-                                            disabled={loadingConfig}
-                                            className="h-9"
-                                        >
-                                            <IconSettings className="w-4 h-4 mr-2" />
-                                            Edit Layout
-                                        </Button>
-                                        <Button variant="outline" onClick={() => setIsManagePeopleOpen(true)} className="h-9">
-                                            <IconPlus className="w-4 h-4 mr-2" />
-                                            Manage People
-                                        </Button>
+                                        {!viewOnlyAccess && (
+                                            <>
+                                                <div className="h-7 w-px bg-slate-200 mx-1" />
+                                                <Button
+                                                    variant="outline"
+                                                    onClick={() => {
+                                                        setEditingFormType(null);
+                                                        setIsEditing(true);
+                                                    }}
+                                                    disabled={loadingConfig}
+                                                    className="h-9"
+                                                >
+                                                    <IconSettings className="w-4 h-4 mr-2" />
+                                                    Edit Layout
+                                                </Button>
+                                                <Button variant="outline" onClick={() => setIsManagePeopleOpen(true)} className="h-9">
+                                                    <IconPlus className="w-4 h-4 mr-2" />
+                                                    Manage People
+                                                </Button>
+                                            </>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -3897,7 +3910,7 @@ const Daily5MRecording = () => {
                                     <div ref={sheetZoomRef} className="print:![zoom:1]" style={{ zoom: sheetZoom }}>
                                         {/* Table Container for PDF Capture */}
                                         <div ref={tableRef} data-pdf-content="true" className="w-full">
-                                            {renderRecordingTable(viewMode)}
+                                            {renderRecordingTable(isReadOnly)}
                                         </div>
                                     </div>
                                 </CardContent>

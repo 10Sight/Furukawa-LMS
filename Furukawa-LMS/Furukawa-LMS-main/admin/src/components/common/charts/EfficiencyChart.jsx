@@ -3,16 +3,20 @@ import brandLogoUrl from "@/assets/logos/fme-transparent.png";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/common/ui/card.jsx";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, LabelList, Cell, Tooltip, ReferenceLine } from 'recharts';
 import { useGetSkillMatrixEfficiencySummaryQuery, useGetSkillMatrixEfficiencyAttendanceQuery } from "@/services/api/SkillMatrixApi.js";
-import { IconFilter, IconX, IconEye, IconEyeOff, IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
+import { IconFilter, IconX, IconEye, IconEyeOff, IconChevronLeft, IconChevronRight, IconDownload, IconLoader2 } from "@tabler/icons-react";
+import { toast } from "sonner";
 import useTranslate from "@/hooks/useTranslate.js";
 import {
     PRESENT_STATUSES, CHART_EFFICIENCY_CAP, getAvg, calculateUserEfficiency,
     countLoggedDays, buildSkillSplit, buildHierarchicalData, sortShiftKeys, UNASSIGNED_SHIFT,
 } from "@/utils/efficiencyMath.js";
+import {
+    skillSplitSheet, groupSheet, operatorSheet, countOperatorsByGroup, describeFilters, exportEfficiencyWorkbook,
+} from "@/utils/efficiencyExcelExport.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const SHIFT_COLORS = ['#6366f1', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#ec4899'];
-const ATTENDANCE_COLORS = { 'Present': 'blue', 'Absent': 'red', 'Late': '#f59e0b', 'Half Day': '#8b5cf6' };
+const SHIFT_COLORS = ['#6366f1', '#f59e0b', '#10b981', '#ef4444', '#99582a', '#ec4899'];
+const ATTENDANCE_COLORS = { 'Present': 'blue', 'Absent': 'red', 'Late': '#f59e0b', 'Half Day': '#99582a' };
 const getAttendanceColor = (status, idx) => ATTENDANCE_COLORS[status] || SHIFT_COLORS[idx % SHIFT_COLORS.length];
 // Total-population bars are yellow, present-population bars blue
 const TOTAL_COLOR = '#f59e0b';
@@ -21,7 +25,7 @@ const PRESENT_COLOR = '#2563eb';
 // Shift-wise Present: a distinct colour per shift code (A/B/C/G/OTHER from the server,
 // UNASSIGNED for a present log with no shift). Amber (Total) and red (Chart 6 Absent) are
 // left out so a shift never reads as either.
-const SHIFT_KEY_COLORS = { A: '#2563eb', B: '#10b981', C: '#8b5cf6', G: '#ec4899', OTHER: '#0891b2', [UNASSIGNED_SHIFT]: '#94a3b8' };
+const SHIFT_KEY_COLORS = { A: '#2563eb', B: '#10b981', C: '#99582a', G: '#ec4899', OTHER: '#0891b2', [UNASSIGNED_SHIFT]: '#94a3b8' };
 
 // Recharts 3 places stacked bars before unstacked ones in each category, so the Total bar gets
 // its own stack id — otherwise the shift-wise Present stack would be drawn ahead of it.
@@ -73,7 +77,7 @@ const GRAD = {
     section: ['#10b981', '#059669'],
     line: ['#f59e0b', '#d97706'],
     subsection: ['#f43f5e', '#e11d48'],
-    attendance: ['#8b5cf6', '#7c3aed'],
+    attendance: ['#99582a', '#7c3aed'],
     operator: ['#0ea5e9', '#0284c7'],
 };
 
@@ -223,7 +227,8 @@ const initF = () => {
     return { deptIds: [], sectionIds: [], lineIds: [], subSectionIds: [], shifts: [], dateFrom: "", dateTo: "" };
 };
 
-const ChartFilter = ({ filter, setFilter, deptOpts, sectionOpts, lineOpts, subSectionOpts, shiftOpts, showDept, showSection, showLine, showSubSection = false, hideLegend = false, hideShift = false }) => {
+// `labelShifts` / `onLabelShiftsChange`: the shift-wise Bar Labels dropdown, shown only when passed
+const ChartFilter = ({ filter, setFilter, deptOpts, sectionOpts, lineOpts, subSectionOpts, shiftOpts, showDept, showSection, showLine, showSubSection = false, hideLegend = false, hideShift = false, labelShifts, onLabelShiftsChange }) => {
     const { t } = useTranslate();
     const hasFilter = filter.deptIds?.length || filter.sectionIds?.length || filter.lineIds?.length || filter.subSectionIds?.length || filter.shifts?.length || filter.dateFrom || filter.dateTo;
     return (
@@ -261,6 +266,12 @@ const ChartFilter = ({ filter, setFilter, deptOpts, sectionOpts, lineOpts, subSe
                     }))}
                     value={filter.shifts}
                     onChange={v => setFilter(f => ({ ...f, shifts: v }))} />
+            )}
+            {onLabelShiftsChange && (
+                <MultiSelectDropdown label={t('charts.barLabels')}
+                    options={shiftOpts.map(s => ({ value: s, label: shiftLabel(s, t), color: shiftColor(s) }))}
+                    value={labelShifts}
+                    onChange={onLabelShiftsChange} />
             )}
             <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2 shadow-sm">
                 <span className="text-[12px] font-bold text-slate-400 uppercase tracking-wider">{t('charts.from')}</span>
@@ -342,7 +353,16 @@ const ChartLoader = ({ className = '' }) => (
     </div>
 );
 
-const ChartSection = ({ badge, title, dateText, tag, statsVisible, onToggleStats, presentMode, onPresentModeChange, loading = false, children }) => {
+// Excel download button; shows a spinner while the file is built
+const DownloadButton = ({ onClick, busy, disabled, label }) => (
+    <button onClick={onClick} disabled={busy || disabled}
+        className="flex items-center gap-1.5 text-[13px] font-bold px-3 py-1.5 rounded-lg border transition-all duration-200
+            bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed">
+        {busy ? <IconLoader2 className="h-4 w-4 animate-spin" /> : <IconDownload className="h-4 w-4" />} {label}
+    </button>
+);
+
+const ChartSection = ({ badge, title, dateText, tag, statsVisible, onToggleStats, presentMode, onPresentModeChange, onDownload, downloading = false, canDownload = true, loading = false, children }) => {
     const { t } = useTranslate();
     return (
         <div className="relative space-y-3 p-7 border border-slate-100 rounded-2xl bg-white shadow-sm hover:shadow-md transition-shadow">
@@ -367,6 +387,7 @@ const ChartSection = ({ badge, title, dateText, tag, statsVisible, onToggleStats
                             : <><IconEye className="h-4 w-4" /> {t('charts.showStats')}</>
                         }
                     </button>
+                    {onDownload && <DownloadButton onClick={onDownload} busy={downloading} disabled={!canDownload} label={t('charts.download')} />}
                     {tag}
                 </div>
             </div>
@@ -536,6 +557,22 @@ const StackSegment = ({ x, y, width, height, fill, payload, shiftKey }) => {
 const stackTopLabel = (rows, shiftKey) => (props) =>
     rows[props.index]?.presentTopKey === shiftKey ? barLabel(0, PRESENT_COLOR)(props) : null;
 
+// Bar Labels dropdown: which shifts get their figure written inside their segment ([] = all)
+const isLabelledShift = (labelShifts, shiftKey) => !labelShifts?.length || labelShifts.includes(shiftKey);
+
+// A shift's own figure, centred inside its segment; skipped when the segment is too short to fit it
+const MIN_SEGMENT_LABEL_HEIGHT = 16;
+const segmentLabel = (shiftKey, labelShifts) => ({ x, y, width, height, value }) => {
+    if (!isLabelledShift(labelShifts, shiftKey) || !value || height < MIN_SEGMENT_LABEL_HEIGHT) return null;
+    const fontSize = Math.max(10, Math.min(13, (width + 4) / 3.2));
+    return (
+        <text x={x + width / 2} y={y + height / 2} textAnchor="middle" dominantBaseline="central"
+            fill="#ffffff" fontSize={fontSize} fontWeight={800}>
+            {Math.round(value)}%
+        </text>
+    );
+};
+
 // Hover card in shift-wise mode: Total, Present and each shift's share (with headcount on Chart 1)
 const ShiftTooltip = ({ active, payload, shiftKeys, titleOf }) => {
     const { t } = useTranslate();
@@ -567,7 +604,7 @@ const ShiftTooltip = ({ active, payload, shiftKeys, titleOf }) => {
 };
 
 // The Present bar(s) for a bar chart: one bar in Total mode, a stack per shift in shift-wise mode
-const renderPresentBars = ({ mode, rows, shiftKeys, maxBarSize, t }) => {
+const renderPresentBars = ({ mode, rows, shiftKeys, labelShifts, maxBarSize, t }) => {
     if (mode !== 'shift') {
         return (
             <Bar key="present" dataKey="present" name={t('charts.presentEff')} fill={PRESENT_COLOR} radius={[10, 10, 0, 0]} maxBarSize={maxBarSize} minPointSize={3}>
@@ -578,6 +615,7 @@ const renderPresentBars = ({ mode, rows, shiftKeys, maxBarSize, t }) => {
     return shiftKeys.map(k => (
         <Bar key={k} dataKey={shiftDataKey(k)} stackId="present" name={shiftLabel(k, t)} fill={shiftColor(k)}
             maxBarSize={maxBarSize} shape={<StackSegment shiftKey={k} />}>
+            <LabelList dataKey={shiftDataKey(k)} content={segmentLabel(k, labelShifts)} />
             <LabelList dataKey="present" content={stackTopLabel(rows, k)} />
         </Bar>
     ));
@@ -599,6 +637,37 @@ const EfficiencyChart = () => {
     const [presentMode, setPresentMode] = useState({ c1: 'shift', c2: 'shift', c3: 'shift', c4: 'shift', c5: 'shift', c6: 'shift' });
     const setChartPresentMode = (key) => (mode) => setPresentMode(prev => ({ ...prev, [key]: mode }));
     const isShiftMode = (key) => presentMode[key] === 'shift';
+    // Per chart: shifts whose figures are labelled on the shift-wise bars ([] = all)
+    const [labelShifts, setLabelShifts] = useState({ c1: [], c2: [], c3: [], c4: [], c5: [], c6: [] });
+    // Props that add the Bar Labels dropdown to a chart's filter row, in shift-wise mode only
+    const labelFilterProps = (key) => isShiftMode(key)
+        ? { labelShifts: labelShifts[key], onLabelShiftsChange: (v) => setLabelShifts(prev => ({ ...prev, [key]: v })) }
+        : {};
+
+    // ── Global filters: each control sets its value on all six charts at once; a chart's own
+    // controls can still override it afterwards.
+    const CHART_KEYS = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6'];
+    const filterSetters = [setF1, setF2, setF3, setF4, setF5, setF6];
+    const [globalDates, setGlobalDates] = useState({ dateFrom: '', dateTo: '' });
+    const [globalLabelShifts, setGlobalLabelShifts] = useState([]);
+    // Excel export in progress: a chart key, 'all', or null
+    const [downloading, setDownloading] = useState(null);
+    const setGlobalDate = (field, value) => {
+        setGlobalDates(prev => ({ ...prev, [field]: value }));
+        filterSetters.forEach(set => set(f => ({ ...f, [field]: value })));
+    };
+    const clearGlobalDates = () => {
+        setGlobalDates({ dateFrom: '', dateTo: '' });
+        filterSetters.forEach(set => set(f => ({ ...f, dateFrom: '', dateTo: '' })));
+    };
+    const setGlobalPresentMode = (mode) => setPresentMode(Object.fromEntries(CHART_KEYS.map(k => [k, mode])));
+    const applyGlobalLabelShifts = (v) => {
+        setGlobalLabelShifts(v);
+        setLabelShifts(Object.fromEntries(CHART_KEYS.map(k => [k, v])));
+    };
+    // The global toggle shows a mode only while every chart is in it
+    const globalPresentMode = CHART_KEYS.every(k => presentMode[k] === presentMode.c1) ? presentMode.c1 : null;
+    const anyShiftMode = CHART_KEYS.some(isShiftMode);
 
     const translateStatus = (name) => {
         if (name === 'Total Manpower') return t('charts.totalManpower');
@@ -899,6 +968,77 @@ const EfficiencyChart = () => {
     const pager6 = usePagedList(d6, OPERATOR_PAGE_SIZE);
     const d6Page = pager6.items;
 
+    // ── Excel export: each chart's full data (every page), with its filters and date range ──
+    const exportLabels = {
+        t,
+        shiftName: (k) => shiftLabel(k, t),
+        shiftColor,
+        manpowerName: translateStatus,
+        statusName: translateStatus,
+        totalColor: TOTAL_COLOR,
+        presentColor: PRESENT_COLOR,
+    };
+    const exportMeta = (f, opts, days) => ({
+        dateText: getDateText(f, t),
+        filtersText: describeFilters({ filter: f, ...opts, shiftName: exportLabels.shiftName, t }),
+        presentNote: days == null ? '' : t('charts.presentPerDayNote').replace('{days}', days),
+    });
+    const groupShiftKeys = (groups) => sortShiftKeys(new Set(
+        groups.flatMap(g => Object.entries(g.presShift || {}).filter(([, v]) => v > 0).map(([k]) => k))
+    ));
+    const chartTitle = (badgeKey, titleKey) => `${t(badgeKey)} ${t(titleKey)}`;
+    const groupSpec = (badgeKey, titleKey, groupHeader, groups, opsAll, level, f, opts, days) => groupSheet({
+        name: t(titleKey), title: chartTitle(badgeKey, titleKey), groupHeader, groups,
+        operatorCounts: countOperatorsByGroup(opsAll, level), shiftKeys: groupShiftKeys(groups),
+        labels: exportLabels, meta: exportMeta(f, opts, days),
+    });
+    const sheetSpecs = {
+        c5: () => skillSplitSheet({
+            name: t('charts.attendanceWiseEff'), title: chartTitle('charts.chart1', 'charts.attendanceWiseEff'),
+            rows: d5, shiftKeys: shiftKeys5, labels: exportLabels,
+            meta: exportMeta(f5, { deptOpts: allDeptOpts, sectionOpts: s5Opts, lineOpts: l5Opts }, days5),
+        }),
+        c1: () => groupSpec('charts.chart2', 'charts.deptWiseEff', t('nav.department'), d1, opsAll1, 'department', f1, { deptOpts: allDeptOpts }, days1),
+        c2: () => groupSpec('charts.chart3', 'charts.sectionWiseEff', t('charts.section'), d2, opsAll2, 'section', f2, { deptOpts: allDeptOpts, sectionOpts: s2Opts }, days2),
+        c3: () => groupSpec('charts.chart4', 'charts.lineWiseEff', t('charts.line'), d3, opsAll3, 'line', f3, { deptOpts: allDeptOpts, sectionOpts: s3Opts, lineOpts: l3Opts }, days3),
+        c4: () => groupSpec('charts.chart5', 'charts.subsectionWiseEff', t('charts.subsection'), d4, opsAll4, 'subsection', f4, { deptOpts: allDeptOpts, sectionOpts: s4Opts, lineOpts: l4Opts }, days4),
+        c6: () => operatorSheet({
+            name: t('charts.operatorWiseEff'), title: chartTitle('charts.chart6', 'charts.operatorWiseEff'),
+            operators: d6, userById: new Map(users.map(u => [u.userId, u])), labels: exportLabels,
+            meta: exportMeta(f6, { deptOpts: allDeptOpts, sectionOpts: s6Opts, lineOpts: l6Opts, subSectionOpts: ss6Opts }, null),
+        }),
+    };
+    const chartFilters = { c1: f1, c2: f2, c3: f3, c4: f4, c5: f5, c6: f6 };
+    const chartHasData = { c1: d1.length > 0, c2: d2.length > 0, c3: d3.length > 0, c4: d4.length > 0, c5: d5.length > 0, c6: d6.length > 0 };
+    const rangeText = (f) => {
+        const today = new Date().toLocaleDateString('en-CA');
+        const from = f.dateFrom || today;
+        const to = f.dateTo || today;
+        return from === to ? from : `${from}_to_${to}`;
+    };
+    const runDownload = async (busyKey, specs, fileName) => {
+        setDownloading(busyKey);
+        try {
+            await exportEfficiencyWorkbook(specs, fileName);
+        } catch (err) {
+            console.error('Efficiency export failed', err);
+            toast.error(t('charts.downloadFailed'));
+        } finally {
+            setDownloading(null);
+        }
+    };
+    const downloadChart = (key) => () => {
+        const spec = sheetSpecs[key]();
+        return runDownload(key, [spec], `Efficiency_${spec.name}_${rangeText(chartFilters[key])}`);
+    };
+    const downloadAllCharts = () =>
+        runDownload('all', ['c5', 'c1', 'c2', 'c3', 'c4', 'c6'].map(k => sheetSpecs[k]()),
+            `Efficiency_All_Charts_${new Date().toLocaleDateString('en-CA')}`);
+    // Props that give a chart its Download button
+    const downloadProps = (key) => ({
+        onDownload: downloadChart(key), downloading: downloading === key, canDownload: chartHasData[key] && !downloading,
+    });
+
     if (isLoading) return (
         <Card className="col-span-1 lg:col-span-2 border border-slate-100 shadow-sm rounded-3xl bg-white">
             <ChartLoader className="min-h-[480px]" />
@@ -920,7 +1060,7 @@ const EfficiencyChart = () => {
     const tooltipTitle = (row) => row.groupName ? `${row.groupName} · ${translateStatus(row.sub)}` : row.displayName;
 
     // Three bar pairs per group, the group name centred under them, dashed lines between groups
-    const renderSkillGroupedChart = (rows, mode, shiftKeys) => (
+    const renderSkillGroupedChart = (rows, mode, shiftKeys, labelled) => (
         <ChartWrapper data={rows} minW={130} height={420}>
             <BarChart data={rows} margin={{ ...commonMargin, bottom: 8 }} barCategoryGap="12%" barGap={6}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e8edf5" strokeWidth={1} vertical={false} />
@@ -936,7 +1076,7 @@ const EfficiencyChart = () => {
                 <Bar dataKey="total" stackId={TOTAL_STACK_ID} name={t('charts.totalEff')} fill={TOTAL_COLOR} radius={[10, 10, 0, 0]} maxBarSize={44} minPointSize={3}>
                     <LabelList dataKey="total" content={barLabel(22, '#1e293b')} />
                 </Bar>
-                {renderPresentBars({ mode, rows, shiftKeys, maxBarSize: 44, t })}
+                {renderPresentBars({ mode, rows, shiftKeys, labelShifts: labelled, maxBarSize: 44, t })}
             </BarChart>
         </ChartWrapper>
     );
@@ -956,6 +1096,41 @@ const EfficiencyChart = () => {
             </CardHeader> */}
 
             <CardContent className="p-6">
+                {/* ── Global filters (apply to all charts) ── */}
+                {/* relative z-40: its own stacking layer, so the open dropdown sits above the
+                    chart filter rows (z-20) and chart loading overlays (z-30) below it */}
+                <div className="relative z-40 flex flex-wrap items-center gap-2.5 mb-8 p-4 rounded-2xl border border-slate-200 bg-slate-50">
+                    <span className="text-[12px] font-extrabold text-slate-500 uppercase tracking-wider mr-1">{t('charts.allCharts')}</span>
+                    <PresentModeToggle mode={globalPresentMode} onChange={setGlobalPresentMode} />
+                    {anyShiftMode && (
+                        <MultiSelectDropdown label={t('charts.barLabels')}
+                            options={allShifts.map(s => ({ value: s, label: shiftLabel(s, t), color: shiftColor(s) }))}
+                            value={globalLabelShifts}
+                            onChange={applyGlobalLabelShifts} />
+                    )}
+                    <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2 shadow-sm">
+                        <span className="text-[12px] font-bold text-slate-400 uppercase tracking-wider">{t('charts.from')}</span>
+                        <input type="date" value={globalDates.dateFrom}
+                            onChange={e => setGlobalDate('dateFrom', e.target.value)}
+                            className="text-[13px] text-slate-600 bg-transparent outline-none cursor-pointer w-32" />
+                    </div>
+                    <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2 shadow-sm">
+                        <span className="text-[12px] font-bold text-slate-400 uppercase tracking-wider">{t('charts.to')}</span>
+                        <input type="date" value={globalDates.dateTo}
+                            onChange={e => setGlobalDate('dateTo', e.target.value)}
+                            className="text-[13px] text-slate-600 bg-transparent outline-none cursor-pointer w-32" />
+                    </div>
+                    {(globalDates.dateFrom || globalDates.dateTo) && (
+                        <button onClick={clearGlobalDates}
+                            className="flex items-center gap-1.5 text-[13px] font-bold text-rose-500 bg-rose-50 hover:bg-rose-100 px-3 py-2 rounded-lg transition-all">
+                            <IconX className="h-4 w-4" /> {t('charts.clear')}
+                        </button>
+                    )}
+                    <div className="ml-auto">
+                        <DownloadButton onClick={downloadAllCharts} busy={downloading === 'all'}
+                            disabled={!!downloading || !Object.values(chartHasData).some(Boolean)} label={t('charts.downloadAll')} />
+                    </div>
+                </div>
                 <div className="grid grid-cols-1 gap-10">
 
                     {/* ── CHART 1: Attendance-Wise Efficiency ── */}
@@ -967,8 +1142,9 @@ const EfficiencyChart = () => {
                         tag={<span className="bg-violet-50 text-violet-700 text-[12px] font-extrabold py-1 px-2.5 rounded uppercase tracking-wider">{t('charts.byStatus')}</span>}
                         statsVisible={statVis.c5} onToggleStats={() => toggleStat('c5')}
                         presentMode={presentMode.c5} onPresentModeChange={setChartPresentMode('c5')}
+                        {...downloadProps('c5')}
                     >
-                        <ChartFilter filter={f5} setFilter={setF5}
+                        <ChartFilter filter={f5} setFilter={setF5} {...labelFilterProps('c5')}
                             deptOpts={allDeptOpts} sectionOpts={s5Opts} lineOpts={l5Opts}
                             shiftOpts={allShifts}
                             showDept={true} showSection={true} showLine={true} hideLegend={true} />
@@ -983,7 +1159,7 @@ const EfficiencyChart = () => {
                                         <Bar dataKey="total" stackId={TOTAL_STACK_ID} name={t('charts.totalEff')} fill={TOTAL_COLOR} radius={[10, 10, 0, 0]} maxBarSize={56} minPointSize={3}>
                                             <LabelList dataKey="total" content={barLabel(22, '#1e293b')} />
                                         </Bar>
-                                        {renderPresentBars({ mode: presentMode.c5, rows: d5Mapped, shiftKeys: shiftKeys5, maxBarSize: 56, t })}
+                                        {renderPresentBars({ mode: presentMode.c5, rows: d5Mapped, shiftKeys: shiftKeys5, labelShifts: labelShifts.c5, maxBarSize: 56, t })}
                                     </BarChart>
                                 </ChartWrapper>
                                 <FrozenLegend shiftKeys={isShiftMode('c5') ? shiftKeys5 : null} />
@@ -1039,15 +1215,16 @@ const EfficiencyChart = () => {
                         tag={<span className="bg-indigo-50 text-indigo-700 text-[12px] font-extrabold py-1 px-2.5 rounded uppercase tracking-wider">{t('charts.deptLevel')}</span>}
                         statsVisible={statVis.c1} onToggleStats={() => toggleStat('c1')}
                         presentMode={presentMode.c1} onPresentModeChange={setChartPresentMode('c1')}
+                        {...downloadProps('c1')}
                     >
-                        <ChartFilter filter={f1} setFilter={setF1}
+                        <ChartFilter filter={f1} setFilter={setF1} {...labelFilterProps('c1')}
                             deptOpts={allDeptOpts} sectionOpts={[]} lineOpts={[]}
                             shiftOpts={allShifts}
                             showDept={true} showSection={false} showLine={false} hideShift={false} />
                         {d1.length > 0 ? (
                             <>
                                 <Pager pager={pager1} />
-                                {renderSkillGroupedChart(d1Grouped, presentMode.c1, shiftKeys1)}
+                                {renderSkillGroupedChart(d1Grouped, presentMode.c1, shiftKeys1, labelShifts.c1)}
                                 <FrozenLegend shiftKeys={isShiftMode('c1') ? shiftKeys1 : null} />
                                 {statVis.c1 && <SummaryCapsules data={d1} dotColor="#f59e0b" label={t('charts.deptEfficiency')} shiftKeys={isShiftMode('c1') ? shiftKeys1 : null} />}
                             </>
@@ -1063,15 +1240,16 @@ const EfficiencyChart = () => {
                         tag={<span className="bg-emerald-50 text-emerald-700 text-[12px] font-extrabold py-1 px-2.5 rounded uppercase tracking-wider">{t('charts.sectionLevel')}</span>}
                         statsVisible={statVis.c2} onToggleStats={() => toggleStat('c2')}
                         presentMode={presentMode.c2} onPresentModeChange={setChartPresentMode('c2')}
+                        {...downloadProps('c2')}
                     >
-                        <ChartFilter filter={f2} setFilter={setF2}
+                        <ChartFilter filter={f2} setFilter={setF2} {...labelFilterProps('c2')}
                             deptOpts={allDeptOpts} sectionOpts={s2Opts} lineOpts={[]}
                             shiftOpts={allShifts}
                             showDept={true} showSection={false} showLine={false} hideShift={false} />
                         {d2.length > 0 ? (
                             <>
                                 <Pager pager={pager2} />
-                                {renderSkillGroupedChart(d2Grouped, presentMode.c2, shiftKeys2)}
+                                {renderSkillGroupedChart(d2Grouped, presentMode.c2, shiftKeys2, labelShifts.c2)}
                                 <FrozenLegend shiftKeys={isShiftMode('c2') ? shiftKeys2 : null} />
                                 {statVis.c2 && <SummaryCapsules data={d2} dotColor="#f59e0b" label={t('charts.sectionEfficiency')} shiftKeys={isShiftMode('c2') ? shiftKeys2 : null} />}
                             </>
@@ -1087,15 +1265,16 @@ const EfficiencyChart = () => {
                         tag={<span className="bg-amber-50 text-amber-700 text-[12px] font-extrabold py-1 px-2.5 rounded uppercase tracking-wider">{t('charts.lineLevel')}</span>}
                         statsVisible={statVis.c3} onToggleStats={() => toggleStat('c3')}
                         presentMode={presentMode.c3} onPresentModeChange={setChartPresentMode('c3')}
+                        {...downloadProps('c3')}
                     >
-                        <ChartFilter filter={f3} setFilter={setF3}
+                        <ChartFilter filter={f3} setFilter={setF3} {...labelFilterProps('c3')}
                             deptOpts={allDeptOpts} sectionOpts={s3Opts} lineOpts={l3Opts}
                             shiftOpts={allShifts}
                             showDept={true} showSection={true} showLine={false} hideShift={false} />
                         {d3.length > 0 ? (
                             <>
                                 <Pager pager={pager3} />
-                                {renderSkillGroupedChart(d3Grouped, presentMode.c3, shiftKeys3)}
+                                {renderSkillGroupedChart(d3Grouped, presentMode.c3, shiftKeys3, labelShifts.c3)}
                                 <FrozenLegend shiftKeys={isShiftMode('c3') ? shiftKeys3 : null} />
                                 {statVis.c3 && <SummaryCapsules data={d3} dotColor="#f59e0b" label={t('charts.lineEfficiency')} shiftKeys={isShiftMode('c3') ? shiftKeys3 : null} />}
                             </>
@@ -1111,15 +1290,16 @@ const EfficiencyChart = () => {
                         tag={<span className="bg-amber-50 text-amber-700 text-[12px] font-extrabold py-1 px-2.5 rounded uppercase tracking-wider">{t('charts.subsection')}</span>}
                         statsVisible={statVis.c4} onToggleStats={() => toggleStat('c4')}
                         presentMode={presentMode.c4} onPresentModeChange={setChartPresentMode('c4')}
+                        {...downloadProps('c4')}
                     >
-                        <ChartFilter filter={f4} setFilter={setF4}
+                        <ChartFilter filter={f4} setFilter={setF4} {...labelFilterProps('c4')}
                             deptOpts={allDeptOpts} sectionOpts={s4Opts} lineOpts={l4Opts}
                             shiftOpts={allShifts}
                             showDept={true} showSection={true} showLine={true} hideShift={false} />
                         {d4.length > 0 ? (
                             <>
                                 <Pager pager={pager4} />
-                                {renderSkillGroupedChart(d4Grouped, presentMode.c4, shiftKeys4)}
+                                {renderSkillGroupedChart(d4Grouped, presentMode.c4, shiftKeys4, labelShifts.c4)}
                                 <FrozenLegend shiftKeys={isShiftMode('c4') ? shiftKeys4 : null} />
                                 {statVis.c4 && <SummaryCapsules data={d4} dotColor="#f59e0b" label={t('charts.subsectionEfficiency')} shiftKeys={isShiftMode('c4') ? shiftKeys4 : null} />}
                             </>
@@ -1135,8 +1315,9 @@ const EfficiencyChart = () => {
                         tag={<span className="bg-sky-50 text-sky-700 text-[12px] font-extrabold py-1 px-2.5 rounded uppercase tracking-wider">{t('charts.individual')}</span>}
                         statsVisible={statVis.c6} onToggleStats={() => toggleStat('c6')}
                         presentMode={presentMode.c6} onPresentModeChange={setChartPresentMode('c6')}
+                        {...downloadProps('c6')}
                     >
-                        <ChartFilter filter={f6} setFilter={setF6}
+                        <ChartFilter filter={f6} setFilter={setF6} {...labelFilterProps('c6')}
                             deptOpts={allDeptOpts} sectionOpts={s6Opts} lineOpts={l6Opts} subSectionOpts={ss6Opts}
                             shiftOpts={allShifts}
                             showDept={true} showSection={true} showLine={true} showSubSection={true} hideLegend={true} />

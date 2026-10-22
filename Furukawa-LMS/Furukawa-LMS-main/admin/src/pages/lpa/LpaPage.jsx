@@ -632,6 +632,25 @@ function LpaPageContent({ viewContext }) {
     return [baseSheet, ...customPdcaSheets];
   }, [activeSection, selectedUnit, pdcaDate, customPdcaSheets]);
 
+  const emailPdcaSheets = useMemo(() => allPdcaSheets.map(item => {
+    let sheetData = null;
+    try {
+      const saved = localStorage.getItem(`lpa_pdca_saved_${item.id}`);
+      if (saved) sheetData = JSON.parse(saved);
+    } catch { /* A corrupt saved snapshot is reported by the send flow. */ }
+    if (!sheetData) {
+      sheetData = getLpaPdcaTopic({
+        section: activeSection,
+        unit: item.unit || selectedUnit,
+        level: 'L1',
+        date: item.date || pdcaDate,
+        records,
+        templates: { assemblyTemplate, ccTemplate }
+      }).sheet;
+    }
+    return { ...item, source: 'lpa', section: activeSection, sheet: sheetData };
+  }), [allPdcaSheets, activeSection, selectedUnit, pdcaDate, records, assemblyTemplate, ccTemplate]);
+
   const handleOpenSpecificPdcaSheet = (sheetItem) => {
     let sheetData = null;
     try {
@@ -843,6 +862,14 @@ function LpaPageContent({ viewContext }) {
       onDateChange={setPdcaDate}
       currentUser={authUser}
       isCreator={true}
+      emailPdcaSheets={[{
+        id: pdcaTopic.id,
+        title: pdcaTopic.topic,
+        topic: pdcaTopic.topic,
+        section: activeSection,
+        unit: pdcaTopic.plant || selectedUnit,
+        date: pdcaDate
+      }]}
     />
   </div>;
 
@@ -1472,7 +1499,7 @@ function LpaPageContent({ viewContext }) {
         metadata={{ auditDate: pdcaDate, unit: selectedUnit, sectionName: activeSection === 'cc' ? 'C&C' : 'Assembly' }}
         pdcaLabel="LPA Observation PDCA"
         assemblySheets={records}
-        pdcaSheets={allPdcaSheets.map(sheet => ({ ...sheet, source: 'lpa', section: activeSection }))}
+        pdcaSheets={emailPdcaSheets}
         onViewAssemblySheet={({ record, sheetIndex: selectedSheetIndex }) => {
           setIsSendMailOpen(false);
           openSheet(record, selectedSheetIndex);

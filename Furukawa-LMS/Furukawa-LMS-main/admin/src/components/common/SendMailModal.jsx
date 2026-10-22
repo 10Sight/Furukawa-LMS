@@ -41,17 +41,23 @@ export default function SendMailModal({
   const [recipients, setRecipients] = useState([]);
   const [ccEmails, setCcEmails] = useState(['']);
   const [showCc, setShowCc] = useState(false);
-  const [subject, setSubject] = useState('');
+  const [remarks, setRemarks] = useState('');
   const [assemblyRecords, setAssemblyRecords] = useState([]);
   const [assemblySelection, setAssemblySelection] = useState('');
   const [pdcaSelection, setPdcaSelection] = useState('');
   const [sheetsLoading, setSheetsLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [sentSuccess, setSentSuccess] = useState(false);
+  const [showDefaultMailPopup, setShowDefaultMailPopup] = useState(false);
+  const [defaultEmails, setDefaultEmails] = useState([]);
+  const [defaultEmailDraft, setDefaultEmailDraft] = useState([]);
+  const [defaultEmailInput, setDefaultEmailInput] = useState('');
+  const [defaultMailsLoading, setDefaultMailsLoading] = useState(false);
+  const [defaultMailsSaving, setDefaultMailsSaving] = useState(false);
   const ccInputsRef = useRef([]);
   const requestInFlightRef = useRef(false);
   const idempotencyKeyRef = useRef('');
-  const [toRows, setToRows] = useState(['']);
+  const toInputRef = useRef(null);
 
   // When modal opens, all input fields are reset to blank, CC is optional/hidden by default
   useEffect(() => {
@@ -62,14 +68,32 @@ export default function SendMailModal({
     }
     setToInput('');
     setRecipients([]);
-    setToRows(['']);
     setCcEmails(['']);
     setShowCc(false);
-    setSubject('');
+    setRemarks('');
     setAssemblySelection('');
     setPdcaSelection('');
+    setShowDefaultMailPopup(false);
     requestInFlightRef.current = false;
     idempotencyKeyRef.current = window.crypto?.randomUUID?.() || `mail-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    let active = true;
+    setDefaultMailsLoading(true);
+    lpaApi.getDefaultMailRecipients()
+      .then((result) => {
+        if (!active) return;
+        const emails = Array.isArray(result?.emails) ? result.emails : [];
+        setDefaultEmails(emails);
+        setDefaultEmailDraft(emails);
+      })
+      .catch((error) => {
+        if (active) toast.error(error.response?.data?.message || 'Could not load saved default email addresses.');
+      })
+      .finally(() => { if (active) setDefaultMailsLoading(false); });
+    return () => { active = false; };
   }, [isOpen]);
 
   useEffect(() => {
@@ -83,8 +107,10 @@ export default function SendMailModal({
     return () => { active = false; };
   }, [isOpen, suppliedAssemblySheets, userContext?.user?.id, userContext?.user?._id]);
 
+  const selectedSection = String(metadata.section || metadata.sectionName || metadata.category || (formType === 'cc' ? 'cc' : 'assembly')).toLowerCase().includes('cc') ? 'cc' : 'assembly';
+  const assemblySheetLabel = selectedSection === 'cc' ? 'LPA C&C Sheet' : 'LPA Assembly Sheet';
   const assemblyOptions = (Array.isArray(suppliedAssemblySheets) ? suppliedAssemblySheets : assemblyRecords)
-    .filter((record) => record && record.section === 'assembly' && !record.sampleData)
+    .filter((record) => record && record.section === selectedSection && !record.sampleData)
     .flatMap((record) => (Array.isArray(record.sheets) ? record.sheets : []).map((sheet, sheetIndex) => ({
       key: `${record.id}::${sheetIndex}`,
       record,
@@ -133,8 +159,12 @@ export default function SendMailModal({
     if (parts.length === 0) return;
     setRecipients(prev => {
       const next = [...prev];
+      const existing = new Set(next.map((entry) => entry.toLowerCase()));
       parts.forEach(p => {
-        if (!next.includes(p)) next.push(p);
+        if (!existing.has(p.toLowerCase())) {
+          next.push(p);
+          existing.add(p.toLowerCase());
+        }
       });
       return next;
     });
@@ -150,6 +180,66 @@ export default function SendMailModal({
       e.preventDefault();
       addRecipient();
     }
+  };
+
+  const addDefaultEmailDraft = () => {
+    const email = defaultEmailInput.trim().toLowerCase();
+    if (!email) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      toast.error('Enter a valid email address.');
+      return;
+    }
+    if (defaultEmailDraft.some((entry) => entry.toLowerCase() === email)) {
+      toast.error('That email address is already in the default list.');
+      return;
+    }
+    setDefaultEmailDraft((current) => [...current, email]);
+    setDefaultEmailInput('');
+  };
+
+  const saveDefaultEmails = async () => {
+    if (defaultEmailInput.trim()) {
+      toast.error('Add or clear the email address before saving.');
+      return;
+    }
+    const invalidEmail = defaultEmailDraft.find((email) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
+    if (invalidEmail) {
+      toast.error(`Enter a valid email address: ${invalidEmail}`);
+      return;
+    }
+    setDefaultMailsSaving(true);
+    try {
+      const result = await lpaApi.saveDefaultMailRecipients(defaultEmailDraft);
+      const emails = Array.isArray(result?.emails) ? result.emails : defaultEmailDraft;
+      setDefaultEmails(emails);
+      setDefaultEmailDraft(emails);
+      setShowDefaultMailPopup(false);
+      toast.success('Default email addresses saved.');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not save default email addresses.');
+    } finally {
+      setDefaultMailsSaving(false);
+    }
+  };
+
+  const addDefaultEmailsToRecipients = () => {
+    if (defaultEmails.length === 0) {
+      toast.error('No saved default email addresses. Add and save addresses first.');
+      return;
+    }
+    setRecipients((current) => {
+      const next = [...current];
+      const existing = new Set(next.map((email) => email.toLowerCase()));
+      defaultEmails.forEach((email) => {
+        if (!existing.has(email.toLowerCase())) {
+          next.push(email);
+          existing.add(email.toLowerCase());
+        }
+      });
+      return next;
+    });
+    setShowDefaultMailPopup(false);
+    toast.success('Saved default addresses added to To.');
   };
 
   // Multiple CC handlers
@@ -226,14 +316,11 @@ export default function SendMailModal({
       toast.error('Please select a PDCA sheet before sending the email.');
       return;
     }
-    const rowRecipients = toRows.map(email => email.trim()).filter(Boolean);
     const parsedInput = toInput.trim() ? toInput.split(/[,;\s]+/).filter(Boolean) : [];
-    const finalRecipients = [...new Set([...recipients, ...rowRecipients, ...parsedInput])];
+    const finalRecipients = [...new Set([...recipients, ...parsedInput])];
     if (recipients.length === 0 && !toInput.trim()) {
-      if (!rowRecipients.length) {
-        toast.error('Please enter at least one recipient email address.');
-        return;
-      }
+      toast.error('Please enter at least one recipient email address.');
+      return;
     }
     const invalidEmail = finalRecipients.find(email => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
     if (invalidEmail) {
@@ -253,6 +340,7 @@ export default function SendMailModal({
       const selectedAssemblyPayload = {
         workbookId: selectedAssembly.record.id || selectedAssembly.record._id,
         sheetIndex: selectedAssembly.sheetIndex,
+        section: selectedSection,
         name: selectedAssembly.sheet.name || `Sheet ${selectedAssembly.sheetIndex + 1}`,
         unit: selectedAssembly.record.unit || '',
         date: selectedAssembly.record.auditDate || selectedAssembly.record.date || ''
@@ -261,14 +349,14 @@ export default function SendMailModal({
         id: selectedPdca.sheet.id || selectedPdca.sheet._id,
         source: selectedPdca.sheet.source === 'lpa' ? 'lpa' : 'pdca',
         name: selectedPdca.sheet.topic || selectedPdca.sheet.title || 'PDCA Sheet',
-        section: selectedPdca.sheet.section,
+        section: selectedPdca.sheet.section || selectedSection,
         unit: selectedPdca.sheet.plant || selectedPdca.sheet.unit || '',
         date: selectedPdca.sheet.date || ''
       };
       const providerResult = await lpaApi.sendEmail({
         to: finalRecipients,
         cc: finalCcList,
-        subject,
+        remarks,
         assemblySheet: selectedAssemblyPayload,
         pdcaSheet: selectedPdcaPayload
       }, idempotencyKeyRef.current);
@@ -280,7 +368,7 @@ export default function SendMailModal({
           onSendSuccess({
             recipients: finalRecipients,
             cc: finalCcList,
-            subject,
+            remarks,
             assemblySheet: { ...selectedAssemblyPayload, data: selectedAssembly.sheet },
             pdcaSheet: selectedPdcaPayload.id,
             pdcaSheetData: selectedPdca.sheet,
@@ -326,15 +414,26 @@ export default function SendMailModal({
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={sending}
-            className="text-slate-400 hover:text-slate-600 p-1 rounded-md hover:bg-slate-100 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Close"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => { setDefaultEmailDraft(defaultEmails); setDefaultEmailInput(''); setShowDefaultMailPopup(true); }}
+              disabled={sending || defaultMailsLoading}
+              className="px-2.5 py-1.5 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg whitespace-nowrap disabled:opacity-50"
+              title="Manage and add saved default recipients"
+            >
+              Add Default Mails
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={sending}
+              className="text-slate-400 hover:text-slate-600 p-1 rounded-md hover:bg-slate-100 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Modal Body */}
@@ -377,6 +476,7 @@ export default function SendMailModal({
                 </span>
               ))}
               <input
+                ref={toInputRef}
                 type="email"
                 value={toInput}
                 onChange={(e) => setToInput(e.target.value)}
@@ -385,15 +485,10 @@ export default function SendMailModal({
                 placeholder={recipients.length === 0 ? "Type recipient email and press Enter..." : "Add more emails..."}
                 className="flex-1 min-w-[160px] border-none outline-none text-xs text-slate-800 bg-transparent px-1 py-0.5 placeholder:text-slate-400"
               />
+              <button type="button" onClick={() => toInput.trim() ? addRecipient() : toInputRef.current?.focus()} className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-blue-600 hover:text-blue-800" title="Add another To recipient">
+                <Plus className="w-3.5 h-3.5" />Add Mail
+              </button>
             </div>
-            {toRows.map((email, idx) => (
-              <div key={idx} className="mt-1.5 flex items-center gap-2">
-                <span className="w-8 text-[11px] text-slate-500">To</span>
-                <input type="email" value={email} onChange={e => setToRows(prev => prev.map((item, i) => i === idx ? e.target.value : item))} placeholder="Recipient email address" className="flex-1 px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600" />
-                {toRows.length > 1 && <button type="button" onClick={() => setToRows(prev => prev.filter((_, i) => i !== idx))} className="p-1 text-slate-400 hover:text-rose-600" aria-label="Remove recipient"><Trash2 className="w-3.5 h-3.5" /></button>}
-              </div>
-            ))}
-            <button type="button" onClick={() => setToRows(prev => [...prev, ''])} className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800"><Plus className="w-3.5 h-3.5" />Add Mail</button>
           </div>
 
           {/* CC Field (Multi-CC with Rows & Add More Button) */}
@@ -469,24 +564,24 @@ export default function SendMailModal({
             </div>
           )}
 
-          {/* Subject Field */}
+          {/* Remarks Field */}
           <div>
             <label className="block font-semibold text-slate-700 mb-1.5">
-              Subject <span className="text-red-500">*</span>
+              Remarks
             </label>
-            <input
-              type="text"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              placeholder="Enter email subject..."
-              className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-slate-800 font-medium placeholder:text-slate-400"
+            <textarea
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+              placeholder="Add remarks for the email..."
+              rows={2}
+              className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-slate-800 font-medium placeholder:text-slate-400 resize-y"
             />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="min-w-0">
               <label htmlFor="mail-assembly-sheet" className="block font-semibold text-slate-700 mb-1.5">
-                Assembly <span className="text-red-500">*</span>
+                {assemblySheetLabel} <span className="text-red-500">*</span>
               </label>
               <select
                 id="mail-assembly-sheet"
@@ -495,7 +590,7 @@ export default function SendMailModal({
                 onChange={(event) => setAssemblySelection(event.target.value)}
                 className="w-full min-w-0 px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
               >
-                <option value="">{sheetsLoading ? 'Loading Assembly sheets…' : 'Select an Assembly sheet…'}</option>
+                <option value="">{sheetsLoading ? 'Loading sheets…' : `Select a ${assemblySheetLabel}…`}</option>
                 {assemblyOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
               </select>
               {selectedAssembly && (
@@ -532,7 +627,7 @@ export default function SendMailModal({
         <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
             <Info className="w-3.5 h-3.5 text-blue-600" />
-            <span>Select both sheets before sending the email</span>
+            <span>Select the requested sheets before sending the email</span>
           </div>
 
           <div className="flex items-center gap-2">
@@ -570,6 +665,55 @@ export default function SendMailModal({
           </div>
         </div>
       </div>
+      {showDefaultMailPopup && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/30" role="presentation">
+          <section className="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="default-mails-title">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+              <div>
+                <h3 id="default-mails-title" className="text-sm font-bold text-slate-800">Default email addresses</h3>
+                <p className="mt-0.5 text-[11px] text-slate-500">Save addresses for your account, then add them to To when needed.</p>
+              </div>
+              <button type="button" onClick={() => setShowDefaultMailPopup(false)} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600" aria-label="Close default email addresses">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-3 p-4">
+              <div className="flex gap-2">
+                <input
+                  type="email"
+                  value={defaultEmailInput}
+                  onChange={(event) => setDefaultEmailInput(event.target.value)}
+                  onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addDefaultEmailDraft(); } }}
+                  placeholder="Enter email address"
+                  className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-xs outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-500/20"
+                />
+                <button type="button" onClick={addDefaultEmailDraft} className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100">
+                  <Plus className="h-3.5 w-3.5" /> Add Mail
+                </button>
+              </div>
+              <div className="max-h-40 space-y-1.5 overflow-y-auto">
+                {defaultMailsLoading ? <p className="py-2 text-xs text-slate-500">Loading saved addresses…</p> : defaultEmailDraft.length ? defaultEmailDraft.map((email, index) => (
+                  <div key={`${email}-${index}`} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                    <span className="break-all">{email}</span>
+                    <button type="button" onClick={() => setDefaultEmailDraft((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="ml-2 rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600" title="Remove address">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )) : <p className="py-2 text-xs text-slate-500">No default addresses saved yet.</p>}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3">
+              <button type="button" onClick={addDefaultEmailsToRecipients} disabled={defaultMailsLoading || defaultEmails.length === 0} className="text-xs font-semibold text-blue-700 hover:text-blue-900 disabled:cursor-not-allowed disabled:opacity-50">Add Default Mails</button>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setShowDefaultMailPopup(false)} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100">Cancel</button>
+                <button type="button" onClick={saveDefaultEmails} disabled={defaultMailsLoading || defaultMailsSaving} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+                  {defaultMailsSaving && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Save
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

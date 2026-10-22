@@ -65,6 +65,16 @@ export const lpaApi = {
     return response.data?.data || response.data;
   },
 
+  getDefaultMailRecipients: async () => {
+    const response = await axiosInstance.get(`${BASE_PATH}/default-mails`);
+    return response.data?.data || response.data;
+  },
+
+  saveDefaultMailRecipients: async (emails) => {
+    const response = await axiosInstance.put(`${BASE_PATH}/default-mails`, { emails });
+    return response.data?.data || response.data;
+  },
+
   // G. Admin Excel Upload
   uploadExcel: async (formData) => {
     const response = await axiosInstance.post(`${BASE_PATH}/upload`, formData, {

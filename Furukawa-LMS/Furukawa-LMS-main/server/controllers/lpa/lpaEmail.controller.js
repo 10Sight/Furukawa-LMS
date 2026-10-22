@@ -35,18 +35,26 @@ const cellText = cell => cell?.formatted ?? cell?.text ?? cell?.value ?? "";
 
 const renderLpaTable = (sheet, title) => {
   if (!sheet || !Array.isArray(sheet.rows) || !sheet.rows.length) throw new ApiError(`The selected ${title} has no saved table data.`, 422);
+  // The Assembly workbook includes title/auditor fields above the checklist
+  // and legend/signature content below it. Email only the actual checklist
+  // table, retaining its two header rows and checklist row values.
+  const tableRows = sheet.rows
+    .map((row, sourceIndex) => ({ row, sourceIndex }))
+    .filter(({ sourceIndex }) => sourceIndex >= 1 && sourceIndex <= 36);
+  if (tableRows.length < 3) throw new ApiError(`The selected ${title} has no saved checklist table.`, 422);
   const covered = new Set();
   const mergeByAnchor = new Map();
   for (const merge of sheet.merges || []) {
     const start = merge.s || { r: merge.start?.row, c: merge.start?.col };
     const end = merge.e || { r: merge.end?.row, c: merge.end?.col };
     if (!Number.isInteger(start.r) || !Number.isInteger(start.c) || !Number.isInteger(end.r) || !Number.isInteger(end.c)) continue;
+    if (start.r < 1 || start.r > 36 || end.r < 1 || end.r > 36) continue;
     mergeByAnchor.set(`${start.r}:${start.c}`, { rows: end.r - start.r + 1, cols: end.c - start.c + 1, start });
     for (let r = start.r; r <= end.r; r++) for (let c = start.c; c <= end.c; c++) {
       if (r !== start.r || c !== start.c) covered.add(`${r}:${c}`);
     }
   }
-  const rows = sheet.rows.map((row, r) => `<tr>${(Array.isArray(row) ? row : []).map((cell, c) => {
+  const rows = tableRows.map(({ row, sourceIndex: r }) => `<tr>${(Array.isArray(row) ? row : []).map((cell, c) => {
     if (covered.has(`${r}:${c}`)) return "";
     const merge = mergeByAnchor.get(`${r}:${c}`);
     const value = escapeHtml(cellText(cell)).replace(/\r?\n/g, "<br>");
@@ -61,9 +69,15 @@ const renderLpaTable = (sheet, title) => {
     const size = Number.isFinite(fontSize) && fontSize >= 8 && fontSize <= 24 ? `font-size:${fontSize}px;` : "";
     const align = ["left", "center", "right"].includes(style.alignment?.horizontal) ? `text-align:${style.alignment.horizontal};` : "";
     const span = merge ? ` rowspan="${merge.rows}" colspan="${merge.cols}"` : "";
-    return `<td${span} style="${bold}${italic}${color}${fill}${size}${align}padding:5px 7px;border:1px solid #9ca3af;vertical-align:top;white-space:pre-wrap;">${value || "&nbsp;"}</td>`;
-  }).join("")}</tr>`).join("");
-  return `<h3 style="margin:20px 0 8px;font:600 16px Arial,sans-serif;">${escapeHtml(title)} · ${escapeHtml(sheet.name || "Worksheet")}</h3><table role="presentation" style="border-collapse:collapse;border:1px solid #9ca3af;font:12px Arial,sans-serif;width:100%;">${rows}</table>`;
+    const isHeader = r === 1 || r === 2;
+    const tag = isHeader ? "th" : "td";
+    const headerStyle = isHeader ? "background-color:#e2e8f0;text-align:left;" : "";
+    return `<${tag}${span} style="${headerStyle}${bold}${italic}${color}${fill}${size}${align}padding:5px 7px;border:1px solid #9ca3af;vertical-align:top;white-space:pre-wrap;">${value || "&nbsp;"}</${tag}>`;
+  }).join("")}</tr>`);
+  // Keep the source's two header rows at the top, followed by checklist data.
+  const thead = rows.slice(0, 2).join("");
+  const tbody = rows.slice(2).join("");
+  return `<h3 style="margin:20px 0 8px;font:600 16px Arial,sans-serif;">${escapeHtml(title)} · ${escapeHtml(sheet.name || "Worksheet")}</h3><table role="presentation" style="border-collapse:collapse;border:1px solid #9ca3af;font:12px Arial,sans-serif;width:100%;"><thead>${thead}</thead><tbody>${tbody}</tbody></table>`;
 };
 
 const renderPdcaTable = (sheet, title) => {
@@ -117,15 +131,14 @@ const buildSheetEmail = (assembly, pdca, portalBaseUrl = ENV.ADMIN_URL || ENV.FR
   const moduleName = assembly.section === "cc" || (pdca.source === "lpa" && pdca.section === "cc") ? "C&C" : "Assembly";
   const assemblyTitle = assembly.section === "cc" ? "LPA C&C Sheet" : "LPA Assembly Sheet";
   const pdcaTitle = pdca.source === "lpa" ? `LPA Observation ${moduleName} PDCA` : `${moduleName} PDCA Sheet`;
-  const remarksHtml = remarks
-    ? `<p style="margin:16px 0;font:14px Arial,sans-serif;color:#334155;"><strong>Remarks:</strong> ${escapeHtml(remarks).replace(/\r?\n/g, "<br>")}</p>`
-    : "";
+  const remarksHtml = `<p style="margin:16px 0;font:14px Arial,sans-serif;color:#334155;"><strong>Remarks:</strong>${remarks ? ` ${escapeHtml(remarks).replace(/\r?\n/g, "<br>")}` : ""}</p>`;
   const html = [
     `<p style="margin:0 0 12px;font:14px Arial,sans-serif;color:#1e293b;">Dear Sir,</p>`,
     `<p style="margin:0 0 18px;font:700 15px Arial,sans-serif;color:#1e293b;">Safety First</p>`,
     `<p style="margin:8px 0;font:14px Arial,sans-serif;color:#334155;"><strong>${escapeHtml(assemblyTitle)}:</strong> <a href="${escapeHtml(assemblyUrl)}" style="color:#2563eb;text-decoration:underline;">${assemblyName}</a></p>`,
     `<p style="margin:8px 0;font:14px Arial,sans-serif;color:#334155;"><strong>${escapeHtml(pdcaTitle)}:</strong> <a href="${escapeHtml(pdcaUrl)}" style="color:#2563eb;text-decoration:underline;">${pdcaName}</a></p>`,
     remarksHtml,
+    `<h2 style="margin:20px 0 8px;font:700 16px Arial,sans-serif;color:#1e293b;">Sheet Data</h2>`,
     ...(assemblySheetData ? [renderLpaTable(assemblySheetData, assemblyTitle)] : []),
     ...(pdcaSheetData ? [pdca.source === "lpa" ? renderPdcaTable(pdcaSheetData, `${pdcaTitle} · ${pdcaName}`) : renderPdcaTable(pdcaSheetData, pdcaTitle)] : [])
   ].join("");

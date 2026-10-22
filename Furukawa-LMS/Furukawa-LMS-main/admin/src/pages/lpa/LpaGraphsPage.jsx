@@ -47,7 +47,7 @@ import {
 /**
  * Custom Rich Tooltip for Recharts
  */
-function CustomChartTooltip({ active, payload, label }) {
+function CustomChartTooltip({ active, payload, label, targetBenchmark = 85 }) {
   if (!active || !payload || payload.length === 0) return null;
   const data = payload[0]?.payload || {};
 
@@ -58,66 +58,57 @@ function CustomChartTooltip({ active, payload, label }) {
           <Calendar size={14} className="text-blue-600" />
           {data.formattedDate || data.date || label}
         </span>
-        <span className="rounded-full bg-blue-50 px-2.5 py-0.5 font-bold text-blue-700 text-[11px] border border-blue-200">
-          {data.totalSheets || 0} {data.totalSheets === 1 ? 'sheet' : 'sheets'}
+        <span className={`rounded-full px-2 py-0.5 font-bold text-[11px] border ${
+          data.avgScore >= targetBenchmark
+            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+            : 'bg-rose-50 text-rose-700 border-rose-200'
+        }`}>
+          {data.avgScore >= targetBenchmark ? 'Target Met' : 'Below Target'}
         </span>
       </div>
 
       <div className="space-y-1.5">
         <div className="flex items-center justify-between font-semibold text-slate-700">
-          <span>Compliance Score:</span>
-          <span className={`font-bold ${data.avgScore >= 85 ? 'text-emerald-600' : data.avgScore >= 70 ? 'text-amber-600' : 'text-rose-600'}`}>
+          <span>Overall Score:</span>
+          <span className={`font-bold ${data.avgScore >= targetBenchmark ? 'text-emerald-600' : data.avgScore >= 70 ? 'text-amber-600' : 'text-rose-600'}`}>
             {data.avgScore}%
           </span>
         </div>
 
-        <div className="pt-1.5 border-t border-slate-100">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Shifts Breakdown:</div>
-          <div className="grid grid-cols-2 gap-1 text-[11px]">
-            <div className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS.shiftA }}></span>
-              <span className="text-slate-600">Shift A:</span>
-              <strong className="text-slate-800">{data.shiftA || 0}</strong>
-            </div>
-            <div className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS.shiftB }}></span>
-              <span className="text-slate-600">Shift B:</span>
-              <strong className="text-slate-800">{data.shiftB || 0}</strong>
-            </div>
-            {data.shiftC > 0 && (
-              <div className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS.shiftC }}></span>
-                <span className="text-slate-600">Shift C:</span>
-                <strong className="text-slate-800">{data.shiftC || 0}</strong>
-              </div>
-            )}
-            {data.shiftG > 0 && (
-              <div className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS.shiftG }}></span>
-                <span className="text-slate-600">Shift G:</span>
-                <strong className="text-slate-800">{data.shiftG || 0}</strong>
-              </div>
-            )}
-          </div>
+        <div className="flex items-center justify-between text-slate-500 text-[11px]">
+          <span>Target Benchmark:</span>
+          <span className="font-bold text-emerald-600">{targetBenchmark}%</span>
         </div>
 
-        <div className="pt-1.5 border-t border-slate-100">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Levels Breakdown:</div>
-          <div className="grid grid-cols-3 gap-1 text-[11px]">
-            <div className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS.level3 }}></span>
-              <span className="text-slate-600">L3:</span>
-              <strong className="text-slate-800">{data.level3 || 0}</strong>
+        <div className="pt-2 border-t border-slate-100">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Score by Levels:</div>
+          <div className="space-y-1 text-[11px]">
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-xs" style={{ backgroundColor: '#06b6d4' }}></span>
+                <span className="text-slate-600">Level 3:</span>
+              </span>
+              <strong className="text-slate-800 font-mono">
+                {data.level3Score != null ? `${data.level3Score}%` : '—'}
+              </strong>
             </div>
-            <div className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS.level2 }}></span>
-              <span className="text-slate-600">L2:</span>
-              <strong className="text-slate-800">{data.level2 || 0}</strong>
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-xs" style={{ backgroundColor: '#8b5cf6' }}></span>
+                <span className="text-slate-600">Level 2:</span>
+              </span>
+              <strong className="text-slate-800 font-mono">
+                {data.level2Score != null ? `${data.level2Score}%` : '—'}
+              </strong>
             </div>
-            <div className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS.level1 }}></span>
-              <span className="text-slate-600">L1:</span>
-              <strong className="text-slate-800">{data.level1 || 0}</strong>
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-xs" style={{ backgroundColor: '#ec4899' }}></span>
+                <span className="text-slate-600">Level 1:</span>
+              </span>
+              <strong className="text-slate-800 font-mono">
+                {data.level1Score != null ? `${data.level1Score}%` : '—'}
+              </strong>
             </div>
           </div>
         </div>
@@ -135,7 +126,8 @@ function LpaSectionGraphCard({
   icon: Icon,
   badgeColor = 'blue',
   sectionData,
-  onResetFilters
+  onResetFilters,
+  targetBenchmark = 85
 }) {
   const [isTableExpanded, setIsTableExpanded] = useState(false);
 
@@ -172,10 +164,10 @@ function LpaSectionGraphCard({
 
         <div className="rounded-xl bg-slate-50/80 border border-slate-100 p-3">
           <div className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">Average Score</div>
-          <div className={`text-xl font-bold mt-0.5 ${summary.avgScore >= 85 ? 'text-emerald-600' : summary.avgScore >= 70 ? 'text-amber-600' : 'text-rose-600'}`}>
+          <div className={`text-xl font-bold mt-0.5 ${summary.avgScore >= targetBenchmark ? 'text-emerald-600' : summary.avgScore >= 70 ? 'text-amber-600' : 'text-rose-600'}`}>
             {summary.avgScore}%
           </div>
-          <div className="text-[11px] text-slate-400 mt-0.5">Target benchmark: 85%</div>
+          <div className="text-[11px] text-slate-400 mt-0.5">Target benchmark: {targetBenchmark}%</div>
         </div>
 
         <div className="rounded-xl bg-slate-50/80 border border-slate-100 p-3">
@@ -224,67 +216,35 @@ function LpaSectionGraphCard({
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
               <XAxis dataKey="formattedDate" stroke="#94a3b8" fontSize={11} tickLine={false} />
               <YAxis
-                yAxisId="left"
-                orientation="left"
+                domain={[0, 100]}
                 stroke="#64748b"
                 fontSize={11}
                 tickLine={false}
-                allowDecimals={false}
-                label={{ value: 'Sheets Created', angle: -90, position: 'insideLeft', offset: 15, style: { fontSize: 10, fill: '#94a3b8' } }}
-              />
-              <YAxis
-                yAxisId="right"
-                orientation="right"
-                domain={[0, 100]}
-                stroke="#e11d48"
-                fontSize={11}
-                tickLine={false}
                 unit="%"
-                label={{ value: 'Score %', angle: 90, position: 'insideRight', offset: 15, style: { fontSize: 10, fill: '#e11d48' } }}
+                label={{ value: 'Score %', angle: -90, position: 'insideLeft', offset: 15, style: { fontSize: 10, fill: '#64748b' } }}
               />
-              <Tooltip content={<CustomChartTooltip />} />
+              <Tooltip content={<CustomChartTooltip targetBenchmark={targetBenchmark} />} />
               <Legend wrapperStyle={{ fontSize: 12, paddingTop: 12 }} />
 
-              {/* Target 85% Benchmark Line */}
+              {/* Target Benchmark Line (Settable by Admin) */}
               <ReferenceLine
-                yAxisId="right"
-                y={85}
+                y={targetBenchmark}
                 stroke="#10b981"
                 strokeDasharray="4 4"
-                strokeWidth={1.5}
-                label={{ value: 'Target: 85%', fill: '#059669', fontSize: 11, fontWeight: 700, position: 'top' }}
+                strokeWidth={2}
+                label={{ value: `Target: ${targetBenchmark}%`, fill: '#059669', fontSize: 11, fontWeight: 700, position: 'top' }}
               />
 
-              {/* Stacked Bars for Sheets Created by Shift */}
-              <Bar yAxisId="left" dataKey="shiftA" name="Shift A" stackId="shifts" fill={COLORS.shiftA} radius={[0, 0, 0, 0]} maxBarSize={54} />
-              <Bar yAxisId="left" dataKey="shiftB" name="Shift B" stackId="shifts" fill={COLORS.shiftB} radius={[0, 0, 0, 0]} maxBarSize={54} />
-              <Bar yAxisId="left" dataKey="shiftC" name="Shift C" stackId="shifts" fill={COLORS.shiftC} radius={[0, 0, 0, 0]} maxBarSize={54} />
-              <Bar yAxisId="left" dataKey="shiftG" name="Shift G" stackId="shifts" fill={COLORS.shiftG} radius={[5, 5, 0, 0]} maxBarSize={54} />
+              {/* Separate Candles for Score by Levels (Side-by-side, unstacked) */}
+              <Bar dataKey="level3Score" name="Level 3 Score (%)" fill="#06b6d4" radius={[4, 4, 0, 0]} maxBarSize={36} />
+              <Bar dataKey="level2Score" name="Level 2 Score (%)" fill="#8b5cf6" radius={[4, 4, 0, 0]} maxBarSize={36} />
+              <Bar dataKey="level1Score" name="Level 1 Score (%)" fill="#ec4899" radius={[4, 4, 0, 0]} maxBarSize={36} />
 
-              {/* Total Sheet Count Label explicitly positioned at the top of each stacked bar */}
+              {/* Overall Score Trend Line with exact % labeled at each dot */}
               <Line
-                yAxisId="left"
-                dataKey="totalSheets"
-                stroke="transparent"
-                dot={false}
-                activeDot={false}
-                legendType="none"
-              >
-                <LabelList
-                  dataKey="totalSheets"
-                  position="top"
-                  offset={6}
-                  style={{ fill: '#0f172a', fontSize: 12, fontWeight: 800 }}
-                  formatter={(val) => (val > 0 ? `${val} Sheets` : '')}
-                />
-              </Line>
-
-              {/* Compliance Score Line with exact % labeled at each dot */}
-              <Line
-                yAxisId="right"
                 type="monotone"
                 dataKey="avgScore"
-                name="Compliance Score (%)"
+                name="Overall Score (%)"
                 stroke="#e11d48"
                 strokeWidth={3}
                 dot={{ r: 5, fill: '#fff', stroke: '#e11d48', strokeWidth: 2.5 }}
@@ -295,7 +255,7 @@ function LpaSectionGraphCard({
                   position="top"
                   offset={10}
                   style={{ fill: '#e11d48', fontSize: 11, fontWeight: 800 }}
-                  formatter={(val) => `${val}%`}
+                  formatter={(val) => (val > 0 ? `${val}%` : '')}
                 />
               </Line>
             </ComposedChart>
@@ -372,7 +332,35 @@ export default function LpaGraphsPage() {
   const navigate = useNavigate();
   const outlet = useOutletContext();
   const { isFormView, setIsFormView } = outlet || {};
-  const userId = useSelector(state => state.auth.user?.id || state.auth.user?._id || 'current');
+  const authUser = useSelector(state => state.auth?.user);
+  const userId = authUser?.id || authUser?._id || 'current';
+  const isAdmin = Boolean(
+    authUser?.isAdmin ||
+    authUser?.role === 'ADMIN' ||
+    authUser?.role === 'SUPERADMIN' ||
+    authUser?.role === 'superadmin' ||
+    authUser?.role === 'admin'
+  );
+
+  // Target Benchmark line settable by Admin (defaults to 85)
+  const [targetBenchmark, setTargetBenchmark] = useState(() => {
+    try {
+      const saved = localStorage.getItem('lpa_target_benchmark');
+      return saved ? Number(saved) : 85;
+    } catch {
+      return 85;
+    }
+  });
+
+  const handleTargetBenchmarkChange = (val) => {
+    const num = Math.max(1, Math.min(100, Number(val) || 85));
+    setTargetBenchmark(num);
+    try {
+      localStorage.setItem('lpa_target_benchmark', String(num));
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   // Filter states
   const [selectedUnit, setSelectedUnit] = useState('all'); // 'all' | 'Bawal' | 'Gujrat'
@@ -525,6 +513,27 @@ export default function LpaGraphsPage() {
               <ChevronDown size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
             </div>
 
+            {/* Target Line Setter (Admin Settable) */}
+            <div className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-xs" title="Target Benchmark Line %">
+              <span className="text-slate-500 font-medium text-[11px]">Target:</span>
+              {isAdmin ? (
+                <div className="flex items-center gap-0.5">
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={targetBenchmark}
+                    onChange={(e) => handleTargetBenchmarkChange(e.target.value)}
+                    className="w-11 text-center rounded border border-emerald-300 bg-emerald-50/60 py-0.5 px-0.5 text-xs font-bold text-emerald-800 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                    title="Admin: Change Target Line %"
+                  />
+                  <span className="text-emerald-700 font-bold">%</span>
+                </div>
+              ) : (
+                <span className="font-bold text-emerald-700">{targetBenchmark}%</span>
+              )}
+            </div>
+
             {/* Refresh Button */}
             <button
               type="button"
@@ -663,10 +672,11 @@ export default function LpaGraphsPage() {
         {(activeTab === 'both' || activeTab === 'assembly') && (
           <LpaSectionGraphCard
             title="1. Assembly Sheet Analytics"
-            subtitle="Daily sheets generated by shifts (A, B, C, G), hierarchy levels (L1, L2, L3), and compliance scores"
+            subtitle="Daily scores by hierarchy levels (Level 3, Level 2, Level 1) with target benchmark"
             icon={FileSpreadsheet}
             badgeColor="blue"
             sectionData={assemblyData}
+            targetBenchmark={targetBenchmark}
             onResetFilters={() => { setSelectedUnit('all'); setDateRange('all'); }}
           />
         )}
@@ -675,10 +685,11 @@ export default function LpaGraphsPage() {
         {(activeTab === 'both' || activeTab === 'cc') && (
           <LpaSectionGraphCard
             title="2. C&C (Cutting & Crimping) Sheet Analytics"
-            subtitle="Daily sheets generated by shifts (A, B, C, G), hierarchy levels (L1, L2, L3), and compliance scores"
+            subtitle="Daily scores by hierarchy levels (Level 3, Level 2, Level 1) with target benchmark"
             icon={Layers}
             badgeColor="emerald"
             sectionData={ccData}
+            targetBenchmark={targetBenchmark}
             onResetFilters={() => { setSelectedUnit('all'); setDateRange('all'); }}
           />
         )}

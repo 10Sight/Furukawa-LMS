@@ -96,6 +96,9 @@ test('2. aggregateSectionData groups daily sheets, shifts, levels and scores for
   assert.equal(day2.shiftG, 1);
   assert.equal(day2.level3, 1);
   assert.equal(day2.level2, 1);
+  assert.ok('level3Score' in day2);
+  assert.ok('level2Score' in day2);
+  assert.ok('level1Score' in day2);
 });
 
 test('3. aggregateSectionData groups daily sheets, shifts, levels for C&C Sheet', () => {

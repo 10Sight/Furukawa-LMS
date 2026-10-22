@@ -3,8 +3,8 @@ import { createPortal } from 'react-dom';
 import { Search, ChevronDown, X, Check, Building2, AlertCircle } from 'lucide-react';
 import { fetchPdcaSections } from './CascadingLineAreaSelect.jsx';
 
-import { VERIFIED_SECTION_MASTER } from '../../pages/pdca/data/pdcaSections.js';
-export { VERIFIED_SECTION_MASTER };
+import { VERIFIED_SECTION_MASTER, isSectionRelatedToDepartment } from '../../pages/pdca/data/pdcaSections.js';
+export { VERIFIED_SECTION_MASTER, isSectionRelatedToDepartment };
 
 const POPOVER_WIDTH = 300;
 const POPOVER_MAX_HEIGHT = 340;
@@ -113,11 +113,16 @@ export default function SearchableSectionSelect({
 
   const displayLabel = currentSection ? currentSection.name : (value || '');
 
-  // Filter sections by search and optional department relationship
+  // Filter sections by search and department relationship
   const filteredSections = useMemo(() => {
-    const q = searchTerm.toLowerCase().trim();
     let list = sections;
 
+    // If department is selected, strictly filter to only related sections
+    if (department && department.trim()) {
+      list = list.filter((s) => isSectionRelatedToDepartment(s, department));
+    }
+
+    const q = searchTerm.toLowerCase().trim();
     if (q) {
       list = list.filter(
         (s) =>
@@ -127,22 +132,7 @@ export default function SearchableSectionSelect({
       );
     }
 
-    // Contextual ordering: if department is selected and matches section category, sort matching to top
-    if (department && department.trim()) {
-      const deptNorm = department.trim().toLowerCase();
-      const isCrimping = deptNorm === 'c&c';
-      return [...list].sort((a, b) => {
-        const aCat = (a.category || '').toLowerCase();
-        const bCat = (b.category || '').toLowerCase();
-        const aMatch = aCat === deptNorm || (isCrimping && aCat === 'crimping');
-        const bMatch = bCat === deptNorm || (isCrimping && bCat === 'crimping');
-        if (aMatch && !bMatch) return -1;
-        if (!aMatch && bMatch) return 1;
-        return (a.name || '').localeCompare(b.name || '');
-      });
-    }
-
-    return list;
+    return [...list].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   }, [sections, searchTerm, department]);
 
   const handleSelect = (sec) => {
@@ -183,7 +173,7 @@ export default function SearchableSectionSelect({
         title={displayLabel ? `${displayLabel} ${currentSection?.uniCode ? `(${currentSection.uniCode})` : ''}` : 'Click to select Section'}
       >
         <span
-          className={`truncate text-[10px] leading-tight block w-full text-center whitespace-nowrap ${
+          className={`truncate text-[12.5px] leading-tight block w-full text-center whitespace-nowrap ${
             displayLabel ? 'font-medium text-slate-800' : 'text-slate-400 italic'
           }`}
         >

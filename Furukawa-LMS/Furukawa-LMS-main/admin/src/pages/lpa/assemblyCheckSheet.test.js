@@ -489,7 +489,7 @@ test('21. createBlankAssemblySheet creates dynamic columns for multiple levels (
 
   // Total Marks on row 37
   assert.equal(threeLevelSheet.rows[37][0].value, 'Total Marks:');
-  assert.equal(threeLevelSheet.rows[37][4].value, '70/');
+  assert.equal(threeLevelSheet.rows[37][4].value, '70');
 
   // Percentage on row 38
   assert.equal(threeLevelSheet.rows[38][0].value, 'Percentage (%):');

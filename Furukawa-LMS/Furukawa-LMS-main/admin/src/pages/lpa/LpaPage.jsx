@@ -9,7 +9,7 @@ import { columnName, editLPACell, importLPAWorkbook, extractWorkbookMetadata } f
 import AssemblySheet from '../../components/lpa/AssemblySheet';
 import { isAssemblyCheckSheet, upgradeAssemblyRecord, createBlankAssemblySheet, getActiveAuditColumns, syncSheetWithLatestSameDaySources, normalizeSourceSheets, sheetHasData } from '../../components/lpa/assemblySheetUtils';
 import CcSheet from '../../components/lpa/CcSheet';
-import assemblyTemplate from './assemblyTemplate.json';
+import assemblyTemplate from './assemblyTemplate.json' with { type: 'json' };
 import { ccTemplate, isCcCheckSheet, upgradeCcTemplateRecord, createBlankCcSheet } from './ccTemplate';
 import lpaApi from '@/services/api/lpaApi.js';
 import PDCASheet from '../../components/pdca/PDCASheet';
@@ -580,6 +580,139 @@ function LpaPageContent({ viewContext }) {
     });
   }, [customPdcaTopic, activeSection, selectedUnit, pdcaDate, records, pdcaSaveVersion]);
 
+  // Custom PDCA Sheets created by Admin (isolated per section & plant)
+  const [customPdcaSheets, setCustomPdcaSheets] = useState(() => {
+    try {
+      const saved = localStorage.getItem(`lpa_custom_pdca_sheets_${activeSection}_${selectedUnit || 'Bawal'}`);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(`lpa_custom_pdca_sheets_${activeSection}_${selectedUnit || 'Bawal'}`);
+      setCustomPdcaSheets(saved ? JSON.parse(saved) : []);
+    } catch {
+      setCustomPdcaSheets([]);
+    }
+  }, [activeSection, selectedUnit]);
+
+  const [isCreatePdcaModalOpen, setIsCreatePdcaModalOpen] = useState(false);
+  const [newPdcaForm, setNewPdcaForm] = useState({
+    title: '',
+    date: todayIso,
+    unit: 'Bawal',
+    department: 'Assembly'
+  });
+
+  const allPdcaSheets = useMemo(() => {
+    const baseSheet = {
+      id: `PDCA-LPA-${activeSection.toUpperCase()}-${selectedUnit || 'Bawal'}`,
+      title: `${activeSection === 'assembly' ? 'Assembly' : 'C&C'} - LPA Observation (PDCA)`,
+      date: pdcaDate || todayIso,
+      unit: selectedUnit || 'Bawal',
+      department: activeSection === 'assembly' ? 'Assembly' : 'C&C',
+      isDefault: true
+    };
+    return [baseSheet, ...customPdcaSheets];
+  }, [activeSection, selectedUnit, pdcaDate, customPdcaSheets]);
+
+  const handleOpenSpecificPdcaSheet = (sheetItem) => {
+    let sheetData = null;
+    try {
+      const saved = localStorage.getItem(`lpa_pdca_saved_${sheetItem.id}`);
+      if (saved) {
+        sheetData = JSON.parse(saved);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+    if (!sheetData) {
+      const fallbackTopic = getLpaPdcaTopic({
+        section: activeSection,
+        unit: sheetItem.unit || selectedUnit,
+        level: 'L1',
+        date: sheetItem.date || pdcaDate,
+        records,
+        templates: { assemblyTemplate, ccTemplate }
+      });
+      sheetData = fallbackTopic.sheet;
+      if (sheetData?.headerInfo) {
+        sheetData.headerInfo.topicName = sheetItem.title;
+      }
+    }
+    setCustomPdcaTopic({
+      id: sheetItem.id,
+      topic: sheetItem.title,
+      section: activeSection,
+      scope: 'Company',
+      plant: sheetItem.unit || selectedUnit || 'Bawal',
+      sheet: sheetData
+    });
+    setIsPdcaSheetOpen(true);
+  };
+
+  const handleCreateCustomPdcaSheet = (e) => {
+    e.preventDefault();
+    if (!isAdmin) {
+      alert('Only administrators are authorized to add new PDCA sheets.');
+      return;
+    }
+    const targetUnit = newPdcaForm.unit || selectedUnit || 'Bawal';
+    const newId = `PDCA-LPA-${activeSection.toUpperCase()}-${targetUnit}-${Date.now()}`;
+    const newSheet = {
+      id: newId,
+      title: newPdcaForm.title.trim() || `${activeSection === 'assembly' ? 'Assembly' : 'C&C'} - LPA Observation (PDCA)`,
+      date: newPdcaForm.date || pdcaDate || todayIso,
+      unit: targetUnit,
+      department: newPdcaForm.department || (activeSection === 'assembly' ? 'Assembly' : 'C&C'),
+      createdAt: new Date().toISOString()
+    };
+
+    const initialTopic = getLpaPdcaTopic({
+      section: activeSection,
+      unit: targetUnit,
+      level: 'L1',
+      date: newSheet.date,
+      records,
+      templates: { assemblyTemplate, ccTemplate }
+    });
+    const customSnapshot = {
+      ...initialTopic.sheet,
+      headerInfo: {
+        ...(initialTopic.sheet?.headerInfo || {}),
+        topicName: newSheet.title
+      }
+    };
+    saveLpaPdcaSnapshot(newId, customSnapshot);
+
+    const updated = [...customPdcaSheets, newSheet];
+    setCustomPdcaSheets(updated);
+    try {
+      localStorage.setItem(`lpa_custom_pdca_sheets_${activeSection}_${selectedUnit || 'Bawal'}`, JSON.stringify(updated));
+    } catch (err) {
+      console.error(err);
+    }
+    setIsCreatePdcaModalOpen(false);
+    setMessage({ text: `✓ PDCA Sheet "${newSheet.title}" created successfully.` });
+  };
+
+  const handleDeleteCustomPdcaSheet = (sheetId) => {
+    if (!isAdmin) return;
+    if (!confirm('Are you sure you want to delete this PDCA sheet?')) return;
+    const updated = customPdcaSheets.filter(s => s.id !== sheetId);
+    setCustomPdcaSheets(updated);
+    try {
+      localStorage.setItem(`lpa_custom_pdca_sheets_${activeSection}_${selectedUnit || 'Bawal'}`, JSON.stringify(updated));
+      localStorage.removeItem(`lpa_pdca_saved_${sheetId}`);
+    } catch (err) {
+      console.error(err);
+    }
+    setMessage({ text: 'PDCA sheet deleted.' });
+  };
+
   const handleBackFromPDCA = () => {
     setCustomPdcaTopic(null);
     setIsPdcaSheetOpen(false);
@@ -916,8 +1049,28 @@ function LpaPageContent({ viewContext }) {
                       />
                     </label>
                   </div>
-                  <div className="text-xs text-slate-500 font-medium bg-slate-50 px-3 py-2 rounded-lg border border-slate-100">
-                    Single PDCA sheet for {activeSection === 'assembly' ? 'Assembly' : 'C&C'} · Add observations via rows inside the sheet
+
+                  <div className="flex items-center gap-2.5">
+                    {/* Create PDCA Option - Admin Only */}
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewPdcaForm({
+                            title: `${activeSection === 'assembly' ? 'Assembly' : 'C&C'} - PDCA Sheet #${allPdcaSheets.length + 1}`,
+                            date: pdcaDate || todayIso,
+                            unit: selectedUnit || 'Bawal',
+                            department: activeSection === 'assembly' ? 'Assembly' : 'C&C'
+                          });
+                          setIsCreatePdcaModalOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 text-white font-semibold text-xs hover:bg-blue-700 transition-all cursor-pointer shadow-xs active:scale-98"
+                        title="Create new PDCA Sheet (Admin Only)"
+                      >
+                        <Plus size={15} />
+                        <span>Create PDCA</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -936,14 +1089,17 @@ function LpaPageContent({ viewContext }) {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {(() => {
-                        const sheetTitle = `${activeSection === 'assembly' ? 'Assembly' : 'C&C'} - LPA Observation (PDCA)`;
                         const query = searchQuery.trim().toLowerCase();
-                        const matchesSearch = !query ||
-                          sheetTitle.toLowerCase().includes(query) ||
-                          (selectedUnit || '').toLowerCase().includes(query) ||
-                          (activeSection === 'assembly' ? 'assembly' : 'c&c').includes(query);
+                        const filteredSheets = allPdcaSheets.filter(sh => {
+                          if (!query) return true;
+                          return (
+                            sh.title.toLowerCase().includes(query) ||
+                            (sh.unit || '').toLowerCase().includes(query) ||
+                            (sh.department || '').toLowerCase().includes(query)
+                          );
+                        });
 
-                        if (!matchesSearch) {
+                        if (filteredSheets.length === 0) {
                           return (
                             <tr>
                               <td colSpan={7} className="p-8 text-center text-sm text-slate-500">
@@ -953,60 +1109,83 @@ function LpaPageContent({ viewContext }) {
                           );
                         }
 
-                        const rows = pdcaTopic?.sheet?.rows || [];
-                        const activeCount = rows.filter(r =>
-                          Boolean(
-                            r.observation?.trim() ||
-                            r.lineArea?.trim() ||
-                            (Array.isArray(r.lineAreas) && r.lineAreas.some(l => l?.lineArea?.trim())) ||
-                            r.rootCause?.trim() ||
-                            r.counterMeasure?.trim()
-                          )
-                        ).length;
+                        return filteredSheets.map((sh, idx) => {
+                          let rows = [];
+                          try {
+                            const saved = localStorage.getItem(`lpa_pdca_saved_${sh.id}`);
+                            if (saved) {
+                              rows = JSON.parse(saved)?.rows || [];
+                            } else if (sh.isDefault) {
+                              rows = pdcaTopic?.sheet?.rows || [];
+                            }
+                          } catch {}
 
-                        return (
-                          <tr className="hover:bg-slate-50 transition-colors">
-                            <td className="px-4 py-4 text-slate-500 font-medium">1</td>
-                            <td className="px-4 py-4 font-semibold">
-                              <button
-                                type="button"
-                                onClick={() => setIsPdcaSheetOpen(true)}
-                                className="text-left font-semibold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer transition-colors"
-                                title={`Open ${sheetTitle}`}
-                              >
-                                {sheetTitle}
-                              </button>
-                            </td>
-                            <td className="px-4 py-4 text-slate-700">{selectedUnit || 'Bawal'}</td>
-                            <td className="px-4 py-4 text-slate-700">{activeSection === 'assembly' ? 'Assembly' : 'C&C'}</td>
-                            <td className="px-4 py-4 text-slate-700">
-                              {activeCount > 0 ? (
-                                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-                                  {activeCount} active observation{activeCount === 1 ? '' : 's'} ({rows.length} total rows)
+                          const activeCount = rows.filter(r =>
+                            Boolean(
+                              r.observation?.trim() ||
+                              r.lineArea?.trim() ||
+                              (Array.isArray(r.lineAreas) && r.lineAreas.some(l => l?.lineArea?.trim())) ||
+                              r.rootCause?.trim() ||
+                              r.counterMeasure?.trim()
+                            )
+                          ).length;
+
+                          return (
+                            <tr key={sh.id} className="hover:bg-slate-50 transition-colors">
+                              <td className="px-4 py-4 text-slate-500 font-medium">{idx + 1}</td>
+                              <td className="px-4 py-4 font-semibold">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenSpecificPdcaSheet(sh)}
+                                  className="text-left font-semibold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer transition-colors"
+                                  title={`Open ${sh.title}`}
+                                >
+                                  {sh.title}
+                                </button>
+                              </td>
+                              <td className="px-4 py-4 text-slate-700">{sh.unit || selectedUnit || 'Bawal'}</td>
+                              <td className="px-4 py-4 text-slate-700">{sh.department || (activeSection === 'assembly' ? 'Assembly' : 'C&C')}</td>
+                              <td className="px-4 py-4 text-slate-700">
+                                {activeCount > 0 ? (
+                                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                                    {activeCount} active observation{activeCount === 1 ? '' : 's'} ({rows.length} total rows)
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-slate-50 text-slate-600 border border-slate-200">
+                                    {rows.length || 10} rows (Click to add observations)
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-4 py-4 text-slate-700">
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  Active
                                 </span>
-                              ) : (
-                                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-slate-50 text-slate-600 border border-slate-200">
-                                  {rows.length} rows (Click to add observations)
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-4 py-4 text-slate-700">
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                Active
-                              </span>
-                            </td>
-                            <td className="px-4 py-4 text-right">
-                              <button
-                                type="button"
-                                onClick={() => setIsPdcaSheetOpen(true)}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-600 bg-blue-600 text-white hover:bg-blue-700 text-xs font-semibold cursor-pointer transition-colors shadow-xs"
-                                title="Open PDCA Sheet"
-                              >
-                                <Eye size={14} /> Open
-                              </button>
-                            </td>
-                          </tr>
-                        );
+                              </td>
+                              <td className="px-4 py-4 text-right">
+                                <div className="inline-flex items-center gap-1.5 justify-end">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenSpecificPdcaSheet(sh)}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-600 bg-blue-600 text-white hover:bg-blue-700 text-xs font-semibold cursor-pointer transition-colors shadow-xs"
+                                    title="Open PDCA Sheet"
+                                  >
+                                    <Eye size={14} /> Open
+                                  </button>
+                                  {isAdmin && !sh.isDefault && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteCustomPdcaSheet(sh.id)}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold cursor-pointer transition-colors"
+                                      title="Delete PDCA Sheet"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        });
                       })()}
                     </tbody>
                   </table>
@@ -1194,6 +1373,84 @@ function LpaPageContent({ viewContext }) {
         initialUnit={selectedUnit}
         initialDate={pdcaDate}
       />
+
+      {/* Create New PDCA Sheet Modal (Admin Only) */}
+      {isCreatePdcaModalOpen && isAdmin && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+              <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                <ClipboardList className="text-blue-600" size={18} />
+                <span>Create New PDCA Sheet</span>
+              </h3>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                Admin Only
+              </span>
+            </div>
+            <form onSubmit={handleCreateCustomPdcaSheet} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Sheet / Topic Title</label>
+                <input
+                  type="text"
+                  required
+                  value={newPdcaForm.title}
+                  onChange={e => setNewPdcaForm(prev => ({ ...prev, title: e.target.value }))}
+                  placeholder={`e.g. ${activeSection === 'assembly' ? 'Assembly' : 'C&C'} - LPA Observation (PDCA) #2`}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Audit Date</label>
+                  <input
+                    type="date"
+                    required
+                    value={newPdcaForm.date}
+                    onChange={e => setNewPdcaForm(prev => ({ ...prev, date: e.target.value }))}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Unit</label>
+                  <select
+                    value={newPdcaForm.unit}
+                    onChange={e => setNewPdcaForm(prev => ({ ...prev, unit: e.target.value }))}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none cursor-pointer"
+                  >
+                    {UNITS.map(u => (
+                      <option key={u} value={u}>{u}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Department</label>
+                <input
+                  type="text"
+                  value={newPdcaForm.department}
+                  onChange={e => setNewPdcaForm(prev => ({ ...prev, department: e.target.value }))}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none bg-slate-50"
+                />
+              </div>
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsCreatePdcaModalOpen(false)}
+                  className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700 shadow-xs cursor-pointer"
+                >
+                  Create Sheet
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   </div>;
 }

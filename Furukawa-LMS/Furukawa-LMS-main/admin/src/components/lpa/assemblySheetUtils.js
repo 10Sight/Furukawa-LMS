@@ -561,10 +561,29 @@ export function normalizeAssemblySheet(sheet) {
   // If already normalized with >= 7 columns, ensure legend and return
   if (sheet.columnCount >= 7 && sheet.columnCount !== 14) {
     const updatedRows = sheet.rows.map((row, r) => {
-      if (r < 3 || r > 36 || !Array.isArray(row)) return row;
-      const obsCell = row[5] || { value: '', formatted: '', type: 'z' };
-      let scoreCell = row[6] || { value: '', formatted: '', type: 'z' };
-      const marksCell = row[4] || { value: '', formatted: '', type: 'z' };
+      if (!Array.isArray(row)) return row;
+      let nextRow = row;
+
+      // Sanitize SFETY in Focus column (index 1)
+      if (r >= 3 && r <= 36 && row[1] && /^sfety$/i.test(String(row[1].value ?? row[1].formatted ?? '').replace(/\s+/g, ' ').trim())) {
+        if (nextRow === row) nextRow = [...row];
+        nextRow[1] = { ...row[1], value: 'Safety ', formatted: 'Safety ' };
+      }
+
+      // Sanitize trailing slash in total marks on row 37
+      if (r === 37 && row[4]) {
+        const clean = String(row[4].value ?? row[4].formatted ?? '70').replace(/\/+$/, '');
+        if (clean !== String(row[4].value ?? '')) {
+          if (nextRow === row) nextRow = [...row];
+          nextRow[4] = { ...row[4], value: clean, formatted: clean };
+        }
+      }
+
+      if (r < 3 || r > 36) return nextRow;
+
+      const obsCell = nextRow[5] || { value: '', formatted: '', type: 'z' };
+      let scoreCell = nextRow[6] || { value: '', formatted: '', type: 'z' };
+      const marksCell = nextRow[4] || { value: '', formatted: '', type: 'z' };
 
       const obsText = String(obsCell.value ?? obsCell.formatted ?? '').trim();
       const scoreText = String(scoreCell.value ?? scoreCell.formatted ?? '').trim();
@@ -578,12 +597,12 @@ export function normalizeAssemblySheet(sheet) {
             formatted: String(autoScore),
             type: autoScore === 'NA' ? 's' : 'n'
           };
-          const nextRow = [...row];
+          if (nextRow === row) nextRow = [...row];
           nextRow[6] = scoreCell;
           return nextRow;
         }
       }
-      return row;
+      return nextRow;
     });
     return ensureAssemblyLegend({ ...sheet, rows: updatedRows });
   }
@@ -642,7 +661,11 @@ export function normalizeAssemblySheet(sheet) {
         { value: '', formatted: '', type: 'z' },
         { value: '', formatted: '', type: 'z' },
         { value: '', formatted: '', type: 'z' },
-        row[oldMarksCol] || { value: '70/', formatted: '70/', type: 's' },
+        (() => {
+          const raw = row[oldMarksCol] || { value: '70', formatted: '70', type: 's' };
+          const clean = String(raw.value ?? raw.formatted ?? '70').replace(/\/+$/, '');
+          return { value: clean, formatted: clean, type: 's' };
+        })(),
         { value: '', formatted: '', type: 'z' },
         row[oldScoreCol] || { value: '0', formatted: '0', type: 's' }
       ];
@@ -753,12 +776,9 @@ export function normalizeAssemblySheet(sheet) {
 export function upgradeAssemblyRecord(record) {
   if (record?.section !== 'assembly' || !Array.isArray(record.sheets)) return record;
 
-  const needsUpgrade = record.sheets.some(s => s.columnCount === 14);
-  if (!needsUpgrade) return record;
-
   return {
     ...record,
-    sheets: record.sheets.map(sheet => (sheet.columnCount === 14 ? normalizeAssemblySheet(sheet) : sheet))
+    sheets: record.sheets.map(sheet => normalizeAssemblySheet(sheet))
   };
 }
 
@@ -881,7 +901,7 @@ export function createBlankAssemblySheet(baseSheet, date, levels = ['L3'], shift
     if (rIdx === 37) {
       const row37 = Array.from({ length: columnCount }, () => ({ value: '', formatted: '', type: 'z' }));
       row37[0] = { value: 'Total Marks:', formatted: 'Total Marks:', type: 's' };
-      row37[4] = { value: '70/', formatted: '70/', type: 's' };
+      row37[4] = { value: '70', formatted: '70', type: 's' };
       auditColumns.forEach((colGroup) => {
         row37[colGroup.obsCol] = { value: '', formatted: '', type: 'z' };
         row37[colGroup.scoreCol] = { value: '0', formatted: '0', type: 's' };

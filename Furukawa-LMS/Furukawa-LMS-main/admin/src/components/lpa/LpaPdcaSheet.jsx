@@ -46,7 +46,7 @@ import {
 } from '../../pages/pdca/data/recordFilters.js';
 import { parseStaffEmployee, findEmployeeDepartment, VERIFIED_EMPLOYEE_MASTER } from '../../pages/pdca/data/pdcaEmployees.js';
 import SearchableLineAreaSelect, { getCachedDbSections } from '../pdca/SearchableLineAreaSelect';
-import SearchableSectionSelect, { VERIFIED_SECTION_MASTER } from '../pdca/SearchableSectionSelect';
+import SearchableSectionSelect, { VERIFIED_SECTION_MASTER, isSectionRelatedToDepartment } from '../pdca/SearchableSectionSelect';
 
 const createEmptyRow = (customDefaults = {}) => ({
   date: customDefaults.date || '',
@@ -193,11 +193,11 @@ function CompactDateCell({ value, onChange }) {
 
       {display ? (
         <div className="flex flex-col items-center leading-none text-center pointer-events-none">
-          <span className="text-[11px] font-bold text-slate-800 tracking-tight">
+          <span className="text-[15px] font-bold text-slate-800 tracking-tight">
             {display.line1}
           </span>
           {display.line2 && (
-            <span className="text-[9.5px] font-semibold text-slate-500 mt-0.5">
+            <span className="text-[13px] font-semibold text-slate-500 mt-0.5">
               /{display.line2}
             </span>
           )}
@@ -1175,22 +1175,16 @@ export default function LpaPdcaSheet({
       let nextLineAreaCode = curr.lineAreaCode;
       let nextLineAreaSectionId = curr.lineAreaSectionId;
 
-      if (dept && curr.sectionId) {
-        const secMatch = VERIFIED_SECTION_MASTER.find((s) => String(s.id) === String(curr.sectionId));
-        if (secMatch && secMatch.category && secMatch.category !== 'Not Applicable') {
-          const deptLower = dept.trim().toLowerCase();
-          const catLower = secMatch.category.trim().toLowerCase();
-          const isCrimping = deptLower === 'c&c';
-          const match = catLower === deptLower || (isCrimping && catLower === 'crimping');
-          if (!match && VERIFIED_SECTION_MASTER.some((s) => s.category?.toLowerCase() === deptLower || (isCrimping && s.category?.toLowerCase() === 'crimping'))) {
-            nextSection = '';
-            nextSectionId = null;
-            nextSectionCode = '';
-            nextLineArea = '';
-            nextLineAreaId = null;
-            nextLineAreaCode = '';
-            nextLineAreaSectionId = null;
-          }
+      if (dept && (curr.sectionId || curr.section)) {
+        const secMatch = VERIFIED_SECTION_MASTER.find((s) => String(s.id) === String(curr.sectionId)) || { id: curr.sectionId, name: curr.section };
+        if (!isSectionRelatedToDepartment(secMatch, dept)) {
+          nextSection = '';
+          nextSectionId = null;
+          nextSectionCode = '';
+          nextLineArea = '';
+          nextLineAreaId = null;
+          nextLineAreaCode = '';
+          nextLineAreaSectionId = null;
         }
       }
 
@@ -1524,6 +1518,32 @@ export default function LpaPdcaSheet({
     return { sectionColWidth: secWidth, lineAreaColWidth: lineAreaWidth };
   }, [rows]);
 
+  // Live Cumulative Points calculation across this sheet
+  const liveCumulativeStats = useMemo(() => {
+    let total = 0;
+    let inProgress = 0;
+    let done = 0;
+    let delay = 0;
+    let notStarted = 0;
+
+    (rows || []).forEach(r => {
+      const hasContent = Boolean(
+        r.observation || r.counterMeasure || r.rootCause ||
+        r.lineArea || r.department || r.staffEmployee ||
+        r.date || r.responseDate || r.status
+      );
+      if (!hasContent) return;
+      total += 1;
+      const rawStatus = normalizePDCAStatus(r.status);
+      if (rawStatus === 'Done') done += 1;
+      else if (rawStatus === 'In- Progress') inProgress += 1;
+      else if (rawStatus === 'Delay') delay += 1;
+      else notStarted += 1;
+    });
+
+    return { total, inProgress, done, delay, notStarted };
+  }, [rows]);
+
   // Filter rows by search
   const filteredRows = useMemo(() => {
     if (!sheetSearch.trim()) return rows.map((r, i) => ({ ...r, originalIndex: i }));
@@ -1607,6 +1627,22 @@ export default function LpaPdcaSheet({
             >
               <BarChart3 className="w-3.5 h-3.5 text-indigo-600" />
               <span>PDCA Graph</span>
+            </button>
+            {/* Live Cumulative Points Badge */}
+            <button
+              type="button"
+              onClick={() => setShowMonthlyGraph(true)}
+              title="Live cumulative points of all PDCA Month analysis across this sheet. Click to open detailed monthly graph & table."
+              className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100/80 border border-indigo-200 text-indigo-900 text-xs font-semibold shadow-2xs transition-all cursor-pointer flex-shrink-0"
+            >
+              <span className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-slate-600 font-medium">Cumulative Points:</span>
+                <span className="font-mono font-black text-indigo-700 text-xs sm:text-[13px]">{liveCumulativeStats.total}</span>
+              </span>
+              <span className="text-[10px] text-slate-500 hidden lg:inline">
+                (Done: <span className="text-emerald-700 font-bold">{liveCumulativeStats.done}</span>, In-Prog: <span className="text-amber-700 font-bold">{liveCumulativeStats.inProgress}</span>, Delay: <span className="text-rose-700 font-bold">{liveCumulativeStats.delay}</span>)
+              </span>
             </button>
           </div>
 
@@ -1815,7 +1851,7 @@ export default function LpaPdcaSheet({
                   </th>
 
                   {/* 4. Status */}
-                  <th rowSpan={2} className="py-1.5 px-1 w-[78px] min-w-[78px] text-center border-r border-[#475569]">
+                  <th rowSpan={2} className="py-1.5 px-1 w-[124px] min-w-[118px] text-center border-r border-[#475569] whitespace-nowrap">
                     <span>Status</span> <span className="text-red-500 font-bold">*</span>
                   </th>
 
@@ -2036,7 +2072,7 @@ export default function LpaPdcaSheet({
                             disabled={!canEditEntireRow}
                             value={row.shift === 'General' ? 'G' : (row.shift || '')}
                             onChange={(e) => handleCellChange(idx, 'shift', e.target.value)}
-                            className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-xs text-slate-800 font-semibold text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors appearance-none ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer'}`}
+                            className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-base text-slate-800 font-semibold text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors appearance-none ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer'}`}
                           >
                             <option value="">-</option>
                             <option value="A">A</option>
@@ -2051,18 +2087,18 @@ export default function LpaPdcaSheet({
                       </td>
 
                       {/* 3. S.No */}
-                      <td className="p-0.5 align-middle text-center border-r border-[#64748B] font-semibold text-slate-600 bg-[#FAFAFA] select-none w-[34px] min-w-[30px] text-xs">
+                      <td className="p-0.5 align-middle text-center border-r border-[#64748B] font-semibold text-slate-600 bg-[#FAFAFA] select-none w-[34px] min-w-[30px] text-base">
                         {sNo}
                       </td>
 
                       {/* 4. Status */}
-                      <td className="px-0.5 py-1 align-middle text-center border-r border-[#64748B] w-[82px] min-w-[78px]">
+                      <td className="px-0.5 py-1 align-middle text-center border-r border-[#64748B] w-[124px] min-w-[118px]">
                         <select
                           disabled={!canEditEntireRow}
                           aria-label={`Status for row ${sNo}`}
                           value={normalizePDCAStatus(row.status)}
                           onChange={(event) => handleCellChange(idx, 'status', event.target.value)}
-                          className={`w-full rounded-md border pl-0.5 pr-0 py-1.5 text-[11px] font-medium outline-none text-center ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer focus:ring-2 focus:ring-blue-300'} ${
+                          className={`w-full min-w-full rounded-md border px-1.5 py-1.5 text-[15px] font-medium outline-none text-center whitespace-nowrap ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer focus:ring-2 focus:ring-blue-300'} ${
                             normalizePDCAStatus(row.status) === 'Done' ? 'bg-green-50 text-green-700 border-green-200' :
                             normalizePDCAStatus(row.status) === 'In- Progress' ? 'bg-yellow-50 text-yellow-800 border-yellow-300' :
                             normalizePDCAStatus(row.status) === 'Delay' ? 'bg-red-50 text-red-700 border-red-200' :
@@ -2083,7 +2119,7 @@ export default function LpaPdcaSheet({
                             disabled={!canEditEntireRow}
                             value={row.department || ''}
                             onChange={(e) => handleDepartmentChange(idx, e.target.value)}
-                            className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 appearance-none truncate font-medium ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer'}`}
+                            className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[14px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 appearance-none truncate font-medium ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer'}`}
                             title={row.department || 'Select Department'}
                           >
                             <option value="">Dept...</option>
@@ -2174,7 +2210,7 @@ export default function LpaPdcaSheet({
                           onChange={(e) => handleCellChange(idx, 'observation', e.target.value)}
                           onKeyDown={(e) => handleKeyDown(e, idx, 'observation')}
                           placeholder=""
-                          className="w-full bg-transparent border-0 outline-none p-1 text-xs text-slate-800 text-center leading-normal focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block whitespace-pre-wrap break-words"
+                          className="w-full bg-transparent border-0 outline-none p-1 text-base text-slate-800 text-center leading-normal focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block whitespace-pre-wrap break-words"
                         />
                       </td>
 
@@ -2261,7 +2297,7 @@ export default function LpaPdcaSheet({
                           onChange={(e) => handleCellChange(idx, 'rootCause', e.target.value)}
                           onKeyDown={(e) => handleKeyDown(e, idx, 'rootCause')}
                           placeholder={canEditActionCols ? "Root cause..." : ""}
-                          className="w-full bg-transparent border-0 outline-none p-1 text-xs text-slate-800 text-center leading-normal focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center whitespace-pre-wrap break-words"
+                          className="w-full bg-transparent border-0 outline-none p-1 text-base text-slate-800 text-center leading-normal focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center whitespace-pre-wrap break-words"
                         />
                       </td>
 
@@ -2281,7 +2317,7 @@ export default function LpaPdcaSheet({
                           onChange={(e) => handleCellChange(idx, 'counterMeasure', e.target.value)}
                           onKeyDown={(e) => handleKeyDown(e, idx, 'counterMeasure')}
                           placeholder={canEditActionCols ? "Counter measure..." : ""}
-                          className="w-full bg-transparent border-0 outline-none p-1 text-xs text-slate-800 text-center leading-normal focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center whitespace-pre-wrap break-words"
+                          className="w-full bg-transparent border-0 outline-none p-1 text-base text-slate-800 text-center leading-normal focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center whitespace-pre-wrap break-words"
                         />
                       </td>
 
@@ -2403,7 +2439,7 @@ export default function LpaPdcaSheet({
                                       return updated;
                                     });
                                   }}
-                                  className={`w-full bg-transparent border-0 outline-none text-[10px] font-semibold text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 appearance-none truncate ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer'}`}
+                                  className={`w-full bg-transparent border-0 outline-none text-[14px] font-semibold text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 appearance-none truncate ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer'}`}
                                   title={emp.department || row.department || 'Select Department'}
                                 >
                                   <option value="">Dept...</option>

@@ -123,6 +123,9 @@ export function aggregateSectionData(records, sectionKey, unitFilter, dateRangeF
         L1_A: 0,
         // Score values for average calculation
         scores: [],
+        level3Scores: [],
+        level2Scores: [],
+        level1Scores: [],
         sheetsList: []
       });
     }
@@ -132,6 +135,10 @@ export function aggregateSectionData(records, sectionKey, unitFilter, dateRangeF
 
     sheets.forEach((sheet) => {
       dayEntry.totalSheets += 1;
+
+      // Extract score
+      const scorePct = extractSheetScore(sheet, record);
+      dayEntry.scores.push(scorePct);
 
       // Extract shift
       const shift = String(sheet.shift || record.shift || (record.shifts && record.shifts[0]) || 'A').toUpperCase();
@@ -143,19 +150,22 @@ export function aggregateSectionData(records, sectionKey, unitFilter, dateRangeF
 
       // Extract level
       const level = String(sheet.targetLevel || sheet.level || record.targetLevel || record.level || (record.levels && record.levels[0]) || 'L3').toUpperCase();
-      if (level === 'L3') dayEntry.level3 += 1;
-      else if (level === 'L2') dayEntry.level2 += 1;
-      else if (level === 'L1') dayEntry.level1 += 1;
+      if (level === 'L3') {
+        dayEntry.level3 += 1;
+        dayEntry.level3Scores.push(scorePct);
+      } else if (level === 'L2') {
+        dayEntry.level2 += 1;
+        dayEntry.level2Scores.push(scorePct);
+      } else if (level === 'L1') {
+        dayEntry.level1 += 1;
+        dayEntry.level1Scores.push(scorePct);
+      }
 
       // Shift x Level matrix
       const key = `${level}_${shift}`;
       if (dayEntry[key] !== undefined) {
         dayEntry[key] += 1;
       }
-
-      // Score
-      const scorePct = extractSheetScore(sheet, record);
-      dayEntry.scores.push(scorePct);
 
       dayEntry.sheetsList.push({
         id: record.id,
@@ -181,9 +191,22 @@ export function aggregateSectionData(records, sectionKey, unitFilter, dateRangeF
       const avg = day.scores.length > 0
         ? Math.round(day.scores.reduce((a, b) => a + b, 0) / day.scores.length)
         : 0;
+      const l3Avg = day.level3Scores.length > 0
+        ? Math.round(day.level3Scores.reduce((a, b) => a + b, 0) / day.level3Scores.length)
+        : null;
+      const l2Avg = day.level2Scores.length > 0
+        ? Math.round(day.level2Scores.reduce((a, b) => a + b, 0) / day.level2Scores.length)
+        : null;
+      const l1Avg = day.level1Scores.length > 0
+        ? Math.round(day.level1Scores.reduce((a, b) => a + b, 0) / day.level1Scores.length)
+        : null;
+
       return {
         ...day,
-        avgScore: avg
+        avgScore: avg,
+        level3Score: l3Avg,
+        level2Score: l2Avg,
+        level1Score: l1Avg
       };
     })
     .sort((a, b) => a.date.localeCompare(b.date));

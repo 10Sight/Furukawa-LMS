@@ -38,7 +38,7 @@ export default function PDCAMonthlyGraph({
   onToggleCollapse
 }) {
   const [viewTimeframe, setViewTimeframe] = useState('daily'); // 'daily' | 'monthly'
-  const [chartType, setChartType] = useState('grouped'); // 'grouped' | 'line' | 'stacked'
+  const [chartType, setChartType] = useState('stacked'); // default to 'stacked' (single candle per date)
   const [dataScope, setDataScope] = useState('sheet'); // 'sheet' | 'all'
   const [hoveredIndex, setHoveredIndex] = useState(null);
 
@@ -190,7 +190,7 @@ export default function PDCAMonthlyGraph({
 
       data.push({
         day: d,
-        label: `${d}`,
+        label: `${d} ${monthNames[selectedMonth]}`,
         fullDateStr: dateKey,
         inProgress: 0,
         done: 0,
@@ -245,18 +245,34 @@ export default function PDCAMonthlyGraph({
     return data;
   }, [activeItems, selectedYear]);
 
+  // Live Cumulative (Sum of All Months) for selectedYear
+  const allMonthsCumulative = useMemo(() => {
+    return monthlyStats.reduce(
+      (acc, m) => ({
+        total: acc.total + m.total,
+        inProgress: acc.inProgress + m.inProgress,
+        done: acc.done + m.done,
+        delay: acc.delay + m.delay,
+        notStarted: acc.notStarted + m.notStarted
+      }),
+      { total: 0, inProgress: 0, done: 0, delay: 0, notStarted: 0 }
+    );
+  }, [monthlyStats]);
+
+
   // Current active dataset depending on timeframe
   const currentDataset = viewTimeframe === 'daily' ? dailyStats : monthlyStats;
 
-  // Overall KPIs for current timeframe view
+  // Overall KPIs for current timeframe view (computed over raw non-duplicated stats)
   const kpis = useMemo(() => {
+    const baseData = viewTimeframe === 'daily' ? dailyStats : monthlyStats;
     let total = 0;
     let inProgress = 0;
     let done = 0;
     let delay = 0;
     let notStarted = 0;
 
-    currentDataset.forEach(d => {
+    baseData.forEach(d => {
       total += d.total;
       inProgress += d.inProgress;
       done += d.done;
@@ -268,7 +284,7 @@ export default function PDCAMonthlyGraph({
     const delayRate = total > 0 ? Math.round((delay / total) * 100) : 0;
 
     return { total, inProgress, done, delay, notStarted, completionRate, delayRate };
-  }, [currentDataset]);
+  }, [viewTimeframe, dailyStats, monthlyStats]);
 
   // Max value for chart Y-axis scaling
   const maxChartValue = useMemo(() => {
@@ -296,11 +312,11 @@ export default function PDCAMonthlyGraph({
 
   // SVG Chart Geometry
   const slotCount = currentDataset.length;
-  const minSlotWidth = viewTimeframe === 'daily' ? 36 : 70;
-  const padding = { top: 30, right: 25, bottom: 42, left: 45 };
+  const minSlotWidth = viewTimeframe === 'daily' ? 46 : 70;
+  const padding = { top: 30, right: 25, bottom: 46, left: 45 };
   const graphWidth = Math.max(880, slotCount * minSlotWidth);
   const svgWidth = graphWidth + padding.left + padding.right;
-  const svgHeight = 270;
+  const svgHeight = 360;
   const graphHeight = svgHeight - padding.top - padding.bottom;
 
   // Y-Scale helper
@@ -441,6 +457,16 @@ export default function PDCAMonthlyGraph({
           <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-100/80">
             <button
               type="button"
+              onClick={() => setChartType('stacked')}
+              className={`px-2 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
+                chartType === 'stacked' ? 'bg-white text-blue-700 shadow-2xs font-bold' : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="Single candle per date showing In-Progress, Done, Delay, Not-Started"
+            >
+              Single Candle
+            </button>
+            <button
+              type="button"
               onClick={() => setChartType('grouped')}
               className={`px-2 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
                 chartType === 'grouped' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
@@ -458,16 +484,6 @@ export default function PDCAMonthlyGraph({
               title="Line trend chart"
             >
               Lines
-            </button>
-            <button
-              type="button"
-              onClick={() => setChartType('stacked')}
-              className={`px-2 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
-                chartType === 'stacked' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
-              }`}
-              title="Stacked bar chart"
-            >
-              Stacked
             </button>
           </div>
 
@@ -582,10 +598,63 @@ export default function PDCAMonthlyGraph({
 
           {/* Interactive Chart Container */}
           <div className="bg-slate-50/50 rounded-xl border border-slate-200/80 p-3 relative">
-            {/* Chart Series Legend & Filter Toggles */}
-            <div className="flex items-center justify-between flex-wrap gap-2 mb-2 pb-2 border-b border-slate-200/60 text-xs">
-              <div className="flex items-center flex-wrap gap-2 sm:gap-3">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Metrics:</span>
+            <div className="flex flex-col md:flex-row items-stretch gap-3">
+              {/* Cumulative Section (Month and its Cumulative) */}
+              <div className="w-full md:w-36 lg:w-40 shrink-0 bg-white rounded-lg border border-slate-200 shadow-2xs flex flex-col overflow-hidden">
+                <div className="px-2.5 py-1.5 bg-slate-100/90 border-b border-slate-200 flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                    Cumulative
+                  </span>
+                  <span className="text-[10px] font-bold font-mono px-1.5 py-0.2 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
+                    {selectedYear}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 px-2.5 py-1 bg-slate-50/80 border-b border-slate-200/70 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                  <span>Month</span>
+                  <span className="text-right">Cumulative</span>
+                </div>
+                <div className="flex-1 divide-y divide-slate-100 text-xs overflow-y-auto max-h-[260px] md:max-h-none">
+                  {monthlyStats.map((m, idx) => {
+                    const isSelected = viewTimeframe === 'daily' && selectedMonth === idx;
+                    return (
+                      <div
+                        key={m.month}
+                        onClick={() => {
+                          if (viewTimeframe === 'daily') setSelectedMonth(idx);
+                        }}
+                        className={`grid grid-cols-2 px-2.5 py-1 items-center transition-colors ${
+                          viewTimeframe === 'daily' ? 'cursor-pointer' : ''
+                        } ${
+                          isSelected
+                            ? 'bg-indigo-50 font-bold text-indigo-900'
+                            : m.total > 0
+                            ? 'hover:bg-slate-50 text-slate-800'
+                            : 'hover:bg-slate-50 text-slate-500'
+                        }`}
+                        title={viewTimeframe === 'daily' ? `Switch to ${m.fullName}` : `${m.fullName}`}
+                      >
+                        <span className="text-xs truncate">{m.month}</span>
+                        <span className={`text-right font-mono text-xs font-semibold ${
+                          m.total > 0 ? 'text-indigo-600 font-bold' : 'text-slate-400'
+                        }`}>
+                          {m.total}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="grid grid-cols-2 px-2.5 py-1.5 bg-slate-100 border-t border-slate-200 text-xs font-bold text-slate-800">
+                  <span>Total</span>
+                  <span className="text-right font-mono text-indigo-700">{allMonthsCumulative.total}</span>
+                </div>
+              </div>
+
+              {/* Right Column: Metrics Row & SVG Graph */}
+              <div className="flex-1 min-w-0 flex flex-col">
+                {/* Chart Series Legend & Filter Toggles */}
+                <div className="flex items-center justify-between flex-wrap gap-2 mb-2 pb-2 border-b border-slate-200/60 text-xs">
+                  <div className="flex items-center flex-wrap gap-2 sm:gap-3">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Metrics:</span>
 
                 {/* In-Progress Legend Toggle */}
                 <button
@@ -667,12 +736,12 @@ export default function PDCAMonthlyGraph({
             </div>
 
             {/* SVG Graph View inside horizontal scroll */}
-            <div className="w-full overflow-x-auto pb-1">
-              <div style={{ minWidth: `${Math.max(680, svgWidth)}px` }}>
+            <div className="w-full overflow-x-auto pb-1 flex-1 flex flex-col justify-end">
+              <div style={{ minWidth: `${Math.max(680, svgWidth)}px` }} className="flex-1 flex flex-col">
                 <svg
                   viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-                  className="w-full h-auto select-none"
-                  style={{ maxHeight: '300px' }}
+                  className="w-full h-auto select-none flex-1"
+                  style={{ minHeight: '350px' }}
                 >
                   <defs>
                     <linearGradient id="inProgressGrad" x1="0" y1="0" x2="0" y2="1">
@@ -823,11 +892,11 @@ export default function PDCAMonthlyGraph({
                           </g>
                         )}
 
-                        {/* Chart Render: Stacked Bars */}
+                        {/* Chart Render: Stacked Bars (Single Candle) */}
                         {chartType === 'stacked' && barCount > 0 && (
                           <g>
                             {(() => {
-                              const stackW = Math.min(22, slotWidth * 0.55);
+                              const stackW = Math.min(26, Math.max(16, slotWidth * 0.6));
                               const baseY = padding.top + graphHeight;
                               let accumulatedH = 0;
 
@@ -865,14 +934,14 @@ export default function PDCAMonthlyGraph({
                           </g>
                         )}
 
-                        {/* X-Axis Label (Day number or Month name) */}
+                        {/* X-Axis Label (e.g. '18 Oct' or Month name) */}
                         <text
                           x={xCenter}
-                          y={svgHeight - 12}
+                          y={svgHeight - 14}
                           textAnchor="middle"
-                          className={`text-[10px] font-semibold transition-all ${
+                          className={`text-[9.5px] font-semibold transition-all ${
                             isHovered
-                              ? 'fill-blue-700 font-bold scale-110'
+                              ? 'fill-blue-700 font-bold scale-105'
                               : item.total > 0
                               ? 'fill-slate-800'
                               : 'fill-slate-400'
@@ -1011,6 +1080,8 @@ export default function PDCAMonthlyGraph({
                 </svg>
               </div>
             </div>
+          </div>
+        </div>
 
             {/* Hover Tooltip Overlay */}
             {hoveredIndex !== null && currentDataset[hoveredIndex] && (

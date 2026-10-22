@@ -715,7 +715,7 @@ export default function AssemblySheet({
                 c === 0 ? (
                   <div className="assembly-total-label">Total Marks:</div>
                 ) : c === 4 ? (
-                  <div className="text-center font-black text-sm text-slate-900 py-1">{totalMarksDisplay}/</div>
+                  <div className="text-center font-black text-sm text-slate-900 py-1">{totalMarksDisplay}</div>
                 ) : Boolean(activeLevelScore) ? (
                   <div className="assembly-score-container assembly-score-total" title={`${activeLevelScore.name} Total Score`}>
                     <span className="assembly-score-value font-black text-sm text-slate-900">
@@ -848,7 +848,10 @@ export default function AssemblySheet({
                     }}
                     className={`assembly-vertical-cell-text ${c === 1 ? 'assembly-focus-text' : 'assembly-area-text'}`}
                   >
-                    {(value || '').replace(/\s+/g, ' ').trim()}
+                    {(() => {
+                      const clean = (value || '').replace(/\s+/g, ' ').trim();
+                      return /^sfety$/i.test(clean) ? 'Safety' : clean;
+                    })()}
                   </span>
                 </div>
               ) : isChecklistRow && c === 2 ? (

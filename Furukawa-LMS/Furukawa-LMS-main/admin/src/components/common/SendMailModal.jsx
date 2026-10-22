@@ -387,7 +387,13 @@ export default function SendMailModal({
         name: selectedPdca.sheet.topic || selectedPdca.sheet.title || 'PDCA Sheet',
         section: selectedPdca.sheet.section || selectedSection,
         unit: selectedPdca.sheet.plant || selectedPdca.sheet.unit || '',
-        date: selectedPdca.sheet.date || ''
+        date: selectedPdca.sheet.date || '',
+        // LPA Observation PDCA sheets are saved as LPA snapshots, not as
+        // standard PDCA records. Include the selected saved snapshot so the
+        // email service can render that sheet when no PDCA record exists.
+        ...(selectedPdca.sheet.source === 'lpa' && selectedPdca.sheet.sheet
+          ? { sheetData: selectedPdca.sheet.sheet }
+          : {})
       };
       const providerResult = await lpaApi.sendEmail({
         to: finalRecipients,

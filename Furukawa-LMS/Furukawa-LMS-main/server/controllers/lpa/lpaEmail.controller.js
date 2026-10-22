@@ -184,15 +184,17 @@ export const createSendLpaEmailHandler = ({ sendMailFn = sendMail, log = logger,
     const assemblySheetData = workbook.sheets?.[Number(assembly.sheetIndex)];
     if (!assemblySheetData?.rows?.length) throw new ApiError("The selected LPA sheet has no saved table data. Save the sheet before sending.", 422);
 
-    const pdcaRecord = await getPdcaRecord(String(pdca.id));
-    if (!pdcaRecord) {
-      const name = pdca.source === "lpa" ? "LPA Observation PDCA" : "PDCA";
-      throw new ApiError(`The selected ${name} sheet has no saved backend data. Save the sheet before sending.`, 422);
-    }
     if (pdca.source === "lpa" && !String(pdca.id).startsWith("PDCA-LPA")) {
       throw new ApiError("The selected LPA Observation PDCA sheet is invalid.", 400);
     }
-    const pdcaSheetData = pdcaRecord.sheet || await getPdcaSheet(pdcaRecord.id || pdcaRecord.recordId || pdca.id);
+    const pdcaRecord = await getPdcaRecord(String(pdca.id));
+    // LPA Observation PDCA sheets are stored as LPA snapshots (local saved
+    // sheet data), rather than rows in the standard pdca_records table. Use
+    // that selected snapshot only for LPA sheets when no backend PDCA record
+    // exists; standard PDCA emails must continue to load exclusively by ID.
+    const pdcaSheetData = pdcaRecord
+      ? (pdcaRecord.sheet || await getPdcaSheet(pdcaRecord.id || pdcaRecord.recordId || pdca.id))
+      : (pdca.source === "lpa" ? pdca.sheetData : null);
     if (!Array.isArray(pdcaSheetData?.rows) || !pdcaSheetData.rows.length || !hasSavedPdcaRows(pdcaSheetData)) {
       throw new ApiError(`The selected ${pdca.source === "lpa" ? "LPA Observation PDCA" : "PDCA"} sheet has no saved table data. Save the sheet before sending.`, 422);
     }

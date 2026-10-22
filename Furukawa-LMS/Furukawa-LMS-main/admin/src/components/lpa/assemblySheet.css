@@ -150,7 +150,8 @@
   color: #0f172a;
   white-space: pre-wrap;
   word-break: break-word;
-  overflow: visible;
+  overflow: hidden;
+  overflow-wrap: anywhere;
   outline: none;
 }
 
@@ -174,7 +175,11 @@
 
 .assembly-form-table .assembly-number textarea {
   text-align: center;
+  align-content: center;
+  overflow-wrap: anywhere;
 }
+
+.assembly-form-table td.assembly-number { text-align: center; overflow: hidden; }
 
 .assembly-form-table .assembly-outside-legend,
 .assembly-form-table .assembly-outside-symbols {

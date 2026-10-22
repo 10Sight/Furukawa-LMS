@@ -1,33 +1,49 @@
 import nodemailer from "nodemailer";
 import ENV from "../configs/env.config.js";
+import logger from "../logger/winston.logger.js";
 
-const sendMail = async function (email, subject, message, attachments = [], cc = "") {
-    const transporter = nodemailer.createTransport({
-        host: ENV.SMTP_HOST || 'smtp.office365.com',
-        port: ENV.SMTP_PORT || 587,
-        secure: false, // Must be false for 587
-        requireTLS: true, // Forces STARTTLS for Office365
+const readStoredSmtpSettings = async () => {
+    try {
+        const { executeQuery } = await import("../db/mssqlHelper.js");
+        const [rows] = await executeQuery("SELECT TOP 1 smtpHost, smtpPort, smtpUsername, smtpPassword, smtpEncryption, fromEmail, fromName FROM system_settings ORDER BY id ASC");
+        return rows?.[0] || {};
+    } catch (error) {
+        logger.warn(`[MAIL] Could not load stored SMTP settings code=${error?.code || "unknown"}; using environment settings`);
+        return {};
+    }
+};
+
+export const createMailSender = ({ env = ENV, createTransport = nodemailer.createTransport, log = logger, getSettings = readStoredSmtpSettings } = {}) => async function (email, subject, message, attachments = [], cc = "") {
+    const settings = await getSettings();
+    const username = settings.smtpUsername || env.SMTP_USERNAME;
+    const password = settings.smtpPassword || env.SMTP_PASSWORD;
+    const host = settings.smtpHost || env.SMTP_HOST || 'smtp.office365.com';
+    const port = Number(settings.smtpPort || env.SMTP_PORT || 587);
+    const encryption = String(settings.smtpEncryption || "tls").toLowerCase();
+    const fromEmail = settings.fromEmail || username;
+    const fromName = settings.fromName || "Furukawa Minda";
+
+    if (!username || !password || !fromEmail) {
+        const error = new Error("Email service is not configured.");
+        error.code = "SMTP_NOT_CONFIGURED";
+        throw error;
+    }
+
+    const transporter = createTransport({
+        host,
+        port,
+        secure: encryption === "ssl" || port === 465,
+        requireTLS: encryption === "tls" && port !== 465,
         auth: {
-            user: ENV.SMTP_USERNAME,
-            pass: ENV.SMTP_PASSWORD,
+            user: username,
+            pass: password,
         },
-        tls: {
-            ciphers: "TLSv1.2", // O365 rejects SSLv3. Require at least TLS 1.2
-            rejectUnauthorized: false,
-        },
+        tls: { minVersion: "TLSv1.2" },
     });
-
-    // Handle transporter auth user from ENV if available, else hardcoded for safety? 
-    // Actually the previous code used ENV.SMTP_USERNAME. Let's stick to ENV but allow override if needed. 
-    // Wait, the previous code strictly used ENV. I should check if I should change that.
-    // The previous code: user: ENV.SMTP_USERNAME
-    // I will keep it ENV.SMTP_USERNAME
-
-    // Create mail options
     const mailOptions = {
-        from: `Furukawa Minda <${ENV.SMTP_USERNAME}>`,
+        from: `${fromName} <${fromEmail}>`,
         to: email,
-        cc: cc,
+        ...(cc ? { cc } : {}),
         subject: subject,
         html: message,
     };
@@ -36,7 +52,16 @@ const sendMail = async function (email, subject, message, attachments = [], cc =
         mailOptions.attachments = attachments;
     }
 
-    await transporter.sendMail(mailOptions);
+    try {
+        return await transporter.sendMail(mailOptions);
+    } catch (error) {
+        log.error(`[MAIL] SMTP send failed code=${error?.code || "unknown"} responseCode=${error?.responseCode || "unknown"} command=${error?.command || "unknown"}`);
+        throw error;
+    } finally {
+        transporter.close();
+    }
 };
+
+const sendMail = createMailSender();
 
 export default sendMail;

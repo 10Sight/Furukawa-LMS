@@ -69,6 +69,7 @@ const createEmptyRow = (customDefaults = {}) => ({
   imageAfter: customDefaults.imageAfter || null,
   imageAfterName: customDefaults.imageAfterName || '',
   fileTypeAfter: customDefaults.fileTypeAfter || 'image',
+  stdDurationMin: customDefaults.stdDurationMin ?? customDefaults.stdDuration ?? '',
   responseDate: customDefaults.responseDate || '',
   responsiblePersonDept: customDefaults.responsiblePersonDept || customDefaults.department || '',
   staffEmployee: customDefaults.staffEmployee || '',
@@ -145,7 +146,7 @@ function AutoResizeTextarea({ value, onChange, onKeyDown, placeholder, className
 }
 
 // Compact Date Picker Cell
-function CompactDateCell({ value, onChange }) {
+function CompactDateCell({ value, onChange, smallText = false }) {
   const hiddenInputRef = useRef(null);
 
   const formatDisplay = (val) => {
@@ -193,11 +194,11 @@ function CompactDateCell({ value, onChange }) {
 
       {display ? (
         <div className="flex flex-col items-center leading-none text-center pointer-events-none">
-          <span className="text-[15px] font-bold text-slate-800 tracking-tight">
+          <span className={`${smallText ? 'text-[12px]' : 'text-[15px]'} font-bold text-slate-800 tracking-tight`}>
             {display.line1}
           </span>
           {display.line2 && (
-            <span className="text-[13px] font-semibold text-slate-500 mt-0.5">
+            <span className={`${smallText ? 'text-[10px]' : 'text-[13px]'} font-semibold text-slate-500 mt-0.5`}>
               /{display.line2}
             </span>
           )}
@@ -375,6 +376,7 @@ export default function LpaPdcaSheet({
       staffName,
       staffId,
       employeeId: staffId,
+      stdDurationMin: row.stdDurationMin ?? row.stdDuration ?? '',
       responsiblePersonConfirmation: confirmation || row.responsiblePersonConfirmation || staffEmployee || ''
     };
   };
@@ -386,6 +388,27 @@ export default function LpaPdcaSheet({
     }
     return Array.from({ length: 10 }, () => createEmptyRow());
   });
+  const hasValidStdDuration = (value) => {
+    const normalized = String(value ?? '').replace(/\s*min$/i, '').trim();
+    return normalized !== '' && Number.isFinite(Number(normalized)) && Number(normalized) >= 0;
+  };
+  const missingRequiredInputs = rows.flatMap((row, rowIndex) => {
+    const missing = [];
+    if (['Not - Confirmed', 'Not-Confirmed'].includes((row.confirmation || '').trim()) && !row.instruction?.trim()) {
+      missing.push({ type: 'confirmation', rowIndex, key: `confirmation:${rowIndex}` });
+    }
+    if (row.responseDate?.trim() && !hasValidStdDuration(row.stdDurationMin ?? row.stdDuration)) {
+      missing.push({ type: 'duration', rowIndex, key: `duration:${rowIndex}` });
+    }
+    return missing;
+  });
+  const missingConfirmationReasonIndices = missingRequiredInputs.filter((item) => item.type === 'confirmation').map((item) => item.rowIndex);
+  const requiredConfirmationKey = missingRequiredInputs.map((item) => item.key).join('|');
+  const confirmationReasonRefs = useRef({});
+  const confirmationSelectRefs = useRef({});
+  const durationRefs = useRef({});
+  const lastAllowedUrlRef = useRef(typeof window !== 'undefined' ? window.location.href : '');
+  const lastRequiredNoticeAtRef = useRef(0);
 
   const [activePreviewImage, setActivePreviewImage] = useState(null);
   const [selectedImageAction, setSelectedImageAction] = useState(null);
@@ -404,6 +427,96 @@ export default function LpaPdcaSheet({
       setToast((prev) => (prev?.message === message ? null : prev));
     }, 3500);
   };
+  const notifyRef = useRef(notify);
+  notifyRef.current = notify;
+  const requireConfirmationReasonBeforeContinuing = () => {
+    const requiredInput = missingRequiredInputs[0];
+    if (!requiredInput) return false;
+    const rowIndex = requiredInput.rowIndex;
+    const message = requiredInput.type === 'confirmation'
+      ? `Complete the Responsible Person Confirmation reason in row ${rowIndex + 1} before continuing.`
+      : `Enter a valid Std. Duration in min for row ${rowIndex + 1} before continuing.`;
+    const input = requiredInput.type === 'confirmation' ? confirmationReasonRefs.current[rowIndex] : durationRefs.current[rowIndex];
+    input?.focus();
+    input?.reportValidity();
+    notifyRef.current(message, 'error');
+    return true;
+  };
+
+  useEffect(() => {
+    if (missingRequiredInputs.length === 0 || typeof document === 'undefined') return undefined;
+    const allowedControls = new Set(missingRequiredInputs.flatMap((requiredInput) => requiredInput.type === 'confirmation'
+      ? [confirmationReasonRefs.current[requiredInput.rowIndex], confirmationSelectRefs.current[requiredInput.rowIndex]]
+      : [durationRefs.current[requiredInput.rowIndex]]).filter(Boolean));
+    lastAllowedUrlRef.current = window.location.href;
+    const firstRequiredInput = missingRequiredInputs[0];
+    const firstRowIndex = firstRequiredInput.rowIndex;
+    const message = firstRequiredInput.type === 'confirmation'
+      ? `Complete the Responsible Person Confirmation reason in row ${firstRowIndex + 1} before continuing.`
+      : `Enter a valid Std. Duration in min for row ${firstRowIndex + 1} before continuing.`;
+    const firstInput = firstRequiredInput.type === 'confirmation' ? confirmationReasonRefs.current[firstRowIndex] : durationRefs.current[firstRowIndex];
+    firstInput?.focus();
+    notifyRef.current(message, 'error');
+
+    const isAllowedControl = (target) => target instanceof Element && Boolean(target.closest('[data-required-action-allowed="true"]'));
+    const notifyAndFocus = () => {
+      const now = Date.now();
+      if (now - lastRequiredNoticeAtRef.current > 800) {
+        notifyRef.current(message, 'error');
+        lastRequiredNoticeAtRef.current = now;
+      }
+      const currentRequiredInput = missingRequiredInputs[0];
+      const currentInput = currentRequiredInput.type === 'confirmation'
+        ? confirmationReasonRefs.current[currentRequiredInput.rowIndex]
+        : durationRefs.current[currentRequiredInput.rowIndex];
+      currentInput?.focus();
+      currentInput?.reportValidity();
+    };
+    const blockOutsideRequiredCell = (event) => {
+      const control = isAllowedControl(event.target) ? event.target.closest('[data-required-action-allowed="true"]') : null;
+      if (control && allowedControls.has(control)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation?.();
+      notifyAndFocus();
+    };
+    const blockKeyboardOutsideRequiredCell = (event) => {
+      const navigationKey = event.key === 'Tab' || event.key === 'Escape' || event.altKey ||
+        ((event.ctrlKey || event.metaKey) && ['r', 'w', 'l'].includes(event.key.toLowerCase()));
+      if (isAllowedControl(event.target) && !navigationKey) return;
+      blockOutsideRequiredCell(event);
+    };
+    const restoreLocation = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation?.();
+      window.history.pushState({ ...(window.history.state || {}), requiredConfirmationGate: true }, '', lastAllowedUrlRef.current);
+      notifyAndFocus();
+    };
+    const warnBeforeLeaving = (event) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+
+    document.addEventListener('pointerdown', blockOutsideRequiredCell, true);
+    document.addEventListener('click', blockOutsideRequiredCell, true);
+    document.addEventListener('keydown', blockKeyboardOutsideRequiredCell, true);
+    document.addEventListener('focusin', blockOutsideRequiredCell, true);
+    document.addEventListener('submit', blockOutsideRequiredCell, true);
+    window.addEventListener('popstate', restoreLocation, true);
+    window.addEventListener('hashchange', restoreLocation, true);
+    window.addEventListener('beforeunload', warnBeforeLeaving);
+    return () => {
+      document.removeEventListener('pointerdown', blockOutsideRequiredCell, true);
+      document.removeEventListener('click', blockOutsideRequiredCell, true);
+      document.removeEventListener('keydown', blockKeyboardOutsideRequiredCell, true);
+      document.removeEventListener('focusin', blockOutsideRequiredCell, true);
+      document.removeEventListener('submit', blockOutsideRequiredCell, true);
+      window.removeEventListener('popstate', restoreLocation, true);
+      window.removeEventListener('hashchange', restoreLocation, true);
+      window.removeEventListener('beforeunload', warnBeforeLeaving);
+    };
+  }, [requiredConfirmationKey]);
 
   // Resizable column widths for Observation, Root Cause, and Counter Measure
   const [observationWidth, setObservationWidth] = useState(() => {
@@ -587,15 +700,21 @@ export default function LpaPdcaSheet({
     }
   };
 
-  useFormAutosave(sheetSnapshot, persistSheet, Boolean(topic?.id), (msg) => notify(msg, 'info'));
+  useFormAutosave(sheetSnapshot, persistSheet, Boolean(topic?.id) && missingRequiredInputs.length === 0, (msg) => notify(msg, 'info'));
 
   // Save handler with validation and user feedback
   const saveSheet = async () => {
     if (isSaving) return false;
+    if (requireConfirmationReasonBeforeContinuing()) return false;
 
     // Validate mandatory fields for rows that have observations/findings
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
+      if (r.responseDate?.trim() && !hasValidStdDuration(r.stdDurationMin ?? r.stdDuration)) {
+        durationRefs.current[i]?.focus();
+        notify(`Row ${i + 1}: Enter a valid Std. Duration in min when Response Date is filled.`, 'error');
+        return false;
+      }
       const hasContent = Boolean(
         r.observation?.trim() ||
         r.rootCause?.trim() ||
@@ -642,6 +761,7 @@ export default function LpaPdcaSheet({
 
   // Back button handler
   const handleBack = () => {
+    if (requireConfirmationReasonBeforeContinuing()) return;
     // Silently persist any current snapshot draft before navigating
     try {
       persistSheet(sheetSnapshot);
@@ -1399,7 +1519,7 @@ export default function LpaPdcaSheet({
       updated[rowIndex] = {
         ...tempRow,
         status: nextStatus,
-        responsiblePersonConfirmation: value || curr.responsiblePersonConfirmation || ''
+        responsiblePersonConfirmation: value || ''
       };
       return updated;
     });
@@ -1805,9 +1925,9 @@ export default function LpaPdcaSheet({
                     P
                   </th>
 
-                  {/* D: Do - Above Counter Measure, Image After, Response Date */}
+                  {/* D: Do - Above Counter Measure, Image After, Duration, Response Date */}
                   <th
-                    colSpan={3}
+                    colSpan={4}
                     className="bg-white text-slate-900 font-bold border-r border-[#94A3B8] py-1 px-2 text-center text-xs tracking-widest"
                     title="Do (D)"
                   >
@@ -1999,7 +2119,12 @@ export default function LpaPdcaSheet({
                     Image After
                   </th>
 
-                  {/* 11. Response Date */}
+                  <th rowSpan={2} className="py-1 px-1 w-[80px] min-w-[75px] text-center border-r border-[#B0BEC5] leading-tight">
+                    <div className="text-[9px] leading-tight font-semibold">Std. Duration</div>
+                    <div className="text-[9px] leading-tight font-semibold">in min</div>
+                  </th>
+
+                  {/* 12. Response Date */}
                   <th rowSpan={2} className="py-1 px-0.5 w-[56px] min-w-[52px] text-center border-r border-[#B0BEC5] leading-tight">
                     <div className="text-[10px] leading-tight font-semibold">Response</div>
                     <div className="text-[10px] leading-tight font-semibold">Date</div>
@@ -2403,11 +2528,34 @@ export default function LpaPdcaSheet({
                         )}
                       </td>
 
-                      {/* 11. Response Date */}
+                      <td className="p-0.5 align-middle text-center border-r border-[#64748B] w-[80px] min-w-[75px]">
+                        <input
+                          ref={(element) => {
+                            if (element) durationRefs.current[idx] = element;
+                            else delete durationRefs.current[idx];
+                          }}
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={String(row.stdDurationMin ?? '').replace(/\s*min$/i, '')}
+                          disabled={!canEditActionCols}
+                          required={Boolean(row.responseDate?.trim())}
+                          aria-required={row.responseDate?.trim() ? 'true' : undefined}
+                          aria-invalid={row.responseDate?.trim() && !hasValidStdDuration(row.stdDurationMin ?? row.stdDuration) ? 'true' : undefined}
+                          data-required-action-allowed={row.responseDate?.trim() && !hasValidStdDuration(row.stdDurationMin ?? row.stdDuration) ? 'true' : undefined}
+                          onChange={(event) => handleCellChange(idx, 'stdDurationMin', event.target.value)}
+                          placeholder="-"
+                          className={`w-full outline-none px-0.5 py-1 text-[11px] text-center ${row.responseDate?.trim() && !hasValidStdDuration(row.stdDurationMin ?? row.stdDuration) ? 'border border-red-500 bg-red-50 text-red-800 rounded' : 'border-0 bg-transparent'} ${!canEditActionCols ? 'cursor-default' : 'focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600'}`}
+                          title="Std. Duration in minutes"
+                        />
+                      </td>
+
+                      {/* 12. Response Date */}
                       <td className="p-0 align-middle text-center border-r border-[#64748B] w-[56px] min-w-[52px]">
                         <CompactDateCell
                           value={row.responseDate}
                           readOnly={!canEditActionCols}
+                          smallText
                           onChange={(val) => handleCellChange(idx, 'responseDate', val)}
                         />
                       </td>
@@ -2665,6 +2813,15 @@ export default function LpaPdcaSheet({
                           <ResponsiblePersonInstructionCell
                             row={row}
                             rowIndex={idx}
+                            reasonRef={(element) => {
+                              if (element) confirmationReasonRefs.current[idx] = element;
+                              else delete confirmationReasonRefs.current[idx];
+                            }}
+                            confirmationRef={(element) => {
+                              if (element) confirmationSelectRefs.current[idx] = element;
+                              else delete confirmationSelectRefs.current[idx];
+                            }}
+                            reasonRequired={missingConfirmationReasonIndices.includes(idx)}
                             currentUser={effectiveUser}
                             readOnly={!canEditEntireRow}
                             onConfirmationChange={(val, uName) => handleConfirmationChange(idx, val, uName)}

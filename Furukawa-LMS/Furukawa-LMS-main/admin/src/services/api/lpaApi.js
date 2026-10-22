@@ -57,7 +57,15 @@ export const lpaApi = {
     return response.data?.data || response.data;
   },
 
-  // E. Admin Excel Upload
+  // F. CMS sheet email delivery
+  sendEmail: async (emailData, idempotencyKey) => {
+    const response = await axiosInstance.post(`${BASE_PATH}/send-email`, emailData, {
+      headers: { "Idempotency-Key": idempotencyKey }
+    });
+    return response.data?.data || response.data;
+  },
+
+  // G. Admin Excel Upload
   uploadExcel: async (formData) => {
     const response = await axiosInstance.post(`${BASE_PATH}/upload`, formData, {
       headers: { "Content-Type": "multipart/form-data" }

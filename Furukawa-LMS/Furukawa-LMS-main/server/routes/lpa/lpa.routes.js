@@ -4,6 +4,8 @@ import { readAccessToken } from "../../utils/accessToken.js";
 import jwt from "jsonwebtoken";
 import ENV from "../../configs/env.config.js";
 import User from "../../models/auth.model.js";
+import verifyJWT from "../../middlewares/auth.middleware.js";
+import { sendLpaEmail } from "../../controllers/lpa/lpaEmail.controller.js";
 import {
   getTemplates,
   getTemplateBySection,
@@ -150,6 +152,9 @@ router.post("/upload", upload.single("file"), uploadExcel);
 // Same-day source data query for multi-level & multi-shift fetching
 router.get("/same-day-source", getSameDaySourceData);
 router.get("/records/same-day-source", getSameDaySourceData);
+
+// CMS email requests require a verified user and only report success after SMTP acceptance.
+router.post("/send-email", verifyJWT, sendLpaEmail);
 
 // LPA Records (explicit endpoints)
 router.get("/records", getRecords);

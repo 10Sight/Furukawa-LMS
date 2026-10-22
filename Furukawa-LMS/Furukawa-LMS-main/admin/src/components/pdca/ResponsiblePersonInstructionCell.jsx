@@ -20,6 +20,9 @@ import { ChevronDown } from 'lucide-react';
 export default function ResponsiblePersonInstructionCell({
   row,
   rowIndex,
+  reasonRef,
+  confirmationRef,
+  reasonRequired = false,
   currentUser,
   readOnly = false,
   onConfirmationChange,
@@ -65,7 +68,9 @@ export default function ResponsiblePersonInstructionCell({
       {/* 2. Middle: Clean Dropdown with ONLY Confirmed and Not-Confirmed */}
       <div className="relative w-full">
         <select
+          ref={confirmationRef}
           disabled={readOnly}
+          data-required-action-allowed={reasonRequired && !readOnly ? 'true' : undefined}
           aria-label={`Responsible person confirmation for row ${sNo}`}
           value={isConfirmed ? 'Confirmed' : isNotConfirmed ? 'Not-Confirmed' : ''}
           onChange={handleSelectConfirmation}
@@ -80,7 +85,7 @@ export default function ResponsiblePersonInstructionCell({
           }`}
           title={isConfirmed ? `Confirmed by ${confirmedBy || 'User'}` : isNotConfirmed ? `Not-Confirmed by ${confirmedBy || 'User'}` : 'Select Confirmation'}
         >
-          <option value="">Select...</option>
+          <option value="" disabled={reasonRequired}>Select...</option>
           <option value="Confirmed">Confirmed</option>
           <option value="Not-Confirmed">Not-Confirmed</option>
         </select>
@@ -98,8 +103,14 @@ export default function ResponsiblePersonInstructionCell({
             * Required
           </span>
           <textarea
+            ref={reasonRef}
             rows={2}
             disabled={readOnly}
+            required
+            aria-required="true"
+            data-required-confirmation-reason="true"
+            data-required-confirmation-active={reasonRequired ? 'true' : 'false'}
+            data-required-action-allowed={reasonRequired && !readOnly ? 'true' : undefined}
             value={instruction}
             onChange={(e) => onInstructionChange(e.target.value)}
             onKeyDown={(e) => {

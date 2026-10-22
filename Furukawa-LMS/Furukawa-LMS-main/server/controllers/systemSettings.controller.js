@@ -97,7 +97,7 @@ export const updateSystemSettings = asyncHandler(async (req, res) => {
     // Allowed fields list to preventSQL injection via key names if we were doing dynamic keys (though we are parameterized)
     const allowedFields = [
         'adminEmail', 'appName', 'appUrl', 'companyName', 'companyAddress', 'companyPhone',
-        'fromEmail', 'smtpHost', 'smtpPort', 'smtpUser', 'smtpPassword', 'smtpEncryption',
+        'fromEmail', 'fromName', 'smtpHost', 'smtpPort', 'smtpUsername', 'smtpPassword', 'smtpEncryption',
         'sessionTimeout', 'maxLoginAttempts', 'passwordMinLength', 'passwordRequireSpecial', 'passwordRequireNumbers', 'passwordRequireUppercase',
         'maxFileUploadSize', 'allowedFileTypes', 'backupRetention', 'autoBackup',
         'maintenanceMode', 'logLevel', 'emailNotifications', 'notificationRetention',

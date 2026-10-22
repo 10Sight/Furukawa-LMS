@@ -86,6 +86,7 @@ export const skillMatrixApi = createApi({
             }),
             invalidatesTags: ["SkillMatrix"],
         }),
+        
         deleteSkillMatrix: builder.mutation({
             query: (id) => ({
                 url: `/api/skill-matrix/sheet/${id}`,

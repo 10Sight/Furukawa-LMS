@@ -204,6 +204,9 @@ function AutoResizeTextarea({
 function AutoWidthInput({
   value = '',
   onChange,
+  inputRef,
+  required = false,
+  dataRequiredActionAllowed = false,
   placeholder = 'Why revised...',
   readOnly = false,
   className = '',
@@ -228,11 +231,15 @@ function AutoWidthInput({
 
   return (
     <input
+      ref={inputRef}
       type="text"
       value={value}
       onChange={onChange}
       placeholder={placeholder}
       title={title || value || placeholder}
+      required={required}
+      aria-required={required || undefined}
+      data-required-action-allowed={dataRequiredActionAllowed ? 'true' : undefined}
       style={{
         fieldSizing: 'content',
         width: `${chLen + 2}ch`,
@@ -255,8 +262,13 @@ export const formatDisplayDate = (isoStr) => {
   return String(isoStr);
 };
 
+const hasValidStdDuration = (value) => {
+  const normalized = String(value ?? '').replace(/\s*min$/i, '').trim();
+  return normalized !== '' && Number.isFinite(Number(normalized)) && Number(normalized) >= 0;
+};
+
 // Compact Date Cell (Shows only calendar icon when empty; once date is selected, icon is removed and date is fully displayed without truncation)
-function CompactDateCell({ value, onChange, readOnly = false }) {
+function CompactDateCell({ value, onChange, readOnly = false, smallText = false }) {
   const inputRef = useRef(null);
 
   const handleOpenPicker = () => {
@@ -277,7 +289,7 @@ function CompactDateCell({ value, onChange, readOnly = false }) {
   if (readOnly) {
     return (
       <div className="relative w-full h-full min-h-[42px] flex items-center justify-center p-1 select-none whitespace-nowrap">
-        <span className="text-[15px] font-semibold text-slate-800 text-center tracking-tight whitespace-nowrap">
+        <span className={`${smallText ? 'text-[12px]' : 'text-[15px]'} font-semibold text-slate-800 text-center tracking-tight whitespace-nowrap`}>
           {display || '-'}
         </span>
       </div>
@@ -310,7 +322,7 @@ function CompactDateCell({ value, onChange, readOnly = false }) {
       {display ? (
         // When date is selected: Date is shown perfectly center-aligned and fully visible without cutting off
         <div className="relative w-full flex items-center justify-center text-center pointer-events-none px-0.5 whitespace-nowrap">
-          <span className="text-[15px] font-semibold text-slate-800 text-center tracking-tight whitespace-nowrap">
+          <span className={`${smallText ? 'text-[12px]' : 'text-[15px]'} font-semibold text-slate-800 text-center tracking-tight whitespace-nowrap`}>
             {display}
           </span>
           <button
@@ -336,7 +348,7 @@ function CompactDateCell({ value, onChange, readOnly = false }) {
 }
 
 // Std. Duration in min cell with automatic 'min' suffix
-function DurationMinCell({ value, readOnly, onChange }) {
+function DurationMinCell({ value, readOnly, onChange, cellRef, requiredActionAllowed = false }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editVal, setEditVal] = useState('');
 
@@ -344,50 +356,70 @@ function DurationMinCell({ value, readOnly, onChange }) {
   const displayVal = numStr ? `${numStr} min` : '';
 
   if (readOnly) {
-    return <span className="text-base text-slate-800 font-medium whitespace-nowrap">{displayVal || '-'}</span>;
+    return <span className={`text-base font-medium whitespace-nowrap ${requiredActionAllowed ? 'text-red-700' : 'text-slate-800'}`}>{displayVal || '-'}</span>;
   }
 
   if (isEditing) {
     return (
-      <input
-        type="text"
-        autoFocus
-        value={editVal}
-        onChange={(e) => {
-          const cleaned = e.target.value.replace(/[^0-9.]/g, '');
-          setEditVal(cleaned);
-        }}
-        onBlur={() => {
-          setIsEditing(false);
-          const finalVal = editVal.trim();
-          onChange(finalVal ? `${finalVal} min` : '');
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
+      <div
+        ref={cellRef}
+        data-required-action-allowed={requiredActionAllowed ? 'true' : undefined}
+        tabIndex={requiredActionAllowed ? 0 : undefined}
+        className={`w-full rounded ${requiredActionAllowed ? 'border border-red-500 bg-red-50' : ''}`}
+      >
+        <input
+          type="text"
+          autoFocus
+          aria-invalid={requiredActionAllowed ? 'true' : undefined}
+          value={editVal}
+          onChange={(e) => {
+            const cleaned = e.target.value.replace(/[^0-9.]/g, '');
+            setEditVal(cleaned);
+            onChange(cleaned ? `${cleaned} min` : '');
+          }}
+          onBlur={() => {
             setIsEditing(false);
             const finalVal = editVal.trim();
             onChange(finalVal ? `${finalVal} min` : '');
-          }
-        }}
-        placeholder="0"
-        className="w-full bg-white border border-blue-500 rounded px-1 py-0.5 text-base text-slate-800 text-center font-semibold outline-none"
-      />
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              setIsEditing(false);
+              const finalVal = editVal.trim();
+              onChange(finalVal ? `${finalVal} min` : '');
+            }
+          }}
+          placeholder="0"
+          className={`w-full rounded px-1 py-0.5 text-base text-center font-semibold outline-none ${requiredActionAllowed ? 'bg-red-50 border border-red-500 text-red-800 focus:border-red-600' : 'bg-white border border-blue-500 text-slate-800'}`}
+        />
+      </div>
     );
   }
 
   return (
     <div
+      ref={cellRef}
+      data-required-action-allowed={requiredActionAllowed ? 'true' : undefined}
+      aria-invalid={requiredActionAllowed ? 'true' : undefined}
+      tabIndex={requiredActionAllowed ? 0 : undefined}
       onClick={() => {
         setEditVal(numStr);
         setIsEditing(true);
       }}
-      className="w-full py-1 text-base text-slate-800 text-center font-medium cursor-text hover:bg-blue-50/50 rounded transition-colors whitespace-nowrap"
+      onKeyDown={(e) => {
+        if (requiredActionAllowed && (e.key === 'Enter' || e.key === ' ')) {
+          e.preventDefault();
+          setEditVal(numStr);
+          setIsEditing(true);
+        }
+      }}
+      className={`w-full py-1 text-base text-center font-medium cursor-text rounded transition-colors whitespace-nowrap ${requiredActionAllowed ? 'border border-red-500 bg-red-50 text-red-700' : 'text-slate-800 hover:bg-blue-50/50'}`}
       title="Click to enter duration (min)"
     >
       {displayVal ? (
         <span className="font-semibold text-slate-800">{displayVal}</span>
       ) : (
-        <span className="text-slate-300">-</span>
+        <span className={requiredActionAllowed ? 'text-red-500' : 'text-slate-300'}>-</span>
       )}
     </div>
   );
@@ -678,6 +710,22 @@ export default function PDCASheet({
   const hasAnyRowResponsible = useMemo(() => isUserResponsibleForAnyRow(rows, effectiveUser), [rows, effectiveUser]);
   const hasEditAccess = Boolean(!readOnly && (isCreatorOrAdmin || hasAnyRowResponsible));
   const effectiveReadOnly = Boolean(readOnly || !hasEditAccess);
+  const missingRequiredInputs = rows.flatMap((row, rowIndex) => {
+    const missing = [];
+    if (['Not - Confirmed', 'Not-Confirmed'].includes((row.confirmation || '').trim()) && !row.instruction?.trim()) {
+      missing.push({ type: 'confirmation', rowIndex, key: `confirmation:${rowIndex}` });
+    }
+    if (row.responseDate?.trim() && !hasValidStdDuration(row.stdDurationMin ?? row.stdDuration)) {
+      missing.push({ type: 'duration', rowIndex, key: `duration:${rowIndex}` });
+    }
+    (Array.isArray(row.revisedDates) ? row.revisedDates : []).forEach((item, revisionIndex) => {
+      const reason = typeof item === 'object' && item !== null ? (item.reason || '') : '';
+      if (!reason.trim()) missing.push({ type: 'revision', rowIndex, revisionIndex, key: `revision:${rowIndex}:${revisionIndex}` });
+    });
+    return missing;
+  });
+  const mustCompleteRequiredInput = missingRequiredInputs.length > 0;
+  const requiredInputKey = missingRequiredInputs.map((item) => item.key).join('|');
 
   const [activePreviewImage, setActivePreviewImage] = useState(null);
   const [selectedImageAction, setSelectedImageAction] = useState(null);
@@ -713,9 +761,109 @@ export default function PDCASheet({
     rows: initialRows.map((r) => ({ ...r })),
     headerInfo: { ...initialHeaderInfo }
   });
+  const responsibleConfirmationReasonRefs = useRef({});
+  const responsibleConfirmationSelectRefs = useRef({});
+  const revisionReasonRefs = useRef({});
+  const durationCellRefs = useRef({});
+  const lastAllowedUrlRef = useRef(typeof window !== 'undefined' ? window.location.href : '');
+  const lastRequiredNoticeAtRef = useRef(0);
+  const showToastRef = useRef(showToast);
+  showToastRef.current = showToast;
+  const requiredInputMessage = (requiredInput) => requiredInput.type === 'confirmation'
+    ? `Complete the Responsible Person Confirmation reason in row ${requiredInput.rowIndex + 1} before continuing.`
+    : requiredInput.type === 'duration'
+      ? `Enter a valid Std. Duration in min for row ${requiredInput.rowIndex + 1} before continuing.`
+      : `Enter a reason for revision ${requiredInput.revisionIndex + 1} in row ${requiredInput.rowIndex + 1} before continuing.`;
+  const requiredInputElement = (requiredInput) => requiredInput.type === 'confirmation'
+    ? responsibleConfirmationReasonRefs.current[requiredInput.rowIndex]
+    : requiredInput.type === 'duration'
+      ? durationCellRefs.current[requiredInput.rowIndex]
+      : revisionReasonRefs.current[`${requiredInput.rowIndex}:${requiredInput.revisionIndex}`];
+  const requiredInputAllowedElements = (requiredInput) => requiredInput.type === 'confirmation'
+    ? [responsibleConfirmationReasonRefs.current[requiredInput.rowIndex], responsibleConfirmationSelectRefs.current[requiredInput.rowIndex]]
+    : requiredInput.type === 'duration'
+      ? [durationCellRefs.current[requiredInput.rowIndex]]
+      : [revisionReasonRefs.current[`${requiredInput.rowIndex}:${requiredInput.revisionIndex}`]];
+  const requireConfirmationReasonBeforeContinuing = () => {
+    const requiredInput = missingRequiredInputs[0];
+    if (!requiredInput) return false;
+    const message = requiredInputMessage(requiredInput);
+    const input = requiredInputElement(requiredInput);
+    input?.focus();
+    input?.reportValidity();
+    showToastRef.current?.(message);
+    return true;
+  };
   const [showDiscardModal, setShowDiscardModal] = useState(false);
   const [isSendMailOpen, setIsSendMailOpen] = useState(false);
   const [showMonthlyGraph, setShowMonthlyGraph] = useState(false);
+
+  useEffect(() => {
+    if (!mustCompleteRequiredInput || typeof document === 'undefined') return undefined;
+
+    const allowedInputs = new Set(missingRequiredInputs.flatMap(requiredInputAllowedElements).filter(Boolean));
+    lastAllowedUrlRef.current = window.location.href;
+    const firstRequiredInput = missingRequiredInputs[0];
+    const message = requiredInputMessage(firstRequiredInput);
+    requiredInputElement(firstRequiredInput)?.focus();
+    showToastRef.current?.(message);
+
+    const isReasonInput = (target) => target instanceof Element && Boolean(target.closest('[data-required-action-allowed="true"]'));
+    const notifyAndFocus = () => {
+      const now = Date.now();
+      if (now - lastRequiredNoticeAtRef.current > 800) {
+        showToastRef.current?.(message);
+        lastRequiredNoticeAtRef.current = now;
+      }
+      const currentInput = requiredInputElement(missingRequiredInputs[0]);
+      currentInput?.focus();
+      currentInput?.reportValidity();
+    };
+    const blockOutsideReason = (event) => {
+      if (isReasonInput(event.target) && allowedInputs.has(event.target.closest('[data-required-action-allowed="true"]'))) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation?.();
+      notifyAndFocus();
+    };
+    const blockKeyboardOutsideReason = (event) => {
+      const navigationKey = event.key === 'Tab' || event.key === 'Escape' || event.altKey ||
+        ((event.ctrlKey || event.metaKey) && ['r', 'w', 'l'].includes(event.key.toLowerCase()));
+      if (isReasonInput(event.target) && !navigationKey) return;
+      blockOutsideReason(event);
+    };
+    const restoreLocation = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation?.();
+      window.history.pushState({ ...(window.history.state || {}), requiredConfirmationGate: true }, '', lastAllowedUrlRef.current);
+      notifyAndFocus();
+    };
+    const warnBeforeLeaving = (event) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+
+    document.addEventListener('pointerdown', blockOutsideReason, true);
+    document.addEventListener('click', blockOutsideReason, true);
+    document.addEventListener('keydown', blockKeyboardOutsideReason, true);
+    document.addEventListener('focusin', blockOutsideReason, true);
+    document.addEventListener('submit', blockOutsideReason, true);
+    window.addEventListener('popstate', restoreLocation, true);
+    window.addEventListener('hashchange', restoreLocation, true);
+    window.addEventListener('beforeunload', warnBeforeLeaving);
+
+    return () => {
+      document.removeEventListener('pointerdown', blockOutsideReason, true);
+      document.removeEventListener('click', blockOutsideReason, true);
+      document.removeEventListener('keydown', blockKeyboardOutsideReason, true);
+      document.removeEventListener('focusin', blockOutsideReason, true);
+      document.removeEventListener('submit', blockOutsideReason, true);
+      window.removeEventListener('popstate', restoreLocation, true);
+      window.removeEventListener('hashchange', restoreLocation, true);
+      window.removeEventListener('beforeunload', warnBeforeLeaving);
+    };
+  }, [mustCompleteRequiredInput, requiredInputKey]);
 
   // Observation Column Resizable Width (default 260px, min 180px, max 650px, persisted in localStorage)
   const [observationWidth, setObservationWidth] = useState(() => {
@@ -1001,9 +1149,40 @@ export default function PDCASheet({
       return false;
     }
     if (isSaving) return false;
+    if (requireConfirmationReasonBeforeContinuing()) return false;
     // Validate mandatory fields (Date, Shift, Status, Line/Area, Observation) for active rows
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
+      const notConfirmed = ['Not - Confirmed', 'Not-Confirmed'].includes((r.confirmation || '').trim());
+      if (notConfirmed && !r.instruction?.trim()) {
+        const reasonInput = responsibleConfirmationReasonRefs.current[i];
+        reasonInput?.focus();
+        reasonInput?.reportValidity();
+        showToast(`Row ${i + 1}: Please enter the required Responsible Person Confirmation reason.`);
+        return false;
+      }
+      if (r.responseDate?.trim() && !hasValidStdDuration(r.stdDurationMin ?? r.stdDuration)) {
+        durationCellRefs.current[i]?.focus();
+        showToast(`Row ${i + 1}: Enter a valid Std. Duration in min when Response Date is filled.`);
+        return false;
+      }
+      if (Array.isArray(r.revisedDates)) {
+        for (let revisionIndex = 0; revisionIndex < r.revisedDates.length; revisionIndex++) {
+          const revision = r.revisedDates[revisionIndex];
+          const reason = typeof revision === 'object' && revision !== null ? (revision.reason || '') : '';
+          if (!reason.trim()) {
+            const reasonInput = revisionReasonRefs.current[`${i}:${revisionIndex}`];
+            reasonInput?.focus();
+            reasonInput?.reportValidity();
+            showToast(`Row ${i + 1}: Please enter a reason for revision ${revisionIndex + 1}.`);
+            return false;
+          }
+        }
+      }
+      if (Array.isArray(r.revisedDates) && r.revisedDates.length > 0 && !r.responseDate?.trim()) {
+        showToast(`Row ${i + 1}: Response Date is required when revisions exist.`);
+        return false;
+      }
       const hasContent = Boolean(
         r.date?.trim() ||
         r.shift?.trim() ||
@@ -1066,6 +1245,7 @@ export default function PDCASheet({
   };
 
   const handleExportToExcel = async () => {
+    if (requireConfirmationReasonBeforeContinuing()) return;
     try {
       showToast('Generating complete Excel workbook with images...');
       const { exportPDCASheetToExcel } = await import('../../pages/pdca/data/pdcaExcelExport.js');
@@ -1092,6 +1272,7 @@ export default function PDCASheet({
 
   // Navigation Back: Separated strictly from save and mandatory validation
   const handleBack = () => {
+    if (requireConfirmationReasonBeforeContinuing()) return;
     if (hasUnsavedChanges()) {
       setShowDiscardModal(true);
     } else {
@@ -1101,6 +1282,7 @@ export default function PDCASheet({
 
   // Discard all unsaved edits made during the session and navigate back immediately
   const handleDiscardAndGoBack = () => {
+    if (requireConfirmationReasonBeforeContinuing()) return;
     setShowDiscardModal(false);
     if (topic?.id && initialStateRef.current) {
       setData((items) => {
@@ -2211,7 +2393,7 @@ export default function PDCASheet({
       updated[rowIndex] = {
         ...tempRow,
         status: nextStatus,
-        responsiblePersonConfirmation: value || curr.responsiblePersonConfirmation || ''
+        responsiblePersonConfirmation: value || ''
       };
       return updated;
     });
@@ -3922,7 +4104,7 @@ export default function PDCASheet({
                         onChange={(e) => handleCellChange(idx, 'rootCause', e.target.value)}
                         onKeyDown={(e) => handleKeyDown(e, idx, 'rootCause')}
                         placeholder="Root cause..."
-                        className="w-full bg-transparent border-0 outline-none p-1.5 text-base text-slate-800 text-center leading-snug focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center"
+                        className="w-full bg-transparent border-0 outline-none p-1.5 text-base text-slate-800 text-center leading-snug whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center"
                       />
                     </div>
                   </td>
@@ -3944,7 +4126,7 @@ export default function PDCASheet({
                         onChange={(e) => handleCellChange(idx, 'counterMeasure', e.target.value)}
                         onKeyDown={(e) => handleKeyDown(e, idx, 'counterMeasure')}
                         placeholder="Counter measure..."
-                        className="w-full bg-transparent border-0 outline-none p-1.5 text-base text-slate-800 text-center leading-snug focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center"
+                        className="w-full bg-transparent border-0 outline-none p-1.5 text-base text-slate-800 text-center leading-snug whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center"
                       />
                     </div>
                   </td>
@@ -4062,6 +4244,11 @@ export default function PDCASheet({
                       <DurationMinCell
                         value={row.stdDurationMin}
                         readOnly={!canEditActionCols}
+                        cellRef={(element) => {
+                          if (element) durationCellRefs.current[idx] = element;
+                          else delete durationCellRefs.current[idx];
+                        }}
+                        requiredActionAllowed={Boolean(row.responseDate?.trim() && !hasValidStdDuration(row.stdDurationMin ?? row.stdDuration))}
                         onChange={(val) => handleCellChange(idx, 'stdDurationMin', val)}
                       />
                     </div>
@@ -4073,6 +4260,7 @@ export default function PDCASheet({
                       <CompactDateCell
                         value={row.responseDate}
                         readOnly={!canEditActionCols}
+                        smallText
                         onChange={(val) => handleResponseDateChange(idx, val)}
                       />
                     </div>
@@ -4092,7 +4280,7 @@ export default function PDCASheet({
                             >
                               <div className="w-full flex items-center justify-between gap-1">
                                 <span className="flex-1 text-[11px] font-semibold text-slate-800 whitespace-nowrap text-center">
-                                  {rIdx + 1}. {formatDisplayDate(revDate)}
+                                  {rIdx + 1}) {formatDisplayDate(revDate)}
                                 </span>
                                 {isAdmin && !readOnly && canEditEntireRow && (
                                   <button
@@ -4111,6 +4299,13 @@ export default function PDCASheet({
                               <AutoWidthInput
                                 value={revReason}
                                 readOnly={!canEditActionCols}
+                                inputRef={(element) => {
+                                  const key = `${idx}:${rIdx}`;
+                                  if (element) revisionReasonRefs.current[key] = element;
+                                  else delete revisionReasonRefs.current[key];
+                                }}
+                                required
+                                dataRequiredActionAllowed={!revReason.trim()}
                                 onChange={(e) => handleRevisionReasonChange(idx, rIdx, e.target.value)}
                                 placeholder="Why revised..."
                                 className="text-[10px] text-slate-700 bg-white border border-slate-200 focus:border-blue-500 rounded px-1 py-0.5"
@@ -4463,6 +4658,15 @@ export default function PDCASheet({
                       <ResponsiblePersonInstructionCell
                         row={row}
                         rowIndex={idx}
+                        reasonRef={(element) => {
+                          if (element) responsibleConfirmationReasonRefs.current[idx] = element;
+                          else delete responsibleConfirmationReasonRefs.current[idx];
+                        }}
+                        confirmationRef={(element) => {
+                          if (element) responsibleConfirmationSelectRefs.current[idx] = element;
+                          else delete responsibleConfirmationSelectRefs.current[idx];
+                        }}
+                        reasonRequired={missingRequiredInputs.some((item) => item.type === 'confirmation' && item.rowIndex === idx)}
                         currentUser={effectiveUser}
                         readOnly={!canEditEntireRow}
                         onConfirmationChange={(val, uName) => handleConfirmationChange(idx, val, uName)}

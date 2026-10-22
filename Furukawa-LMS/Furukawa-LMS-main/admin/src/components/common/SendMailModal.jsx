@@ -5,12 +5,15 @@ import {
   X,
   Check,
   Loader2,
-  FileSpreadsheet,
   Info,
   Plus,
   Trash2
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
+import { usePDCA } from '@hooks/pdca/usePDCA.js';
+import { listLPAWorkbooks } from '../../pages/lpa/lpaStore.js';
+import lpaApi from '../../services/api/lpaApi.js';
 
 /**
  * SendMailModal
@@ -25,18 +28,30 @@ export default function SendMailModal({
   formType = 'assembly', // 'assembly' | 'cc' | 'pdca'
   title = 'LPA Check Sheet',
   metadata = {},
+  pdcaLabel = 'PDCA',
+  assemblySheets: suppliedAssemblySheets,
+  pdcaSheets: suppliedPdcaSheets,
+  onViewAssemblySheet,
+  onViewPDCASheet,
   onSendSuccess
 }) {
+  const navigate = useNavigate();
+  const { data: contextPdcaSheets = [], userContext } = usePDCA();
   const [toInput, setToInput] = useState('');
   const [recipients, setRecipients] = useState([]);
   const [ccEmails, setCcEmails] = useState(['']);
   const [showCc, setShowCc] = useState(false);
   const [subject, setSubject] = useState('');
-  const [message, setMessage] = useState('');
-  const [includeExcel, setIncludeExcel] = useState(true);
+  const [assemblyRecords, setAssemblyRecords] = useState([]);
+  const [assemblySelection, setAssemblySelection] = useState('');
+  const [pdcaSelection, setPdcaSelection] = useState('');
+  const [sheetsLoading, setSheetsLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [sentSuccess, setSentSuccess] = useState(false);
   const ccInputsRef = useRef([]);
+  const requestInFlightRef = useRef(false);
+  const idempotencyKeyRef = useRef('');
+  const [toRows, setToRows] = useState(['']);
 
   // When modal opens, all input fields are reset to blank, CC is optional/hidden by default
   useEffect(() => {
@@ -47,11 +62,67 @@ export default function SendMailModal({
     }
     setToInput('');
     setRecipients([]);
+    setToRows(['']);
     setCcEmails(['']);
     setShowCc(false);
     setSubject('');
-    setMessage('');
+    setAssemblySelection('');
+    setPdcaSelection('');
+    requestInFlightRef.current = false;
+    idempotencyKeyRef.current = window.crypto?.randomUUID?.() || `mail-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || Array.isArray(suppliedAssemblySheets)) return undefined;
+    let active = true;
+    setSheetsLoading(true);
+    listLPAWorkbooks(userContext?.user?.id || userContext?.user?._id || 'current')
+      .then((records) => { if (active) setAssemblyRecords(Array.isArray(records) ? records : []); })
+      .catch(() => { if (active) setAssemblyRecords([]); })
+      .finally(() => { if (active) setSheetsLoading(false); });
+    return () => { active = false; };
+  }, [isOpen, suppliedAssemblySheets, userContext?.user?.id, userContext?.user?._id]);
+
+  const assemblyOptions = (Array.isArray(suppliedAssemblySheets) ? suppliedAssemblySheets : assemblyRecords)
+    .filter((record) => record && record.section === 'assembly' && !record.sampleData)
+    .flatMap((record) => (Array.isArray(record.sheets) ? record.sheets : []).map((sheet, sheetIndex) => ({
+      key: `${record.id}::${sheetIndex}`,
+      record,
+      sheet,
+      sheetIndex,
+      label: [sheet.name || `Sheet ${sheetIndex + 1}`, record.unit, record.auditDate || record.date].filter(Boolean).join(' · ')
+    })));
+  const pdcaOptions = (Array.isArray(suppliedPdcaSheets) ? suppliedPdcaSheets : contextPdcaSheets)
+    .filter((sheet) => sheet && (sheet.id || sheet._id))
+    .map((sheet, index) => ({
+      key: `${sheet.source === 'lpa' ? 'lpa-' : ''}${sheet.id || sheet._id}-${index}`,
+      sheet,
+      label: [sheet.topic || sheet.title || 'PDCA Sheet', sheet.plant || sheet.unit, sheet.date].filter(Boolean).join(' · ')
+    }));
+  const selectedAssembly = assemblyOptions.find((option) => option.key === assemblySelection);
+  const selectedPdca = pdcaOptions.find((option) => option.key === pdcaSelection);
+
+  const openAssemblySheet = () => {
+    if (!selectedAssembly) return;
+    if (typeof onViewAssemblySheet === 'function') {
+      onViewAssemblySheet(selectedAssembly);
+      return;
+    }
+    const target = `/cms/lpa?viewWorkbookId=${encodeURIComponent(selectedAssembly.record.id)}&sheetIndex=${selectedAssembly.sheetIndex}`;
+    if (window.location.pathname.includes('cms-dashboard')) window.open(target, '_blank', 'noopener,noreferrer');
+    else navigate(target);
+  };
+
+  const openPdcaSheet = () => {
+    if (!selectedPdca) return;
+    if (typeof onViewPDCASheet === 'function') {
+      onViewPDCASheet(selectedPdca.sheet);
+      return;
+    }
+    const id = selectedPdca.sheet.id || selectedPdca.sheet._id;
+    if (window.location.pathname.includes('cms-dashboard')) navigate(`/sheet/${encodeURIComponent(id)}`);
+    else navigate(`/cms/pdca?sheet=${encodeURIComponent(id)}`);
+  };
 
   if (!isOpen) return null;
 
@@ -145,50 +216,88 @@ export default function SendMailModal({
     }
   };
 
-  const handleSend = () => {
+  const handleSend = async () => {
+    if (requestInFlightRef.current || sentSuccess) return;
+    if (!selectedAssembly) {
+      toast.error('Please select an Assembly sheet before sending the email.');
+      return;
+    }
+    if (!selectedPdca) {
+      toast.error('Please select a PDCA sheet before sending the email.');
+      return;
+    }
+    const rowRecipients = toRows.map(email => email.trim()).filter(Boolean);
+    const parsedInput = toInput.trim() ? toInput.split(/[,;\s]+/).filter(Boolean) : [];
+    const finalRecipients = [...new Set([...recipients, ...rowRecipients, ...parsedInput])];
     if (recipients.length === 0 && !toInput.trim()) {
+      if (!rowRecipients.length) {
+        toast.error('Please enter at least one recipient email address.');
+        return;
+      }
+    }
+    const invalidEmail = finalRecipients.find(email => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
+    if (invalidEmail) {
+      toast.error(`Please enter a valid email address: ${invalidEmail}`);
+      return;
+    }
+    if (!finalRecipients.length) {
       toast.error('Please enter at least one recipient email address.');
       return;
     }
 
-    const finalRecipients = [...recipients];
-    if (toInput.trim() && !finalRecipients.includes(toInput.trim())) {
-      finalRecipients.push(toInput.trim());
-    }
-
     const finalCcList = ccEmails.map(e => e.trim()).filter(Boolean);
 
+    requestInFlightRef.current = true;
     setSending(true);
+    try {
+      const selectedAssemblyPayload = {
+        workbookId: selectedAssembly.record.id || selectedAssembly.record._id,
+        sheetIndex: selectedAssembly.sheetIndex,
+        name: selectedAssembly.sheet.name || `Sheet ${selectedAssembly.sheetIndex + 1}`,
+        unit: selectedAssembly.record.unit || '',
+        date: selectedAssembly.record.auditDate || selectedAssembly.record.date || ''
+      };
+      const selectedPdcaPayload = {
+        id: selectedPdca.sheet.id || selectedPdca.sheet._id,
+        source: selectedPdca.sheet.source === 'lpa' ? 'lpa' : 'pdca',
+        name: selectedPdca.sheet.topic || selectedPdca.sheet.title || 'PDCA Sheet',
+        section: selectedPdca.sheet.section,
+        unit: selectedPdca.sheet.plant || selectedPdca.sheet.unit || '',
+        date: selectedPdca.sheet.date || ''
+      };
+      const providerResult = await lpaApi.sendEmail({
+        to: finalRecipients,
+        cc: finalCcList,
+        subject,
+        assemblySheet: selectedAssemblyPayload,
+        pdcaSheet: selectedPdcaPayload
+      }, idempotencyKeyRef.current);
 
-    // Frontend send simulation
-    setTimeout(() => {
-      setSending(false);
       setSentSuccess(true);
-      toast.success(`Mail sent successfully to ${finalRecipients.join(', ')}`);
-
+      toast.success(`Email accepted by the mail service for ${finalRecipients.join(', ')}`);
       if (typeof onSendSuccess === 'function') {
-        onSendSuccess({
-          recipients: finalRecipients,
-          cc: finalCcList,
-          subject,
-          message,
-          attachments: [
-            includeExcel ? `${getAttachmentBaseName()}.xlsx` : null
-          ].filter(Boolean)
-        });
+        try {
+          onSendSuccess({
+            recipients: finalRecipients,
+            cc: finalCcList,
+            subject,
+            assemblySheet: { ...selectedAssemblyPayload, data: selectedAssembly.sheet },
+            pdcaSheet: selectedPdcaPayload.id,
+            pdcaSheetData: selectedPdca.sheet,
+            providerResult
+          });
+        } catch (callbackError) {
+          console.error('Email was accepted, but the post-send callback failed.', callbackError);
+        }
       }
-
-      setTimeout(() => {
-        onClose();
-      }, 900);
-    }, 1000);
-  };
-
-  const getAttachmentBaseName = () => {
-    const dateStr = metadata.auditDate || metadata.date || new Date().toISOString().slice(0, 10);
-    if (formType === 'pdca') return `PDCA_Observation_${dateStr}`;
-    if (formType === 'cc') return `CC_LPA_CheckSheet_${dateStr}`;
-    return `Assembly_LPA_CheckSheet_${dateStr}`;
+      setTimeout(onClose, 900);
+    } catch (error) {
+      const message = error.response?.data?.message || error.message || 'Email could not be sent. Please try again.';
+      toast.error(message);
+    } finally {
+      setSending(false);
+      requestInFlightRef.current = false;
+    }
   };
 
   return (
@@ -220,7 +329,8 @@ export default function SendMailModal({
           <button
             type="button"
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 p-1 rounded-md hover:bg-slate-100 transition-colors cursor-pointer"
+            disabled={sending}
+            className="text-slate-400 hover:text-slate-600 p-1 rounded-md hover:bg-slate-100 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             title="Close"
           >
             <X className="w-5 h-5" />
@@ -276,6 +386,14 @@ export default function SendMailModal({
                 className="flex-1 min-w-[160px] border-none outline-none text-xs text-slate-800 bg-transparent px-1 py-0.5 placeholder:text-slate-400"
               />
             </div>
+            {toRows.map((email, idx) => (
+              <div key={idx} className="mt-1.5 flex items-center gap-2">
+                <span className="w-8 text-[11px] text-slate-500">To</span>
+                <input type="email" value={email} onChange={e => setToRows(prev => prev.map((item, i) => i === idx ? e.target.value : item))} placeholder="Recipient email address" className="flex-1 px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600" />
+                {toRows.length > 1 && <button type="button" onClick={() => setToRows(prev => prev.filter((_, i) => i !== idx))} className="p-1 text-slate-400 hover:text-rose-600" aria-label="Remove recipient"><Trash2 className="w-3.5 h-3.5" /></button>}
+              </div>
+            ))}
+            <button type="button" onClick={() => setToRows(prev => [...prev, ''])} className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800"><Plus className="w-3.5 h-3.5" />Add Mail</button>
           </div>
 
           {/* CC Field (Multi-CC with Rows & Add More Button) */}
@@ -365,47 +483,48 @@ export default function SendMailModal({
             />
           </div>
 
-          {/* Attachments Card */}
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1.5">
-              Attachments
-            </label>
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-                  <FileSpreadsheet className="w-4 h-4" />
-                </div>
-                <div className="min-w-0 truncate">
-                  <div className="font-semibold text-slate-800 truncate text-xs">
-                    {getAttachmentBaseName()}.xlsx
-                  </div>
-                  <div className="text-[11px] text-slate-500">
-                    Auto-generated spreadsheet report (~42 KB)
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                  <Check className="w-3 h-3 stroke-[3]" />
-                  Attached
-                </span>
-              </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="min-w-0">
+              <label htmlFor="mail-assembly-sheet" className="block font-semibold text-slate-700 mb-1.5">
+                Assembly <span className="text-red-500">*</span>
+              </label>
+              <select
+                id="mail-assembly-sheet"
+                required
+                value={assemblySelection}
+                onChange={(event) => setAssemblySelection(event.target.value)}
+                className="w-full min-w-0 px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
+              >
+                <option value="">{sheetsLoading ? 'Loading Assembly sheets…' : 'Select an Assembly sheet…'}</option>
+                {assemblyOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+              </select>
+              {selectedAssembly && (
+                <button type="button" onClick={openAssemblySheet} className="mt-1.5 text-blue-600 hover:text-blue-800 hover:underline font-semibold">
+                  View Sheet
+                </button>
+              )}
             </div>
-          </div>
 
-          {/* Message Body Field */}
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1.5">
-              Message Body
-            </label>
-            <textarea
-              rows={6}
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder="Type message body here..."
-              className="w-full p-3 text-xs border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-slate-800 leading-relaxed resize-y bg-white placeholder:text-slate-400 font-normal"
-            />
+            <div className="min-w-0">
+              <label htmlFor="mail-pdca-sheet" className="block font-semibold text-slate-700 mb-1.5">
+                {pdcaLabel} <span className="text-red-500">*</span>
+              </label>
+              <select
+                id="mail-pdca-sheet"
+                required
+                value={pdcaSelection}
+                onChange={(event) => setPdcaSelection(event.target.value)}
+                className="w-full min-w-0 px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
+              >
+                <option value="">Select a {pdcaLabel} sheet…</option>
+                {pdcaOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+              </select>
+              {selectedPdca && (
+                <button type="button" onClick={openPdcaSheet} className="mt-1.5 text-blue-600 hover:text-blue-800 hover:underline font-semibold">
+                  View Sheet
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -413,7 +532,7 @@ export default function SendMailModal({
         <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
             <Info className="w-3.5 h-3.5 text-blue-600" />
-            <span>Emails sent with authoritative audit score attachments</span>
+            <span>Select both sheets before sending the email</span>
           </div>
 
           <div className="flex items-center gap-2">

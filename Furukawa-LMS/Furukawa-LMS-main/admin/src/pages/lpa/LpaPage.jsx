@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
-import { useOutletContext, useNavigate } from 'react-router-dom';
+import { useOutletContext, useNavigate, useLocation } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { Upload, Save, ArrowLeft, ZoomIn, ZoomOut, Trash2, Search, Download, ChevronDown, CalendarDays, ClipboardList, AlertTriangle, Plus, Eye, Mail, User, BarChart3 } from 'lucide-react';
 import { listLPAWorkbooks, createLPAWorkbook, saveLPAWorkbook, deleteLPAWorkbook } from './lpaStore';
@@ -32,6 +32,7 @@ const errorText = error => error.message || 'Could not save LPA data. Your edits
 
 function LpaPageContent({ viewContext }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const outlet = useOutletContext();
   const layout = viewContext || outlet || {};
   const { setIsFormView = () => { } } = layout;
@@ -193,6 +194,18 @@ function LpaPageContent({ viewContext }) {
     setEditor(next);
     initialSnapshotRef.current = JSON.stringify(next);
   };
+  const handledMailViewRef = useRef('');
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const workbookId = params.get('viewWorkbookId');
+    const sheetIndex = Number(params.get('sheetIndex') || 0);
+    const token = workbookId ? `${workbookId}:${sheetIndex}` : '';
+    if (!token || loading || handledMailViewRef.current === token) return;
+    const record = records.find((item) => String(item.id) === String(workbookId) && item.section === 'assembly');
+    if (!record || !Array.isArray(record.sheets) || !record.sheets[sheetIndex]) return;
+    handledMailViewRef.current = token;
+    openSheet(record, sheetIndex).then(() => navigate('/cms/lpa', { replace: true }));
+  }, [location.search, loading, records, navigate]);
   const authUser = useSelector(state => state.auth?.user);
   const isAdmin = Boolean(
     authUser?.isAdmin ||
@@ -654,6 +667,31 @@ function LpaPageContent({ viewContext }) {
     setIsPdcaSheetOpen(true);
   };
 
+  const handledPdcaViewRef = useRef('');
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const sheetId = params.get('viewPdcaSheetId');
+    if (!sheetId) return;
+    const section = params.get('section') === 'cc' ? 'cc' : 'assembly';
+    const unit = params.get('unit') || 'Bawal';
+    const token = `${section}:${unit}:${sheetId}`;
+    if (handledPdcaViewRef.current === token) return;
+    if (activeSection !== section) {
+      setActiveSection(section);
+      return;
+    }
+    if (selectedUnit !== unit) {
+      setSelectedUnit(unit);
+      return;
+    }
+    const sheet = allPdcaSheets.find(item => String(item.id || item._id) === String(sheetId));
+    if (!sheet) return;
+    handledPdcaViewRef.current = token;
+    setActiveSubTab('pdca');
+    handleOpenSpecificPdcaSheet(sheet);
+    navigate('/cms/lpa', { replace: true });
+  }, [location.search, activeSection, selectedUnit, allPdcaSheets, navigate]);
+
   const handleCreateCustomPdcaSheet = (e) => {
     e.preventDefault();
     if (!isAdmin) {
@@ -821,15 +859,6 @@ function LpaPageContent({ viewContext }) {
       <button type="button" disabled={busy} onClick={handleBack} className={button}><ArrowLeft size={16} />Back</button>
       <span className="text-xs text-slate-500 truncate max-w-xs">{editor.name} · {sheet.name}{dirty ? ' · Unsaved changes' : ''}</span>
       <div className="ml-auto flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setIsSendMailOpen(true)}
-          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-blue-600 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition-colors shadow-2xs cursor-pointer"
-          title="Send check sheet by email"
-        >
-          <Mail size={15} className="text-blue-600" />
-          <span>Send Mail</span>
-        </button>
         <button type="button" onClick={() => setZoom(value => Math.min(200, value + 10))} disabled={zoom >= 200} className={button} title="Zoom In"><ZoomIn size={16} /><span className="sr-only">Zoom In</span></button>
         <span className="text-xs w-10 text-center">{zoom}%</span>
         <button type="button" onClick={() => setZoom(value => Math.max(50, value - 10))} disabled={zoom <= 50} className={button} title="Zoom Out"><ZoomOut size={16} /><span className="sr-only">Zoom Out</span></button>
@@ -904,29 +933,13 @@ function LpaPageContent({ viewContext }) {
       </div>
     )}
 
-    {/* Send Mail Modal */}
-    <SendMailModal
-      isOpen={isSendMailOpen}
-      onClose={() => setIsSendMailOpen(false)}
-      formType={editor.section === 'cc' ? 'cc' : 'assembly'}
-      title={editor.name || (editor.section === 'cc' ? 'LPA CHECK SHEET LEVEL-3 C&C QA/Prod.' : 'Assembly LPA Check Sheet')}
-      metadata={{
-        auditDate: sheet?.date || editor.auditDate || editor.date,
-        shift: sheet?.shift || editor.shift,
-        department: sheet?.department || editor.department,
-        sectionName: sheet?.sectionName || editor.sectionName,
-        line: sheet?.line || editor.line,
-        unit: editor.unit || selectedUnit,
-        auditors: Array.isArray(sheet?.auditors) ? sheet.auditors.join(', ') : (sheet?.auditors || editor.auditor || editor.auditors),
-        scorePercentage: sheet?.scorePercentage || sheet?.percentage || editor.scorePercentage || editor.percentage,
-        totalMarks: sheet?.totalMarks || editor.totalMarks,
-        totalScore: sheet?.totalScore || editor.totalScore
-      }}
-    />
   </div>;
 
   return <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm text-slate-800">
     <div className="p-6 space-y-6">
+      <div className="flex justify-end">
+        <button type="button" onClick={() => setIsSendMailOpen(true)} className="inline-flex items-center gap-1.5 rounded-lg border border-blue-600 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"><Mail size={15} />Send Mail</button>
+      </div>
       <div className="flex flex-wrap items-start justify-between gap-4 pb-2 border-b border-slate-100">
         <div className="flex flex-col gap-3">
           {/* Unit Option */}
@@ -1451,6 +1464,28 @@ function LpaPageContent({ viewContext }) {
           </div>
         </div>
       )}
+      <SendMailModal
+        isOpen={isSendMailOpen}
+        onClose={() => setIsSendMailOpen(false)}
+        formType={activeSection === 'cc' ? 'cc' : activeSubTab === 'pdca' ? 'pdca' : 'assembly'}
+        title={`${activeSection === 'cc' ? 'C&C' : 'Assembly'} ${activeSubTab === 'pdca' ? 'PDCA' : 'LPA'} Sheet`}
+        metadata={{ auditDate: pdcaDate, unit: selectedUnit, sectionName: activeSection === 'cc' ? 'C&C' : 'Assembly' }}
+        pdcaLabel="LPA Observation PDCA"
+        assemblySheets={records}
+        pdcaSheets={allPdcaSheets.map(sheet => ({ ...sheet, source: 'lpa', section: activeSection }))}
+        onViewAssemblySheet={({ record, sheetIndex: selectedSheetIndex }) => {
+          setIsSendMailOpen(false);
+          openSheet(record, selectedSheetIndex);
+        }}
+        onViewPDCASheet={sheet => {
+          setIsSendMailOpen(false);
+          if (sheet.source === 'lpa') {
+            handleOpenSpecificPdcaSheet(sheet);
+          } else {
+            navigate(`/cms/pdca?sheet=${encodeURIComponent(sheet.id || sheet._id)}`);
+          }
+        }}
+      />
     </div>
   </div>;
 }

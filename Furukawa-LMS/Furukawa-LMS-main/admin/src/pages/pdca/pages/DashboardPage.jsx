@@ -12,6 +12,8 @@ import AddPDCAModal from '@components/pdca/AddPDCAModal';
 import AddCFTModal from '@components/pdca/AddCFTModal';
 import AddMemberModal from '@components/pdca/AddMemberModal';
 import FormDeletionDialog from '@components/shared/FormDeletionDialog';
+import SendMailModal from '@components/common/SendMailModal';
+import { Mail } from 'lucide-react';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 
 export default function DashboardPage() {
@@ -52,6 +54,7 @@ export default function DashboardPage() {
   const [targetItemForMemberModal, setTargetItemForMemberModal] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteError, setDeleteError] = useState('');
+  const [isSendMailOpen, setIsSendMailOpen] = useState(false);
 
   const itemsPerPage = 8;
 
@@ -297,6 +300,9 @@ export default function DashboardPage() {
       />
 
       {/* 3. Search Bar + Action Buttons */}
+      <div className="flex items-center justify-end">
+        <button type="button" onClick={() => setIsSendMailOpen(true)} className="mb-2 inline-flex items-center gap-1.5 rounded-lg border border-blue-600 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"><Mail size={15} />Send Mail</button>
+      </div>
       <TableActionBar
         searchQuery={searchQuery}
         setSearchQuery={(q) => {
@@ -399,6 +405,7 @@ export default function DashboardPage() {
         onCancel={() => { setDeleteTarget(null); setDeleteError(''); }}
         onDelete={confirmDeletePDCA}
       />
+      <SendMailModal isOpen={isSendMailOpen} onClose={() => setIsSendMailOpen(false)} formType="pdca" title="PDCA Report" metadata={{ auditDate: selectedDate, unit: selectedPlant }} />
     </div>
   );
 }

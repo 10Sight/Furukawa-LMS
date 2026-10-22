@@ -53,8 +53,6 @@ export default function SendMailModal({
   const [defaultCcEmails, setDefaultCcEmails] = useState([]);
   const [defaultToDraft, setDefaultToDraft] = useState([]);
   const [defaultCcDraft, setDefaultCcDraft] = useState([]);
-  const [defaultToInput, setDefaultToInput] = useState('');
-  const [defaultCcInput, setDefaultCcInput] = useState('');
   const [defaultMailsLoading, setDefaultMailsLoading] = useState(false);
   const [defaultMailsSaving, setDefaultMailsSaving] = useState(false);
   const ccInputsRef = useRef([]);
@@ -187,46 +185,42 @@ export default function SendMailModal({
   };
 
   const openDefaultMailPopup = () => {
-    setDefaultToDraft(defaultToEmails);
-    setDefaultCcDraft(defaultCcEmails);
-    setDefaultToInput('');
-    setDefaultCcInput('');
+    setDefaultToDraft(defaultToEmails.length ? [...defaultToEmails] : ['']);
+    setDefaultCcDraft(defaultCcEmails.length ? [...defaultCcEmails] : ['']);
     setShowDefaultMailPopup(true);
   };
 
   const addDefaultEmailDraft = (target) => {
-    const isCc = target === 'cc';
-    const input = isCc ? defaultCcInput : defaultToInput;
-    const draft = isCc ? defaultCcDraft : defaultToDraft;
-    const email = input.trim().toLowerCase();
-    if (!email) return;
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      toast.error('Enter a valid email address.');
-      return;
-    }
-    if (draft.some((entry) => entry.toLowerCase() === email)) {
-      toast.error(`That email address is already in the default ${target.toUpperCase()} list.`);
-      return;
-    }
-    if (isCc) {
-      setDefaultCcDraft((current) => [...current, email]);
-      setDefaultCcInput('');
-    } else {
-      setDefaultToDraft((current) => [...current, email]);
-      setDefaultToInput('');
-    }
+    const setDraft = target === 'cc' ? setDefaultCcDraft : setDefaultToDraft;
+    setDraft((current) => [...current, '']);
+  };
+
+  const changeDefaultEmailDraft = (target, index, value) => {
+    const setDraft = target === 'cc' ? setDefaultCcDraft : setDefaultToDraft;
+    setDraft((current) => current.map((email, rowIndex) => rowIndex === index ? value : email));
+  };
+
+  const removeDefaultEmailDraft = (target, index) => {
+    const setDraft = target === 'cc' ? setDefaultCcDraft : setDefaultToDraft;
+    setDraft((current) => current.filter((_, rowIndex) => rowIndex !== index));
   };
 
   const saveDefaultEmails = async () => {
-    if (defaultToInput.trim() || defaultCcInput.trim()) {
-      toast.error('Add or clear both pending email addresses before saving.');
-      return;
-    }
     const to = [...new Set(defaultToDraft.map((email) => email.trim().toLowerCase()).filter(Boolean))];
     const cc = [...new Set(defaultCcDraft.map((email) => email.trim().toLowerCase()).filter(Boolean))];
-    const invalidEmail = [...to, ...cc].find((email) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
+    const invalidEmail = [...defaultToDraft, ...defaultCcDraft]
+      .map((email) => email.trim())
+      .find((email) => email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
     if (invalidEmail) {
       toast.error(`Enter a valid email address: ${invalidEmail}`);
+      return;
+    }
+    const hasDuplicate = (addresses) => {
+      const values = addresses.map((email) => email.trim().toLowerCase()).filter(Boolean);
+      return new Set(values).size !== values.length;
+    };
+    if (hasDuplicate(defaultToDraft) || hasDuplicate(defaultCcDraft)) {
+      toast.error('Remove duplicate addresses within the To or CC list before saving.');
       return;
     }
     setDefaultMailsSaving(true);
@@ -722,34 +716,33 @@ export default function SendMailModal({
             </div>
             <div className="space-y-4 overflow-y-auto p-4 flex-1">
               {[
-                { target: 'to', title: 'Default Recipients (To)', draft: defaultToDraft, setDraft: setDefaultToDraft, input: defaultToInput, setInput: setDefaultToInput },
-                { target: 'cc', title: 'Default CC', draft: defaultCcDraft, setDraft: setDefaultCcDraft, input: defaultCcInput, setInput: setDefaultCcInput }
-              ].map(({ target, title: sectionTitle, draft, setDraft, input, setInput }) => (
+                { target: 'to', title: 'Default Recipients (To)', draft: defaultToDraft },
+                { target: 'cc', title: 'Default CC', draft: defaultCcDraft }
+              ].map(({ target, title: sectionTitle, draft }) => (
                 <section key={target} className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
                   <h4 className="text-xs font-bold text-slate-700">{sectionTitle}</h4>
-                  <div className="flex gap-2">
-                    <input
-                      type="email"
-                      value={input}
-                      onChange={(event) => setInput(event.target.value)}
-                      onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addDefaultEmailDraft(target); } }}
-                      placeholder={`Enter ${target.toUpperCase()} email address`}
-                      className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-xs outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-500/20"
-                    />
-                    <button type="button" onClick={() => addDefaultEmailDraft(target)} className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100">
-                      <Plus className="h-3.5 w-3.5" /> Add Mail
-                    </button>
-                  </div>
-                  <div className="max-h-36 space-y-1.5 overflow-y-auto">
-                    {defaultMailsLoading ? <p className="py-2 text-xs text-slate-500">Loading saved addresses…</p> : draft.length ? draft.map((email, index) => (
-                      <div key={`${email}-${index}`} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
-                        <span className="break-all">{email}</span>
-                        <button type="button" onClick={() => setDraft((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="ml-2 rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600" title={`Remove ${target.toUpperCase()} address`}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    )) : <p className="py-2 text-xs text-slate-500">No default addresses saved yet.</p>}
-                  </div>
+                  {defaultMailsLoading ? <p className="py-2 text-xs text-slate-500">Loading saved addresses…</p> : (
+                    <div className="max-h-40 space-y-1.5 overflow-y-auto">
+                      {draft.map((email, index) => (
+                        <div key={`${target}-${index}`} className="flex items-center gap-2">
+                          <input
+                            type="email"
+                            value={email}
+                            onChange={(event) => changeDefaultEmailDraft(target, index, event.target.value)}
+                            onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addDefaultEmailDraft(target); } }}
+                            placeholder={`Enter ${target.toUpperCase()} email address`}
+                            className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-xs outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-500/20"
+                          />
+                          <button type="button" onClick={() => removeDefaultEmailDraft(target, index)} className="rounded p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600" title={`Remove ${target.toUpperCase()} address`}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <button type="button" onClick={() => addDefaultEmailDraft(target)} className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100">
+                    <Plus className="h-3.5 w-3.5" /> Add Mail
+                  </button>
                 </section>
               ))}
               </div>

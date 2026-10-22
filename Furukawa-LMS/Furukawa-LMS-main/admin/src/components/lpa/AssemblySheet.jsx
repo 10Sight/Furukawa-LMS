@@ -467,11 +467,23 @@ export default function AssemblySheet({
 
   const hasColumnData = useCallback((colGroup) => {
     if (!colGroup) return false;
-    if (colGroup.shift === 'A') return Boolean(sourceShiftStatus.A);
-    if (colGroup.shift === 'B') return Boolean(sourceShiftStatus.B);
-    if (colGroup.level === 'L2' && sheetTargetLevel === 'L1') return Boolean(sourceShiftStatus.L2);
-    return true;
-  }, [sourceShiftStatus, sheetTargetLevel]);
+    // Editable columns can gain data after the sheet was created, while the
+    // sourceShiftStatus snapshot remains unchanged. Check the live worksheet
+    // cells first so the totals reflect edits made in this sheet.
+    const hasCurrentData = sheet.rows.some((row, rowIndex) => {
+      if (rowIndex < 3 || rowIndex > 36 || !row) return false;
+      const observation = row[colGroup.obsCol]?.value ?? row[colGroup.obsCol]?.formatted;
+      const score = row[colGroup.scoreCol]?.value ?? row[colGroup.scoreCol]?.formatted;
+      return [observation, score].some(value => value != null && String(value).trim() !== '');
+    });
+    if (hasCurrentData) return true;
+    if (colGroup.isFetched) {
+      if (colGroup.shift === 'A') return Boolean(sourceShiftStatus.A);
+      if (colGroup.shift === 'B') return Boolean(sourceShiftStatus.B);
+      if (colGroup.level === 'L2' && sheetTargetLevel === 'L1') return Boolean(sourceShiftStatus.L2);
+    }
+    return false;
+  }, [sheet.rows, sourceShiftStatus, sheetTargetLevel]);
 
   const isLevelReadOnly = useCallback((colGroup) => {
     if (!colGroup) return false;

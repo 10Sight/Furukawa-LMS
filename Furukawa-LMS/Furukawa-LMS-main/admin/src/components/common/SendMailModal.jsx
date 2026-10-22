@@ -49,9 +49,12 @@ export default function SendMailModal({
   const [sending, setSending] = useState(false);
   const [sentSuccess, setSentSuccess] = useState(false);
   const [showDefaultMailPopup, setShowDefaultMailPopup] = useState(false);
-  const [defaultEmails, setDefaultEmails] = useState([]);
-  const [defaultEmailDraft, setDefaultEmailDraft] = useState([]);
-  const [defaultEmailInput, setDefaultEmailInput] = useState('');
+  const [defaultToEmails, setDefaultToEmails] = useState([]);
+  const [defaultCcEmails, setDefaultCcEmails] = useState([]);
+  const [defaultToDraft, setDefaultToDraft] = useState([]);
+  const [defaultCcDraft, setDefaultCcDraft] = useState([]);
+  const [defaultToInput, setDefaultToInput] = useState('');
+  const [defaultCcInput, setDefaultCcInput] = useState('');
   const [defaultMailsLoading, setDefaultMailsLoading] = useState(false);
   const [defaultMailsSaving, setDefaultMailsSaving] = useState(false);
   const ccInputsRef = useRef([]);
@@ -69,7 +72,7 @@ export default function SendMailModal({
     setToInput('');
     setRecipients([]);
     setCcEmails(['']);
-    setShowCc(false);
+    setShowCc(true);
     setRemarks('');
     setAssemblySelection('');
     setPdcaSelection('');
@@ -85,9 +88,10 @@ export default function SendMailModal({
     lpaApi.getDefaultMailRecipients()
       .then((result) => {
         if (!active) return;
-        const emails = Array.isArray(result?.emails) ? result.emails : [];
-        setDefaultEmails(emails);
-        setDefaultEmailDraft(emails);
+        const to = Array.isArray(result?.to) ? result.to : (Array.isArray(result?.emails) ? result.emails : []);
+        const cc = Array.isArray(result?.cc) ? result.cc : [];
+        setDefaultToEmails(to);
+        setDefaultCcEmails(cc);
       })
       .catch((error) => {
         if (active) toast.error(error.response?.data?.message || 'Could not load saved default email addresses.');
@@ -182,39 +186,60 @@ export default function SendMailModal({
     }
   };
 
-  const addDefaultEmailDraft = () => {
-    const email = defaultEmailInput.trim().toLowerCase();
+  const openDefaultMailPopup = () => {
+    setDefaultToDraft(defaultToEmails);
+    setDefaultCcDraft(defaultCcEmails);
+    setDefaultToInput('');
+    setDefaultCcInput('');
+    setShowDefaultMailPopup(true);
+  };
+
+  const addDefaultEmailDraft = (target) => {
+    const isCc = target === 'cc';
+    const input = isCc ? defaultCcInput : defaultToInput;
+    const draft = isCc ? defaultCcDraft : defaultToDraft;
+    const email = input.trim().toLowerCase();
     if (!email) return;
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       toast.error('Enter a valid email address.');
       return;
     }
-    if (defaultEmailDraft.some((entry) => entry.toLowerCase() === email)) {
-      toast.error('That email address is already in the default list.');
+    if (draft.some((entry) => entry.toLowerCase() === email)) {
+      toast.error(`That email address is already in the default ${target.toUpperCase()} list.`);
       return;
     }
-    setDefaultEmailDraft((current) => [...current, email]);
-    setDefaultEmailInput('');
+    if (isCc) {
+      setDefaultCcDraft((current) => [...current, email]);
+      setDefaultCcInput('');
+    } else {
+      setDefaultToDraft((current) => [...current, email]);
+      setDefaultToInput('');
+    }
   };
 
   const saveDefaultEmails = async () => {
-    if (defaultEmailInput.trim()) {
-      toast.error('Add or clear the email address before saving.');
+    if (defaultToInput.trim() || defaultCcInput.trim()) {
+      toast.error('Add or clear both pending email addresses before saving.');
       return;
     }
-    const invalidEmail = defaultEmailDraft.find((email) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
+    const to = [...new Set(defaultToDraft.map((email) => email.trim().toLowerCase()).filter(Boolean))];
+    const cc = [...new Set(defaultCcDraft.map((email) => email.trim().toLowerCase()).filter(Boolean))];
+    const invalidEmail = [...to, ...cc].find((email) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
     if (invalidEmail) {
       toast.error(`Enter a valid email address: ${invalidEmail}`);
       return;
     }
     setDefaultMailsSaving(true);
     try {
-      const result = await lpaApi.saveDefaultMailRecipients(defaultEmailDraft);
-      const emails = Array.isArray(result?.emails) ? result.emails : defaultEmailDraft;
-      setDefaultEmails(emails);
-      setDefaultEmailDraft(emails);
+      const result = await lpaApi.saveDefaultMailRecipients(to, cc);
+      const savedTo = Array.isArray(result?.to) ? result.to : to;
+      const savedCc = Array.isArray(result?.cc) ? result.cc : cc;
+      setDefaultToEmails(savedTo);
+      setDefaultCcEmails(savedCc);
+      setDefaultToDraft(savedTo);
+      setDefaultCcDraft(savedCc);
       setShowDefaultMailPopup(false);
-      toast.success('Default email addresses saved.');
+      toast.success('Default To and CC addresses saved.');
     } catch (error) {
       toast.error(error.response?.data?.message || 'Could not save default email addresses.');
     } finally {
@@ -223,23 +248,35 @@ export default function SendMailModal({
   };
 
   const addDefaultEmailsToRecipients = () => {
-    if (defaultEmails.length === 0) {
-      toast.error('No saved default email addresses. Add and save addresses first.');
-      return;
-    }
-    setRecipients((current) => {
-      const next = [...current];
-      const existing = new Set(next.map((email) => email.toLowerCase()));
-      defaultEmails.forEach((email) => {
-        if (!existing.has(email.toLowerCase())) {
-          next.push(email);
-          existing.add(email.toLowerCase());
-        }
+    const hasDefaults = defaultToEmails.length > 0 || defaultCcEmails.length > 0;
+    if (defaultToEmails.length) {
+      setRecipients((current) => {
+        const next = [...current];
+        const existing = new Set(next.map((email) => email.toLowerCase()));
+        defaultToEmails.forEach((email) => {
+          if (!existing.has(email.toLowerCase())) {
+            next.push(email);
+            existing.add(email.toLowerCase());
+          }
+        });
+        return next;
       });
-      return next;
-    });
-    setShowDefaultMailPopup(false);
-    toast.success('Saved default addresses added to To.');
+    }
+    if (defaultCcEmails.length) {
+      setShowCc(true);
+      setCcEmails((current) => {
+        const next = current.flatMap((value) => value.split(/[,;\s]+/).map((email) => email.trim()).filter(Boolean));
+        const existing = new Set(next.map((email) => email.toLowerCase()));
+        defaultCcEmails.forEach((email) => {
+          if (!existing.has(email.toLowerCase())) {
+            next.push(email);
+            existing.add(email.toLowerCase());
+          }
+        });
+        return next.length ? next : [''];
+      });
+    }
+    if (hasDefaults) toast.success('Saved default To and CC addresses added to their matching fields.');
   };
 
   // Multiple CC handlers
@@ -333,6 +370,11 @@ export default function SendMailModal({
     }
 
     const finalCcList = ccEmails.map(e => e.trim()).filter(Boolean);
+    const invalidCcEmail = finalCcList.find(email => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
+    if (invalidCcEmail) {
+      toast.error(`Please enter a valid CC email address: ${invalidCcEmail}`);
+      return;
+    }
 
     requestInFlightRef.current = true;
     setSending(true);
@@ -391,7 +433,8 @@ export default function SendMailModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-150">
       <div
-        className="w-full max-w-xl bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-150"
+        style={{ minHeight: 'min(620px, 90vh)' }}
+        className="w-full max-w-3xl max-h-[96vh] bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col animate-in zoom-in-95 duration-150"
         role="dialog"
         aria-modal="true"
         aria-labelledby="send-mail-modal-title"
@@ -417,10 +460,10 @@ export default function SendMailModal({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => { setDefaultEmailDraft(defaultEmails); setDefaultEmailInput(''); setShowDefaultMailPopup(true); }}
+              onClick={() => { openDefaultMailPopup(); addDefaultEmailsToRecipients(); }}
               disabled={sending || defaultMailsLoading}
               className="px-2.5 py-1.5 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg whitespace-nowrap disabled:opacity-50"
-              title="Manage and add saved default recipients"
+              title="Manage saved default To and CC addresses"
             >
               Add Default Mails
             </button>
@@ -445,17 +488,19 @@ export default function SendMailModal({
                 <span>To (Recipients)</span>
                 <span className="text-red-500">*</span>
               </label>
-              {!showCc && (
-                <button
-                  type="button"
-                  onClick={handleOpenCcSection}
-                  className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-2.5 py-0.5 rounded-md font-semibold text-xs border border-transparent hover:border-blue-200 transition-all cursor-pointer"
-                  title="Add CC recipients (optional)"
-                >
-                  <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-                  <span>Add CC</span>
-                </button>
-              )}
+              <div className="flex items-center gap-2">
+                {!showCc && (
+                  <button
+                    type="button"
+                    onClick={handleOpenCcSection}
+                    className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-2.5 py-0.5 rounded-md font-semibold text-xs border border-transparent hover:border-blue-200 transition-all cursor-pointer"
+                    title="Add CC recipients (optional)"
+                  >
+                    <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                    <span>Add CC</span>
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Recipient Pills + Input Box */}
@@ -536,16 +581,14 @@ export default function SendMailModal({
                       placeholder={idx === 0 ? "Type CC email..." : `Type CC email ${idx + 1}...`}
                       className="flex-1 px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-slate-800 placeholder:text-slate-400 shadow-2xs"
                     />
-                    {ccEmails.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveCcRow(idx)}
-                        className="text-slate-400 hover:text-rose-600 p-1.5 rounded-md hover:bg-rose-50 transition-colors cursor-pointer"
-                        title="Remove this CC"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveCcRow(idx)}
+                      className="text-slate-400 hover:text-rose-600 p-1.5 rounded-md hover:bg-rose-50 transition-colors cursor-pointer"
+                      title="Remove this CC"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 ))}
               </div>
@@ -667,43 +710,51 @@ export default function SendMailModal({
       </div>
       {showDefaultMailPopup && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/30" role="presentation">
-          <section className="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="default-mails-title">
+          <section style={{ minHeight: 'min(480px, 85vh)' }} className="w-full max-w-xl max-h-[92vh] rounded-xl border border-slate-200 bg-white shadow-2xl flex flex-col overflow-hidden" role="dialog" aria-modal="true" aria-labelledby="default-mails-title">
             <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
               <div>
-                <h3 id="default-mails-title" className="text-sm font-bold text-slate-800">Default email addresses</h3>
-                <p className="mt-0.5 text-[11px] text-slate-500">Save addresses for your account, then add them to To when needed.</p>
+                <h3 id="default-mails-title" className="text-sm font-bold text-slate-800">Default mail recipients</h3>
+                <p className="mt-0.5 text-[11px] text-slate-500">Manage To and CC defaults separately. Save both lists together.</p>
               </div>
               <button type="button" onClick={() => setShowDefaultMailPopup(false)} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600" aria-label="Close default email addresses">
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="space-y-3 p-4">
-              <div className="flex gap-2">
-                <input
-                  type="email"
-                  value={defaultEmailInput}
-                  onChange={(event) => setDefaultEmailInput(event.target.value)}
-                  onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addDefaultEmailDraft(); } }}
-                  placeholder="Enter email address"
-                  className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-xs outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-500/20"
-                />
-                <button type="button" onClick={addDefaultEmailDraft} className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100">
-                  <Plus className="h-3.5 w-3.5" /> Add Mail
-                </button>
-              </div>
-              <div className="max-h-40 space-y-1.5 overflow-y-auto">
-                {defaultMailsLoading ? <p className="py-2 text-xs text-slate-500">Loading saved addresses…</p> : defaultEmailDraft.length ? defaultEmailDraft.map((email, index) => (
-                  <div key={`${email}-${index}`} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-                    <span className="break-all">{email}</span>
-                    <button type="button" onClick={() => setDefaultEmailDraft((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="ml-2 rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600" title="Remove address">
-                      <Trash2 className="h-3.5 w-3.5" />
+            <div className="space-y-4 overflow-y-auto p-4 flex-1">
+              {[
+                { target: 'to', title: 'Default Recipients (To)', draft: defaultToDraft, setDraft: setDefaultToDraft, input: defaultToInput, setInput: setDefaultToInput },
+                { target: 'cc', title: 'Default CC', draft: defaultCcDraft, setDraft: setDefaultCcDraft, input: defaultCcInput, setInput: setDefaultCcInput }
+              ].map(({ target, title: sectionTitle, draft, setDraft, input, setInput }) => (
+                <section key={target} className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+                  <h4 className="text-xs font-bold text-slate-700">{sectionTitle}</h4>
+                  <div className="flex gap-2">
+                    <input
+                      type="email"
+                      value={input}
+                      onChange={(event) => setInput(event.target.value)}
+                      onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addDefaultEmailDraft(target); } }}
+                      placeholder={`Enter ${target.toUpperCase()} email address`}
+                      className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-xs outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-500/20"
+                    />
+                    <button type="button" onClick={() => addDefaultEmailDraft(target)} className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100">
+                      <Plus className="h-3.5 w-3.5" /> Add Mail
                     </button>
                   </div>
-                )) : <p className="py-2 text-xs text-slate-500">No default addresses saved yet.</p>}
+                  <div className="max-h-36 space-y-1.5 overflow-y-auto">
+                    {defaultMailsLoading ? <p className="py-2 text-xs text-slate-500">Loading saved addresses…</p> : draft.length ? draft.map((email, index) => (
+                      <div key={`${email}-${index}`} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+                        <span className="break-all">{email}</span>
+                        <button type="button" onClick={() => setDraft((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="ml-2 rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600" title={`Remove ${target.toUpperCase()} address`}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    )) : <p className="py-2 text-xs text-slate-500">No default addresses saved yet.</p>}
+                  </div>
+                </section>
+              ))}
               </div>
-            </div>
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3">
-              <button type="button" onClick={addDefaultEmailsToRecipients} disabled={defaultMailsLoading || defaultEmails.length === 0} className="text-xs font-semibold text-blue-700 hover:text-blue-900 disabled:cursor-not-allowed disabled:opacity-50">Add Default Mails</button>
+              <span className="text-[11px] text-slate-500">Saved To and CC defaults are added to their matching fields when you click Add Default Mails.</span>
               <div className="flex gap-2">
                 <button type="button" onClick={() => setShowDefaultMailPopup(false)} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100">Cancel</button>
                 <button type="button" onClick={saveDefaultEmails} disabled={defaultMailsLoading || defaultMailsSaving} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50">

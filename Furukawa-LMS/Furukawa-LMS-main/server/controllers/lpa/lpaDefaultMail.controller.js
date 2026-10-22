@@ -24,25 +24,32 @@ export const getDefaultMailRecipients = asyncHandler(async (req, res) => {
   if (!userId) throw new ApiError("A signed-in user is required to access default mail addresses.", 401);
   await ensureDefaultMailTable();
   const [rows] = await executeQuery("SELECT emailAddresses FROM dbo.lpa_default_mail_recipients WHERE userId = ?", [String(userId)]);
-  let emails = [];
-  try { emails = rows[0]?.emailAddresses ? JSON.parse(rows[0].emailAddresses) : []; } catch { emails = []; }
-  res.json(new ApiResponse(200, { emails: Array.isArray(emails) ? emails : [] }, "Default mail addresses fetched."));
+  let stored = {};
+  try { stored = rows[0]?.emailAddresses ? JSON.parse(rows[0].emailAddresses) : {}; } catch { stored = {}; }
+  // Older saved data was a single To list; continue to expose it as To defaults.
+  const to = Array.isArray(stored) ? stored : (Array.isArray(stored.to) ? stored.to : []);
+  const cc = Array.isArray(stored.cc) ? stored.cc : [];
+  res.json(new ApiResponse(200, { to, cc, emails: to }, "Default mail addresses fetched."));
 });
 
 export const saveDefaultMailRecipients = asyncHandler(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) throw new ApiError("A signed-in user is required to save default mail addresses.", 401);
-  const incoming = req.body?.emails;
-  if (!Array.isArray(incoming)) throw new ApiError("Email addresses must be provided as a list.", 400);
-  const emails = [...new Set(incoming.map((email) => String(email).trim().toLowerCase()).filter(Boolean))];
-  if (emails.some((email) => !validEmail(email))) throw new ApiError("Enter valid email addresses before saving.", 400);
+  const toIncoming = req.body?.to ?? req.body?.emails;
+  const ccIncoming = req.body?.cc ?? [];
+  if (!Array.isArray(toIncoming) || !Array.isArray(ccIncoming)) throw new ApiError("To and CC email addresses must be provided as lists.", 400);
+  const normalize = (addresses) => [...new Set(addresses.map((email) => String(email).trim().toLowerCase()).filter(Boolean))];
+  const to = normalize(toIncoming);
+  const cc = normalize(ccIncoming);
+  if ([...to, ...cc].some((email) => !validEmail(email))) throw new ApiError("Enter valid email addresses before saving.", 400);
+  const emailLists = JSON.stringify({ to, cc });
 
   await ensureDefaultMailTable();
   const [existing] = await executeQuery("SELECT userId FROM dbo.lpa_default_mail_recipients WHERE userId = ?", [String(userId)]);
   if (existing.length) {
-    await executeQuery("UPDATE dbo.lpa_default_mail_recipients SET emailAddresses = ?, updatedAt = GETDATE() WHERE userId = ?", [JSON.stringify(emails), String(userId)]);
+    await executeQuery("UPDATE dbo.lpa_default_mail_recipients SET emailAddresses = ?, updatedAt = GETDATE() WHERE userId = ?", [emailLists, String(userId)]);
   } else {
-    await executeQuery("INSERT INTO dbo.lpa_default_mail_recipients (userId, emailAddresses) VALUES (?, ?)", [String(userId), JSON.stringify(emails)]);
+    await executeQuery("INSERT INTO dbo.lpa_default_mail_recipients (userId, emailAddresses) VALUES (?, ?)", [String(userId), emailLists]);
   }
-  res.json(new ApiResponse(200, { emails }, "Default mail addresses saved."));
+  res.json(new ApiResponse(200, { to, cc, emails: to }, "Default mail addresses saved."));
 });

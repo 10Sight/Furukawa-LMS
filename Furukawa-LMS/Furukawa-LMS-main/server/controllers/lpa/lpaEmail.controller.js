@@ -113,13 +113,19 @@ const buildSheetEmail = (assembly, pdca, portalBaseUrl = ENV.ADMIN_URL || ENV.FR
   const pdcaUrl = new URL(`${pdcaPath}?${pdcaParams}`, base).toString();
 
   const assemblyName = escapeHtml(assembly.name || "Assembly sheet");
-  const pdcaName = escapeHtml(pdca.name || "LPA Observation PDCA sheet");
-  const moduleName = pdca.source === "lpa" && pdca.section === "cc" ? "C&C" : "Assembly";
+  const pdcaName = escapeHtml(pdca.name || "PDCA sheet");
+  const moduleName = assembly.section === "cc" || (pdca.source === "lpa" && pdca.section === "cc") ? "C&C" : "Assembly";
   const assemblyTitle = assembly.section === "cc" ? "LPA C&C Sheet" : "LPA Assembly Sheet";
-  const pdcaTitle = pdca.source === "lpa" ? `${moduleName} LPA Observation PDCA` : "PDCA Sheet";
+  const pdcaTitle = pdca.source === "lpa" ? `LPA Observation ${moduleName} PDCA` : `${moduleName} PDCA Sheet`;
+  const remarksHtml = remarks
+    ? `<p style="margin:16px 0;font:14px Arial,sans-serif;color:#334155;"><strong>Remarks:</strong> ${escapeHtml(remarks).replace(/\r?\n/g, "<br>")}</p>`
+    : "";
   const html = [
-    `<p><strong>Remarks:</strong> ${escapeHtml(remarks).replace(/\r?\n/g, "<br>") || "-"}</p>`,
-    `<p><a href="${escapeHtml(assemblyUrl)}">View ${assemblyName}</a> · <a href="${escapeHtml(pdcaUrl)}">View ${pdcaName}</a></p>`,
+    `<p style="margin:0 0 12px;font:14px Arial,sans-serif;color:#1e293b;">Dear Sir,</p>`,
+    `<p style="margin:0 0 18px;font:700 15px Arial,sans-serif;color:#1e293b;">Safety First</p>`,
+    `<p style="margin:8px 0;font:14px Arial,sans-serif;color:#334155;"><strong>${escapeHtml(assemblyTitle)}:</strong> <a href="${escapeHtml(assemblyUrl)}" style="color:#2563eb;text-decoration:underline;">${assemblyName}</a></p>`,
+    `<p style="margin:8px 0;font:14px Arial,sans-serif;color:#334155;"><strong>${escapeHtml(pdcaTitle)}:</strong> <a href="${escapeHtml(pdcaUrl)}" style="color:#2563eb;text-decoration:underline;">${pdcaName}</a></p>`,
+    remarksHtml,
     ...(assemblySheetData ? [renderLpaTable(assemblySheetData, assemblyTitle)] : []),
     ...(pdcaSheetData ? [pdca.source === "lpa" ? renderPdcaTable(pdcaSheetData, `${pdcaTitle} · ${pdcaName}`) : renderPdcaTable(pdcaSheetData, pdcaTitle)] : [])
   ].join("");

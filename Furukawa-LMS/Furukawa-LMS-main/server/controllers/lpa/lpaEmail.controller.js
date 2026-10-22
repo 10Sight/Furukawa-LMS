@@ -65,22 +65,18 @@ const buildSheetEmail = (assembly, pdca, portalBaseUrl = ENV.ADMIN_URL || ENV.FR
   }
   const pdcaUrl = new URL(`${pdcaPath}?${pdcaParams}`, base).toString();
 
-  const assemblyName = escapeHtml(assembly.name || "Assembly sheet");
-  const pdcaName = escapeHtml(pdca.name || "PDCA sheet");
   const moduleName = assembly.section === "cc" || (pdca.source === "lpa" && pdca.section === "cc") ? "C&C" : "Assembly";
   const assemblyTitle = assembly.section === "cc" ? "LPA C&C Sheet" : "LPA Assembly Sheet";
   const pdcaTitle = pdca.source === "lpa" ? `LPA Observation ${moduleName} PDCA` : `${moduleName} PDCA Sheet`;
-  const openButton = url => `<table role="presentation" border="0" cellpadding="0" cellspacing="0" align="center" style="margin:0 auto 18px;"><tr><td align="center" bgcolor="#2563eb" style="background-color:#2563eb;border:1px solid #2563eb;border-radius:6px;"><a href="${escapeHtml(url)}" target="_blank" style="display:inline-block;padding:12px 20px;font-family:Arial,sans-serif;font-size:14px;line-height:18px;font-weight:bold;color:#ffffff;text-decoration:none;border-radius:6px;">Click Here to Open</a></td></tr></table>`;
+  const sheetButtonRow = (label, url) => `<table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="width:100%;table-layout:fixed;margin:0 0 12px;"><tr><td width="65%" valign="middle" style="width:65%;padding:8px 10px 8px 0;font-family:Arial,sans-serif;font-size:14px;line-height:20px;color:#334155;word-break:break-word;"><strong>${escapeHtml(label)}</strong></td><td width="35%" align="center" valign="middle" style="width:35%;padding:8px 0;text-align:center;"><table role="presentation" border="0" cellpadding="0" cellspacing="0" align="center" style="margin:0 auto;"><tr><td align="center" bgcolor="#2563eb" style="background-color:#2563eb;border:1px solid #2563eb;border-radius:6px;"><a href="${escapeHtml(url)}" target="_blank" style="display:inline-block;padding:12px 20px;font-family:Arial,sans-serif;font-size:14px;line-height:18px;font-weight:bold;color:#ffffff;text-decoration:none;border-radius:6px;white-space:nowrap;">Click Here to Open</a></td></tr></table></td></tr></table>`;
   const remarksHtml = remarks
     ? `<p style="margin:16px 0;font:14px Arial,sans-serif;color:#334155;"><strong>Remarks:</strong> ${escapeHtml(remarks).replace(/\r?\n/g, "<br>")}</p>`
     : "";
   const html = [
     `<p style="margin:0 0 12px;font:14px Arial,sans-serif;color:#1e293b;">Dear Sir,</p>`,
     `<p style="margin:0 0 18px;font:700 15px Arial,sans-serif;color:#1e293b;">Safety First</p>`,
-    `<p style="margin:8px 0 6px;font:14px Arial,sans-serif;color:#334155;"><strong>${escapeHtml(assemblyTitle)}:</strong> ${assemblyName}</p>`,
-    openButton(assemblyUrl),
-    `<p style="margin:8px 0 6px;font:14px Arial,sans-serif;color:#334155;"><strong>${escapeHtml(pdcaTitle)}:</strong> ${pdcaName}</p>`,
-    openButton(pdcaUrl),
+    sheetButtonRow(`${assemblyTitle}:`, assemblyUrl),
+    sheetButtonRow(`${pdcaTitle}: ${moduleName} -`, pdcaUrl),
     remarksHtml
   ].join("");
   return { html, assemblyUrl, pdcaUrl };

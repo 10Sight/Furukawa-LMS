@@ -21,7 +21,7 @@ mock.module("../models/daily5MRecord.model.js", {
         findById: async () => db.record,
         upsert: async (input) => { db.saved.push(input); return { id: 99, sessionId: input.sessionId || 99, ...input }; },
         updateStatus: async (id, status) => { db.statusUpdates.push({ id, status }); return true; },
-        findAll: async () => ({ records: [], totalCount: 0 }),
+        findAll: async (filters) => { db.listFilters = filters; return { records: [], totalCount: 0 }; },
         getStats: async () => [],
         getRowStats: async () => ({}),
     }
@@ -164,4 +164,13 @@ test("the dashboard's all-departments scope needs daily5m:read", async () => {
     // Without scope=all the user's own assignment still applies
     const scoped = await call(controller.getDaily5MStats, { user: crimper, params: { departmentId: "1" }, query: {} });
     assert.equal(scoped.error?.statuscode, 403);
+});
+
+test("the records list accepts only known row-status filters", async () => {
+    const ok = await call(controller.get5MRecords, { user: crimper, params: { departmentId: "all" }, query: { scope: "all", rowStatus: "rejected" } });
+    assert.equal(ok.status, 200);
+    assert.equal(db.listFilters.rowStatus, "rejected");
+
+    const bad = await call(controller.get5MRecords, { user: crimper, params: { departmentId: "all" }, query: { scope: "all", rowStatus: "pendingRowCount; DROP" } });
+    assert.equal(bad.error?.statuscode, 400);
 });

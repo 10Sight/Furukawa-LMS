@@ -987,21 +987,24 @@ const EfficiencyChart = () => {
         groups.flatMap(g => Object.entries(g.presShift || {}).filter(([, v]) => v > 0).map(([k]) => k))
     ));
     const chartTitle = (badgeKey, titleKey) => `${t(badgeKey)} ${t(titleKey)}`;
-    const groupSpec = (badgeKey, titleKey, groupHeader, groups, opsAll, level, f, opts, days) => groupSheet({
+    // Actual columns: the same rollup recomputed with each operator's uncapped efficiency
+    const groupSpec = (badgeKey, titleKey, groupHeader, groups, opsAll, opsAtt, level, groupKeys, f, opts, days) => groupSheet({
         name: t(titleKey), title: chartTitle(badgeKey, titleKey), groupHeader, groups,
+        actualGroups: buildHierarchicalData(opsAll, opsAtt, level, groupKeys, days, calculateUserEfficiency),
         operatorCounts: countOperatorsByGroup(opsAll, level), shiftKeys: groupShiftKeys(groups),
         labels: exportLabels, meta: exportMeta(f, opts, days),
     });
     const sheetSpecs = {
         c5: () => skillSplitSheet({
             name: t('charts.attendanceWiseEff'), title: chartTitle('charts.chart1', 'charts.attendanceWiseEff'),
-            rows: d5, shiftKeys: shiftKeys5, labels: exportLabels,
+            rows: d5, actualRows: buildSkillSplit(opsAll5, opsAtt5, days5, calculateUserEfficiency),
+            shiftKeys: shiftKeys5, labels: exportLabels,
             meta: exportMeta(f5, { deptOpts: allDeptOpts, sectionOpts: s5Opts, lineOpts: l5Opts }, days5),
         }),
-        c1: () => groupSpec('charts.chart2', 'charts.deptWiseEff', t('nav.department'), d1, opsAll1, 'department', f1, { deptOpts: allDeptOpts }, days1),
-        c2: () => groupSpec('charts.chart3', 'charts.sectionWiseEff', t('charts.section'), d2, opsAll2, 'section', f2, { deptOpts: allDeptOpts, sectionOpts: s2Opts }, days2),
-        c3: () => groupSpec('charts.chart4', 'charts.lineWiseEff', t('charts.line'), d3, opsAll3, 'line', f3, { deptOpts: allDeptOpts, sectionOpts: s3Opts, lineOpts: l3Opts }, days3),
-        c4: () => groupSpec('charts.chart5', 'charts.subsectionWiseEff', t('charts.subsection'), d4, opsAll4, 'subsection', f4, { deptOpts: allDeptOpts, sectionOpts: s4Opts, lineOpts: l4Opts }, days4),
+        c1: () => groupSpec('charts.chart2', 'charts.deptWiseEff', t('nav.department'), d1, opsAll1, opsAtt1, 'department', allDepts, f1, { deptOpts: allDeptOpts }, days1),
+        c2: () => groupSpec('charts.chart3', 'charts.sectionWiseEff', t('charts.section'), d2, opsAll2, opsAtt2, 'section', allSections, f2, { deptOpts: allDeptOpts, sectionOpts: s2Opts }, days2),
+        c3: () => groupSpec('charts.chart4', 'charts.lineWiseEff', t('charts.line'), d3, opsAll3, opsAtt3, 'line', allLines, f3, { deptOpts: allDeptOpts, sectionOpts: s3Opts, lineOpts: l3Opts }, days3),
+        c4: () => groupSpec('charts.chart5', 'charts.subsectionWiseEff', t('charts.subsection'), d4, opsAll4, opsAtt4, 'subsection', allSubSections, f4, { deptOpts: allDeptOpts, sectionOpts: s4Opts, lineOpts: l4Opts }, days4),
         c6: () => operatorSheet({
             name: t('charts.operatorWiseEff'), title: chartTitle('charts.chart6', 'charts.operatorWiseEff'),
             operators: d6, userById: new Map(users.map(u => [u.userId, u])), labels: exportLabels,

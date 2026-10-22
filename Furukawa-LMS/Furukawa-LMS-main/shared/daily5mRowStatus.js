@@ -9,6 +9,41 @@ export const rowKey = (rowIndex, field) => `rec_${rowIndex}_${field}`;
 export const isRejectedStatus = (status) => status === ROW_STATUS.REJECTED || status === ROW_STATUS.DECLINED;
 export const normalizeRejectReason = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
 
+// Row-level status shown on the dashboard and used by its status filter.
+export const ROW_STATE = Object.freeze({ APPROVED: 'APPROVED', REJECTED: 'REJECTED', PENDING: 'PENDING' });
+// Values accepted by the records list `rowStatus` filter: sheets having at least one row in that state.
+export const ROW_STATUS_FILTERS = Object.freeze(['approved', 'rejected', 'pending']);
+
+// A row counts once it has any of its identifying fields filled.
+export const isRowActive = (recordData, rowIndex) => !!(
+    recordData?.[rowKey(rowIndex, 'Date')] ||
+    recordData?.[rowKey(rowIndex, 'Line')] ||
+    recordData?.[rowKey(rowIndex, 'StationMC')] ||
+    recordData?.[rowKey(rowIndex, 'OpName')] ||
+    recordData?.[rowKey(rowIndex, 'OperatorName')]
+);
+
+export const rowStateOf = (status) =>
+    status === ROW_STATUS.APPROVED ? ROW_STATE.APPROVED
+        : isRejectedStatus(status) ? ROW_STATE.REJECTED
+            : ROW_STATE.PENDING;
+
+// Per-row states of a sheet's active rows plus their counts.
+export function summarizeRowStatuses(recordData) {
+    const summary = { approved: 0, rejected: 0, pending: 0, total: 0, rows: [] };
+    if (!recordData || typeof recordData !== 'object') return summary;
+    for (let i = 0; i < DAILY_5M_MAX_ROWS; i++) {
+        if (!isRowActive(recordData, i)) continue;
+        const state = rowStateOf(recordData[rowKey(i, 'RowStatus')]);
+        summary.rows.push({ rowNo: i + 1, state });
+        summary.total++;
+        if (state === ROW_STATE.APPROVED) summary.approved++;
+        else if (state === ROW_STATE.REJECTED) summary.rejected++;
+        else summary.pending++;
+    }
+    return summary;
+}
+
 // Returns an error message, or null when the reason is acceptable.
 export function validateRejectReason(value) {
     const reason = normalizeRejectReason(value);

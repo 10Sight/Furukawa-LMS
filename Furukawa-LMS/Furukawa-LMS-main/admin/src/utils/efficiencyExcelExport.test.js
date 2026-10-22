@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildSkillSplit, buildHierarchicalData } from './efficiencyMath.js';
+import { buildSkillSplit, buildHierarchicalData, calculateUserEfficiency } from './efficiencyMath.js';
 import {
     skillSplitSheet, groupSheet, operatorSheet, countOperatorsByGroup, describeFilters,
     buildEfficiencyWorkbook, safeSheetName, safeFileName,
@@ -70,6 +70,28 @@ test('operator sheet looks up org fields and labels skill', () => {
     assert.equal(spec.rows[0].skill, 'Skilled Manpower');
     near(spec.rows[0].efficiency, 1.35);           // uncapped, as Chart 6 shows it
     assert.equal(spec.rows[0].shift, 'Shift A');
+});
+
+test('Actual columns are uncapped; Considered columns keep the 100% cap', () => {
+    const over = [op(1, 150, true), op(2, 120, false)];
+    const att = over.map(u => ({ ...u, attendanceDate: 'd1', logStatus: 'Present', shift: 'A' }));
+    const split = skillSplitSheet({
+        name: 'M', title: 'T', rows: buildSkillSplit(over, att, 1),
+        actualRows: buildSkillSplit(over, att, 1, calculateUserEfficiency), shiftKeys: ['A'], labels, meta,
+    });
+    near(split.rows[0].total, 1);          // considered: (100 + 100) / 2
+    near(split.rows[0].actualTotal, 1.35); // actual: (150 + 120) / 2
+    near(split.rows[0].actualPresent, 1.35);
+    const keys = split.columns.map(c => c.key);
+    assert.ok(keys.indexOf('actualTotal') < keys.indexOf('total'));
+    assert.ok(keys.indexOf('actualPresent') < keys.indexOf('present'));
+
+    const groups = buildHierarchicalData(over, att, 'department', [], 1);
+    const actualGroups = buildHierarchicalData(over, att, 'department', [], 1, calculateUserEfficiency);
+    const g = groupSheet({ name: 'D', title: 'T', groupHeader: 'D', groups, actualGroups, shiftKeys: ['A'], labels, meta });
+    near(g.rows[0].total, 1);
+    near(g.rows[0].actualTotal, 1.35);
+    near(g.footerRows[0].actualTotal, 1.35);
 });
 
 test('filters are described by name', () => {

@@ -25,10 +25,10 @@ const shiftOf = (op) => op.shift || UNASSIGNED_SHIFT;
 const shiftRank = (k) => (SHIFT_DISPLAY_ORDER.includes(k) ? SHIFT_DISPLAY_ORDER.indexOf(k) : SHIFT_DISPLAY_ORDER.length);
 export const sortShiftKeys = (keys) => [...keys].sort((a, b) => shiftRank(a) - shiftRank(b) || String(a).localeCompare(String(b)));
 
-// { shift: summed chart efficiency } over attendance rows
-const sumByShift = (rows) => rows.reduce((acc, op) => {
+// { shift: summed efficiency } over attendance rows (capped chart efficiency by default)
+const sumByShift = (rows, effOf = chartEfficiency) => rows.reduce((acc, op) => {
     const k = shiftOf(op);
-    acc[k] = (acc[k] || 0) + chartEfficiency(op);
+    acc[k] = (acc[k] || 0) + effOf(op);
     return acc;
 }, {});
 const divideByShift = (sums, divisor) =>
@@ -85,13 +85,15 @@ const presentRowsWithin = (opsAll, opsAtt) => {
 // Every figure divides by the same headcount (and Present also by the logged-day count), so
 // Unskilled + Skilled = Total Manpower for both; Skilled is derived so rounding matches too.
 // `presentByShift` splits Present by shift (same divisor), `presentCountByShift` counts operators.
-export const buildSkillSplit = (opsAll, opsAtt, dayCount) => {
+// `effOf` is the per-operator figure: capped (charts) by default, calculateUserEfficiency for the
+// export's uncapped "Actual" columns.
+export const buildSkillSplit = (opsAll, opsAtt, dayCount, effOf = chartEfficiency) => {
     const presOps = presentRowsWithin(opsAll, opsAtt);
     const totalCount = opsAll.length;
     const presDiv = totalCount * dayCount;
-    const totalPct = (ops) => totalCount ? round2(getSum(ops.map(chartEfficiency)) / totalCount) : 0;
-    const presentPct = (ops) => presDiv ? round2(getSum(ops.map(chartEfficiency)) / presDiv) : 0;
-    const presentShiftPct = (ops) => divideByShift(sumByShift(ops), presDiv);
+    const totalPct = (ops) => totalCount ? round2(getSum(ops.map(effOf)) / totalCount) : 0;
+    const presentPct = (ops) => presDiv ? round2(getSum(ops.map(effOf)) / presDiv) : 0;
+    const presentShiftPct = (ops) => divideByShift(sumByShift(ops, effOf), presDiv);
     const countEvaluated = (ops) => ops.filter(op => op.currentEffeciency != null || op.evalData != null).length;
     const uniqueUsers = (rows) => new Set(rows.map(op => op.userId)).size;
     const usersByShift = (rows) => {
@@ -185,7 +187,8 @@ const rollUp = (childRows, getParentId, getParentName) => {
 
 // Hierarchical rollup: Sub-Section = avg of its users; Line = avg of its active sub-sections;
 // Section = avg of its active lines; Department = avg of its active sections.
-export const buildHierarchicalData = (opsAll, opsAtt, level, allGroupKeys = [], dayCount = 1) => {
+// `effOf` as in buildSkillSplit: capped by default, uncapped for the export's "Actual" columns.
+export const buildHierarchicalData = (opsAll, opsAtt, level, allGroupKeys = [], dayCount = 1, effOf = chartEfficiency) => {
     const ssMap = {};
     const ensureSS = (op) => {
         const ssId = String(op.subSectionId || op.subSectionName || '');
@@ -208,7 +211,7 @@ export const buildHierarchicalData = (opsAll, opsAtt, level, allGroupKeys = [], 
     opsAll.forEach(op => {
         const row = ensureSS(op);
         if (!row) return;
-        const eff = chartEfficiency(op);
+        const eff = effOf(op);
         row.allArr.push(eff);
         if (!op.isSkilled) row.allUnsArr.push(eff);
     });
@@ -217,7 +220,7 @@ export const buildHierarchicalData = (opsAll, opsAtt, level, allGroupKeys = [], 
     presentRowsWithin(opsAll, opsAtt).forEach(op => {
         const row = ensureSS(op);
         if (!row) return;
-        const eff = chartEfficiency(op);
+        const eff = effOf(op);
         const shift = shiftOf(op);
         row.presArr.push(eff);
         row.presShiftSum[shift] = (row.presShiftSum[shift] || 0) + eff;

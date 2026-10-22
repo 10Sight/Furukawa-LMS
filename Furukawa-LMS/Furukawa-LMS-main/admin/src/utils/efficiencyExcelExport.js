@@ -45,29 +45,42 @@ export const describeFilters = ({ filter, deptOpts = [], sectionOpts = [], lineO
     return parts.length ? parts.join(' · ') : t('charts.noFiltersApplied');
 };
 
-// Title-block rows shared by every sheet
-const baseMeta = ({ dateText, filtersText, presentNote, t }) => [
+// Title-block rows shared by every sheet; `actualNote` explains Actual vs Considered (Charts 1–5)
+const baseMeta = ({ dateText, filtersText, presentNote, t }, actualNote = false) => [
     [t('charts.date'), dateText.replace(/^[^:]*:\s*/, '')],
     [t('charts.filtersApplied'), filtersText],
     ...(presentNote ? [['', presentNote]] : []),
+    ...(actualNote ? [['', t('charts.actualVsConsideredNote')]] : []),
     [t('charts.generatedAt'), new Date().toLocaleString()],
 ];
 
+// Charts 1–5 efficiency columns: Actual (no cap) before Considered (each operator capped at
+// 100%, the figure the charts plot). Actual headers use a darker shade of the chart colour.
+const ACTUAL_TOTAL_COLOR = '#b45309';
+const ACTUAL_PRESENT_COLOR = '#1e3a8a';
+const efficiencyColumns = (t, labels) => [
+    { header: t('charts.actualTotalEff'), key: 'actualTotal', type: 'percent', color: ACTUAL_TOTAL_COLOR },
+    { header: t('charts.consideredTotalEff'), key: 'total', type: 'percent', color: labels.totalColor },
+    { header: t('charts.actualPresentEff'), key: 'actualPresent', type: 'percent', color: ACTUAL_PRESENT_COLOR },
+    { header: t('charts.consideredPresentEff'), key: 'present', type: 'percent', color: labels.presentColor },
+];
+
 const shiftColumns = (shiftKeys, labels, keyOf = (k) => `shift_${k}`) =>
-    shiftKeys.map(k => ({ header: `${labels.t('charts.presentEff')} · ${labels.shiftName(k)}`, key: keyOf(k), type: 'percent', color: labels.shiftColor(k) }));
+    shiftKeys.map(k => ({ header: `${labels.t('charts.consideredPresentEff')} · ${labels.shiftName(k)}`, key: keyOf(k), type: 'percent', color: labels.shiftColor(k) }));
 
 const shiftValues = (shiftKeys, byShift = {}) =>
     Object.fromEntries(shiftKeys.map(k => [`shift_${k}`, pct(Math.max(0, byShift[k] || 0))]));
 
 // ─── Chart 1: Total / Skilled / Unskilled manpower ────────────────────────────
-export const skillSplitSheet = ({ name, title, rows, shiftKeys, labels, meta }) => {
+// `actualRows`: the same split computed without the 100% cap (matched by row name)
+export const skillSplitSheet = ({ name, title, rows, actualRows = [], shiftKeys, labels, meta }) => {
     const { t } = labels;
+    const actualByName = new Map(actualRows.map(r => [r.name, r]));
     return {
-        name, title, meta: baseMeta({ ...meta, t }),
+        name, title, meta: baseMeta({ ...meta, t }, true),
         columns: [
             { header: t('charts.manpowerType'), key: 'type', type: 'text' },
-            { header: t('charts.totalEff'), key: 'total', type: 'percent', color: labels.totalColor },
-            { header: t('charts.presentEff'), key: 'present', type: 'percent', color: labels.presentColor },
+            ...efficiencyColumns(t, labels),
             ...shiftColumns(shiftKeys, labels),
             { header: t('charts.operators'), key: 'operators', type: 'count' },
             { header: t('charts.evaluated'), key: 'evaluated', type: 'count' },
@@ -77,7 +90,9 @@ export const skillSplitSheet = ({ name, title, rows, shiftKeys, labels, meta }) 
         ],
         rows: rows.map(r => ({
             type: labels.manpowerName(r.name),
+            actualTotal: pct(actualByName.get(r.name)?.total ?? r.total),
             total: pct(r.total),
+            actualPresent: pct(actualByName.get(r.name)?.present ?? r.present),
             present: pct(r.present),
             ...shiftValues(shiftKeys, r.presentByShift),
             operators: r.totalCount,
@@ -96,13 +111,18 @@ const SKILL_ROWS = [
     { name: 'Unskilled Manpower', total: 'allUnskilled', present: 'presUnskilled', shift: 'presUnskilledShift', count: 'unskilled' },
 ];
 
-export const groupSheet = ({ name, title, groupHeader, groups, operatorCounts = {}, shiftKeys, labels, meta }) => {
+// `actualGroups`: the same rollup computed without the 100% cap (matched by group id)
+export const groupSheet = ({ name, title, groupHeader, groups, actualGroups = [], operatorCounts = {}, shiftKeys, labels, meta }) => {
     const { t } = labels;
+    const actualById = new Map(actualGroups.map(g => [g.id, g]));
+    const actualOf = (g) => actualById.get(g.id) || g;
     const rows = groups.flatMap(g => SKILL_ROWS.map(s => ({
         _groupId: g.id, // merge key: two groups can share a name (e.g. "Line 1" in two sections)
         group: g.name,
         type: labels.manpowerName(s.name),
+        actualTotal: pct(actualOf(g)[s.total]),
         total: pct(g[s.total]),
+        actualPresent: pct(actualOf(g)[s.present]),
         present: pct(g[s.present]),
         ...shiftValues(shiftKeys, g[s.shift]),
         operators: operatorCounts[g.id]?.[s.count] || 0,
@@ -112,19 +132,20 @@ export const groupSheet = ({ name, title, groupHeader, groups, operatorCounts = 
         _groupId: '__average__',
         group: t('charts.average'),
         type: labels.manpowerName(s.name),
+        actualTotal: pct(getAvg(groups.map(g => actualOf(g)[s.total] ?? 0))),
         total: pct(getAvg(groups.map(g => g[s.total] ?? 0))),
+        actualPresent: pct(getAvg(groups.map(g => actualOf(g)[s.present] ?? 0))),
         present: pct(getAvg(groups.map(g => g[s.present] ?? 0))),
         ...Object.fromEntries(shiftKeys.map(k => [`shift_${k}`, pct(Math.max(0, getAvg(groups.map(g => g[s.shift]?.[k] || 0))))])),
         operators: groups.reduce((sum, g) => sum + (operatorCounts[g.id]?.[s.count] || 0), 0),
     })) : [];
     return {
-        name, title, meta: baseMeta({ ...meta, t }),
+        name, title, meta: baseMeta({ ...meta, t }, true),
         mergeColumn: 'group',
         columns: [
             { header: groupHeader, key: 'group', type: 'text', wrap: true },
             { header: t('charts.manpowerType'), key: 'type', type: 'text' },
-            { header: t('charts.totalEff'), key: 'total', type: 'percent', color: labels.totalColor },
-            { header: t('charts.presentEff'), key: 'present', type: 'percent', color: labels.presentColor },
+            ...efficiencyColumns(t, labels),
             ...shiftColumns(shiftKeys, labels),
             { header: t('charts.operators'), key: 'operators', type: 'count' },
         ],

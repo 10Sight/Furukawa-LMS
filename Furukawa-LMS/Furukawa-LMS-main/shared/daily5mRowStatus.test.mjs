@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    validateRejectReason, normalizeRejectReason, getRejectedRows, enforceRejectReasons,
+    validateRejectReason, normalizeRejectReason, getRejectedRows, enforceRejectReasons, summarizeRowStatuses,
     REJECT_REASON_MAX,
 } from './daily5mRowStatus.js';
 
@@ -49,6 +49,22 @@ test('legacy rejected rows without a reason keep saving', () => {
     const data = { rec_0_RowStatus: 'REJECTED' };
     assert.equal(enforceRejectReasons(data, { rec_0_RowStatus: 'REJECTED' }).error, undefined);
     assert.equal('rec_0_RejectReason' in data, false);
+});
+
+test('summarizeRowStatuses classifies only active rows', () => {
+    const summary = summarizeRowStatuses({
+        rec_0_Line: 'L1', rec_0_RowStatus: 'APPROVED',
+        rec_1_OpName: 'Asha', rec_1_RowStatus: 'REJECTED',
+        rec_2_StationMC: 'M3',                                // no status yet
+        rec_3_RowStatus: 'APPROVED',                          // status but no data: not a row
+        rec_4_Date: '2026-10-01', rec_4_RowStatus: 'DECLINED',
+    });
+    assert.deepEqual(
+        summary.rows.map(r => [r.rowNo, r.state]),
+        [[1, 'APPROVED'], [2, 'REJECTED'], [3, 'PENDING'], [5, 'REJECTED']]
+    );
+    assert.deepEqual([summary.approved, summary.rejected, summary.pending, summary.total], [1, 2, 1, 4]);
+    assert.equal(summarizeRowStatuses(null).total, 0);
 });
 
 test('rows that are not rejected never carry a reason', () => {

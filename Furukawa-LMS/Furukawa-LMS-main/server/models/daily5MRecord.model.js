@@ -3,7 +3,16 @@ import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 import RevisionRecordService from "../services/revisionRecord.service.js";
 import { formatLocalDate } from "../utils/istDate.util.js";
-import { getRejectedRows } from "../../shared/daily5mRowStatus.js";
+import { getRejectedRows, summarizeRowStatuses } from "../../shared/daily5mRowStatus.js";
+
+// Persisted per-row status counts (kept in sync on every save) so the records list can filter by
+// row status in SQL, with correct pagination, without parsing recordData per query.
+const ROW_COUNT_COLUMNS = Object.freeze({
+    approved: "approvedRowCount",
+    rejected: "rejectedRowCount",
+    pending: "pendingRowCount",
+});
+const BACKFILL_BATCH_SIZE = 200;
 
 class Daily5MRecord {
     constructor(data) {
@@ -18,6 +27,7 @@ class Daily5MRecord {
         this.formType = data.formType || 'standard';
         this.recordData = typeof data.recordData === 'string' ? JSON.parse(data.recordData) : (data.recordData || {});
         this.rejectedRows = getRejectedRows(this.recordData);
+        this.rowStatusSummary = summarizeRowStatuses(this.recordData);
         this.submittedBy = data.submittedBy; // User ID
         this.submittedByName = data.submittedByName || "Unknown"; // Joined Full Name
         this.sectionName = data.sectionName;
@@ -108,6 +118,11 @@ class Daily5MRecord {
             await migrationHelper.ensureColumnExists('daily_5m_records', 'revNo', "VARCHAR(255) NULL");
             await migrationHelper.ensureColumnExists('daily_5m_records', 'issueDate', "VARCHAR(255) NULL");
             await migrationHelper.ensureColumnExists('daily_5m_records', 'revDate', "VARCHAR(255) NULL");
+            for (const column of Object.values(ROW_COUNT_COLUMNS)) {
+                await migrationHelper.ensureColumnExists('daily_5m_records', column, "INT NULL");
+            }
+            // Fill counts for rows saved before the columns existed; runs in the background
+            this.backfillRowStatusCounts().catch(err => logger.error(`Daily5MRecord row-count backfill failed: ${err.message}`));
 
             // Remove unique constraints to allow full history (every save = new row)
             const dropConstraintsQuery = `
@@ -134,44 +149,46 @@ class Daily5MRecord {
         }
     }
 
-    static calculateAggregateStatus(recordData) {
-        if (!recordData) return 'PENDING';
-
-        const rowCount = 20; // Max rows to check (safe upper bound)
-        let activeRows = 0;
-        let approvedRows = 0;
-        let rejectedRows = 0;
-
-        for (let i = 0; i < rowCount; i++) {
-            // Check if row has any significant data
-            const hasData = recordData[`rec_${i}_Date`] ||
-                            recordData[`rec_${i}_Line`] ||
-                            recordData[`rec_${i}_StationMC`] ||
-                            recordData[`rec_${i}_OpName`] ||
-                            recordData[`rec_${i}_OperatorName`];
-
-            if (hasData) {
-                activeRows++;
-                const rowStatus = recordData[`rec_${i}_RowStatus`];
-                if (rowStatus === 'APPROVED') {
-                    approvedRows++;
-                } else if (rowStatus === 'REJECTED' || rowStatus === 'DECLINED') {
-                    rejectedRows++;
-                }
-            }
-        }
-
-        if (activeRows === 0) return 'PENDING';
-        if (rejectedRows > 0) return 'DECLINED';
-        if (approvedRows === activeRows) return 'APPROVED';
-        
+    static calculateAggregateStatus(recordData, summary = summarizeRowStatuses(recordData)) {
+        if (summary.total === 0) return 'PENDING';
+        if (summary.rejected > 0) return 'DECLINED';
+        if (summary.approved === summary.total) return 'APPROVED';
         return 'PENDING';
+    }
+
+    // One-time fill of the row-count columns for rows saved before they existed. Batched and
+    // idempotent (only NULL rows), so a restart mid-way simply resumes.
+    static async backfillRowStatusCounts() {
+        let updated = 0;
+        for (;;) {
+            const [rows] = await executeQuery(
+                `SELECT TOP ${BACKFILL_BATCH_SIZE} id, recordData FROM daily_5m_records WHERE ${ROW_COUNT_COLUMNS.pending} IS NULL ORDER BY id`
+            );
+            if (!rows || rows.length === 0) break;
+            for (const row of rows) {
+                let data = {};
+                try {
+                    data = typeof row.recordData === 'string' ? JSON.parse(row.recordData) : (row.recordData || {});
+                } catch (err) {
+                    // Unparseable data counts as no rows, so the loop can't revisit it forever
+                    logger.warn(`Daily5MRecord backfill: record ${row.id} has invalid recordData (${err.message})`);
+                }
+                const summary = summarizeRowStatuses(data);
+                await executeQuery(
+                    `UPDATE daily_5m_records SET ${ROW_COUNT_COLUMNS.approved} = ?, ${ROW_COUNT_COLUMNS.rejected} = ?, ${ROW_COUNT_COLUMNS.pending} = ? WHERE id = ?`,
+                    [summary.approved, summary.rejected, summary.pending, row.id]
+                );
+            }
+            updated += rows.length;
+        }
+        if (updated > 0) logger.info(`Daily5MRecord: backfilled row status counts for ${updated} records.`);
     }
 
     static async upsert(recordData) {
         const { departmentId, sectionId, date, shift, line, formType, recordData: data, submittedBy, sessionId, adminRemarks } = recordData;
         const dataJson = JSON.stringify(data);
-        const aggregateStatus = this.calculateAggregateStatus(data);
+        const rowSummary = summarizeRowStatuses(data);
+        const aggregateStatus = this.calculateAggregateStatus(data, rowSummary);
 
         // Preserve the original submitter so that a QA Incharge approving rows
         // doesn't overwrite submittedBy with their own ID (which would trigger
@@ -214,13 +231,15 @@ class Daily5MRecord {
         }
 
         const query = `
-            INSERT INTO daily_5m_records (departmentId, sectionId, date, shift, line, formType, recordData, submittedBy, sessionId, status, adminRemarks, docNo, revNo, issueDate, revDate, createdAt, updatedAt)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE());
+            INSERT INTO daily_5m_records (departmentId, sectionId, date, shift, line, formType, recordData, submittedBy, sessionId, status, adminRemarks, docNo, revNo, issueDate, revDate,
+                ${ROW_COUNT_COLUMNS.approved}, ${ROW_COUNT_COLUMNS.rejected}, ${ROW_COUNT_COLUMNS.pending}, createdAt, updatedAt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE());
             SELECT SCOPE_IDENTITY() as id;
         `;
 
         const [rows] = await executeQuery(query, [
-            departmentId, sectionId || null, date, shift, line, formType, dataJson, finalSubmittedBy, sessionId || null, aggregateStatus, adminRemarks || null, docNo, revNo, issueDate, revDate
+            departmentId, sectionId || null, date, shift, line, formType, dataJson, finalSubmittedBy, sessionId || null, aggregateStatus, adminRemarks || null, docNo, revNo, issueDate, revDate,
+            rowSummary.approved, rowSummary.rejected, rowSummary.pending
         ]);
 
         const newId = rows[0].id;
@@ -250,7 +269,9 @@ class Daily5MRecord {
         return { sql, params };
     }
 
-    static async findAll({ departmentId, sectionId, startDate, endDate, formType, limit = 50, offset = 0, submittedBy, groupBySession = false, search = "", allowedDepartmentIds, allowedSectionIds }) {
+    // `rowStatus` ('approved' | 'rejected' | 'pending') keeps sheets having at least one row in that
+    // state; the column name comes from the ROW_COUNT_COLUMNS whitelist, never from the request.
+    static async findAll({ departmentId, sectionId, startDate, endDate, formType, limit = 50, offset = 0, submittedBy, groupBySession = false, search = "", rowStatus, allowedDepartmentIds, allowedSectionIds }) {
         if (Array.isArray(allowedDepartmentIds) && allowedDepartmentIds.length === 0) {
             return { records: [], totalCount: 0 };
         }
@@ -258,6 +279,7 @@ class Daily5MRecord {
         let sql = "";
         let params = [];
         const scopeClause = this.buildScopeClause("r.", allowedDepartmentIds, allowedSectionIds);
+        const rowStatusColumn = ROW_COUNT_COLUMNS[rowStatus];
 
         if (groupBySession) {
             // Pick only the latest record for each sessionId
@@ -314,6 +336,10 @@ class Daily5MRecord {
                 dateClause += " AND date <= ?";
                 params.push(endDate);
             }
+            // Like the date range, row status is judged on each session's latest row
+            if (rowStatusColumn) {
+                dateClause += ` AND ${rowStatusColumn} > 0`;
+            }
 
             sql += `
                 ),
@@ -360,6 +386,9 @@ class Daily5MRecord {
             if (endDate) {
                 sql += " AND r.date <= ?";
                 params.push(endDate);
+            }
+            if (rowStatusColumn) {
+                sql += ` AND r.${rowStatusColumn} > 0`;
             }
             if (search) {
                 sql += ` AND (
@@ -550,40 +579,21 @@ class Daily5MRecord {
                 };
             }
 
-            // Parse recordData to count filled rows
-            let rowCount = 0;
-            let approvedRows = 0;
-            let rejectedRows = 0;
-            let pendingRows = 0;
-
+            // Count filled rows by status
+            let summary = summarizeRowStatuses(null);
             if (record.recordData) {
                 try {
                     const data = typeof record.recordData === 'string' ? JSON.parse(record.recordData) : record.recordData;
-                    // Check up to 20 rows
-                    for (let i = 0; i < 20; i++) {
-                        const rowStatus = data[`rec_${i}_RowStatus`];
-                        const hasData = data[`rec_${i}_Date`] ||
-                                        data[`rec_${i}_Line`] ||
-                                        data[`rec_${i}_StationMC`] ||
-                                        data[`rec_${i}_OpName`] ||
-                                        data[`rec_${i}_OperatorName`];
-
-                        if (hasData) {
-                            rowCount++;
-                            if (rowStatus === 'APPROVED') approvedRows++;
-                            else if (rowStatus === 'REJECTED' || rowStatus === 'DECLINED') rejectedRows++;
-                            else pendingRows++;
-                        }
-                    }
+                    summary = summarizeRowStatuses(data);
                 } catch (e) {
                     console.error("Error parsing recordData for stats:", e);
                 }
             }
 
-            dailyStatsMap[dateStr].total += rowCount;
-            dailyStatsMap[dateStr].approved += approvedRows;
-            dailyStatsMap[dateStr].rejected += rejectedRows;
-            dailyStatsMap[dateStr].pending += pendingRows;
+            dailyStatsMap[dateStr].total += summary.total;
+            dailyStatsMap[dateStr].approved += summary.approved;
+            dailyStatsMap[dateStr].rejected += summary.rejected;
+            dailyStatsMap[dateStr].pending += summary.pending;
         });
 
         return Object.values(dailyStatsMap).sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -663,25 +673,12 @@ class Daily5MRecord {
                 };
             }
 
-            for (let i = 0; i < 20; i++) {
-                const hasData = data[`rec_${i}_Date`] || data[`rec_${i}_Line`] || data[`rec_${i}_StationMC`] || data[`rec_${i}_OpName`] || data[`rec_${i}_OperatorName`];
-                if (hasData) {
-                    const status = data[`rec_${i}_RowStatus`] || 'PENDING';
-                    
-                    overall.total++;
-                    departmentMap[deptId].total++;
-
-                    if (status === 'APPROVED') {
-                        overall.approved++;
-                        departmentMap[deptId].approved++;
-                    } else if (status === 'REJECTED' || status === 'DECLINED') {
-                        overall.rejected++;
-                        departmentMap[deptId].rejected++;
-                    } else {
-                        overall.pending++;
-                        departmentMap[deptId].pending++;
-                    }
-                }
+            const summary = summarizeRowStatuses(data);
+            for (const bucket of [overall, departmentMap[deptId]]) {
+                bucket.total += summary.total;
+                bucket.approved += summary.approved;
+                bucket.rejected += summary.rejected;
+                bucket.pending += summary.pending;
             }
         });
 

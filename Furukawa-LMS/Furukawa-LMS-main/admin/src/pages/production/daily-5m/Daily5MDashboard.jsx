@@ -21,6 +21,7 @@ import { Input } from "@/components/forms/primitives/input.jsx";
 import { Label } from "@/components/forms/primitives/label.jsx";
 import { useGetSectionsByDepartmentQuery } from "@/services/api/SectionApi.js";
 import RejectedReasonsCell from "./components/RejectedReasonsCell.jsx";
+import RowStatusCell from "./components/RowStatusCell.jsx";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/common/ui/popover.jsx";
 import { Calendar } from "@/components/forms/primitives/calendar.jsx";
 import {
@@ -147,6 +148,8 @@ const Daily5MDashboard = () => {
     const [chartEndDate, setChartEndDate] = useState("");
     const [chartViewType, setChartViewType] = useState('daily');
     const [searchTerm, setSearchTerm] = useState("");
+    // 'all' or one of ROW_STATUS_FILTERS: sheets with at least one row in that state
+    const [rowStatusFilter, setRowStatusFilter] = useState("all");
     const [records, setRecords] = useState([]);
     const [loading, setLoading] = useState(false);
     const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -183,7 +186,7 @@ const Daily5MDashboard = () => {
     // Reset page when filters change
     useEffect(() => {
         setCurrentPage(1);
-    }, [selectedDepartment, selectedSection, startDate, endDate, searchTerm]);
+    }, [selectedDepartment, selectedSection, startDate, endDate, searchTerm, rowStatusFilter]);
 
     // Fetch chart data when filters change
     useEffect(() => {
@@ -192,7 +195,7 @@ const Daily5MDashboard = () => {
 
     useEffect(() => {
         if (authUser) fetchRecords();
-    }, [authUser, selectedDepartment, selectedSection, startDate, endDate, currentPage, pageSize]);
+    }, [authUser, selectedDepartment, selectedSection, startDate, endDate, rowStatusFilter, currentPage, pageSize]);
 
     // Fetch Row Stats (Pie Charts) - Independent triggers
     useEffect(() => {
@@ -222,6 +225,7 @@ const Daily5MDashboard = () => {
             if (startDate) query += `&startDate=${startDate}`;
             if (endDate) query += `&endDate=${endDate}`;
             if (searchTerm) query += `&search=${encodeURIComponent(searchTerm)}`;
+            if (rowStatusFilter !== 'all') query += `&rowStatus=${rowStatusFilter}`;
 
             const response = await axiosInstance.get(query);
             if (response.data.success) {
@@ -503,7 +507,7 @@ const Daily5MDashboard = () => {
                         </CardTitle>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
                         <div className="space-y-2">
                             <Label className="text-xs font-bold text-slate-500 uppercase">Department</Label>
                             <Select value={selectedDepartment} onValueChange={(val) => { setSelectedDepartment(val); setSelectedSection("all"); }}>
@@ -534,6 +538,21 @@ const Daily5MDashboard = () => {
                                             {sec.name} {sec.category && `(${sec.category})`}
                                         </SelectItem>
                                     ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label className="text-xs font-bold text-slate-500 uppercase">Row Status</Label>
+                            <Select value={rowStatusFilter} onValueChange={setRowStatusFilter}>
+                                <SelectTrigger title="Shows sheets that have at least one row with this status">
+                                    <SelectValue placeholder="All Statuses" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Statuses</SelectItem>
+                                    <SelectItem value="approved">Has Approved Rows</SelectItem>
+                                    <SelectItem value="pending">Has Pending Rows</SelectItem>
+                                    <SelectItem value="rejected">Has Rejected Rows</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>
@@ -958,7 +977,7 @@ const Daily5MDashboard = () => {
                                     <TableHead>Section</TableHead>
                                     <TableHead>Line</TableHead>
                                     <TableHead>Submitted By</TableHead>
-                                    <TableHead>Status</TableHead>
+                                    <TableHead className="min-w-[170px]">Row Status</TableHead>
                                     <TableHead className="min-w-[200px]">Rejected Reason</TableHead>
                                     <TableHead className="whitespace-nowrap">Dimension Checks (2h)</TableHead>
                                     <TableHead className="min-w-[180px]">Admin Remarks</TableHead>
@@ -990,15 +1009,7 @@ const Daily5MDashboard = () => {
                                         <TableCell className="font-medium text-slate-900">{record.line || "-"}</TableCell>
                                         <TableCell>{record.submittedByName || "User"}</TableCell>
                                         <TableCell>
-                                            {record.status === 'APPROVED' ? (
-                                                <span className="px-2 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded text-xs font-semibold">Approved</span>
-                                            ) : record.status === 'REJECTED' || record.status === 'DECLINED' ? (
-                                                <span className="px-2 py-0.5 bg-red-50 text-red-700 border border-red-200 rounded text-xs font-semibold">Rejected</span>
-                                            ) : record.status === 'SUBMITTED' ? (
-                                                <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded text-xs font-semibold">Submitted</span>
-                                            ) : (
-                                                <span className="px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded text-xs font-semibold">Pending</span>
-                                            )}
+                                            <RowStatusCell summary={record.rowStatusSummary} submitted={record.status === 'SUBMITTED'} />
                                         </TableCell>
                                         <TableCell className="max-w-[220px]">
                                             <RejectedReasonsCell rejectedRows={record.rejectedRows} />

@@ -6,7 +6,7 @@ import NotificationService from "../services/notification.service.js";
 import { executeQuery } from "../db/mssqlHelper.js";
 import logAudit from "../utils/auditLogger.js";
 import { canActOnRow, matchesDaily5MRouting } from "../../shared/daily5mRouting.js";
-import { enforceRejectReasons, rowKey } from "../../shared/daily5mRowStatus.js";
+import { enforceRejectReasons, rowKey, ROW_STATUS_FILTERS } from "../../shared/daily5mRowStatus.js";
 import { scope5MRequestFor, canView5MRecord, canViewAll5MRecords } from "../utils/daily5mScope.util.js";
 import { hasAnyPermission } from "../middlewares/roleAuth.middleware.js";
 import { formatLocalDate } from "../utils/istDate.util.js";
@@ -289,8 +289,12 @@ export const create5MRecord = async (req, res, next) => {
 export const get5MRecords = async (req, res, next) => {
     try {
         const { departmentId } = req.params;
-        const { sectionId, startDate, endDate, limit, offset, formType, groupBySession, search, scope } = req.query;
+        const { sectionId, startDate, endDate, limit, offset, formType, groupBySession, search, scope, rowStatus } = req.query;
         const { id: userId, role } = req.user;
+
+        if (rowStatus && !ROW_STATUS_FILTERS.includes(rowStatus)) {
+            return next(new ApiError(`Invalid rowStatus "${rowStatus}". Use one of: ${ROW_STATUS_FILTERS.join(', ')}`, 400));
+        }
 
         const limitInt = parseInt(limit) || 50;
         // scope=all: the dashboard's read-only Records List across every department
@@ -307,6 +311,7 @@ export const get5MRecords = async (req, res, next) => {
             endDate,
             search,
             formType,
+            rowStatus: rowStatus || undefined,
             groupBySession: groupBySession === 'true',
             limit: limitInt,
             offset: parseInt(offset) || 0,
@@ -316,7 +321,7 @@ export const get5MRecords = async (req, res, next) => {
 
         const { records, totalCount } = await Daily5MRecord.findAll(filters);
 
-        logAudit(userId, "VIEW_DAILY_5M_RECORDS_LIST", { departmentId, sectionId, startDate, endDate, formType, allDepartments: listAllDepartments }, { resourceType: "DAILY_5M_RECORD", req })
+        logAudit(userId, "VIEW_DAILY_5M_RECORDS_LIST", { departmentId, sectionId, startDate, endDate, formType, rowStatus, allDepartments: listAllDepartments }, { resourceType: "DAILY_5M_RECORD", req })
             .catch(err => console.error("logAudit(VIEW_DAILY_5M_RECORDS_LIST) failed:", err.message));
 
         res.status(200).json({

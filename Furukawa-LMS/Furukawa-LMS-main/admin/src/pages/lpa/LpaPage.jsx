@@ -21,6 +21,7 @@ import { PDCAProvider } from '../pdca/context/PDCAContext';
 import { getLpaPdcaTopic, saveLpaPdcaSnapshot, extractObservationsFromSheet, createEmptyPdcaRow, getWorksheetScore, getWorksheetScoresList } from './lpaPdcaUtils';
 import { isRecordCreator, canEditRecord } from '@pages/pdca/data/recordFilters.js';
 import LpaTable from '../../components/lpa/LpaTable';
+import { matchesLpaDateRange } from './lpaDateFilters.js';
 
 const SECTIONS = [{ id: 'assembly', label: 'Assembly' }, { id: 'cc', label: 'C&C' }];
 const UNITS = ['Bawal', 'Gujrat'];
@@ -75,6 +76,8 @@ function LpaPageContent({ viewContext }) {
   const [isPdcaSheetOpen, setIsPdcaSheetOpen] = useState(false);
   const [pdcaSaveVersion, setPdcaSaveVersion] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const [isSendMailOpen, setIsSendMailOpen] = useState(false);
   const [showUnsavedAlert, setShowUnsavedAlert] = useState(false);
   const showUnsavedAlertRef = useRef(false);
@@ -551,7 +554,9 @@ function LpaPageContent({ viewContext }) {
   const visibleRecords = displayRecords.filter(record =>
     record.unit === selectedUnit &&
     record.section === activeSection &&
-    (!record.auditDate || record.auditDate === pdcaDate) &&
+    ((fromDate || toDate)
+      ? matchesLpaDateRange(record.auditDate || record.date, fromDate, toDate)
+      : (!record.auditDate || record.auditDate === pdcaDate)) &&
     `${record.name} ${record.sheets?.map(item => item.name).join(' ') || ''}`.toLowerCase().includes(searchQuery.toLowerCase())
   );
   const exportAllRecords = () => {
@@ -596,6 +601,14 @@ function LpaPageContent({ viewContext }) {
     setDirty(true);
   };
   const status = message && <p role={message.error ? 'alert' : 'status'} className={`text-xs ${message.error ? 'text-red-600' : 'text-emerald-700'}`}>{message.text}</p>;
+  const dateRangeControls = (
+    <div className="flex flex-wrap items-end gap-2" aria-label="Filter by date range">
+      <label className="flex flex-col gap-1 text-[10px] font-semibold text-slate-600">From Date<input type="date" value={fromDate} max={toDate || undefined} onChange={event => setFromDate(event.target.value)} className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs" /></label>
+      <label className="flex flex-col gap-1 text-[10px] font-semibold text-slate-600">To Date<input type="date" value={toDate} min={fromDate || undefined} onChange={event => setToDate(event.target.value)} className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs" /></label>
+      {(fromDate || toDate) && <button type="button" onClick={() => { setFromDate(''); setToDate(''); }} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Clear dates</button>}
+      {fromDate && toDate && fromDate > toDate && <span role="alert" className="pb-1 text-xs text-red-600">From Date must not be later than To Date.</span>}
+    </div>
+  );
 
   const pdcaTopic = useMemo(() => {
     if (customPdcaTopic) return customPdcaTopic;
@@ -653,6 +666,7 @@ function LpaPageContent({ viewContext }) {
     } catch { /* An invalid removal cache never changes saved LPA records. */ }
     return [...(deletedDefaultIds.includes(baseSheet.id) ? [] : [baseSheet]), ...customPdcaSheets];
   }, [activeSection, selectedUnit, pdcaDate, customPdcaSheets, pdcaDeleteRevision]);
+  const visiblePdcaSheets = allPdcaSheets.filter(item => matchesLpaDateRange(item.date, fromDate, toDate));
 
   const emailPdcaSheets = useMemo(() => allPdcaSheets.map(item => {
     let sheetData = null;
@@ -760,6 +774,7 @@ function LpaPageContent({ viewContext }) {
     });
     const customSnapshot = {
       ...initialTopic.sheet,
+      rows: (initialTopic.sheet?.rows || []).map(row => ({ ...row, date: '', status: '' })),
       headerInfo: {
         ...(initialTopic.sheet?.headerInfo || {}),
         topicName: newSheet.title
@@ -1099,6 +1114,7 @@ function LpaPageContent({ viewContext }) {
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-100 p-3 bg-white">
                   <div className="flex flex-wrap items-center gap-3 flex-1">
+                    {dateRangeControls}
                     <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
                       <CalendarDays size={17} />
                       <span>Audit date</span>
@@ -1160,7 +1176,7 @@ function LpaPageContent({ viewContext }) {
                     <tbody className="divide-y divide-slate-100">
                       {(() => {
                         const query = searchQuery.trim().toLowerCase();
-                        const filteredSheets = allPdcaSheets.filter(sh => {
+                        const filteredSheets = visiblePdcaSheets.filter(sh => {
                           if (!query) return true;
                           return (
                             sh.title.toLowerCase().includes(query) ||
@@ -1264,6 +1280,7 @@ function LpaPageContent({ viewContext }) {
             ) : (
               <div>
                 <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 p-3">
+                  {dateRangeControls}
                   <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
                     <CalendarDays size={17} />
                     <span>Audit date</span>

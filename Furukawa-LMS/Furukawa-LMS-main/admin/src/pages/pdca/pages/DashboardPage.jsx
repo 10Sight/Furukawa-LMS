@@ -45,6 +45,8 @@ export default function DashboardPage() {
     return saved.scope === 'Department' ? (saved.department || '') : '';
   });
   const [selectedDate, setSelectedDate] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -122,8 +124,8 @@ export default function DashboardPage() {
     }
   }, [lpaSource]);
   const deptFilterToApply = activeTab === 'Department' ? selectedDepartment : '';
-  const filteredData = useMemo(() => filterPDCARecords(sourceData, selectedPlant, activeTab, searchQuery, deptFilterToApply, selectedDate),
-    [sourceData, activeTab, selectedPlant, searchQuery, deptFilterToApply, selectedDate]);
+  const filteredData = useMemo(() => filterPDCARecords(sourceData, selectedPlant, activeTab, searchQuery, deptFilterToApply, selectedDate, fromDate, toDate),
+    [sourceData, activeTab, selectedPlant, searchQuery, deptFilterToApply, selectedDate, fromDate, toDate]);
 
   const revealSavedForm = item => {
     if (PDCA_PLANTS.includes(item.plant)) setSelectedPlant(item.plant);
@@ -271,20 +273,21 @@ export default function DashboardPage() {
   return (
     <div className="space-y-3.5 w-full min-w-0">
       {lpaSource && <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-800">LPA · {lpaSource.category === 'assembly' ? 'Assembly' : 'C&C'}{lpaSource.workbookName ? ` · ${lpaSource.workbookName}` : ''}{lpaSource.worksheet ? ` · ${lpaSource.worksheet}` : ''}<p className="mt-1 text-xs">Showing PDCA records linked to this LPA source. New records will be linked automatically.</p><button type="button" onClick={openLpaPdca} className="mt-3 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700">{sourceData.length ? 'Open original PDCA form' : 'Create original PDCA record'}</button></div>}
-      {/* 1. Unit Filter and Calendar Date Filter on Top */}
+      {/* 1. Unit Filter on Top */}
       <FilterToolbar
         selectedPlant={selectedPlant}
         setSelectedPlant={(p) => {
           setSelectedPlant(p);
           setCurrentPage(1);
         }}
-        selectedDate={selectedDate}
-        setSelectedDate={(d) => {
-          setSelectedDate(d);
-          setCurrentPage(1);
-        }}
         onExportAll={onExportAll || handleExportExcel}
       />
+      <div className="flex flex-wrap items-end gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+        <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-600">From Date<input type="date" value={fromDate} max={toDate || undefined} onChange={e => { setFromDate(e.target.value); setCurrentPage(1); }} className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs" /></label>
+        <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-600">To Date<input type="date" value={toDate} min={fromDate || undefined} onChange={e => { setToDate(e.target.value); setCurrentPage(1); }} className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs" /></label>
+        {(fromDate || toDate) && <button type="button" onClick={() => { setFromDate(''); setToDate(''); setCurrentPage(1); }} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Clear dates</button>}
+        {fromDate && toDate && fromDate > toDate && <span role="alert" className="text-xs text-red-600">From Date must not be later than To Date.</span>}
+      </div>
 
       {/* 2. Tabs below Unit Filter */}
       <TabNavigation

@@ -105,9 +105,21 @@ export function PDCAProvider({ children }) {
   const refreshData = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await pdcaApi.getRecords();
-      const records = res?.records || (Array.isArray(res) ? res : null);
-      if (Array.isArray(records)) {
+      const records = [];
+      let page = 1;
+      let total = Infinity;
+      let receivedRecords = false;
+      while (records.length < total) {
+        const result = await pdcaApi.getRecords({ page, limit: 100 });
+        const pageRecords = result?.records || (Array.isArray(result) ? result : null);
+        if (!Array.isArray(pageRecords)) break;
+        receivedRecords = true;
+        records.push(...pageRecords);
+        total = Number(result?.total);
+        if (!pageRecords.length || pageRecords.length < 100 || !Number.isFinite(total)) break;
+        page += 1;
+      }
+      if (receivedRecords) {
         publishData(records);
         try { commitPDCA(records, []); } catch {}
       }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { filterPDCARecords } from './recordFilters.js';
+import { filterPDCARecords, matchesDateRange } from './recordFilters.js';
 import { commitSaved, readSaved } from '../../../components/shared/formPersistence.js';
 for (const plant of ['Bawal', 'Gujrat']) {
   for (const scope of ['Company', 'Department', 'Self PDCA', 'CFT']) {
@@ -24,6 +24,13 @@ test('Previously saved All Plants forms can be reopened from either unit', () =>
   const old = { id: 'old', plant: 'All Plants', scope: 'Company', topic: 'Previously saved' };
   for (const plant of ['Bawal', 'Gujrat']) assert.deepEqual(filterPDCARecords([old], plant, 'Company'), [old]);
   assert.deepEqual(filterPDCARecords([old], 'Unit', 'Company'), []);
+});
+
+test('PDCA range filter includes both boundary dates and supports either endpoint', () => {
+  assert.equal(matchesDateRange({ date: '23-10-2026' }, '2026-10-23', '2026-10-23'), true);
+  assert.equal(matchesDateRange({ date: '24 Oct 2026' }, '2026-10-23', '2026-10-24'), true);
+  assert.equal(matchesDateRange({ date: '2026-10-22' }, '2026-10-23', ''), false);
+  assert.equal(matchesDateRange({ date: '23 Oct 2026' }, '', '2026-10-23'), true);
 });
 
 test('PDCA_DEPARTMENTS contains exactly the 13 required departments in exact order', async () => {

@@ -168,7 +168,7 @@ export function createEmptyPdcaRow(customDefaults = {}) {
     date: customDefaults.date || '',
     shift: customDefaults.shift || '',
     lineArea: customDefaults.lineArea || '',
-    status: customDefaults.status || 'Open',
+    status: customDefaults.status || '',
     observation: customDefaults.observation || '',
     imageBefore: customDefaults.imageBefore || null,
     imageBeforeName: customDefaults.imageBeforeName || '',
@@ -364,9 +364,9 @@ export function getLpaPdcaTopic({ section = 'assembly', unit = 'Bawal', level = 
 
   const finalRows = prioritized.map((item, idx) => {
     return createEmptyPdcaRow({
-      date: item.date || date,
+      date: '',
       shift: item.shift || (idx % 2 === 0 ? 'A' : 'B'),
-      status: item.status || 'Open',
+      status: '',
       lineArea: item.lineArea || '',
       observation: item.observation || '',
       rootCause: item.rootCause || '',
@@ -382,9 +382,9 @@ export function getLpaPdcaTopic({ section = 'assembly', unit = 'Bawal', level = 
   // Pad up to at least 10 rows with empty form rows
   while (finalRows.length < 10) {
     finalRows.push(createEmptyPdcaRow({
-      date,
+      date: '',
       shift: finalRows.length % 2 === 0 ? 'A' : 'B',
-      status: 'Open',
+      status: '',
       lineArea: '',
       observation: '',
       rootCause: '',

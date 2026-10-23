@@ -85,7 +85,7 @@ export default function ResponsiblePersonInstructionCell({
           }`}
           title={isConfirmed ? `Confirmed by ${confirmedBy || 'User'}` : isNotConfirmed ? `Not-Confirmed by ${confirmedBy || 'User'}` : 'Select Confirmation'}
         >
-          <option value="" disabled={reasonRequired}>Select...</option>
+          <option value="">Select...</option>
           <option value="Confirmed">Confirmed</option>
           <option value="Not-Confirmed">Not-Confirmed</option>
         </select>

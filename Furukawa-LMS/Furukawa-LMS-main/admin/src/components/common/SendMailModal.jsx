@@ -14,6 +14,7 @@ import { useNavigate } from 'react-router-dom';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import { listLPAWorkbooks } from '../../pages/lpa/lpaStore.js';
 import lpaApi from '../../services/api/lpaApi.js';
+import pdcaApi from '../../services/api/pdcaApi.js';
 
 // Keep the popup focused on sheets generated after this feature was introduced.
 // The cutoff is stored in this browser so a refresh or a new popup instance does
@@ -61,6 +62,7 @@ export default function SendMailModal({
   const [showCc, setShowCc] = useState(false);
   const [remarks, setRemarks] = useState('');
   const [assemblyRecords, setAssemblyRecords] = useState([]);
+  const [authoritativePdcaRecords, setAuthoritativePdcaRecords] = useState([]);
   const [assemblySelection, setAssemblySelection] = useState('');
   const [pdcaSelection, setPdcaSelection] = useState('');
   const [sheetsLoading, setSheetsLoading] = useState(false);
@@ -85,6 +87,37 @@ export default function SendMailModal({
     : 'assembly';
 
   // When modal opens, all input fields are reset to blank, CC is optional/hidden by default
+  useEffect(() => {
+    if (!isOpen || !pdcaOnly) return undefined;
+    let active = true;
+    setAuthoritativePdcaRecords([]);
+    (async () => {
+      const allRecords = [];
+      let page = 1;
+      let total = Infinity;
+      while (allRecords.length < total) {
+        const result = await pdcaApi.getRecords({ page, limit: 100 });
+        const records = Array.isArray(result) ? result : result?.records || [];
+        allRecords.push(...records);
+        total = Number(result?.total);
+        if (!records.length || records.length < 100 || !Number.isFinite(total)) break;
+        page += 1;
+      }
+      return allRecords;
+    })()
+      .then(records => {
+        if (!active) return;
+        setAuthoritativePdcaRecords(records.filter(record => record && !record.isDeleted));
+      })
+      .catch(error => {
+        if (active) {
+          setAuthoritativePdcaRecords([]);
+          toast.error(error.response?.data?.message || 'Could not load current PDCA sheets.');
+        }
+      });
+    return () => { active = false; };
+  }, [isOpen, pdcaOnly]);
+
   useEffect(() => {
     if (!isOpen) {
       setSending(false);
@@ -165,8 +198,8 @@ export default function SendMailModal({
       sheetIndex,
       label: [sheet.name || `Sheet ${sheetIndex + 1}`, record.unit, record.auditDate || record.date].filter(Boolean).join(' · ')
     })));
-  const pdcaOptions = (Array.isArray(suppliedPdcaSheets) ? suppliedPdcaSheets : contextPdcaSheets)
-    .filter((sheet) => sheet && (sheet.id || sheet._id))
+  const pdcaOptions = (pdcaOnly ? authoritativePdcaRecords : (Array.isArray(suppliedPdcaSheets) ? suppliedPdcaSheets : contextPdcaSheets))
+    .filter((sheet) => sheet && !sheet.isDeleted && (sheet.id || sheet._id))
     .map((sheet, index) => ({
       key: `${sheet.source === 'lpa' ? 'lpa-' : ''}${sheet.id || sheet._id}-${index}`,
       sheet,

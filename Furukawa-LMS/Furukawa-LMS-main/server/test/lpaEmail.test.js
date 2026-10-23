@@ -189,6 +189,26 @@ test("PDCA-only email sends the selected PDCA sheet without requiring an LPA wor
   assert.equal(res.responseBody.data.links.pdca, "https://portal.example/cms/pdca?sheet=pdca-9");
 });
 
+test("PDCA-only email rejects deleted records before sending", async () => {
+  let sendCount = 0;
+  const sendHandler = createSendLpaEmailHandler({
+    sendMailFn: async () => { sendCount += 1; return { accepted: ["one@example.com"], rejected: [] }; },
+    getPdcaRecord: async id => ({ id, isDeleted: true, sheet: { rows: [{ observation: "Deleted" }] } }),
+    attemptStore: new Map(),
+    portalBaseUrl: "https://portal.example"
+  });
+  const { req, res } = makeRequestResponse({
+    emailMode: "pdca-only",
+    to: ["one@example.com"],
+    cc: [],
+    pdcaSheet: { id: "deleted-pdca", source: "pdca", section: "assembly" }
+  }, "deleted-pdca-mail");
+
+  await invokeHandler(sendHandler, req, res);
+  assert.equal(res.statusCode, 404);
+  assert.equal(sendCount, 0);
+});
+
 test("email endpoint rejects an Assembly workbook that no longer exists", async () => {
   let sendCount = 0;
   const sendHandler = createSendLpaEmailHandler({

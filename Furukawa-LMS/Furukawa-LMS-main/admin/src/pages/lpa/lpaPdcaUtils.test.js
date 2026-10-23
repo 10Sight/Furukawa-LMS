@@ -74,6 +74,7 @@ test('getLpaPdcaTopic returns topic with at least 10 rows for Assembly, C&C and 
   assert.equal(assemblyTopic.sheet.headerInfo.topicName, 'Assembly - LPA Observation (PDCA)');
   assert.ok(assemblyTopic.sheet.rows.length >= 10);
   assert.ok(assemblyTopic.sheet.rows[0].shift);
+  assert.ok(assemblyTopic.sheet.rows.every(row => row.date === '' && row.status === ''));
 
   const ccTopic = getLpaPdcaTopic({ section: 'cc', unit: 'Bawal', level: 'L1', date: '2026-10-09' });
   assert.equal(ccTopic.topic, 'C&C - LPA Observation (PDCA)');
@@ -82,6 +83,12 @@ test('getLpaPdcaTopic returns topic with at least 10 rows for Assembly, C&C and 
 
   const allTopic = getLpaPdcaTopic({ section: 'all', unit: 'Bawal', level: 'L1', date: '2026-10-09' });
   assert.ok(allTopic.sheet.rows.length >= 10);
+});
+
+test('new LPA PDCA rows leave Date and Status blank by default', () => {
+  const row = createEmptyPdcaRow();
+  assert.equal(row.date, '');
+  assert.equal(row.status, '');
 });
 
 test('Single LPA PDCA sheet: dedicated single sheet ID for Assembly and single for C&C', () => {

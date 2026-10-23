@@ -39,7 +39,7 @@ import PDCAMonthlyGraph from './PDCAMonthlyGraph';
 import ResponsiblePersonInstructionCell from './ResponsiblePersonInstructionCell';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import pdcaApi from '@/services/api/pdcaApi.js';
-import { PDCA_DEPARTMENTS, PDCA_STATUS_OPTIONS, normalizePDCAStatus, computePDCAStatus } from '../../pages/pdca/data/pdcaConstants.js';
+import { PDCA_DEPARTMENTS, PDCA_UNITS, PDCA_STATUS_OPTIONS, normalizePDCAStatus, computePDCAStatus } from '../../pages/pdca/data/pdcaConstants.js';
 import {
   isRecordCreator,
   isUserResponsibleForRow,
@@ -52,8 +52,100 @@ import {
   VERIFIED_EMPLOYEE_MASTER
 } from '../../pages/pdca/data/pdcaEmployees.js';
 import SearchableLineAreaSelect, { getCachedDbSections } from './SearchableLineAreaSelect';
+import { getDefaultSectionsWithLines } from './CascadingLineAreaSelect.jsx';
 import SearchableSectionSelect, { VERIFIED_SECTION_MASTER, isSectionRelatedToDepartment } from './SearchableSectionSelect';
 import { getMediaUrl } from '@/utils/mediaUtils.js';
+
+function CheckboxMultiSelect({ value = [], options = [], onChange, disabled = false, placeholder }) {
+  const [open, setOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState(null);
+  const buttonRef = useRef(null);
+  const menuRef = useRef(null);
+  const selected = Array.isArray(value) ? value.map(String) : (value ? [String(value)] : []);
+  const label = selected.length
+    ? selected.map(item => options.find(option => String(option.value) === item)?.label || item).join(', ')
+    : placeholder;
+  const updateMenuPosition = () => {
+    const rect = buttonRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const viewportPadding = 8;
+    const width = Math.min(Math.max(rect.width, 176), window.innerWidth - viewportPadding * 2);
+    const left = Math.max(viewportPadding, Math.min(rect.left, window.innerWidth - width - viewportPadding));
+    const expectedHeight = Math.min(208, Math.max(48, options.length * 32 + 12));
+    const viewportHeight = Math.max(
+      window.innerHeight || 0,
+      document.documentElement.clientHeight || 0,
+      window.visualViewport?.height || 0
+    );
+    const spaceBelow = viewportHeight - rect.bottom - viewportPadding;
+    const spaceAbove = rect.top - viewportPadding;
+    const openAbove = spaceBelow < expectedHeight && spaceAbove >= expectedHeight;
+    const maxHeight = Math.max(32, Math.min(208, openAbove ? spaceAbove : spaceBelow));
+    const renderedHeight = Math.min(expectedHeight, maxHeight);
+    const requestedTop = openAbove ? rect.top - renderedHeight - 4 : rect.bottom + 4;
+    const top = Math.max(viewportPadding, Math.min(requestedTop, viewportHeight - renderedHeight - viewportPadding));
+    setMenuPosition({ left, width, maxHeight, top });
+  };
+
+  useLayoutEffect(() => {
+    if (!open) return undefined;
+    updateMenuPosition();
+    const closeOnOutsideClick = event => {
+      if (!buttonRef.current?.contains(event.target) && !menuRef.current?.contains(event.target)) setOpen(false);
+    };
+    const closeOnEscape = event => { if (event.key === 'Escape') setOpen(false); };
+    const closeOnScroll = () => setOpen(false);
+    window.addEventListener('resize', updateMenuPosition);
+    window.addEventListener('scroll', closeOnScroll, true);
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      window.removeEventListener('resize', updateMenuPosition);
+      window.removeEventListener('scroll', closeOnScroll, true);
+      document.removeEventListener('mousedown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [open, options.length]);
+
+  return (
+    <div className="w-full min-w-0">
+      <button
+        ref={buttonRef}
+        type="button"
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen(current => !current)}
+        title={label}
+        className={`flex w-full min-h-[30px] items-center justify-between gap-1 rounded-md border px-1.5 py-1 text-left text-[10px] leading-tight transition-colors ${selected.length ? 'border-blue-200 bg-blue-50/60 text-slate-800' : 'border-slate-200 bg-white text-slate-500'} ${open ? 'border-blue-400 ring-1 ring-blue-100' : 'hover:border-blue-300 hover:bg-blue-50/40'} disabled:cursor-default disabled:opacity-60`}
+      >
+        <span className="min-w-0 flex-1 truncate">{label || placeholder}</span>
+        {selected.length > 0 && <span className="shrink-0 rounded-full bg-blue-100 px-1.5 py-0.5 text-[9px] font-semibold text-blue-700">{selected.length}</span>}
+        <ChevronDown className={`h-3 w-3 shrink-0 text-slate-400 transition-transform ${open ? 'rotate-180 text-blue-600' : ''}`} />
+      </button>
+      {open && menuPosition && createPortal(
+        <div
+          ref={menuRef}
+          role="listbox"
+          aria-multiselectable="true"
+          className="overflow-y-auto rounded-lg border border-slate-200 bg-white p-1.5 text-left shadow-[0_12px_32px_rgba(15,23,42,0.2)] ring-1 ring-slate-900/5"
+          style={{ position: 'fixed', zIndex: 10000, top: menuPosition.top, left: menuPosition.left, width: menuPosition.width, maxHeight: menuPosition.maxHeight }}
+        >
+          {options.map(option => {
+            const optionValue = String(option.value);
+            const checked = selected.includes(optionValue);
+            return <label key={optionValue} className={`flex min-h-8 cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-[11px] transition-colors ${checked ? 'bg-blue-50 text-blue-800' : 'text-slate-700 hover:bg-slate-50'}`}>
+              <input className="h-3.5 w-3.5 shrink-0 accent-blue-600" type="checkbox" checked={checked} onChange={() => onChange(checked ? selected.filter(item => item !== optionValue) : [...selected, optionValue])} />
+              <span className="min-w-0 flex-1 truncate">{option.label}</span>
+            </label>;
+          })}
+          {options.length === 0 && <div className="px-2 py-2 text-[10px] text-slate-400">No options available</div>}
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
 
 export const DEFAULT_OBSERVATION_WIDTH = 260;
 export const MIN_OBSERVATION_WIDTH = 180;
@@ -70,10 +162,11 @@ export const MAX_COUNTER_MEASURE_WIDTH = 550;
 const createEmptyRow = (customDefaults = {}) => ({
   date: customDefaults.date || '',
   shift: customDefaults.shift || '',
-  status: customDefaults.status ? normalizePDCAStatus(customDefaults.status) : 'Not-Started',
+  status: customDefaults.status ? normalizePDCAStatus(customDefaults.status) : '',
   department: customDefaults.department || '',
   departments: Array.isArray(customDefaults.departments) ? customDefaults.departments : (customDefaults.department ? [customDefaults.department] : []),
   unit: customDefaults.unit || '',
+  units: Array.isArray(customDefaults.units) ? customDefaults.units : (customDefaults.unit ? [customDefaults.unit] : []),
   section: customDefaults.section || '',
   sections: Array.isArray(customDefaults.sections) ? customDefaults.sections : (customDefaults.section ? [{ section: customDefaults.section, sectionId: customDefaults.sectionId ?? null, sectionCode: customDefaults.sectionCode || '' }] : []),
   sectionId: customDefaults.sectionId ?? customDefaults.lineAreaSectionId ?? null,
@@ -104,6 +197,7 @@ const createEmptyRow = (customDefaults = {}) => ({
   revisedDates: Array.isArray(customDefaults.revisedDates) ? customDefaults.revisedDates : [],
   noOfTimeRevised: customDefaults.noOfTimeRevised !== undefined ? customDefaults.noOfTimeRevised : 0,
   respUnit: customDefaults.respUnit || customDefaults.responsiblePersonUnit || '',
+  respUnits: Array.isArray(customDefaults.respUnits) ? customDefaults.respUnits : (customDefaults.respUnit || customDefaults.responsiblePersonUnit ? [customDefaults.respUnit || customDefaults.responsiblePersonUnit] : []),
   responsiblePersonUnit: customDefaults.responsiblePersonUnit || customDefaults.respUnit || '',
   responsiblePersonDept: customDefaults.responsiblePersonDept || customDefaults.department || '',
   staffEmployee: customDefaults.staffEmployee || '',
@@ -440,6 +534,17 @@ export default function PDCASheet({
   emailPdcaSheets = undefined
 }) {
   const { data, setData, showToast, userContext } = usePDCA();
+  const lpaSheetIdentity = [
+    topic?.id,
+    topic?.recordId,
+    topic?.topic,
+    topic?.sheet?.headerInfo?.topicName
+  ].filter(Boolean).join(' ').toLowerCase();
+  const lpaSheetTitle = String(topic?.topic || topic?.sheet?.headerInfo?.topicName || '').trim().toLowerCase();
+  const isLpaObservationSheet = String(topic?.id || topic?.recordId || '').startsWith('PDCA-LPA') ||
+    Boolean(topic?.lpaSource) ||
+    /lpa\s*observation/.test(lpaSheetIdentity) ||
+    ['assembly', 'c&c', 'c & c'].includes(lpaSheetTitle);
   const effectiveUser = currentUser || userContext?.user;
 
   // Determine if the current user has Administrator privileges
@@ -598,8 +703,8 @@ export default function PDCASheet({
         normalizedRevisedDates = [];
       } else {
         normalizedRevisedDates = row.revisedDates.map((item) => {
-          if (typeof item === 'string') return { date: item, reason: '' };
-          return { date: item?.date || '', reason: item?.reason || '' };
+          if (typeof item === 'string') return { date: item, reason: '', previousDate: '' };
+          return { date: item?.date || '', reason: item?.reason || '', previousDate: item?.previousDate || '' };
         }).filter((r) => r.date);
       }
     }
@@ -618,15 +723,18 @@ export default function PDCASheet({
     const confirmedBy = (row.confirmedBy || '').trim();
     const instruction = (row.instruction || '').trim();
 
-    let status = computePDCAStatus({
+    let status = row.status ? computePDCAStatus({
       ...row,
       responseDate,
       confirmation,
       status: row.status
-    }, currentDate);
+    }, currentDate) : '';
 
     // Section P Unit
-    const unit = (row.unit === 'Bawal' || row.unit === 'Gujrat') ? row.unit : (row.unit || '');
+    const units = isLpaObservationSheet
+      ? (Array.isArray(row.units) && row.units.length ? [...new Set(row.units.map(String).filter(Boolean))] : (row.unit ? [row.unit] : []))
+      : (row.unit ? [row.unit] : []);
+    const unit = units[0] || '';
     const stdDurationMin = (row.stdDurationMin !== undefined && row.stdDurationMin !== null)
       ? row.stdDurationMin
       : (row.stdDuration !== undefined && row.stdDuration !== null ? row.stdDuration : '');
@@ -634,6 +742,9 @@ export default function PDCASheet({
     const respUnit = (row.respUnit === 'Bawal' || row.respUnit === 'Gujrat')
       ? row.respUnit
       : (row.responsiblePersonUnit || row.respUnit || '');
+    const respUnits = isLpaObservationSheet
+      ? (Array.isArray(row.respUnits) && row.respUnits.length ? [...new Set(row.respUnits.map(String).filter(Boolean))] : (respUnit ? [respUnit] : []))
+      : (respUnit ? [respUnit] : []);
 
     return {
       ...row,
@@ -641,11 +752,13 @@ export default function PDCASheet({
       department,
       departments,
       unit,
+      units,
       stdDurationMin,
       responseDate,
       revisedDates: normalizedRevisedDates,
       noOfTimeRevised,
       respUnit,
+      respUnits,
       responsiblePersonUnit: respUnit,
       confirmation,
       confirmedBy,
@@ -2309,19 +2422,24 @@ export default function PDCASheet({
           revisions = [];
         } else {
           revisions = curr.revisedDates.map((item) => {
-            if (typeof item === 'string') return { date: item, reason: '' };
-            return { date: item?.date || '', reason: item?.reason || '' };
+            if (typeof item === 'string') return { date: item, reason: '', previousDate: '' };
+            return { date: item?.date || '', reason: item?.reason || '', previousDate: item?.previousDate || '' };
           }).filter((r) => r.date);
         }
       }
 
       if (!newDate) {
+        const hasRevisionHistory = revisions.length > 0;
+        const restoredDate = hasRevisionHistory
+          ? (curr.initialResponseDate || '')
+          : '';
         updated[rowIndex] = {
           ...curr,
-          responseDate: '',
-          revisedDates: revisions,
-          noOfTimeRevised: revisions.length,
-          status: 'Not-Started'
+          initialResponseDate: hasRevisionHistory ? (curr.initialResponseDate || oldDate || '') : '',
+          responseDate: restoredDate,
+          revisedDates: [],
+          noOfTimeRevised: 0,
+          status: restoredDate ? computePDCAStatus({ ...curr, responseDate: restoredDate }, currentDate) : ''
         };
         return updated;
       }
@@ -2332,7 +2450,7 @@ export default function PDCASheet({
       let nextRevisions = revisions;
       if (!isFirstTime && oldDate && oldDate !== newDate) {
         // User selected response date for second or subsequent time: record revision
-        nextRevisions = [...revisions, { date: newDate, reason: '' }];
+        nextRevisions = [...revisions, { date: newDate, reason: '', previousDate: oldDate }];
       }
 
       const tempRow = {
@@ -2376,8 +2494,9 @@ export default function PDCASheet({
     });
   };
 
-  // Delete a specific revision date from No. of time Revised column (Restricted to Administrators only)
-  const handleDeleteRevisedDate = (rowIndex, dateIndex) => {
+  // Delete and persist a revision date (Administrators only). This action is
+  // intentionally independent of the normal sheet edit permission/save flow.
+  const handleDeleteRevisedDate = async (rowIndex, dateIndex) => {
     if (!isAdmin) {
       if (typeof showToast === 'function') {
         showToast('Access Denied: Only administrators have access to delete revised dates.');
@@ -2385,36 +2504,54 @@ export default function PDCASheet({
       return;
     }
 
-    setRows((prev) => {
-      const updated = [...prev];
-      const curr = updated[rowIndex];
-      if (!curr || !Array.isArray(curr.revisedDates)) return prev;
+    const curr = rows[rowIndex];
+    if (!curr || !Array.isArray(curr.revisedDates)) return;
 
-      const remaining = curr.revisedDates.filter((_, i) => i !== dateIndex);
-      let latestDate = curr.initialResponseDate || '';
-      if (remaining.length > 0) {
-        const lastRev = remaining[remaining.length - 1];
-        latestDate = typeof lastRev === 'string' ? lastRev : (lastRev.date || latestDate);
+    const revisions = curr.revisedDates.map(item => typeof item === 'string'
+      ? { date: item, reason: '', previousDate: '' }
+      : { ...item, date: item?.date || '', reason: item?.reason || '', previousDate: item?.previousDate || '' });
+    const removed = revisions[dateIndex];
+    if (!removed) return;
+    const priorDate = removed.previousDate || (dateIndex > 0
+      ? revisions[dateIndex - 1]?.date || ''
+      : curr.initialResponseDate || '');
+    const remaining = revisions.filter((_, i) => i !== dateIndex);
+    // If a middle revision is removed, connect the next revision to the date
+    // that preceded the removed entry so later removals still restore correctly.
+    if (remaining[dateIndex]) remaining[dateIndex] = { ...remaining[dateIndex], previousDate: priorDate };
+    const removedLatestRevision = dateIndex === revisions.length - 1;
+    const latestDate = removedLatestRevision
+      ? priorDate
+      : (curr.responseDate || revisions[revisions.length - 1]?.date || curr.initialResponseDate || '');
+    const tempRow = {
+      ...curr,
+      revisedDates: remaining,
+      responseDate: latestDate,
+      noOfTimeRevised: remaining.length
+    };
+    const nextRows = rows.map((row, index) => index === rowIndex
+      ? { ...tempRow, status: computePDCAStatus(tempRow, currentDate) }
+      : row);
+    const nextSnapshot = { rows: nextRows, headerInfo };
+    const targetId = topic?.id || topic?.recordId || (headerInfo.topicName?.trim() ? encodeURIComponent(headerInfo.topicName.trim()) : 'current_topic');
+
+    try {
+      setIsSaving(true);
+      if (targetId) await pdcaApi.saveSheet(targetId, nextSnapshot);
+      setRows(nextRows);
+      persistSheet(nextSnapshot);
+      initialStateRef.current = {
+        rows: nextRows.map((row) => ({ ...row })),
+        headerInfo: { ...headerInfo }
+      };
+      initialSnapshotRef.current = serializeSheet(nextRows, headerInfo);
+      if (typeof showToast === 'function') showToast('Revised date deleted successfully.');
+    } catch (error) {
+      if (typeof showToast === 'function') {
+        showToast(error?.response?.data?.message || error.message || 'Could not delete the revised date. Please try again.');
       }
-
-      const tempRow = {
-        ...curr,
-        revisedDates: remaining,
-        responseDate: latestDate,
-        noOfTimeRevised: remaining.length
-      };
-
-      const nextStatus = computePDCAStatus(tempRow, currentDate);
-
-      updated[rowIndex] = {
-        ...tempRow,
-        status: nextStatus
-      };
-      return updated;
-    });
-
-    if (typeof showToast === 'function') {
-      showToast('Revised date deleted successfully.');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -2470,6 +2607,10 @@ export default function PDCASheet({
 
   // Column 4: Status change handler
   const handleStatusChange = (rowIndex, value) => {
+    if (!value) {
+      setRows(prev => prev.map((row, index) => index === rowIndex ? { ...row, status: '' } : row));
+      return;
+    }
     const normalizedStatus = normalizePDCAStatus(value);
     setRows((prev) => {
       const updated = [...prev];
@@ -3409,17 +3550,17 @@ export default function PDCASheet({
           {/* Table Column Headers - Frozen on vertical scroll */}
           <thead className="sticky top-0 z-20 bg-white shadow-xs">
             {/* Title Row: Centered Page Title */}
-            <tr className="bg-white">
+            {!isLpaObservationSheet && <tr className="bg-white">
               <th
                 colSpan={totalCols}
                 className="py-4 px-6 text-center font-extrabold text-slate-900 text-2xl sm:text-3xl md:text-4xl tracking-wide select-none bg-white border-r border-b border-[#94A3B8]"
               >
                 {headerInfo.topicName || topic?.topic || (topic?.section === 'cc' ? 'C&C - LPA Observation (PDCA)' : 'Assembly - LPA Observation (PDCA)')}
               </th>
-            </tr>
+            </tr>}
 
             {/* Row 1: 会議名 (Meeting Name) [Left] & 作成者 : (Prepared By) [Right] */}
-            <tr className="bg-white text-[15px]">
+            {!isLpaObservationSheet && <tr className="bg-white text-[15px]">
               <th
                 colSpan={2}
                 className="text-slate-900 font-bold text-center border-r border-b border-[#94A3B8] py-1.5 px-2 select-none whitespace-nowrap text-[16px] tracking-wider"
@@ -3462,7 +3603,7 @@ export default function PDCASheet({
                   className={`w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-900 font-medium text-base ${effectiveReadOnly ? 'cursor-default' : 'focus:bg-blue-50/20'}`}
                 />
               </th>
-            </tr>
+            </tr>}
 
             {/* Row 2: 出席者 (Attendees) [Left] & 議事録No (Minutes / Audit No) [Right] */}
             <tr className="bg-white text-[15px]">
@@ -3771,8 +3912,12 @@ export default function PDCASheet({
             {rows.map((row, idx) => {
               const sNo = idx + 1;
               const canEditEntireRow = canEditEntireSheet;
-              const unitSelected = ['Bawal', 'Gujrat'].includes(row.unit);
-              const responsibleUnitSelected = ['Bawal', 'Gujrat'].includes(row.respUnit || row.responsiblePersonUnit);
+              const unitSelected = isLpaObservationSheet
+                ? (row.units || (row.unit ? [row.unit] : [])).some(unit => PDCA_UNITS.includes(unit))
+                : ['Bawal', 'Gujrat'].includes(row.unit);
+              const responsibleUnitSelected = isLpaObservationSheet
+                ? (row.respUnits || (row.respUnit || row.responsiblePersonUnit ? [row.respUnit || row.responsiblePersonUnit] : [])).some(unit => PDCA_UNITS.includes(unit))
+                : ['Bawal', 'Gujrat'].includes(row.respUnit || row.responsiblePersonUnit);
               const isDeptMember = isUserInResponsibleDepartment(row, effectiveUser);
               const canEditActionCols = Boolean(!readOnly && (isCreatorOrAdmin || isDeptMember));
 
@@ -3824,7 +3969,7 @@ export default function PDCASheet({
                       <select
                         disabled={!canEditEntireRow}
                         aria-label={`Status for row ${sNo}`}
-                        value={normalizePDCAStatus(row.status)}
+                        value={row.status ? normalizePDCAStatus(row.status) : ''}
                         onChange={event => handleStatusChange(idx, event.target.value)}
                         className={`w-full min-w-full rounded-md border px-1.5 py-1 text-[15px] font-medium outline-none whitespace-nowrap ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer focus:ring-2 focus:ring-blue-300'} text-center ${normalizePDCAStatus(row.status) === 'Done' ? 'bg-green-50 text-green-700 border-green-200' :
                             normalizePDCAStatus(row.status) === 'In- Progress' ? 'bg-yellow-50 text-yellow-800 border-yellow-300' :
@@ -3832,6 +3977,7 @@ export default function PDCASheet({
                                 'bg-blue-50 text-blue-700 border-blue-200'
                           }`}
                       >
+                        <option value="">Select...</option>
                         <option value="Not-Started" style={{ color: '#1d4ed8', backgroundColor: '#eff6ff' }}>Not-Started</option>
                         <option value="Done" style={{ color: '#15803d', backgroundColor: '#f0fdf4' }}>Done</option>
                         <option value="In- Progress" style={{ color: '#854d0e', backgroundColor: '#fefce8' }}>In- Progress</option>
@@ -3842,179 +3988,115 @@ export default function PDCASheet({
 
                   {/* 5. Unit (Section P) - Immediately before Department */}
                   <td className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[80px] min-w-[75px] focus-within:bg-blue-50/30">
-                    <div className="relative w-full flex items-center justify-center">
-                      <select
-                        disabled={!canEditEntireRow}
-                        value={row.unit || ''}
-                        onChange={(e) => handleCellChange(idx, 'unit', e.target.value)}
-                        className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1 text-[14px] text-slate-800 text-center font-medium focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate`}
-                        title={row.unit || 'Select Unit'}
-                      >
-                        <option value="">Unit...</option>
-                        <option value="Bawal">Bawal</option>
-                        <option value="Gujrat">Gujrat</option>
+                    {isLpaObservationSheet ? <CheckboxMultiSelect
+                      disabled={!canEditEntireRow}
+                      value={row.units || (row.unit ? [row.unit] : [])}
+                      options={PDCA_UNITS.map(unit => ({ value: unit, label: unit }))}
+                      placeholder="Unit..."
+                      onChange={values => setRows(prev => prev.map((item, rowIndex) => rowIndex === idx ? { ...item, units: values, unit: values[0] || '' } : item))}
+                    /> : <div className="relative w-full flex items-center justify-center">
+                      <select disabled={!canEditEntireRow} value={row.unit || ''} onChange={event => handleCellChange(idx, 'unit', event.target.value)} className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1 text-[14px] text-slate-800 text-center font-medium focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate`} title={row.unit || 'Select Unit'}>
+                        <option value="">Unit...</option><option value="Bawal">Bawal</option><option value="Gujrat">Gujrat</option>
                       </select>
-                      {canEditEntireRow && (
-                        <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                      )}
-                    </div>
+                      {canEditEntireRow && <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />}
+                    </div>}
                   </td>
 
-                  {/* 6. Department (Multi-select support with + button) */}
-                  <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[95px] min-w-[90px]">
-                    <div className="flex flex-col h-full justify-between">
+                  {/* 6. Department */}
+                  <td className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[95px] min-w-[90px]">
+                    {isLpaObservationSheet ? <CheckboxMultiSelect
+                      disabled={!canEditEntireRow || !unitSelected}
+                      value={row.departments || (row.department ? [row.department] : [])}
+                      options={departmentsList.map(department => ({ value: department, label: department }))}
+                      placeholder="Dept..."
+                      onChange={values => setRows(prev => prev.map((item, rowIndex) => {
+                        if (rowIndex !== idx) return item;
+                        const sections = (item.sections || []).filter(section => !values.length || values.some(department => {
+                          const master = VERIFIED_SECTION_MASTER.find(option => String(option.id) === String(section.sectionId)) || { id: section.sectionId, name: section.section };
+                          return isSectionRelatedToDepartment(master, department);
+                        }));
+                        const sectionIds = new Set(sections.map(section => String(section.sectionId)));
+                        const lineAreas = (item.lineAreas || []).filter(line => !sections.length ? false : (!line.sectionId || sectionIds.has(String(line.sectionId))));
+                        const firstSection = sections[0] || {};
+                        const firstLine = lineAreas[0] || {};
+                        return { ...item, departments: values, department: values[0] || '', sections, section: firstSection.section || '', sectionId: firstSection.sectionId ?? null, sectionCode: firstSection.sectionCode || '', lineAreas, lineArea: firstLine.lineArea || '', lineAreaId: firstLine.lineAreaId ?? null, lineAreaCode: firstLine.lineAreaCode || '', lineAreaSectionId: firstLine.sectionId ?? null };
+                      }))}
+                    /> : <div className="flex flex-col h-full justify-between">
                       <div className="flex flex-col divide-y divide-[#CBD5E1]">
-                        {((Array.isArray(row.departments) && row.departments.length > 0) ? row.departments : (row.department ? [row.department] : [''])).map((dVal, dIdx, arr) => (
-                          <div key={dIdx} className="relative w-full p-0.5 flex items-center justify-between min-h-[30px] group/dept focus-within:bg-blue-50/30">
-                            <div className="relative w-full flex items-center justify-center">
-                              <select
-                                disabled={!canEditEntireRow || !unitSelected}
-                                value={dVal || ''}
-                                onChange={(e) => handleUpdateDepartment(idx, dIdx, e.target.value)}
-                                className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1 text-[14px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${!canEditEntireRow || !unitSelected ? 'cursor-default opacity-50' : 'cursor-pointer'} appearance-none truncate font-medium`}
-                                title={unitSelected ? (dVal || 'Select Department') : 'Select Unit first to choose a Department'}
-                              >
-                                <option value="">Dept...</option>
-                                {departmentsList.map((d) => (
-                                  <option key={d} value={d}>
-                                    {d}
-                                  </option>
-                                ))}
-                              </select>
-                              {canEditEntireRow && (
-                                <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                              )}
-                            </div>
-                            {arr.length > 1 && canEditEntireRow && (
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveDepartment(idx, dIdx)}
-                                className="opacity-0 group-hover/dept:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 p-0.5 rounded transition-all cursor-pointer flex-shrink-0 absolute right-0.5 top-1/2 -translate-y-1/2"
-                                title="Remove Department"
-                              >
-                                <X className="w-2.5 h-2.5 stroke-[2.5]" />
-                              </button>
-                            )}
-                          </div>
-                        ))}
+                        {((row.departments?.length ? row.departments : (row.department ? [row.department] : ['']))).map((department, deptIndex, all) => <div key={deptIndex} className="relative min-h-[30px] p-0.5">
+                          <select disabled={!canEditEntireRow || !unitSelected} value={department || ''} onChange={event => handleUpdateDepartment(idx, deptIndex, event.target.value)} className="w-full bg-transparent px-1 py-1 text-center text-[14px]">
+                            <option value="">Dept...</option>{departmentsList.map(value => <option key={value} value={value}>{value}</option>)}
+                          </select>
+                          {all.length > 1 && canEditEntireRow && <button type="button" onClick={() => handleRemoveDepartment(idx, deptIndex)} className="absolute right-0 top-1 text-slate-400 hover:text-rose-600" title="Remove Department"><X className="h-2.5 w-2.5" /></button>}
+                        </div>)}
                       </div>
-                      {canEditEntireRow && (
-                        <div className="flex justify-end p-0.5 border-t border-slate-100/80 bg-slate-50/50">
-                          <button
-                            type="button"
-                            onClick={() => handleAddDepartment(idx)}
-                            disabled={!unitSelected}
-                            className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-semibold text-blue-600 hover:text-blue-800 hover:bg-blue-100/50 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                            title="Add another Department"
-                          >
-                            <Plus className="w-2.5 h-2.5 stroke-[2.5]" />
-                            <span>Add</span>
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                      {canEditEntireRow && <button type="button" disabled={!unitSelected} onClick={() => handleAddDepartment(idx)} className="border-t border-slate-100 bg-slate-50/50 px-1 py-0.5 text-[9px] text-blue-600 disabled:opacity-40"><Plus className="inline h-2.5 w-2.5" /> Add</button>}
+                    </div>}
                   </td>
 
-                  {/* 7. Section (Multi-select support with + button) */}
-                  <td
-                    style={{
-                      width: `${sectionColWidth}px`,
-                      minWidth: `${sectionColWidth}px`
-                    }}
-                    className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150"
-                  >
-                    <div className="flex flex-col h-full justify-between">
-                      <div className="flex flex-col divide-y divide-[#CBD5E1]">
-                        {((Array.isArray(row.sections) && row.sections.length > 0) ? row.sections : (row.section ? [{ section: row.section, sectionId: row.sectionId, sectionCode: row.sectionCode }] : [{ section: '', sectionId: null, sectionCode: '' }])).map((sVal, sIdx, arr) => (
-                          <div key={sIdx} className="relative w-full p-0.5 flex items-center justify-between min-h-[30px] group/sec">
-                            <div className="w-full flex items-center justify-center">
-                              <SearchableSectionSelect
-                                disabled={!canEditEntireRow}
-                                value={sVal.section}
-                                sectionId={sVal.sectionId}
-                                sectionCode={sVal.sectionCode}
-                                department={row.departments?.[sIdx] || row.departments?.[0] || row.department}
-                                onChange={(sectionName, meta) => handleUpdateSection(idx, sIdx, sectionName, meta)}
-                                placeholder="Section..."
-                              />
-                            </div>
-                            {arr.length > 1 && canEditEntireRow && (
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveSection(idx, sIdx)}
-                                className="opacity-0 group-hover/sec:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 p-0.5 rounded transition-all cursor-pointer flex-shrink-0 absolute right-0.5 top-1/2 -translate-y-1/2 z-10"
-                                title="Remove Section"
-                              >
-                                <X className="w-2.5 h-2.5 stroke-[2.5]" />
-                              </button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                      {canEditEntireRow && (
-                        <div className="flex justify-end p-0.5 border-t border-slate-100/80 bg-slate-50/50">
-                          <button
-                            type="button"
-                            onClick={() => handleAddSection(idx)}
-                            className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-semibold text-blue-600 hover:text-blue-800 hover:bg-blue-100/50 transition-colors cursor-pointer"
-                            title="Add another Section"
-                          >
-                            <Plus className="w-2.5 h-2.5 stroke-[2.5]" />
-                            <span>Add</span>
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                  {/* 7. Section */}
+                  <td style={{ width: `${sectionColWidth}px`, minWidth: `${sectionColWidth}px` }} className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150">
+                    {isLpaObservationSheet ? <CheckboxMultiSelect
+                      disabled={!canEditEntireRow}
+                      value={row.sections?.length ? row.sections.map(section => section.sectionId ?? section.section) : (row.sectionId || row.section ? [row.sectionId || row.section] : [])}
+                      options={VERIFIED_SECTION_MASTER
+                        .filter(section => !row.departments?.length || row.departments.some(department => isSectionRelatedToDepartment(section, department)))
+                        .map(section => ({ value: section.id, label: section.name }))}
+                      placeholder="Section..."
+                      onChange={values => setRows(prev => prev.map((item, rowIndex) => {
+                        if (rowIndex !== idx) return item;
+                        const sections = values.map(value => {
+                          const master = VERIFIED_SECTION_MASTER.find(section => String(section.id) === String(value));
+                          const existing = item.sections?.find(section => String(section.sectionId) === String(value) || section.section === value);
+                          return master ? { section: master.name, sectionId: master.id, sectionCode: master.uniCode || '' } : existing;
+                        }).filter(Boolean);
+                        const first = sections[0] || {};
+                        const sectionIds = new Set(sections.map(section => String(section.sectionId)));
+                        const lineAreas = (item.lineAreas || []).filter(line => !line.sectionId || sectionIds.has(String(line.sectionId)));
+                        const firstLine = lineAreas[0] || {};
+                        return { ...item, sections, section: first.section || '', sectionId: first.sectionId ?? null, sectionCode: first.sectionCode || '', lineAreas, lineArea: firstLine.lineArea || '', lineAreaId: firstLine.lineAreaId ?? null, lineAreaCode: firstLine.lineAreaCode || '', lineAreaSectionId: firstLine.sectionId ?? null };
+                      }))}
+                    /> : <div className="flex flex-col h-full justify-between">
+                      {((row.sections?.length ? row.sections : (row.section ? [{ section: row.section, sectionId: row.sectionId, sectionCode: row.sectionCode }] : [{ section: '', sectionId: null, sectionCode: '' }]))).map((section, sectionIndex, all) => <div key={sectionIndex} className="relative min-h-[30px] p-0.5">
+                        <SearchableSectionSelect disabled={!canEditEntireRow} value={section.section} sectionId={section.sectionId} sectionCode={section.sectionCode} department={row.departments?.[sectionIndex] || row.departments?.[0] || row.department} onChange={(name, meta) => handleUpdateSection(idx, sectionIndex, name, meta)} placeholder="Section..." />
+                        {all.length > 1 && canEditEntireRow && <button type="button" onClick={() => handleRemoveSection(idx, sectionIndex)} className="absolute right-0 top-1 text-slate-400 hover:text-rose-600" title="Remove Section"><X className="h-2.5 w-2.5" /></button>}
+                      </div>)}
+                      {canEditEntireRow && <button type="button" onClick={() => handleAddSection(idx)} className="border-t border-slate-100 bg-slate-50/50 px-1 py-0.5 text-[9px] text-blue-600"><Plus className="inline h-2.5 w-2.5" /> Add</button>}
+                    </div>}
                   </td>
 
-                  {/* 8. Line/Area (Multi-select support with + button) */}
-                  <td
-                    style={{
-                      width: `${lineAreaColWidth}px`,
-                      minWidth: `${lineAreaColWidth}px`
-                    }}
-                    className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150"
-                  >
-                    <div className="flex flex-col h-full justify-between">
-                      <div className="flex flex-col divide-y divide-[#CBD5E1]">
-                        {((Array.isArray(row.lineAreas) && row.lineAreas.length > 0) ? row.lineAreas : (row.lineArea ? [{ lineArea: row.lineArea, lineAreaId: row.lineAreaId, lineAreaCode: row.lineAreaCode, sectionId: row.lineAreaSectionId }] : [{ lineArea: '', lineAreaId: null, lineAreaCode: '', sectionId: null }])).map((laVal, laIdx, arr) => (
-                          <div key={laIdx} className="relative w-full p-0.5 flex items-center justify-between min-h-[30px] group/line">
-                            <div className="w-full flex items-center justify-center">
-                              <SearchableLineAreaSelect
-                                disabled={!canEditEntireRow}
-                                value={laVal.lineArea}
-                                sectionId={laVal.sectionId ?? row.sections?.[laIdx]?.sectionId ?? row.sectionId}
-                                lineId={laVal.lineAreaId}
-                                onChange={(val, meta) => handleUpdateLineArea(idx, laIdx, val, meta)}
-                              />
-                            </div>
-                            {arr.length > 1 && canEditEntireRow && (
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveLineArea(idx, laIdx)}
-                                className="opacity-0 group-hover/line:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 p-0.5 rounded transition-all cursor-pointer flex-shrink-0 absolute right-0.5 top-1/2 -translate-y-1/2 z-10"
-                                title="Remove Line/Area"
-                              >
-                                <X className="w-2.5 h-2.5 stroke-[2.5]" />
-                              </button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                      {canEditEntireRow && (
-                        <div className="flex justify-end p-0.5 border-t border-slate-100/80 bg-slate-50/50">
-                          <button
-                            type="button"
-                            onClick={() => handleAddLineArea(idx)}
-                            className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-semibold text-blue-600 hover:text-blue-800 hover:bg-blue-100/50 transition-colors cursor-pointer"
-                            title="Add another Line/Area"
-                          >
-                            <Plus className="w-2.5 h-2.5 stroke-[2.5]" />
-                            <span>Add</span>
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                  {/* 8. Line/Area */}
+                  <td style={{ width: `${lineAreaColWidth}px`, minWidth: `${lineAreaColWidth}px` }} className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150">
+                    {isLpaObservationSheet ? <CheckboxMultiSelect
+                      disabled={!canEditEntireRow || !(row.sections?.length || row.section)}
+                      value={row.lineAreas?.length ? row.lineAreas.map(line => line.lineArea) : (row.lineArea ? [row.lineArea] : [])}
+                      options={[...new Set([
+                        ...((getCachedDbSections() || getDefaultSectionsWithLines())
+                          .filter(section => (row.sections || []).some(selected => String(selected.sectionId) === String(section.id) || selected.section === section.name) || String(row.sectionId) === String(section.id) || row.section === section.name)
+                          .flatMap(section => (section.lines || []).map(line => line?.name || line))),
+                        ...(row.lineAreas || []).map(line => line.lineArea)
+                      ].filter(Boolean))].map(line => ({ value: line, label: line }))}
+                      placeholder="Line/Area..."
+                      onChange={values => setRows(prev => prev.map((item, rowIndex) => {
+                        if (rowIndex !== idx) return item;
+                        const hierarchy = getCachedDbSections() || getDefaultSectionsWithLines();
+                        const selectedSections = (item.sections?.length ? item.sections : [{ section: item.section, sectionId: item.sectionId }]).filter(section => section.section || section.sectionId);
+                        const lineAreas = values.map(lineArea => {
+                          const existing = item.lineAreas?.find(line => line.lineArea === lineArea);
+                          const owner = hierarchy.find(section => selectedSections.some(selected => String(selected.sectionId) === String(section.id) || selected.section === section.name) && (section.lines || []).some(line => (line?.name || line) === lineArea));
+                          const lineRecord = owner?.lines?.find(line => (line?.name || line) === lineArea);
+                          return existing || { lineArea, lineAreaId: lineRecord?.id ?? null, lineAreaCode: lineRecord?.uniCode || '', sectionId: owner?.id ?? selectedSections[0]?.sectionId ?? item.sectionId ?? null };
+                        });
+                        const first = lineAreas[0] || {};
+                        return { ...item, lineAreas, lineArea: first.lineArea || '', lineAreaId: first.lineAreaId ?? null, lineAreaCode: first.lineAreaCode || '', lineAreaSectionId: first.sectionId ?? null };
+                      }))}
+                    /> : <div className="flex flex-col h-full justify-between">
+                      {((row.lineAreas?.length ? row.lineAreas : (row.lineArea ? [{ lineArea: row.lineArea, lineAreaId: row.lineAreaId, lineAreaCode: row.lineAreaCode, sectionId: row.lineAreaSectionId }] : [{ lineArea: '', lineAreaId: null, lineAreaCode: '', sectionId: null }]))).map((line, lineIndex, all) => <div key={lineIndex} className="relative min-h-[30px] p-0.5">
+                        <SearchableLineAreaSelect disabled={!canEditEntireRow} value={line.lineArea} sectionId={line.sectionId ?? row.sections?.[lineIndex]?.sectionId ?? row.sectionId} lineId={line.lineAreaId} onChange={(value, meta) => handleUpdateLineArea(idx, lineIndex, value, meta)} />
+                        {all.length > 1 && canEditEntireRow && <button type="button" onClick={() => handleRemoveLineArea(idx, lineIndex)} className="absolute right-0 top-1 text-slate-400 hover:text-rose-600" title="Remove Line/Area"><X className="h-2.5 w-2.5" /></button>}
+                      </div>)}
+                      {canEditEntireRow && <button type="button" onClick={() => handleAddLineArea(idx)} className="border-t border-slate-100 bg-slate-50/50 px-1 py-0.5 text-[9px] text-blue-600"><Plus className="inline h-2.5 w-2.5" /> Add</button>}
+                    </div>}
                   </td>
 
                   {/* 6. Observation (Auto-expanding, resizable width, wrapped multiline text) */}
@@ -4339,7 +4421,7 @@ export default function PDCASheet({
                                 <span className="flex-1 text-[11px] font-semibold text-slate-800 whitespace-nowrap text-center">
                                   {rIdx + 1}) {formatDisplayDate(revDate)}
                                 </span>
-                                {isAdmin && !readOnly && canEditEntireRow && (
+                                {isAdmin && (
                                   <button
                                     type="button"
                                     onClick={(e) => {
@@ -4378,50 +4460,26 @@ export default function PDCASheet({
                     )}
                   </td>
 
-                  {/* Unit in Responsible Person Confirmation - Immediately before Dept */}
+                  {/* Unit in Responsible Person Confirmation */}
                   <td className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[80px] min-w-[75px]">
-                    {row.staffEmployees && row.staffEmployees.length > 1 ? (
-                      <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
-                        {row.staffEmployees.map((emp, empIdx) => (
-                          <div
-                            key={empIdx}
-                            className="relative w-full py-1 px-1 flex items-center justify-center min-h-[30px] focus-within:bg-blue-50/30"
-                          >
-                            <select
-                              disabled={!canEditEntireRow}
-                              value={emp.unit || row.respUnit || ''}
-                              onChange={(e) => handleResponsiblePersonUnitChange(idx, e.target.value, empIdx)}
-                              className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1 text-[10px] text-slate-800 text-center font-medium focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate`}
-                              title={emp.unit || row.respUnit || 'Select Unit'}
-                            >
-                              <option value="">Unit...</option>
-                              <option value="Bawal">Bawal</option>
-                              <option value="Gujrat">Gujrat</option>
-                            </select>
-                            {canEditEntireRow && (
-                              <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="relative w-full flex items-center justify-center focus-within:bg-blue-50/30">
-                        <select
-                          disabled={!canEditEntireRow}
-                          value={row.respUnit || row.responsiblePersonUnit || ''}
-                          onChange={(e) => handleResponsiblePersonUnitChange(idx, e.target.value)}
-                          className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[10.5px] text-slate-800 text-center font-medium focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate`}
-                          title={row.respUnit || row.responsiblePersonUnit || 'Select Unit'}
-                        >
-                          <option value="">Unit...</option>
-                          <option value="Bawal">Bawal</option>
-                          <option value="Gujrat">Gujrat</option>
+                    {isLpaObservationSheet ? <CheckboxMultiSelect
+                      disabled={!canEditEntireRow}
+                      value={row.respUnits || (row.respUnit ? [row.respUnit] : [])}
+                      options={PDCA_UNITS.map(unit => ({ value: unit, label: unit }))}
+                      placeholder="Unit..."
+                      onChange={values => setRows(prev => prev.map((item, rowIndex) => rowIndex === idx ? { ...item, respUnits: values, respUnit: values[0] || '', responsiblePersonUnit: values[0] || '' } : item))}
+                    /> : row.staffEmployees && row.staffEmployees.length > 1 ? <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
+                      {row.staffEmployees.map((employee, employeeIndex) => <div key={employeeIndex} className="relative min-h-[30px] px-1 py-1">
+                        <select disabled={!canEditEntireRow} value={employee.unit || row.respUnit || ''} onChange={event => handleResponsiblePersonUnitChange(idx, event.target.value, employeeIndex)} className="w-full bg-transparent px-1 py-1 text-center text-[10px]">
+                          <option value="">Unit...</option><option value="Bawal">Bawal</option><option value="Gujrat">Gujrat</option>
                         </select>
-                        {canEditEntireRow && (
-                          <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                        )}
-                      </div>
-                    )}
+                      </div>)}
+                    </div> : <div className="relative w-full flex items-center justify-center">
+                      <select disabled={!canEditEntireRow} value={row.respUnit || row.responsiblePersonUnit || ''} onChange={event => handleResponsiblePersonUnitChange(idx, event.target.value)} className="w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[10.5px] text-slate-800 text-center font-medium focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 appearance-none truncate">
+                        <option value="">Unit...</option><option value="Bawal">Bawal</option><option value="Gujrat">Gujrat</option>
+                      </select>
+                      {canEditEntireRow && <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />}
+                    </div>}
                   </td>
 
                   {/* Department Dropdown in Responsible Person Confirmation */}

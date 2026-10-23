@@ -143,6 +143,9 @@ export const createSendLpaEmailHandler = ({ sendMailFn = sendMail, log = logger,
       throw new ApiError("The selected LPA Observation PDCA sheet is invalid.", 400);
     }
     const pdcaRecord = await getPdcaRecord(String(pdca.id));
+    if (pdcaRecord?.isDeleted || (pdca.source === "pdca" && !pdcaRecord)) {
+      throw new ApiError("The selected PDCA sheet is unavailable or has been deleted.", 404);
+    }
     // LPA Observation PDCA sheets are stored as LPA snapshots (local saved
     // sheet data), rather than rows in the standard pdca_records table. Use
     // that selected snapshot only for LPA sheets when no backend PDCA record

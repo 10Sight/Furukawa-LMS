@@ -5,16 +5,12 @@ import {
   FileSpreadsheet, 
   Plus, 
   ChevronDown,
-  MapPin,
-  Calendar,
-  X
+  MapPin
 } from 'lucide-react';
 
 export default function FilterToolbar({
   selectedPlant,
   setSelectedPlant,
-  selectedDate,
-  setSelectedDate,
   searchQuery,
   setSearchQuery,
   onExport,
@@ -29,7 +25,7 @@ export default function FilterToolbar({
 
   return (
     <div className="w-full">
-      {/* 1. Unit & Date Filter Row (Positioned in Top-Left Corner) */}
+      {/* 1. Unit Filter Row (Positioned in Top-Left Corner) */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
           {/* Unit Filter */}
@@ -47,31 +43,6 @@ export default function FilterToolbar({
               ))}
             </select>
             <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-          </div>
-
-          {/* Calendar-Based Date Filter */}
-          <div className="relative flex items-center">
-            <div className="flex items-center gap-2 bg-white border border-[#D1D5DB] rounded-xl px-3.5 py-2 text-slate-700 shadow-sm hover:border-slate-400 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/25 transition-all">
-              <Calendar className="w-4 h-4 text-blue-600 flex-shrink-0" />
-              <input
-                type="date"
-                value={selectedDate || ''}
-                onChange={(e) => setSelectedDate?.(e.target.value)}
-                className="text-xs sm:text-sm font-semibold bg-transparent border-0 outline-none cursor-pointer text-slate-700 p-0"
-                title="Filter records by date"
-                placeholder="Filter by date..."
-              />
-              {selectedDate && (
-                <button
-                  type="button"
-                  onClick={() => setSelectedDate?.('')}
-                  className="text-slate-400 hover:text-rose-600 p-0.5 rounded cursor-pointer transition-colors"
-                  title="Clear date filter"
-                >
-                  <X className="w-3.5 h-3.5 stroke-[2.5]" />
-                </button>
-              )}
-            </div>
           </div>
         </div>
 

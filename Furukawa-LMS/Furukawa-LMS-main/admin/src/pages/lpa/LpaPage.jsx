@@ -501,8 +501,8 @@ function LpaPageContent({ viewContext }) {
         department: formData.department,
         sectionName: formData.sectionName || '',
         line: formData.line || '',
-        auditors: formData.auditor ? [formData.auditor] : [''],
-        auditor: formData.auditor || ''
+        auditors: [],
+        auditor: ''
       };
     });
 
@@ -526,8 +526,8 @@ function LpaPageContent({ viewContext }) {
       department: formData.department,
       sectionName: formData.sectionName || '',
       line: formData.line || '',
-      auditors: formData.auditor ? [formData.auditor] : [''],
-      auditor: formData.auditor || '',
+      auditors: [],
+      auditor: '',
       sheets: newSheets
     };
 

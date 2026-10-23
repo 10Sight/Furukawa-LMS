@@ -1,5 +1,5 @@
 .cc-form-stage {
-  width: max-content;
+  width: 100%;
   min-width: 100%;
   min-height: 100%;
   box-sizing: border-box;
@@ -10,8 +10,11 @@
 }
 
 .cc-check-sheet {
-  box-sizing: content-box;
-  width: max-content;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 780px;
+  max-width: 1200px;
+  margin: 0 auto;
   padding: 0 4px 8px 4px;
   border: 2px solid #172bff;
   border-radius: 4px;
@@ -22,6 +25,7 @@
 }
 
 .cc-check-sheet-table {
+  width: 100%;
   table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;

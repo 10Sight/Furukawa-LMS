@@ -413,7 +413,7 @@ export default function CcSheet({
   const firstTotalMarks = columnScores[firstGroupId]?.totalMarks ?? 62;
 
   return (
-    <div className="cc-check-sheet" style={{ width: `${tableWidth}px`, minWidth: `${tableWidth}px` }}>
+    <div className="cc-check-sheet">
       {/* 1. Header Banner matching Assembly Form exactly */}
       <div className="assembly-form-header-box mb-3">
         {/* Top Compartment: Title (Left) and Auditor Name (Right) */}
@@ -585,8 +585,8 @@ export default function CcSheet({
       </div>
 
       {/* 2. C&C Audit Table */}
-      <table ref={tableRef} className="cc-check-sheet-table" style={{ width: `${tableWidth}px` }} aria-label={`${sheet.name} editable C&C LPA form`}>
-        <colgroup>{widths.map((width, column) => <col key={column} style={{ width: `${width}px` }} />)}</colgroup>
+      <table ref={tableRef} className="cc-check-sheet-table" aria-label={`${sheet.name} editable C&C LPA form`}>
+        <colgroup>{widths.map((width, column) => <col key={column} style={{ width: `${(width / tableWidth) * 100}%` }} />)}</colgroup>
         <tbody>
           {sheet.rows.map((row, rowIndex) => {
             // Rows 0 and 1 are replaced by the interactive Header Box
@@ -630,14 +630,14 @@ export default function CcSheet({
                     rowIndex >= 39 && rowIndex <= 43 ? 'cc-legend-row' : '',
                     rowIndex === 44 ? 'cc-footer' : '',
                     rowIndex === 44 && columnIndex === 6 ? 'cc-footer-date' : '',
-                    (columnIndex === 1 || columnIndex === 5) && merge?.e.r > rowIndex ? 'cc-vertical' : '',
+                    rowIndex > 3 && (columnIndex === 1 || columnIndex === 5) && merge?.e.r > rowIndex ? 'cc-vertical' : '',
                     columnIndex === 0 && rowIndex >= 4 && rowIndex <= 34 ? 'cc-number' : '',
                     columnIndex === 6 && rowIndex >= 4 && rowIndex <= 35 ? 'cc-mark' : '',
                     (Boolean(activeObsGroup) || Boolean(activeScoreGroup)) && rowIndex >= 4 && rowIndex <= 36 ? 'cc-score-cell' : '',
                     columnIndex === 2 && rowIndex >= 4 && rowIndex <= 34 ? 'cc-question' : '',
                   ].filter(Boolean).join(' ');
                   const isVertical = classes.split(' ').includes('cc-vertical');
-                  let cellDisplay = value;
+                  let cellDisplay = rowIndex === 2 && columnIndex === 0 ? 'S.No' : value;
 
                   // Row 35: Total Marks (col 6) and Total Scores for each group
                   if (rowIndex === 35) {

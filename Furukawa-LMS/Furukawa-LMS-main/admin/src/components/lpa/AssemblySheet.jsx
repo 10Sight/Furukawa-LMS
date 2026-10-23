@@ -200,7 +200,7 @@ export default function AssemblySheet({
   const initialDate = rawSheet?.date || editor?.date || editor?.auditDate || new Date().toISOString().slice(0, 10);
   const [formDate, setFormDate] = useState(initialDate);
   const [formShift, setFormShift] = useState(rawSheet?.shift || editor?.shift || '');
-  const [formDepartment, setFormDepartment] = useState(rawSheet?.department || editor?.department || '');
+  const [formDepartment, setFormDepartment] = useState('Assembly');
   const [formSection, setFormSection] = useState(rawSheet?.sectionName || rawSheet?.section || editor?.sectionName || '');
   const [formLine, setFormLine] = useState(rawSheet?.line || rawSheet?.lineArea || editor?.line || editor?.lineArea || '');
 
@@ -223,10 +223,13 @@ export default function AssemblySheet({
     if (Array.isArray(editor?.auditors) && editor.auditors.length > 0 && editor.auditors.some(Boolean)) return editor.auditors;
     if (rawSheet?.auditor && typeof rawSheet.auditor === 'string' && rawSheet.auditor.trim()) return [rawSheet.auditor.trim()];
     if (editor?.auditor && typeof editor.auditor === 'string' && editor.auditor.trim()) return [editor.auditor.trim()];
-    return [''];
+    return [];
   }, [rawSheet?.auditors, editor?.auditors, rawSheet?.auditor, editor?.auditor]);
 
   const [auditorList, setAuditorList] = useState(initialAuditors);
+  const [auditorFieldsVisible, setAuditorFieldsVisible] = useState(initialAuditors.some(Boolean));
+  const auditorSheetKey = rawSheet?.id || rawSheet?.name || editor?.id || editor?.name || '';
+  const auditorSheetKeyRef = useRef(auditorSheetKey);
 
   // Sync internal state if sheet/editor changes
   useEffect(() => {
@@ -236,22 +239,26 @@ export default function AssemblySheet({
     if (rawSheet?.shift || editor?.shift) {
       setFormShift(rawSheet?.shift || editor?.shift);
     }
-    if (rawSheet?.department || editor?.department) {
-      setFormDepartment(rawSheet?.department || editor?.department);
-    }
+    setFormDepartment('Assembly');
     if (rawSheet?.sectionName || rawSheet?.section || editor?.sectionName) {
       setFormSection(rawSheet?.sectionName || rawSheet?.section || editor?.sectionName);
     }
     if (rawSheet?.line || editor?.line) {
       setFormLine(rawSheet?.line || editor?.line);
     }
-    const incomingAuditors = (Array.isArray(rawSheet?.auditors) && rawSheet.auditors.length > 0 && rawSheet.auditors.some(Boolean))
+    const incomingAuditors = (Array.isArray(rawSheet?.auditors) && rawSheet.auditors.length > 0)
       ? rawSheet.auditors
-      : (Array.isArray(editor?.auditors) && editor.auditors.length > 0 && editor.auditors.some(Boolean))
+      : (Array.isArray(editor?.auditors) && editor.auditors.length > 0)
         ? editor.auditors
-        : (rawSheet?.auditor?.trim?.() ? [rawSheet.auditor.trim()] : (editor?.auditor?.trim?.() ? [editor.auditor.trim()] : ['']));
+        : (rawSheet?.auditor?.trim?.() ? [rawSheet.auditor.trim()] : (editor?.auditor?.trim?.() ? [editor.auditor.trim()] : []));
     setAuditorList(incomingAuditors);
-  }, [rawSheet?.date, rawSheet?.shift, rawSheet?.department, rawSheet?.sectionName, rawSheet?.line, rawSheet?.auditors, rawSheet?.auditor, editor?.date, editor?.shift, editor?.department, editor?.sectionName, editor?.line, editor?.auditors, editor?.auditor]);
+    if (auditorSheetKeyRef.current !== auditorSheetKey) {
+      auditorSheetKeyRef.current = auditorSheetKey;
+      setAuditorFieldsVisible(incomingAuditors.some(Boolean));
+    } else if (incomingAuditors.some(Boolean)) {
+      setAuditorFieldsVisible(true);
+    }
+  }, [rawSheet?.id, rawSheet?.name, rawSheet?.date, rawSheet?.shift, rawSheet?.department, rawSheet?.sectionName, rawSheet?.line, rawSheet?.auditors, rawSheet?.auditor, editor?.id, editor?.name, editor?.date, editor?.shift, editor?.department, editor?.sectionName, editor?.line, editor?.auditors, editor?.auditor, auditorSheetKey]);
 
   // Master Data: Sections and Employees
   const [sectionsMaster, setSectionsMaster] = useState(VERIFIED_SECTION_MASTER);
@@ -372,6 +379,7 @@ export default function AssemblySheet({
   const handleAddAuditor = () => {
     const next = [...auditorList, ''];
     setAuditorList(next);
+    setAuditorFieldsVisible(true);
     notifyMetadataChange({ auditors: next });
   };
 
@@ -963,9 +971,9 @@ export default function AssemblySheet({
 
             {/* Right Box: Auditor Name(s) with Search Dropdown + Add Auditor */}
             <div className="assembly-header-auditor-box">
-              <div className="flex items-center justify-between mb-1">
+              <div className={`flex items-center justify-between ${auditorFieldsVisible ? 'mb-1' : ''}`}>
                 <label className="text-[10px] font-bold text-slate-700 uppercase tracking-wider !mb-0">
-                  Auditor Name
+                  {auditorFieldsVisible ? 'Auditor Name' : ''}
                 </label>
                 <button
                   type="button"
@@ -979,7 +987,7 @@ export default function AssemblySheet({
                 </button>
               </div>
 
-              <div className="space-y-1.5">
+              {auditorFieldsVisible && <div className="space-y-1.5">
                 {auditorList.map((auditor, idx) => (
                   <div key={idx} className="flex items-center gap-1">
                     <AuditorSearchDropdown
@@ -1002,7 +1010,7 @@ export default function AssemblySheet({
                     )}
                   </div>
                 ))}
-              </div>
+              </div>}
             </div>
           </div>
 
@@ -1018,7 +1026,7 @@ export default function AssemblySheet({
                 type="date"
                 value={formDate}
                 onChange={handleDateChange}
-                disabled={disabled}
+                disabled
                 className="assembly-header-input assembly-header-input-date"
                 required
               />
@@ -1033,7 +1041,7 @@ export default function AssemblySheet({
                 id="lpa-assembly-shift"
                 value={formShift}
                 onChange={handleShiftChange}
-                disabled={disabled}
+                disabled
                 className="assembly-header-select assembly-header-select-shift"
                 required
               >
@@ -1051,7 +1059,7 @@ export default function AssemblySheet({
                 id="lpa-assembly-department"
                 value={formDepartment}
                 onChange={handleDepartmentChange}
-                disabled={disabled}
+                disabled
                 className="assembly-header-select assembly-header-select-dept truncate"
                 title={formDepartment || 'Select Department'}
                 required
@@ -1072,7 +1080,7 @@ export default function AssemblySheet({
                 id="lpa-assembly-section"
                 value={formSection}
                 onChange={handleSectionChange}
-                disabled={disabled}
+                disabled
                 className="assembly-header-select assembly-header-select-section truncate"
                 title={formSection || 'Select Section'}
               >
@@ -1094,7 +1102,7 @@ export default function AssemblySheet({
                 id="lpa-assembly-line"
                 value={formLine}
                 onChange={handleLineChange}
-                disabled={disabled}
+                disabled
                 className="assembly-header-select assembly-header-select-line truncate"
                 title={formLine || 'Select Line'}
               >

@@ -1207,8 +1207,21 @@ export default function PDCASheet({
         r.responsiblePersonConfirmation?.trim()
       );
       if (hasContent) {
-        if (!['Bawal', 'Gujrat'].includes(r.unit) || !['Bawal', 'Gujrat'].includes(r.respUnit || r.responsiblePersonUnit)) {
-          showToast(`Row ${i + 1}: Select valid values in both Unit fields before selecting a Department.`);
+        const hasPrimaryDepartment = Boolean(
+          r.department?.trim() || (Array.isArray(r.departments) && r.departments.some(d => d?.trim()))
+        );
+        const hasResponsibleDepartmentWithoutUnit = Boolean(
+          ((r.responsiblePersonDept && r.responsiblePersonDept !== 'CFT') && !['Bawal', 'Gujrat'].includes(r.respUnit || r.responsiblePersonUnit)) ||
+          (Array.isArray(r.staffEmployees) && r.staffEmployees.some(emp =>
+            emp.department && emp.department !== 'CFT' && !['Bawal', 'Gujrat'].includes(emp.unit || r.respUnit || r.responsiblePersonUnit)
+          ))
+        );
+        if (hasPrimaryDepartment && !['Bawal', 'Gujrat'].includes(r.unit)) {
+          showToast(`Row ${i + 1}: Select a Unit before selecting the Department.`);
+          return false;
+        }
+        if (hasResponsibleDepartmentWithoutUnit) {
+          showToast(`Row ${i + 1}: Select the Responsible Confirmation Unit before selecting its Department.`);
           return false;
         }
         const missing = [];
@@ -3758,7 +3771,8 @@ export default function PDCASheet({
             {rows.map((row, idx) => {
               const sNo = idx + 1;
               const canEditEntireRow = canEditEntireSheet;
-              const bothUnitsSelected = ['Bawal', 'Gujrat'].includes(row.unit) && ['Bawal', 'Gujrat'].includes(row.respUnit || row.responsiblePersonUnit);
+              const unitSelected = ['Bawal', 'Gujrat'].includes(row.unit);
+              const responsibleUnitSelected = ['Bawal', 'Gujrat'].includes(row.respUnit || row.responsiblePersonUnit);
               const isDeptMember = isUserInResponsibleDepartment(row, effectiveUser);
               const canEditActionCols = Boolean(!readOnly && (isCreatorOrAdmin || isDeptMember));
 
@@ -3854,11 +3868,11 @@ export default function PDCASheet({
                           <div key={dIdx} className="relative w-full p-0.5 flex items-center justify-between min-h-[30px] group/dept focus-within:bg-blue-50/30">
                             <div className="relative w-full flex items-center justify-center">
                               <select
-                                disabled={!canEditEntireRow || !bothUnitsSelected}
+                                disabled={!canEditEntireRow || !unitSelected}
                                 value={dVal || ''}
                                 onChange={(e) => handleUpdateDepartment(idx, dIdx, e.target.value)}
-                                className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1 text-[14px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${!canEditEntireRow || !bothUnitsSelected ? 'cursor-default opacity-50' : 'cursor-pointer'} appearance-none truncate font-medium`}
-                                title={bothUnitsSelected ? (dVal || 'Select Department') : 'Select both Unit fields first to choose a Department'}
+                                className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1 text-[14px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${!canEditEntireRow || !unitSelected ? 'cursor-default opacity-50' : 'cursor-pointer'} appearance-none truncate font-medium`}
+                                title={unitSelected ? (dVal || 'Select Department') : 'Select Unit first to choose a Department'}
                               >
                                 <option value="">Dept...</option>
                                 {departmentsList.map((d) => (
@@ -3889,7 +3903,7 @@ export default function PDCASheet({
                           <button
                             type="button"
                             onClick={() => handleAddDepartment(idx)}
-                            disabled={!bothUnitsSelected}
+                            disabled={!unitSelected}
                             className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-semibold text-blue-600 hover:text-blue-800 hover:bg-blue-100/50 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                             title="Add another Department"
                           >
@@ -4420,7 +4434,7 @@ export default function PDCASheet({
                             className="relative w-full py-1 px-1 flex items-center justify-center min-h-[30px] focus-within:bg-blue-50/30"
                           >
                             <select
-                              disabled={!canEditEntireRow || !bothUnitsSelected}
+                              disabled={!canEditEntireRow || !['Bawal', 'Gujrat'].includes(emp.unit || row.respUnit || row.responsiblePersonUnit)}
                               value={
                                 (emp.department && emp.department !== 'CFT')
                                   ? emp.department
@@ -4444,10 +4458,10 @@ export default function PDCASheet({
                                   return updated;
                                 });
                               }}
-                              className={`w-full bg-transparent border-0 outline-none text-[10px] font-semibold text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${!canEditEntireRow || !bothUnitsSelected ? 'cursor-default opacity-50' : 'cursor-pointer'} appearance-none truncate`}
-                              title={bothUnitsSelected
+                              className={`w-full bg-transparent border-0 outline-none text-[10px] font-semibold text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${!canEditEntireRow || !['Bawal', 'Gujrat'].includes(emp.unit || row.respUnit || row.responsiblePersonUnit) ? 'cursor-default opacity-50' : 'cursor-pointer'} appearance-none truncate`}
+                              title={['Bawal', 'Gujrat'].includes(emp.unit || row.respUnit || row.responsiblePersonUnit)
                                 ? (((emp.department && emp.department !== 'CFT') ? emp.department : (findEmployeeDepartment(emp.code ? `${emp.name} (${emp.code})` : emp.name, dbEmployees) || row.responsiblePersonDept)) || 'Select Department')
-                                : 'Select both Unit fields first to choose a Department'}
+                                : 'Select the Responsible Confirmation Unit first to choose a Department'}
                             >
                               <option value="">Dept...</option>
                               {emp.department && emp.department !== 'CFT' && !departmentsList.includes(emp.department) && (
@@ -4465,7 +4479,7 @@ export default function PDCASheet({
                     ) : (
                       <div className="relative w-full flex items-center justify-center focus-within:bg-blue-50/30">
                         <select
-                          disabled={!canEditEntireRow || !bothUnitsSelected}
+                          disabled={!canEditEntireRow || !responsibleUnitSelected}
                           value={
                             (row.responsiblePersonDept && row.responsiblePersonDept !== 'CFT')
                               ? row.responsiblePersonDept
@@ -4476,8 +4490,8 @@ export default function PDCASheet({
                                   ''))
                           }
                           onChange={(e) => handleResponsiblePersonDeptChange(idx, e.target.value)}
-                          className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${!canEditEntireRow || !bothUnitsSelected ? 'cursor-default opacity-50' : 'cursor-pointer'} appearance-none truncate`}
-                          title={bothUnitsSelected ? (row.responsiblePersonDept || 'Select Department') : 'Select both Unit fields first to choose a Department'}
+                          className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${!canEditEntireRow || !responsibleUnitSelected ? 'cursor-default opacity-50' : 'cursor-pointer'} appearance-none truncate`}
+                          title={responsibleUnitSelected ? (row.responsiblePersonDept || 'Select Department') : 'Select the Responsible Confirmation Unit first to choose a Department'}
                         >
                           <option value="">Dept...</option>
                           {row.responsiblePersonDept && row.responsiblePersonDept !== 'CFT' && !departmentsList.includes(row.responsiblePersonDept) && (

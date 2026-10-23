@@ -1,10 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { X, Layers, Calendar, Clock, Building2, User, Check, Plus, AlertCircle } from 'lucide-react';
+import { X, Layers, Calendar, Clock, Building2, Check, Plus, AlertCircle } from 'lucide-react';
 import { PDCA_DEPARTMENTS, DEFAULT_LINE_AREAS } from '@pages/pdca/data/pdcaConstants';
 import { fetchPdcaSections } from '@components/pdca/CascadingLineAreaSelect.jsx';
 import { VERIFIED_SECTION_MASTER } from '@pages/pdca/data/pdcaSections';
-import { VERIFIED_EMPLOYEE_MASTER } from '@pages/pdca/data/pdcaEmployees';
-import pdcaApi from '@/services/api/pdcaApi';
 
 export const LPA_LEVEL_OPTIONS = [
   {
@@ -55,13 +53,11 @@ export default function CreateLpaModal({
   const [department, setDepartment] = useState(initialSection === 'cc' ? 'C&C' : 'Assembly');
   const [sectionName, setSectionName] = useState('');
   const [line, setLine] = useState('');
-  const [auditor, setAuditor] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   // Master data
   const [sectionsMaster, setSectionsMaster] = useState(VERIFIED_SECTION_MASTER);
-  const [employeeMaster, setEmployeeMaster] = useState(VERIFIED_EMPLOYEE_MASTER);
 
   useEffect(() => {
     if (isOpen) {
@@ -74,7 +70,6 @@ export default function CreateLpaModal({
       setDepartment(sec === 'cc' ? 'C&C' : 'Assembly');
       setSectionName('');
       setLine('');
-      setAuditor('');
       setErrorMsg('');
       setSubmitting(false);
     }
@@ -86,15 +81,6 @@ export default function CreateLpaModal({
       .then(data => {
         if (active && Array.isArray(data) && data.length > 0) {
           setSectionsMaster(data);
-        }
-      })
-      .catch(() => { });
-
-    pdcaApi.getEmployees()
-      .then(res => {
-        const list = Array.isArray(res) ? res : res?.data;
-        if (active && Array.isArray(list) && list.length > 0) {
-          setEmployeeMaster(list);
         }
       })
       .catch(() => { });
@@ -208,7 +194,6 @@ export default function CreateLpaModal({
       department,
       sectionName,
       line,
-      auditor: auditor.trim()
     });
   };
 
@@ -357,18 +342,22 @@ export default function CreateLpaModal({
                 <label className="block text-[11px] font-medium text-slate-600 mb-1">
                   Department <span className="text-red-600">*</span>
                 </label>
-                <select
-                  value={department}
-                  onChange={(e) => handleDepartmentChange(e.target.value)}
-                  required
-                  className="w-full h-9 px-2 text-xs bg-white border border-slate-300 rounded-lg shadow-2xs focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-slate-800 font-medium truncate"
-                >
-                  {PDCA_DEPARTMENTS.map((dept) => (
-                    <option key={dept} value={dept}>
-                      {dept}
-                    </option>
-                  ))}
-                </select>
+                {section === 'assembly' ? (
+                  <input value="Assembly" readOnly className="w-full h-9 px-2 text-xs bg-slate-50 border border-slate-300 rounded-lg text-slate-800 font-medium" />
+                ) : (
+                  <select
+                    value={department}
+                    onChange={(e) => handleDepartmentChange(e.target.value)}
+                    required
+                    className="w-full h-9 px-2 text-xs bg-white border border-slate-300 rounded-lg shadow-2xs focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-slate-800 font-medium truncate"
+                  >
+                    {PDCA_DEPARTMENTS.map((dept) => (
+                      <option key={dept} value={dept}>
+                        {dept}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div>
@@ -409,32 +398,6 @@ export default function CreateLpaModal({
                   ))}
                 </select>
               </div>
-            </div>
-          </div>
-
-          {/* Optional Auditor Name */}
-          <div>
-            <label className="block text-[11px] font-medium text-slate-600 mb-1">
-              Auditor Name <span className="text-slate-400 font-normal">(Optional)</span>
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                list="lpa-auditor-suggestions"
-                value={auditor}
-                onChange={(e) => setAuditor(e.target.value)}
-                placeholder="Type or select auditor name..."
-                className="w-full h-9 pl-8 pr-3 text-xs bg-white border border-slate-300 rounded-lg shadow-2xs focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-slate-800"
-              />
-              <User size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-              <datalist id="lpa-auditor-suggestions">
-                {employeeMaster.map((emp) => (
-                  <option
-                    key={emp.id || emp.code || emp.name}
-                    value={emp.code ? `${emp.name} (${emp.code})` : emp.name}
-                  />
-                ))}
-              </datalist>
             </div>
           </div>
 

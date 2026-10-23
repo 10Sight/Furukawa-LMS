@@ -1,11 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import {
   BarChart3,
-  TrendingUp,
-  CheckCircle2,
-  Clock,
-  AlertTriangle,
-  HelpCircle,
   ChevronUp,
   ChevronDown,
   Calendar,
@@ -503,99 +498,6 @@ export default function PDCAMonthlyGraph({
 
       {!isCollapsed && (
         <div className="p-4 space-y-4">
-          {/* Top KPI Metric Cards (In-Progress, Done, Delay, Not-Started, Total) */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            {/* 1. In-Progress Card */}
-            <div className="bg-gradient-to-br from-amber-50/70 to-orange-50/40 border border-amber-200/80 rounded-xl p-3 relative overflow-hidden">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-amber-700 flex items-center gap-1">
-                  <Clock className="w-3 h-3" />
-                  <span>In-Progress</span>
-                </span>
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-xs" />
-              </div>
-              <div className="mt-1 flex items-baseline gap-2">
-                <span className="text-2xl font-extrabold text-amber-900 font-mono">{kpis.inProgress}</span>
-                <span className="text-[11px] text-amber-600 font-medium">active</span>
-              </div>
-              <div className="text-[10px] text-slate-500 mt-0.5">Under execution</div>
-            </div>
-
-            {/* 2. Done Card */}
-            <div className="bg-gradient-to-br from-emerald-50/70 to-teal-50/40 border border-emerald-200/80 rounded-xl p-3 relative overflow-hidden">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3" />
-                  <span>Done</span>
-                </span>
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-xs" />
-              </div>
-              <div className="mt-1 flex items-baseline gap-2">
-                <span className="text-2xl font-extrabold text-emerald-900 font-mono">{kpis.done}</span>
-                <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-100/70 px-1.5 py-0.2 rounded-md">
-                  {kpis.completionRate}%
-                </span>
-              </div>
-              <div className="text-[10px] text-slate-500 mt-0.5">Completed & Confirmed</div>
-            </div>
-
-            {/* 3. Delay Card */}
-            <div className={`bg-gradient-to-br from-rose-50/70 to-red-50/40 border rounded-xl p-3 relative overflow-hidden ${
-              kpis.delay > 0 ? 'border-rose-300 ring-1 ring-rose-200' : 'border-rose-200/80'
-            }`}>
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-rose-700 flex items-center gap-1">
-                  <AlertTriangle className="w-3 h-3" />
-                  <span>Delay</span>
-                </span>
-                <span className={`w-2.5 h-2.5 rounded-full ${kpis.delay > 0 ? 'bg-red-500 animate-pulse' : 'bg-red-400'}`} />
-              </div>
-              <div className="mt-1 flex items-baseline gap-2">
-                <span className="text-2xl font-extrabold text-rose-900 font-mono">{kpis.delay}</span>
-                {kpis.delay > 0 && (
-                  <span className="text-[11px] font-semibold text-rose-700 bg-rose-100/70 px-1.5 py-0.2 rounded-md">
-                    {kpis.delayRate}%
-                  </span>
-                )}
-              </div>
-              <div className="text-[10px] text-slate-500 mt-0.5">Passed response date</div>
-            </div>
-
-            {/* 4. Not-Started Card */}
-            <div className="bg-gradient-to-br from-blue-50/70 to-slate-50/60 border border-blue-200/80 rounded-xl p-3 relative overflow-hidden">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-blue-700 flex items-center gap-1">
-                  <HelpCircle className="w-3 h-3" />
-                  <span>Not-Started</span>
-                </span>
-                <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-xs" />
-              </div>
-              <div className="mt-1 flex items-baseline gap-2">
-                <span className="text-2xl font-extrabold text-blue-900 font-mono">{kpis.notStarted}</span>
-                <span className="text-[11px] text-blue-600 font-medium">pending</span>
-              </div>
-              <div className="text-[10px] text-slate-500 mt-0.5">No response date yet</div>
-            </div>
-
-            {/* 5. Total Card */}
-            <div className="bg-gradient-to-br from-slate-50 to-indigo-50/40 border border-slate-200 rounded-xl p-3 relative overflow-hidden">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700">Total PDCA</span>
-                <TrendingUp className="w-3.5 h-3.5 text-indigo-600" />
-              </div>
-              <div className="mt-1 flex items-baseline gap-2">
-                <span className="text-2xl font-extrabold text-slate-900 font-mono">{kpis.total}</span>
-                <span className="text-[11px] text-indigo-600 font-semibold">{kpis.completionRate}% closed</span>
-              </div>
-              <div className="w-full bg-slate-200 h-1.5 rounded-full mt-1.5 overflow-hidden">
-                <div
-                  className="bg-emerald-500 h-full rounded-full transition-all duration-500"
-                  style={{ width: `${Math.min(100, kpis.completionRate)}%` }}
-                />
-              </div>
-            </div>
-          </div>
-
           {/* Interactive Chart Container */}
           <div className="bg-slate-50/50 rounded-xl border border-slate-200/80 p-3 relative">
             <div className="flex flex-col md:flex-row items-stretch gap-3">

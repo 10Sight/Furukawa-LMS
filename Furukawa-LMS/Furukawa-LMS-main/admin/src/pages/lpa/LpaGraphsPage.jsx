@@ -20,11 +20,8 @@ import {
 import {
   ArrowLeft,
   BarChart3,
-  TrendingUp,
   Calendar,
   Layers,
-  Clock,
-  CheckCircle2,
   FileSpreadsheet,
   RefreshCw,
   ChevronDown,
@@ -419,32 +416,6 @@ export default function LpaGraphsPage() {
     return aggregateSectionData(records, 'cc', selectedUnit, dateRange);
   }, [records, selectedUnit, dateRange]);
 
-  // Overall Global KPI Summary
-  const globalSummary = useMemo(() => {
-    const totalSheets = assemblyData.summary.totalSheets + ccData.summary.totalSheets;
-    const scores = [
-      ...assemblyData.dailyData.flatMap(d => d.scores),
-      ...ccData.dailyData.flatMap(d => d.scores)
-    ];
-    const avgScore = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
-
-    return {
-      totalSheets,
-      avgScore,
-      assemblySheets: assemblyData.summary.totalSheets,
-      assemblyAvgScore: assemblyData.summary.avgScore,
-      ccSheets: ccData.summary.totalSheets,
-      ccAvgScore: ccData.summary.avgScore,
-      shiftA: assemblyData.summary.totalShiftA + ccData.summary.totalShiftA,
-      shiftB: assemblyData.summary.totalShiftB + ccData.summary.totalShiftB,
-      shiftC: assemblyData.summary.totalShiftC + ccData.summary.totalShiftC,
-      shiftG: assemblyData.summary.totalShiftG + ccData.summary.totalShiftG,
-      level3: assemblyData.summary.totalLevel3 + ccData.summary.totalLevel3,
-      level2: assemblyData.summary.totalLevel2 + ccData.summary.totalLevel2,
-      level1: assemblyData.summary.totalLevel1 + ccData.summary.totalLevel1
-    };
-  }, [assemblyData, ccData]);
-
   return (
     <div className="min-h-screen bg-slate-50/70 text-slate-800 flex flex-col font-sans">
       {/* Sticky Top Header Navigation */}
@@ -566,76 +537,6 @@ export default function LpaGraphsPage() {
             <button type="button" onClick={loadData} className="font-bold underline hover:text-rose-900">Retry</button>
           </div>
         )}
-
-        {/* Global KPI Strip */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Card 1: Total Sheets */}
-          <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Sheets Created</span>
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-                <FileSpreadsheet size={16} />
-              </div>
-            </div>
-            <div className="mt-2 text-2xl font-black text-slate-900">{globalSummary.totalSheets}</div>
-            <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
-              <span className="font-semibold text-slate-700">Assembly: {globalSummary.assemblySheets}</span> ·
-              <span className="font-semibold text-slate-700">C&C: {globalSummary.ccSheets}</span>
-            </div>
-          </div>
-
-          {/* Card 2: Overall Score */}
-          <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Average Compliance</span>
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
-                <TrendingUp size={16} />
-              </div>
-            </div>
-            <div className={`mt-2 text-2xl font-black ${globalSummary.avgScore >= 85 ? 'text-emerald-600' : globalSummary.avgScore >= 70 ? 'text-amber-600' : 'text-rose-600'}`}>
-              {globalSummary.avgScore}%
-            </div>
-            <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
-              <span>Assembly: {globalSummary.assemblyAvgScore}%</span> ·
-              <span>C&C: {globalSummary.ccAvgScore}%</span>
-            </div>
-          </div>
-
-          {/* Card 3: Shifts Distribution */}
-          <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Shift Volume</span>
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-50 text-purple-600">
-                <Clock size={16} />
-              </div>
-            </div>
-            <div className="mt-2 text-2xl font-black text-slate-900">
-              {globalSummary.shiftA + globalSummary.shiftB}
-            </div>
-            <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
-              <span className="text-blue-600 font-bold">Shift A: {globalSummary.shiftA}</span> ·
-              <span className="text-emerald-600 font-bold">Shift B: {globalSummary.shiftB}</span>
-            </div>
-          </div>
-
-          {/* Card 4: Levels Distribution */}
-          <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Hierarchy Levels</span>
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
-                <Layers size={16} />
-              </div>
-            </div>
-            <div className="mt-2 text-2xl font-black text-slate-900">
-              {globalSummary.level3 + globalSummary.level2 + globalSummary.level1}
-            </div>
-            <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
-              <span className="text-cyan-600 font-bold">L3: {globalSummary.level3}</span> ·
-              <span className="text-purple-600 font-bold">L2: {globalSummary.level2}</span> ·
-              <span className="text-pink-600 font-bold">L1: {globalSummary.level1}</span>
-            </div>
-          </div>
-        </div>
 
         {/* Section Navigation Tabs */}
         <div className="flex items-center justify-between flex-wrap gap-2">

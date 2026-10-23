@@ -1025,7 +1025,7 @@ function LpaPageContent({ viewContext }) {
             title="Open LPA Analytics & Graphs (Assembly & C&C Sheets)"
           >
             <BarChart3 size={16} />
-            <span>Graphs</span>
+            <span>Graph trend</span>
           </button>
         </div>
       </div>

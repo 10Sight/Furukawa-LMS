@@ -271,7 +271,7 @@ export class LpaRecord {
     };
   }
 
-  static async getRecordById(idOrRecordId, user = null) {
+  static async getRecordById(idOrRecordId, user = null, { authoritative = false } = {}) {
     const idStr = String(idOrRecordId);
     const dbActive = await isDbConnected();
 
@@ -336,7 +336,11 @@ export class LpaRecord {
             updatedAt: r.updatedAt
           };
         }
+        // Email selection validates against the DB when connected. A disk
+        // fallback there could resurrect a workbook deleted from the DB.
+        if (authoritative) return null;
       } catch (err) {
+        if (authoritative) throw err;
         logger.warn("Querying lpa_record by ID failed:", err.message);
       }
     }
@@ -928,6 +932,7 @@ export class LpaRecord {
         ]);
       } catch (err) {
         logger.error("Failed deleting lpa_record from DB:", err.message);
+        throw err;
       }
     }
 

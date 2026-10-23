@@ -15,6 +15,23 @@ import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import { listLPAWorkbooks } from '../../pages/lpa/lpaStore.js';
 import lpaApi from '../../services/api/lpaApi.js';
 
+// Keep the popup focused on sheets generated after this feature was introduced.
+// The cutoff is stored in this browser so a refresh or a new popup instance does
+// not bring older workbook records back into the selection list.
+const assemblyMailSheetsCutoffKey = 'cms.lpa.assemblyMailSheetsCutoff.v1';
+function getAssemblyMailSheetsCutoff() {
+  try {
+    const saved = Number(window.localStorage.getItem(assemblyMailSheetsCutoffKey));
+    if (Number.isFinite(saved) && saved > 0) return saved;
+    const cutoff = Date.now();
+    window.localStorage.setItem(assemblyMailSheetsCutoffKey, String(cutoff));
+    return cutoff;
+  } catch {
+    return Date.now();
+  }
+}
+const assemblyMailSheetsCutoff = getAssemblyMailSheetsCutoff();
+
 /**
  * SendMailModal
  * Clean frontend email modal with blank input fields & multi-CC support:
@@ -29,6 +46,7 @@ export default function SendMailModal({
   title = 'LPA Check Sheet',
   metadata = {},
   pdcaLabel = 'PDCA',
+  pdcaOnly = false,
   assemblySheets: suppliedAssemblySheets,
   pdcaSheets: suppliedPdcaSheets,
   onViewAssemblySheet,
@@ -55,10 +73,16 @@ export default function SendMailModal({
   const [defaultCcDraft, setDefaultCcDraft] = useState([]);
   const [defaultMailsLoading, setDefaultMailsLoading] = useState(false);
   const [defaultMailsSaving, setDefaultMailsSaving] = useState(false);
+  const [attachedDefaultToEmails, setAttachedDefaultToEmails] = useState([]);
+  const [attachedDefaultCcEmails, setAttachedDefaultCcEmails] = useState([]);
   const ccInputsRef = useRef([]);
   const requestInFlightRef = useRef(false);
   const idempotencyKeyRef = useRef('');
   const toInputRef = useRef(null);
+  const selectedSection = formType === 'cc' || [metadata.section, metadata.sectionName, metadata.category]
+    .some((value) => /c\s*&\s*c|\bcc\b/i.test(String(value || '')))
+    ? 'cc'
+    : 'assembly';
 
   // When modal opens, all input fields are reset to blank, CC is optional/hidden by default
   useEffect(() => {
@@ -75,6 +99,8 @@ export default function SendMailModal({
     setAssemblySelection('');
     setPdcaSelection('');
     setShowDefaultMailPopup(false);
+    setAttachedDefaultToEmails([]);
+    setAttachedDefaultCcEmails([]);
     requestInFlightRef.current = false;
     idempotencyKeyRef.current = window.crypto?.randomUUID?.() || `mail-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   }, [isOpen]);
@@ -100,28 +126,6 @@ export default function SendMailModal({
         ).values()];
         setDefaultToEmails(to);
         setDefaultCcEmails(cc);
-        setRecipients(current => {
-          const next = [...current];
-          const existing = new Set(next.map(email => email.trim().toLowerCase()));
-          to.forEach(email => {
-            if (!existing.has(email.toLowerCase())) {
-              next.push(email);
-              existing.add(email.toLowerCase());
-            }
-          });
-          return next;
-        });
-        setCcEmails(current => {
-          const next = current.filter(email => email.trim());
-          const existing = new Set(next.flatMap(value => value.split(/[,;\s]+/).map(email => email.trim().toLowerCase()).filter(Boolean)));
-          cc.forEach(email => {
-            if (!existing.has(email.toLowerCase())) {
-              next.push(email);
-              existing.add(email.toLowerCase());
-            }
-          });
-          return next.length ? next : [''];
-        });
       })
       .catch((error) => {
         if (active) toast.error(error.response?.data?.message || 'Could not load saved default email addresses.');
@@ -131,20 +135,29 @@ export default function SendMailModal({
   }, [isOpen]);
 
   useEffect(() => {
-    if (!isOpen || Array.isArray(suppliedAssemblySheets)) return undefined;
+    // The LPA page supplies its current, already-filtered workbook list. Reuse
+    // that source so the popup cannot resurrect records from a separate/stale
+    // list request after a workbook has been deleted.
+    if (!isOpen || pdcaOnly || Array.isArray(suppliedAssemblySheets)) return undefined;
     let active = true;
+    setAssemblyRecords([]);
     setSheetsLoading(true);
     listLPAWorkbooks(userContext?.user?.id || userContext?.user?._id || 'current')
       .then((records) => { if (active) setAssemblyRecords(Array.isArray(records) ? records : []); })
       .catch(() => { if (active) setAssemblyRecords([]); })
       .finally(() => { if (active) setSheetsLoading(false); });
     return () => { active = false; };
-  }, [isOpen, suppliedAssemblySheets, userContext?.user?.id, userContext?.user?._id]);
+  }, [isOpen, pdcaOnly, suppliedAssemblySheets, selectedSection, userContext?.user?.id, userContext?.user?._id]);
 
-  const selectedSection = String(metadata.section || metadata.sectionName || metadata.category || (formType === 'cc' ? 'cc' : 'assembly')).toLowerCase().includes('cc') ? 'cc' : 'assembly';
   const assemblySheetLabel = selectedSection === 'cc' ? 'LPA C&C Sheet' : 'LPA Assembly Sheet';
+  const pdcaSheetPrompt = /\bsheet$/i.test(pdcaLabel) ? pdcaLabel : `${pdcaLabel} sheet`;
   const assemblyOptions = (Array.isArray(suppliedAssemblySheets) ? suppliedAssemblySheets : assemblyRecords)
-    .filter((record) => record && record.section === selectedSection && !record.sampleData)
+    .filter((record) => {
+      if (!record || record.section !== selectedSection || record.sampleData) return false;
+      if (selectedSection !== 'assembly') return true;
+      const createdAt = Date.parse(record.createdAt || '');
+      return Number.isFinite(createdAt) && createdAt > assemblyMailSheetsCutoff;
+    })
     .flatMap((record) => (Array.isArray(record.sheets) ? record.sheets : []).map((sheet, sheetIndex) => ({
       key: `${record.id}::${sheetIndex}`,
       record,
@@ -273,13 +286,24 @@ export default function SendMailModal({
     }
   };
 
-  const addDefaultEmailsToRecipients = () => {
-    const hasDefaults = defaultToEmails.length > 0 || defaultCcEmails.length > 0;
-    if (defaultToEmails.length) {
+  const addDefaultEmailsToRecipients = async () => {
+    if (defaultMailsLoading) return;
+    setDefaultMailsLoading(true);
+    try {
+    const attached = await lpaApi.attachDefaultMailRecipients();
+    const to = Array.isArray(attached?.to) ? attached.to : [];
+    const cc = Array.isArray(attached?.cc) ? attached.cc : [];
+    setDefaultToEmails(to);
+    setDefaultCcEmails(cc);
+    const hasDefaults = to.length > 0 || cc.length > 0;
+    const addedTo = to.filter(email => !recipients.some(existing => existing.trim().toLowerCase() === email.toLowerCase()));
+    const currentCc = ccEmails.flatMap(value => value.split(/[,;\s]+/).map(email => email.trim()).filter(Boolean));
+    const addedCc = cc.filter(email => !currentCc.some(existing => existing.toLowerCase() === email.toLowerCase()));
+    if (to.length) {
       setRecipients((current) => {
         const next = [...current];
         const existing = new Set(next.map((email) => email.toLowerCase()));
-        defaultToEmails.forEach((email) => {
+        to.forEach((email) => {
           if (!existing.has(email.toLowerCase())) {
             next.push(email);
             existing.add(email.toLowerCase());
@@ -288,12 +312,12 @@ export default function SendMailModal({
         return next;
       });
     }
-    if (defaultCcEmails.length) {
+    if (cc.length) {
       setShowCc(true);
       setCcEmails((current) => {
         const next = current.flatMap((value) => value.split(/[,;\s]+/).map((email) => email.trim()).filter(Boolean));
         const existing = new Set(next.map((email) => email.toLowerCase()));
-        defaultCcEmails.forEach((email) => {
+        cc.forEach((email) => {
           if (!existing.has(email.toLowerCase())) {
             next.push(email);
             existing.add(email.toLowerCase());
@@ -302,7 +326,29 @@ export default function SendMailModal({
         return next.length ? next : [''];
       });
     }
+    setAttachedDefaultToEmails(current => [...new Set([...current, ...addedTo.map(email => email.toLowerCase())])]);
+    setAttachedDefaultCcEmails(current => [...new Set([...current, ...addedCc.map(email => email.toLowerCase())])]);
     if (hasDefaults) toast.success('Saved default To and CC addresses added to their matching fields.');
+    else toast.info('No default To or CC addresses are configured.');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not attach saved default email addresses.');
+    } finally {
+      setDefaultMailsLoading(false);
+    }
+  };
+
+  const removeAttachedDefaultEmails = () => {
+    const toSet = new Set(attachedDefaultToEmails);
+    const ccSet = new Set(attachedDefaultCcEmails);
+    setRecipients(current => current.filter(email => !toSet.has(email.trim().toLowerCase())));
+    setCcEmails(current => {
+      const remaining = current.flatMap(value => value.split(/[,;\s]+/).map(email => email.trim()).filter(Boolean))
+        .filter(email => !ccSet.has(email.toLowerCase()));
+      return remaining.length ? remaining : [''];
+    });
+    setAttachedDefaultToEmails([]);
+    setAttachedDefaultCcEmails([]);
+    toast.success('Attached default addresses removed.');
   };
 
   // Multiple CC handlers
@@ -371,7 +417,7 @@ export default function SendMailModal({
 
   const handleSend = async () => {
     if (requestInFlightRef.current || sentSuccess) return;
-    if (!selectedAssembly) {
+    if (!pdcaOnly && !selectedAssembly) {
       toast.error('Please select an Assembly sheet before sending the email.');
       return;
     }
@@ -405,14 +451,14 @@ export default function SendMailModal({
     requestInFlightRef.current = true;
     setSending(true);
     try {
-      const selectedAssemblyPayload = {
+      const selectedAssemblyPayload = selectedAssembly ? {
         workbookId: selectedAssembly.record.id || selectedAssembly.record._id,
         sheetIndex: selectedAssembly.sheetIndex,
         section: selectedSection,
         name: selectedAssembly.sheet.name || `Sheet ${selectedAssembly.sheetIndex + 1}`,
         unit: selectedAssembly.record.unit || '',
         date: selectedAssembly.record.auditDate || selectedAssembly.record.date || ''
-      };
+      } : null;
       const selectedPdcaPayload = {
         id: selectedPdca.sheet.id || selectedPdca.sheet._id,
         source: selectedPdca.sheet.source === 'lpa' ? 'lpa' : 'pdca',
@@ -427,13 +473,14 @@ export default function SendMailModal({
           ? { sheetData: selectedPdca.sheet.sheet }
           : {})
       };
-      const providerResult = await lpaApi.sendEmail({
+      const emailPayload = {
         to: finalRecipients,
         cc: finalCcList,
         remarks,
-        assemblySheet: selectedAssemblyPayload,
-        pdcaSheet: selectedPdcaPayload
-      }, idempotencyKeyRef.current);
+        pdcaSheet: selectedPdcaPayload,
+        ...(pdcaOnly ? { emailMode: 'pdca-only' } : { assemblySheet: selectedAssemblyPayload })
+      };
+      const providerResult = await lpaApi.sendEmail(emailPayload, idempotencyKeyRef.current);
 
       setSentSuccess(true);
       toast.success(`Email accepted by the mail service for ${finalRecipients.join(', ')}`);
@@ -443,7 +490,7 @@ export default function SendMailModal({
             recipients: finalRecipients,
             cc: finalCcList,
             remarks,
-            assemblySheet: { ...selectedAssemblyPayload, data: selectedAssembly.sheet },
+            assemblySheet: selectedAssembly ? { ...selectedAssemblyPayload, data: selectedAssembly.sheet } : null,
             pdcaSheet: selectedPdcaPayload.id,
             pdcaSheetData: selectedPdca.sheet,
             providerResult
@@ -492,13 +539,15 @@ export default function SendMailModal({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => { openDefaultMailPopup(); addDefaultEmailsToRecipients(); }}
+              onClick={openDefaultMailPopup}
               disabled={sending || defaultMailsLoading}
               className="px-2.5 py-1.5 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg whitespace-nowrap disabled:opacity-50"
               title="Manage saved default To and CC addresses"
             >
               Add Default Mails
             </button>
+            <button type="button" onClick={addDefaultEmailsToRecipients} disabled={sending || defaultMailsLoading || (!defaultToEmails.length && !defaultCcEmails.length)} className="px-2.5 py-1.5 text-[11px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg whitespace-nowrap disabled:opacity-50" title="Attach saved default addresses to their matching fields">Attach Default Mails</button>
+            <button type="button" onClick={removeAttachedDefaultEmails} disabled={sending || (!attachedDefaultToEmails.length && !attachedDefaultCcEmails.length)} className="px-2.5 py-1.5 text-[11px] font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg whitespace-nowrap disabled:opacity-50" title="Remove addresses attached by Attach Default Mails">Remove Default Mails</button>
             <button
               type="button"
               onClick={onClose}
@@ -653,8 +702,8 @@ export default function SendMailModal({
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="min-w-0">
+          <div className={`grid grid-cols-1 ${pdcaOnly ? '' : 'sm:grid-cols-2'} gap-4`}>
+            {!pdcaOnly && <div className="min-w-0">
               <label htmlFor="mail-assembly-sheet" className="block font-semibold text-slate-700 mb-1.5">
                 {assemblySheetLabel} <span className="text-red-500">*</span>
               </label>
@@ -673,7 +722,7 @@ export default function SendMailModal({
                   View Sheet
                 </button>
               )}
-            </div>
+            </div>}
 
             <div className="min-w-0">
               <label htmlFor="mail-pdca-sheet" className="block font-semibold text-slate-700 mb-1.5">
@@ -686,7 +735,7 @@ export default function SendMailModal({
                 onChange={(event) => setPdcaSelection(event.target.value)}
                 className="w-full min-w-0 px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
               >
-                <option value="">Select a {pdcaLabel} sheet…</option>
+                <option value="">Select a {pdcaSheetPrompt}…</option>
                 {pdcaOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
               </select>
               {selectedPdca && (

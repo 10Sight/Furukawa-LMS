@@ -19,17 +19,35 @@ const ensureDefaultMailTable = async () => {
 const getUserId = (req) => req.user?.id ?? req.user?._id ?? req.user?.userId;
 const validEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
-export const getDefaultMailRecipients = asyncHandler(async (req, res) => {
-  const userId = getUserId(req);
-  if (!userId) throw new ApiError("A signed-in user is required to access default mail addresses.", 401);
+const readDefaultMailLists = async (userId) => {
   await ensureDefaultMailTable();
   const [rows] = await executeQuery("SELECT emailAddresses FROM dbo.lpa_default_mail_recipients WHERE userId = ?", [String(userId)]);
   let stored = {};
   try { stored = rows[0]?.emailAddresses ? JSON.parse(rows[0].emailAddresses) : {}; } catch { stored = {}; }
   // Older saved data was a single To list; continue to expose it as To defaults.
-  const to = Array.isArray(stored) ? stored : (Array.isArray(stored.to) ? stored.to : []);
-  const cc = Array.isArray(stored.cc) ? stored.cc : [];
+  const toSource = Array.isArray(stored) ? stored : (Array.isArray(stored.to) ? stored.to : []);
+  const ccSource = Array.isArray(stored.cc) ? stored.cc : [];
+  const normalize = (addresses) => [...new Map(addresses
+    .map(email => String(email).trim())
+    .filter(email => validEmail(email))
+    .map(email => [email.toLowerCase(), email])).values()];
+  return { to: normalize(toSource), cc: normalize(ccSource) };
+};
+
+export const getDefaultMailRecipients = asyncHandler(async (req, res) => {
+  const userId = getUserId(req);
+  if (!userId) throw new ApiError("A signed-in user is required to access default mail addresses.", 401);
+  const { to, cc } = await readDefaultMailLists(userId);
   res.json(new ApiResponse(200, { to, cc, emails: to }, "Default mail addresses fetched."));
+});
+
+// Return the configured recipient lists for the popup's explicit Attach action.
+// This does not modify saved configuration or any manually selected recipients.
+export const attachDefaultMailRecipients = asyncHandler(async (req, res) => {
+  const userId = getUserId(req);
+  if (!userId) throw new ApiError("A signed-in user is required to attach default mail addresses.", 401);
+  const { to, cc } = await readDefaultMailLists(userId);
+  res.json(new ApiResponse(200, { to, cc, emails: to }, "Default mail addresses ready to attach."));
 });
 
 export const saveDefaultMailRecipients = asyncHandler(async (req, res) => {

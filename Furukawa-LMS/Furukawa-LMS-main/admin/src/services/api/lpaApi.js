@@ -70,6 +70,11 @@ export const lpaApi = {
     return response.data?.data || response.data;
   },
 
+  attachDefaultMailRecipients: async () => {
+    const response = await axiosInstance.post(`${BASE_PATH}/default-mails/attach`);
+    return response.data?.data || response.data;
+  },
+
   saveDefaultMailRecipients: async (to, cc = []) => {
     const response = await axiosInstance.put(`${BASE_PATH}/default-mails`, { to, cc });
     return response.data?.data || response.data;

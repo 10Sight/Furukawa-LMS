@@ -6,7 +6,7 @@ import ENV from "../../configs/env.config.js";
 import User from "../../models/auth.model.js";
 import verifyJWT from "../../middlewares/auth.middleware.js";
 import { sendLpaEmail } from "../../controllers/lpa/lpaEmail.controller.js";
-import { getDefaultMailRecipients, saveDefaultMailRecipients } from "../../controllers/lpa/lpaDefaultMail.controller.js";
+import { attachDefaultMailRecipients, getDefaultMailRecipients, saveDefaultMailRecipients } from "../../controllers/lpa/lpaDefaultMail.controller.js";
 import {
   getTemplates,
   getTemplateBySection,
@@ -157,6 +157,7 @@ router.get("/records/same-day-source", getSameDaySourceData);
 // CMS email requests require a verified user and only report success after SMTP acceptance.
 router.post("/send-email", verifyJWT, sendLpaEmail);
 router.get("/default-mails", verifyJWT, getDefaultMailRecipients);
+router.post("/default-mails/attach", verifyJWT, attachDefaultMailRecipients);
 router.put("/default-mails", verifyJWT, saveDefaultMailRecipients);
 
 // LPA Records (explicit endpoints)

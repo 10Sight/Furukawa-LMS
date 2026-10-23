@@ -275,11 +275,9 @@ export async function deleteLPAWorkbook(ownerIdOrWorkbookId, maybeWorkbookId) {
   const workbookId = maybeWorkbookId !== undefined ? maybeWorkbookId : ownerIdOrWorkbookId;
   const ownerId = maybeWorkbookId !== undefined ? ownerIdOrWorkbookId : 'current';
 
-  try {
-    await lpaApi.deleteRecord(workbookId);
-  } catch (apiError) {
-    console.warn('Backend delete request failed:', apiError?.message || apiError);
-  }
+  // Do not report a local-only deletion as successful when the authoritative
+  // backend still has the workbook. The caller keeps it visible on failure.
+  await lpaApi.deleteRecord(workbookId);
 
   // Remove from local IndexedDB cache
   await transaction('readwrite', (store, done, fail) => {

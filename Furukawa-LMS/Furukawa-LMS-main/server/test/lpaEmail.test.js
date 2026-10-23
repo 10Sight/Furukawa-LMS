@@ -129,6 +129,8 @@ test("email endpoint returns success only after provider acceptance and deduplic
       sentHtml = html;
       return { messageId: "provider-accepted-id", accepted: to, rejected: [] };
     },
+    getLpaRecord: async id => ({ id, section: "assembly", sheets: [{ rows: [] }, { rows: [[{ value: "saved" }]] }] }),
+    getPdcaRecord: async id => ({ id, sheet: { rows: [{ observation: "Saved observation" }] } }),
     attemptStore: new Map(),
     portalBaseUrl: "https://portal.example"
   });
@@ -137,7 +139,7 @@ test("email endpoint returns success only after provider acceptance and deduplic
     cc: [],
     subject: "Selected CMS sheets",
     assemblySheet: { workbookId: "book-1", sheetIndex: 1, name: "Assembly" },
-    pdcaSheet: { id: "lpa-pdca-1", source: "lpa", section: "assembly", name: "Observation" }
+    pdcaSheet: { id: "PDCA-LPA-1", source: "lpa", section: "assembly", name: "Observation" }
   };
   const first = makeRequestResponse(body);
   await invokeHandler(sendHandler, first.req, first.res);
@@ -146,12 +148,66 @@ test("email endpoint returns success only after provider acceptance and deduplic
   assert.equal(first.res.responseBody.message, "Email accepted by the configured mail service.");
   assert.deepEqual(sentTo, body.to);
   assert.match(sentHtml, /viewWorkbookId=book-1/);
-  assert.match(sentHtml, /viewPdcaSheetId=lpa-pdca-1/);
+  assert.match(sentHtml, /viewPdcaSheetId=PDCA-LPA-1/);
 
   const retry = makeRequestResponse(body);
   await invokeHandler(sendHandler, retry.req, retry.res);
   assert.equal(retry.res.statusCode, 200);
   assert.equal(sendCount, 1);
+});
+
+test("PDCA-only email sends the selected PDCA sheet without requiring an LPA workbook", async () => {
+  let sentSubject;
+  let sentHtml;
+  let lpaLookupCount = 0;
+  const sendHandler = createSendLpaEmailHandler({
+    sendMailFn: async (_to, subject, html) => {
+      sentSubject = subject;
+      sentHtml = html;
+      return { accepted: ["one@example.com"], rejected: [] };
+    },
+    getLpaRecord: async () => { lpaLookupCount += 1; return null; },
+    getPdcaRecord: async id => ({ id, sheet: { rows: [{ observation: "Saved PDCA observation" }] } }),
+    attemptStore: new Map(),
+    portalBaseUrl: "https://portal.example"
+  });
+  const { req, res } = makeRequestResponse({
+    emailMode: "pdca-only",
+    to: ["one@example.com"],
+    cc: [],
+    pdcaSheet: { id: "pdca-9", source: "pdca", section: "assembly", name: "PDCA report" }
+  }, "pdca-only-email");
+
+  await invokeHandler(sendHandler, req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(lpaLookupCount, 0);
+  assert.equal(sentSubject, "Assembly PDCA Sheet");
+  assert.match(sentHtml, /sheet=pdca-9/);
+  assert.doesNotMatch(sentHtml, /viewWorkbookId=/);
+  assert.equal(res.responseBody.data.links.assembly, undefined);
+  assert.equal(res.responseBody.data.links.pdca, "https://portal.example/cms/pdca?sheet=pdca-9");
+});
+
+test("email endpoint rejects an Assembly workbook that no longer exists", async () => {
+  let sendCount = 0;
+  const sendHandler = createSendLpaEmailHandler({
+    sendMailFn: async () => { sendCount += 1; return { accepted: ["one@example.com"], rejected: [] }; },
+    getLpaRecord: async () => null,
+    attemptStore: new Map(),
+    portalBaseUrl: "https://portal.example"
+  });
+  const { req, res } = makeRequestResponse({
+    to: ["one@example.com"],
+    cc: [],
+    assemblySheet: { workbookId: "deleted-book", sheetIndex: 0 },
+    pdcaSheet: { id: "lpa-pdca-1", source: "lpa", section: "assembly" }
+  }, "deleted-assembly-workbook");
+
+  await invokeHandler(sendHandler, req, res);
+
+  assert.equal(res.statusCode, 404);
+  assert.equal(sendCount, 0);
 });
 
 test("email endpoint reports provider rejection without claiming success", async () => {

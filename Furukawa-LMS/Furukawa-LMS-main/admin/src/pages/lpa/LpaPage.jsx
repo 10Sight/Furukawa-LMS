@@ -619,6 +619,7 @@ function LpaPageContent({ viewContext }) {
       return [];
     }
   });
+  const [pdcaDeleteRevision, setPdcaDeleteRevision] = useState(0);
 
   useEffect(() => {
     try {
@@ -646,8 +647,12 @@ function LpaPageContent({ viewContext }) {
       department: activeSection === 'assembly' ? 'Assembly' : 'C&C',
       isDefault: true
     };
-    return [baseSheet, ...customPdcaSheets];
-  }, [activeSection, selectedUnit, pdcaDate, customPdcaSheets]);
+    let deletedDefaultIds = [];
+    try {
+      deletedDefaultIds = JSON.parse(localStorage.getItem(`lpa_deleted_default_pdca_sheets_${activeSection}_${selectedUnit || 'Bawal'}`) || '[]');
+    } catch { /* An invalid removal cache never changes saved LPA records. */ }
+    return [...(deletedDefaultIds.includes(baseSheet.id) ? [] : [baseSheet]), ...customPdcaSheets];
+  }, [activeSection, selectedUnit, pdcaDate, customPdcaSheets, pdcaDeleteRevision]);
 
   const emailPdcaSheets = useMemo(() => allPdcaSheets.map(item => {
     let sheetData = null;
@@ -773,16 +778,27 @@ function LpaPageContent({ viewContext }) {
     setMessage({ text: `✓ PDCA Sheet "${newSheet.title}" created successfully.` });
   };
 
-  const handleDeleteCustomPdcaSheet = (sheetId) => {
+  const handleDeletePdcaSheet = (sheet) => {
     if (!isAdmin) return;
-    if (!confirm('Are you sure you want to delete this PDCA sheet?')) return;
-    const updated = customPdcaSheets.filter(s => s.id !== sheetId);
-    setCustomPdcaSheets(updated);
+    if (!confirm(`Are you sure you want to delete "${sheet.title}"?`)) return;
     try {
-      localStorage.setItem(`lpa_custom_pdca_sheets_${activeSection}_${selectedUnit || 'Bawal'}`, JSON.stringify(updated));
-      localStorage.removeItem(`lpa_pdca_saved_${sheetId}`);
+      if (sheet.isDefault) {
+        const key = `lpa_deleted_default_pdca_sheets_${activeSection}_${selectedUnit || 'Bawal'}`;
+        const existing = JSON.parse(localStorage.getItem(key) || '[]');
+        const deletedIds = Array.isArray(existing) ? existing : [];
+        if (!deletedIds.includes(sheet.id)) deletedIds.push(sheet.id);
+        localStorage.setItem(key, JSON.stringify(deletedIds));
+        setPdcaDeleteRevision(revision => revision + 1);
+      } else {
+        const updated = customPdcaSheets.filter(item => item.id !== sheet.id);
+        setCustomPdcaSheets(updated);
+        localStorage.setItem(`lpa_custom_pdca_sheets_${activeSection}_${selectedUnit || 'Bawal'}`, JSON.stringify(updated));
+      }
+      localStorage.removeItem(`lpa_pdca_saved_${sheet.id}`);
     } catch (err) {
       console.error(err);
+      setMessage({ error: true, text: 'The PDCA sheet could not be deleted from this browser.' });
+      return;
     }
     setMessage({ text: 'PDCA sheet deleted.' });
   };
@@ -1225,10 +1241,10 @@ function LpaPageContent({ viewContext }) {
                                   >
                                     <Eye size={14} /> Open
                                   </button>
-                                  {isAdmin && !sh.isDefault && (
+                                  {isAdmin && (
                                     <button
                                       type="button"
-                                      onClick={() => handleDeleteCustomPdcaSheet(sh.id)}
+                                      onClick={() => handleDeletePdcaSheet(sh)}
                                       className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold cursor-pointer transition-colors"
                                       title="Delete PDCA Sheet"
                                     >

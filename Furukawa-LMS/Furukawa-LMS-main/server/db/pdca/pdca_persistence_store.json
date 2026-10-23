@@ -2555,5 +2555,1456 @@
       "details": "Created PDCA record: Reduction of Solder Bridge Defects in ECU Assembly (PDCA-GJ-101)",
       "createdAt": "2026-10-13T10:08:56.971Z"
     }
+  ],
+  "sections": [
+    {
+      "id": 118,
+      "name": "200% Manpower",
+      "uniCode": "WQ1-7",
+      "departmentId": 61,
+      "category": "Direct",
+      "lines": [
+        {
+          "id": 436,
+          "name": "200%",
+          "uniCode": "200%",
+          "sectionId": 118,
+          "department": 61
+        }
+      ]
+    },
+    {
+      "id": 78,
+      "name": "AIRBAG SUB-ASSEMBLY",
+      "uniCode": "WAP1-6",
+      "departmentId": 62,
+      "category": "Direct",
+      "lines": [
+        {
+          "id": 230,
+          "name": "AIRBAG",
+          "uniCode": "AB-01",
+          "sectionId": 78,
+          "department": 62
+        }
+      ]
+    },
+    {
+      "id": 116,
+      "name": "Assembly (Rework/Material Handler/Trainer/Support)",
+      "uniCode": "WAP1-2",
+      "departmentId": 62,
+      "category": "Direct",
+      "lines": [
+        {
+          "id": 397,
+          "name": "REWORK",
+          "uniCode": "Rework",
+          "sectionId": 116,
+          "department": 62
+        },
+        {
+          "id": 394,
+          "name": "Ventilation",
+          "uniCode": "BSL/YXA",
+          "sectionId": 116,
+          "department": 62
+        },
+        {
+          "id": 382,
+          "name": "YED IP-1",
+          "uniCode": "YED-1",
+          "sectionId": 116,
+          "department": 62
+        },
+        {
+          "id": 383,
+          "name": "YED IP-2",
+          "uniCode": "YED-2",
+          "sectionId": 116,
+          "department": 62
+        },
+        {
+          "id": 384,
+          "name": "YED IP-3",
+          "uniCode": "YED-3",
+          "sectionId": 116,
+          "department": 62
+        },
+        {
+          "id": 385,
+          "name": "YHB AS DOOR",
+          "uniCode": "SMALL CONV.-1",
+          "sectionId": 116,
+          "department": 62
+        },
+        {
+          "id": 387,
+          "name": "YHB BACK DOOR",
+          "uniCode": "BACK DOOR",
+          "sectionId": 116,
+          "department": 62
+        },
+        {
+          "id": 386,
+          "name": "YHB DR DOOR",
+          "uniCode": "SMALL CONV.-2",
+          "sectionId": 116,
+          "department": 62
+        },
+        {
+          "id": 379,
+          "name": "YHB FLOOR-1",
+          "uniCode": "FLOOR-1",
+          "sectionId": 116,
+          "department": 62
+        },
+        {
+          "id": 380,
+          "name": "YHB FLOOR-2",
+          "uniCode": "FLOOR-2",
+          "sectionId": 116,
+          "department": 62
+        },
+        {
+          "id": 381,
+          "name": "YHB FLOOR-3",
+          "uniCode": "FLOOR-3",
+          "sectionId": 116,
+          "department": 62
+        },
+        {
+          "id": 374,
+          "name": "YHB IP-1",
+          "uniCode": "IP-1",
+          "sectionId": 116,
+          "department": 62
+        },
+        {
+          "id": 376,
+          "name": "YHB IP-2",
+          "uniCode": "IP-2",
+          "sectionId": 116,
+          "department": 62
+        },
+        {
+          "id": 377,
+          "name": "YHB IP-3",
+          "uniCode": "IP-3",
+          "sectionId": 116,
+          "department": 62
+        },
+        {
+          "id": 389,
+          "name": "YHB ROOF",
+          "uniCode": "SMALL FIX.-2",
+          "sectionId": 116,
+          "department": 62
+        },
+        {
+          "id": 388,
+          "name": "YHB RR DOOR",
+          "uniCode": "SMALL FIX.-",
+          "sectionId": 116,
+          "department": 62
+        },
+        {
+          "id": 391,
+          "name": "YWD FR BUMPER",
+          "uniCode": "YWD-1",
+          "sectionId": 116,
+          "department": 62
+        },
+        {
+          "id": 390,
+          "name": "YY8 HV",
+          "uniCode": "YY8-1",
+          "sectionId": 116,
+          "department": 62
+        },
+        {
+          "id": 393,
+          "name": "YY8 LID BOX",
+          "uniCode": "LID BOX-1",
+          "sectionId": 116,
+          "department": 62
+        }
+      ]
+    },
+    {
+      "id": 74,
+      "name": "Assembly Production",
+      "uniCode": "WAP1-8",
+      "departmentId": 62,
+      "category": "Direct",
+      "lines": [
+        {
+          "id": 283,
+          "name": "LID BOX",
+          "uniCode": "LID01",
+          "sectionId": 74,
+          "department": 62
+        },
+        {
+          "id": 202,
+          "name": "YED IP-1",
+          "uniCode": "YED-01",
+          "sectionId": 74,
+          "department": 62
+        },
+        {
+          "id": 203,
+          "name": "YED IP-2",
+          "uniCode": "YED-02",
+          "sectionId": 74,
+          "department": 62
+        },
+        {
+          "id": 205,
+          "name": "YED IP-3",
+          "uniCode": "YED-03",
+          "sectionId": 74,
+          "department": 62
+        },
+        {
+          "id": 206,
+          "name": "YHB AS DOOR",
+          "uniCode": "AS-01",
+          "sectionId": 74,
+          "department": 62
+        },
+        {
+          "id": 209,
+          "name": "YHB BACK DOOR",
+          "uniCode": "BK-01",
+          "sectionId": 74,
+          "department": 62
+        },
+        {
+          "id": 278,
+          "name": "YHB BUMPER",
+          "uniCode": "BP01",
+          "sectionId": 74,
+          "department": 62
+        },
+        {
+          "id": 281,
+          "name": "YHB DOME LAMP",
+          "uniCode": "YDL01",
+          "sectionId": 74,
+          "department": 62
+        },
+        {
+          "id": 275,
+          "name": "YHB DR DOOR",
+          "uniCode": "DR-01",
+          "sectionId": 74,
+          "department": 62
+        },
+        {
+          "id": 190,
+          "name": "YHB FLOOR-1",
+          "uniCode": "FL-01",
+          "sectionId": 74,
+          "department": 62
+        },
+        {
+          "id": 194,
+          "name": "YHB FLOOR-2",
+          "uniCode": "FL-02",
+          "sectionId": 74,
+          "department": 62
+        },
+        {
+          "id": 197,
+          "name": "YHB FLOOR-3",
+          "uniCode": "FL-03",
+          "sectionId": 74,
+          "department": 62
+        },
+        {
+          "id": 280,
+          "name": "YHB FUEL",
+          "uniCode": "FU01",
+          "sectionId": 74,
+          "department": 62
+        },
+        {
+          "id": 198,
+          "name": "YHB IP-1",
+          "uniCode": "IP-01",
+          "sectionId": 74,
+          "department": 62
+        },
+        {
+          "id": 199,
+          "name": "YHB IP-2",
+          "uniCode": "IP-02",
+          "sectionId": 74,
+          "department": 62
+        },
+        {
+          "id": 200,
+          "name": "YHB IP-3",
+          "uniCode": "IP-03",
+          "sectionId": 74,
+          "department": 62
+        },
+        {
+          "id": 277,
+          "name": "YHB ROOF",
+          "uniCode": "RF01",
+          "sectionId": 74,
+          "department": 62
+        },
+        {
+          "id": 276,
+          "name": "YHB RR DOOR",
+          "uniCode": "RR01",
+          "sectionId": 74,
+          "department": 62
+        },
+        {
+          "id": 215,
+          "name": "YWD FR BUMPER",
+          "uniCode": "YWD01",
+          "sectionId": 74,
+          "department": 62
+        },
+        {
+          "id": 284,
+          "name": "YXA / VENTILATION",
+          "uniCode": "YT01",
+          "sectionId": 74,
+          "department": 62
+        },
+        {
+          "id": 212,
+          "name": "YY8 HV",
+          "uniCode": "YY8-01",
+          "sectionId": 74,
+          "department": 62
+        }
+      ]
+    },
+    {
+      "id": 75,
+      "name": "Assembly Production (Support team)",
+      "uniCode": "WAP1-7",
+      "departmentId": 62,
+      "category": "Direct",
+      "lines": [
+        {
+          "id": 420,
+          "name": "AIR BAG",
+          "uniCode": "AB-02",
+          "sectionId": 75,
+          "department": 62
+        },
+        {
+          "id": 434,
+          "name": "SPD",
+          "uniCode": "SP-001",
+          "sectionId": 75,
+          "department": 62
+        },
+        {
+          "id": 419,
+          "name": "TUBE CUTTING",
+          "uniCode": "TC-02",
+          "sectionId": 75,
+          "department": 62
+        },
+        {
+          "id": 290,
+          "name": "YED IP-1",
+          "uniCode": "YED01",
+          "sectionId": 75,
+          "department": 62
+        },
+        {
+          "id": 291,
+          "name": "YED IP-2",
+          "uniCode": "YED02",
+          "sectionId": 75,
+          "department": 62
+        },
+        {
+          "id": 292,
+          "name": "YED IP-3",
+          "uniCode": "YED03",
+          "sectionId": 75,
+          "department": 62
+        },
+        {
+          "id": 307,
+          "name": "YHB AS DOOR",
+          "uniCode": "AS01",
+          "sectionId": 75,
+          "department": 62
+        },
+        {
+          "id": 308,
+          "name": "YHB BACKDOOR",
+          "uniCode": "BK01",
+          "sectionId": 75,
+          "department": 62
+        },
+        {
+          "id": 306,
+          "name": "YHB DR DOOR",
+          "uniCode": "DR01",
+          "sectionId": 75,
+          "department": 62
+        },
+        {
+          "id": 238,
+          "name": "YHB FLOOR-1",
+          "uniCode": "FL01",
+          "sectionId": 75,
+          "department": 62
+        },
+        {
+          "id": 285,
+          "name": "YHB FLOOR-2",
+          "uniCode": "FL02",
+          "sectionId": 75,
+          "department": 62
+        },
+        {
+          "id": 286,
+          "name": "YHB FLOOR-3",
+          "uniCode": "FL03",
+          "sectionId": 75,
+          "department": 62
+        },
+        {
+          "id": 287,
+          "name": "YHB IP-1",
+          "uniCode": "IP1",
+          "sectionId": 75,
+          "department": 62
+        },
+        {
+          "id": 288,
+          "name": "YHB IP-2",
+          "uniCode": "IP02",
+          "sectionId": 75,
+          "department": 62
+        },
+        {
+          "id": 289,
+          "name": "YHB IP-3",
+          "uniCode": "IP03",
+          "sectionId": 75,
+          "department": 62
+        },
+        {
+          "id": 403,
+          "name": "YHB RR DOOR",
+          "uniCode": "RR-01",
+          "sectionId": 75,
+          "department": 62
+        },
+        {
+          "id": 417,
+          "name": "YY8 HV",
+          "uniCode": "HV-01",
+          "sectionId": 75,
+          "department": 62
+        }
+      ]
+    },
+    {
+      "id": 70,
+      "name": "Assembly Quality",
+      "uniCode": "WQ1-4",
+      "departmentId": 61,
+      "category": "Direct",
+      "lines": [
+        {
+          "id": 214,
+          "name": "Back Door",
+          "uniCode": "BD01",
+          "sectionId": 70,
+          "department": 61
+        },
+        {
+          "id": 228,
+          "name": "SPD",
+          "uniCode": "SPD01",
+          "sectionId": 70,
+          "department": 61
+        },
+        {
+          "id": 229,
+          "name": "Tube Cutting & Airbag",
+          "uniCode": "TCA01",
+          "sectionId": 70,
+          "department": 61
+        },
+        {
+          "id": 207,
+          "name": "YED IP-1",
+          "uniCode": "YI01",
+          "sectionId": 70,
+          "department": 61
+        },
+        {
+          "id": 210,
+          "name": "YED IP-2",
+          "uniCode": "YI02",
+          "sectionId": 70,
+          "department": 61
+        },
+        {
+          "id": 211,
+          "name": "YED IP-3",
+          "uniCode": "YD03",
+          "sectionId": 70,
+          "department": 61
+        },
+        {
+          "id": 185,
+          "name": "YHB Floor-1",
+          "uniCode": "L3",
+          "sectionId": 70,
+          "department": 61
+        },
+        {
+          "id": 187,
+          "name": "YHB Floor-2",
+          "uniCode": "L5",
+          "sectionId": 70,
+          "department": 61
+        },
+        {
+          "id": 193,
+          "name": "YHB Floor-3",
+          "uniCode": "L6",
+          "sectionId": 70,
+          "department": 61
+        },
+        {
+          "id": 196,
+          "name": "YHB IP-1",
+          "uniCode": "L1",
+          "sectionId": 70,
+          "department": 61
+        },
+        {
+          "id": 201,
+          "name": "YHB IP-2",
+          "uniCode": "L4",
+          "sectionId": 70,
+          "department": 61
+        },
+        {
+          "id": 204,
+          "name": "YHB IP-3",
+          "uniCode": "L7",
+          "sectionId": 70,
+          "department": 61
+        },
+        {
+          "id": 226,
+          "name": "YHB Small Cony.  AS Door",
+          "uniCode": "L9",
+          "sectionId": 70,
+          "department": 61
+        },
+        {
+          "id": 227,
+          "name": "YHB Small Cony. DR Door",
+          "uniCode": "LF01",
+          "sectionId": 70,
+          "department": 61
+        },
+        {
+          "id": 223,
+          "name": "YHB Small Fix Bumper",
+          "uniCode": "LB01",
+          "sectionId": 70,
+          "department": 61
+        },
+        {
+          "id": 225,
+          "name": "YHB Small Fix door Lamp",
+          "uniCode": "LV01",
+          "sectionId": 70,
+          "department": 61
+        },
+        {
+          "id": 224,
+          "name": "YHB Small Fix Fuel",
+          "uniCode": "LE01",
+          "sectionId": 70,
+          "department": 61
+        },
+        {
+          "id": 221,
+          "name": "YHB Small Fix Roof",
+          "uniCode": "LC01",
+          "sectionId": 70,
+          "department": 61
+        },
+        {
+          "id": 222,
+          "name": "YHB Small Fix RR Door",
+          "uniCode": "LD01",
+          "sectionId": 70,
+          "department": 61
+        },
+        {
+          "id": 216,
+          "name": "YWD",
+          "uniCode": "YW01",
+          "sectionId": 70,
+          "department": 61
+        },
+        {
+          "id": 218,
+          "name": "YY8 HV",
+          "uniCode": "LK01",
+          "sectionId": 70,
+          "department": 61
+        },
+        {
+          "id": 219,
+          "name": "YY8 Lid Box",
+          "uniCode": "LP01",
+          "sectionId": 70,
+          "department": 61
+        },
+        {
+          "id": 220,
+          "name": "YY8/YXA Ventilation",
+          "uniCode": "LL01",
+          "sectionId": 70,
+          "department": 61
+        }
+      ]
+    },
+    {
+      "id": 94,
+      "name": "Assembly Quality (Line Leader)",
+      "uniCode": "WQ1-3",
+      "departmentId": 61,
+      "category": "Direct",
+      "lines": [
+        {
+          "id": 316,
+          "name": "Leader",
+          "uniCode": "L01",
+          "sectionId": 94,
+          "department": 61
+        }
+      ]
+    },
+    {
+      "id": 82,
+      "name": "ASSEMBLY SUB LEADER",
+      "uniCode": "WAP1-3",
+      "departmentId": 62,
+      "category": "Direct",
+      "lines": [
+        {
+          "id": 422,
+          "name": "AIR BAG",
+          "uniCode": "AB-001",
+          "sectionId": 82,
+          "department": 62
+        },
+        {
+          "id": 421,
+          "name": "TUBE CUTTING",
+          "uniCode": "TC-001",
+          "sectionId": 82,
+          "department": 62
+        },
+        {
+          "id": 409,
+          "name": "YED IP-1",
+          "uniCode": "ED-01",
+          "sectionId": 82,
+          "department": 62
+        },
+        {
+          "id": 410,
+          "name": "YED IP-2",
+          "uniCode": "ED-02",
+          "sectionId": 82,
+          "department": 62
+        },
+        {
+          "id": 411,
+          "name": "YED IP-3",
+          "uniCode": "ED-03",
+          "sectionId": 82,
+          "department": 62
+        },
+        {
+          "id": 415,
+          "name": "YHB BACK DOOR",
+          "uniCode": "BK-001",
+          "sectionId": 82,
+          "department": 62
+        },
+        {
+          "id": 414,
+          "name": "YHB DR DOOR",
+          "uniCode": "DR-001",
+          "sectionId": 82,
+          "department": 62
+        },
+        {
+          "id": 402,
+          "name": "YHB FLOOR-1",
+          "uniCode": "FL-001",
+          "sectionId": 82,
+          "department": 62
+        },
+        {
+          "id": 404,
+          "name": "YHB FLOOR-2",
+          "uniCode": "FL-002",
+          "sectionId": 82,
+          "department": 62
+        },
+        {
+          "id": 405,
+          "name": "YHB FLOOR-3",
+          "uniCode": "FL-003",
+          "sectionId": 82,
+          "department": 62
+        },
+        {
+          "id": 406,
+          "name": "YHB IP-1",
+          "uniCode": "IP-001",
+          "sectionId": 82,
+          "department": 62
+        },
+        {
+          "id": 407,
+          "name": "YHB IP-2",
+          "uniCode": "IP-002",
+          "sectionId": 82,
+          "department": 62
+        },
+        {
+          "id": 408,
+          "name": "YHB IP-3",
+          "uniCode": "IP-003",
+          "sectionId": 82,
+          "department": 62
+        },
+        {
+          "id": 413,
+          "name": "YHB RR DOOR",
+          "uniCode": "RR-001",
+          "sectionId": 82,
+          "department": 62
+        },
+        {
+          "id": 416,
+          "name": "YY8 HV",
+          "uniCode": "HV-001",
+          "sectionId": 82,
+          "department": 62
+        }
+      ]
+    },
+    {
+      "id": 123,
+      "name": "C&C (Leader, rework, material handler, rolling,)",
+      "uniCode": "WCP1-3",
+      "departmentId": 72,
+      "category": "Direct",
+      "lines": [
+        {
+          "id": 362,
+          "name": "Charging",
+          "uniCode": "CHG",
+          "sectionId": 123,
+          "department": 72
+        },
+        {
+          "id": 366,
+          "name": "Delivery",
+          "uniCode": "DEL",
+          "sectionId": 123,
+          "department": 72
+        },
+        {
+          "id": 361,
+          "name": "Line Leader",
+          "uniCode": "LL",
+          "sectionId": 123,
+          "department": 72
+        },
+        {
+          "id": 367,
+          "name": "Material Handler",
+          "uniCode": "MH",
+          "sectionId": 123,
+          "department": 72
+        },
+        {
+          "id": 365,
+          "name": "Part Fitting",
+          "uniCode": "PF",
+          "sectionId": 123,
+          "department": 72
+        },
+        {
+          "id": 364,
+          "name": "Point Tapping",
+          "uniCode": "PT",
+          "sectionId": 123,
+          "department": 72
+        },
+        {
+          "id": 363,
+          "name": "Rolling",
+          "uniCode": "ROL",
+          "sectionId": 123,
+          "department": 72
+        }
+      ]
+    },
+    {
+      "id": 121,
+      "name": "C&C machine",
+      "uniCode": "WCP1-5",
+      "departmentId": 72,
+      "category": "Direct",
+      "lines": [
+        {
+          "id": 350,
+          "name": "C&C AUTO",
+          "uniCode": "CC-1",
+          "sectionId": 121,
+          "department": 72
+        }
+      ]
+    },
+    {
+      "id": 122,
+      "name": "C&C other",
+      "uniCode": "WCP1-4",
+      "departmentId": 72,
+      "category": "Direct",
+      "lines": [
+        {
+          "id": 358,
+          "name": "Blue Tapping",
+          "uniCode": "BT",
+          "sectionId": 122,
+          "department": 72
+        },
+        {
+          "id": 378,
+          "name": "Heat Shrinking",
+          "uniCode": "HS",
+          "sectionId": 122,
+          "department": 72
+        },
+        {
+          "id": 352,
+          "name": "Joint Crimping ",
+          "uniCode": "JCR",
+          "sectionId": 122,
+          "department": 72
+        },
+        {
+          "id": 356,
+          "name": "Kappa",
+          "uniCode": "KAPPA",
+          "sectionId": 122,
+          "department": 72
+        },
+        {
+          "id": 351,
+          "name": "Manual Crimping",
+          "uniCode": "MCR",
+          "sectionId": 122,
+          "department": 72
+        },
+        {
+          "id": 354,
+          "name": "Middle Slitting",
+          "uniCode": "MSL",
+          "sectionId": 122,
+          "department": 72
+        },
+        {
+          "id": 355,
+          "name": "Middle Splicing",
+          "uniCode": "MSP",
+          "sectionId": 122,
+          "department": 72
+        },
+        {
+          "id": 353,
+          "name": "Resistance Welding ",
+          "uniCode": "RW",
+          "sectionId": 122,
+          "department": 72
+        },
+        {
+          "id": 357,
+          "name": "Shield Wire",
+          "uniCode": "SW",
+          "sectionId": 122,
+          "department": 72
+        },
+        {
+          "id": 360,
+          "name": "Silicon",
+          "uniCode": "SILICON",
+          "sectionId": 122,
+          "department": 72
+        },
+        {
+          "id": 359,
+          "name": "Twisting",
+          "uniCode": "TW",
+          "sectionId": 122,
+          "department": 72
+        }
+      ]
+    },
+    {
+      "id": 95,
+      "name": "CSG + 3T (Quality)",
+      "uniCode": "WQ1-2",
+      "departmentId": 61,
+      "category": "Direct",
+      "lines": [
+        {
+          "id": 318,
+          "name": "CSG + 3T (Quality)",
+          "uniCode": "CSG01",
+          "sectionId": 95,
+          "department": 61
+        }
+      ]
+    },
+    {
+      "id": 115,
+      "name": "D&D",
+      "uniCode": "DD1-1",
+      "departmentId": 71,
+      "category": "Indirect",
+      "lines": [
+        {
+          "id": 423,
+          "name": "D&D",
+          "uniCode": "Dd01",
+          "sectionId": 115,
+          "department": 71
+        }
+      ]
+    },
+    {
+      "id": 107,
+      "name": "FG (Bawal +3T+TTIPL)",
+      "uniCode": "FG1-1",
+      "departmentId": 68,
+      "category": "Indirect",
+      "lines": [
+        {
+          "id": 429,
+          "name": "3T",
+          "uniCode": "3",
+          "sectionId": 107,
+          "department": 68
+        }
+      ]
+    },
+    {
+      "id": 113,
+      "name": "IT",
+      "uniCode": "IT01-1",
+      "departmentId": 51,
+      "category": "Indirect",
+      "lines": [
+        {
+          "id": 432,
+          "name": "IT",
+          "uniCode": "It",
+          "sectionId": 113,
+          "department": 51
+        }
+      ]
+    },
+    {
+      "id": 104,
+      "name": "JB",
+      "uniCode": "SRC1-1",
+      "departmentId": 63,
+      "category": "Direct",
+      "lines": [
+        {
+          "id": 340,
+          "name": "JB line ",
+          "uniCode": "jb01",
+          "sectionId": 104,
+          "department": 63
+        }
+      ]
+    },
+    {
+      "id": 108,
+      "name": "Logistics",
+      "uniCode": "FG1-2",
+      "departmentId": 68,
+      "category": "Indirect",
+      "lines": [
+        {
+          "id": 427,
+          "name": "Logistics ",
+          "uniCode": "Lg",
+          "sectionId": 108,
+          "department": 68
+        }
+      ]
+    },
+    {
+      "id": 111,
+      "name": "Maintenance",
+      "uniCode": "MT1-1",
+      "departmentId": 70,
+      "category": "Indirect",
+      "lines": [
+        {
+          "id": 444,
+          "name": "Maint.",
+          "uniCode": "tm0",
+          "sectionId": 111,
+          "department": 70
+        }
+      ]
+    },
+    {
+      "id": 110,
+      "name": "PE",
+      "uniCode": "PE1-1",
+      "departmentId": 49,
+      "category": "Indirect",
+      "lines": [
+        {
+          "id": 433,
+          "name": "PE",
+          "uniCode": "PE",
+          "sectionId": 110,
+          "department": 49
+        }
+      ]
+    },
+    {
+      "id": 109,
+      "name": "PPC (Name Tag Printing)",
+      "uniCode": "PP1-1",
+      "departmentId": 69,
+      "category": "Indirect",
+      "lines": [
+        {
+          "id": 426,
+          "name": "PPC",
+          "uniCode": "Pp",
+          "sectionId": 109,
+          "department": 69
+        }
+      ]
+    },
+    {
+      "id": 85,
+      "name": "PRODUCTION OFFICE",
+      "uniCode": "WAP1-1",
+      "departmentId": 62,
+      "category": "Indirect",
+      "lines": [
+        {
+          "id": 392,
+          "name": "Document",
+          "uniCode": "Report",
+          "sectionId": 85,
+          "department": 62
+        },
+        {
+          "id": 435,
+          "name": "KAIZEN",
+          "uniCode": "KI-01",
+          "sectionId": 85,
+          "department": 62
+        }
+      ]
+    },
+    {
+      "id": 87,
+      "name": "Quality C&C",
+      "uniCode": "WQ1-5",
+      "departmentId": 61,
+      "category": "Direct",
+      "lines": [
+        {
+          "id": 269,
+          "name": "Airbag",
+          "uniCode": "AB01",
+          "sectionId": 87,
+          "department": 61
+        },
+        {
+          "id": 261,
+          "name": "Cutting & Crimping",
+          "uniCode": "AC01",
+          "sectionId": 87,
+          "department": 61
+        },
+        {
+          "id": 265,
+          "name": "Joint Crimping",
+          "uniCode": "JCR01",
+          "sectionId": 87,
+          "department": 61
+        },
+        {
+          "id": 264,
+          "name": "Manual ",
+          "uniCode": "MCR01",
+          "sectionId": 87,
+          "department": 61
+        },
+        {
+          "id": 267,
+          "name": "Resistance welding",
+          "uniCode": "RSW01",
+          "sectionId": 87,
+          "department": 61
+        },
+        {
+          "id": 268,
+          "name": "YY8",
+          "uniCode": "YY801",
+          "sectionId": 87,
+          "department": 61
+        }
+      ]
+    },
+    {
+      "id": 99,
+      "name": "Quality Lab",
+      "uniCode": "WQ1-1",
+      "departmentId": 61,
+      "category": "Indirect",
+      "lines": [
+        {
+          "id": 373,
+          "name": "NPD",
+          "uniCode": "NPD01",
+          "sectionId": 99,
+          "department": 61
+        },
+        {
+          "id": 372,
+          "name": "PI",
+          "uniCode": "PI1",
+          "sectionId": 99,
+          "department": 61
+        },
+        {
+          "id": 371,
+          "name": "QA LAB",
+          "uniCode": "QL-1",
+          "sectionId": 99,
+          "department": 61
+        }
+      ]
+    },
+    {
+      "id": 117,
+      "name": "Quality Office ( Reports) + Kaizen",
+      "uniCode": "WQ1-6",
+      "departmentId": 61,
+      "category": "Indirect",
+      "lines": [
+        {
+          "id": 437,
+          "name": "Data Entry",
+          "uniCode": "WQO01",
+          "sectionId": 117,
+          "department": 61
+        }
+      ]
+    },
+    {
+      "id": 105,
+      "name": "Safety",
+      "uniCode": "SF1-1",
+      "departmentId": 67,
+      "category": "Direct",
+      "lines": [
+        {
+          "id": 430,
+          "name": "Safety",
+          "uniCode": "SF01",
+          "sectionId": 105,
+          "department": 67
+        }
+      ]
+    },
+    {
+      "id": 126,
+      "name": "SFG Confirmation",
+      "uniCode": "WAP1-9",
+      "departmentId": 62,
+      "category": "Direct",
+      "lines": [
+        {
+          "id": 447,
+          "name": "SFG",
+          "uniCode": "SFG01",
+          "sectionId": 126,
+          "department": 62
+        }
+      ]
+    },
+    {
+      "id": 124,
+      "name": "SFG Confirmation _C&C & Document",
+      "uniCode": "WCP1-2",
+      "departmentId": 72,
+      "category": "Indirect",
+      "lines": [
+        {
+          "id": 348,
+          "name": "DOCUMENT",
+          "uniCode": "DOC-1",
+          "sectionId": 124,
+          "department": 72
+        },
+        {
+          "id": 347,
+          "name": "IMPROVEMENT",
+          "uniCode": "IMP-1",
+          "sectionId": 124,
+          "department": 72
+        },
+        {
+          "id": 349,
+          "name": "SAP",
+          "uniCode": "SAP-1",
+          "sectionId": 124,
+          "department": 72
+        }
+      ]
+    },
+    {
+      "id": 80,
+      "name": "SPD",
+      "uniCode": "WAP1-4",
+      "departmentId": 62,
+      "category": "Direct",
+      "lines": [
+        {
+          "id": 398,
+          "name": "SDP",
+          "uniCode": "SPD",
+          "sectionId": 80,
+          "department": 62
+        }
+      ]
+    },
+    {
+      "id": 120,
+      "name": "SRC Maintenance",
+      "uniCode": "SRC1-5",
+      "departmentId": 63,
+      "category": "Direct",
+      "lines": [
+        {
+          "id": 395,
+          "name": "SRC Maintenance ",
+          "uniCode": "Src01",
+          "sectionId": 120,
+          "department": 63
+        }
+      ]
+    },
+    {
+      "id": 98,
+      "name": "SRC- Production",
+      "uniCode": "SRC1-2",
+      "departmentId": 63,
+      "category": "Direct",
+      "lines": [
+        {
+          "id": 322,
+          "name": "Line-1 (Online)",
+          "uniCode": "SRC Production  Line-1",
+          "sectionId": 98,
+          "department": 63
+        },
+        {
+          "id": 328,
+          "name": "Line-2 (Online)",
+          "uniCode": "SRC Production Line-2",
+          "sectionId": 98,
+          "department": 63
+        },
+        {
+          "id": 329,
+          "name": "Line-3 (Online)",
+          "uniCode": "SRC Production Line-3",
+          "sectionId": 98,
+          "department": 63
+        },
+        {
+          "id": 330,
+          "name": "Line-4 (Online)",
+          "uniCode": "SRC Production Line-4",
+          "sectionId": 98,
+          "department": 63
+        },
+        {
+          "id": 443,
+          "name": "Line-5",
+          "uniCode": "SRC PRODUCTION LINE - 05",
+          "sectionId": 98,
+          "department": 63
+        },
+        {
+          "id": 337,
+          "name": "Offline stations",
+          "uniCode": "",
+          "sectionId": 98,
+          "department": 63
+        }
+      ]
+    },
+    {
+      "id": 96,
+      "name": "SRC Quality",
+      "uniCode": "SRC1-4",
+      "departmentId": 63,
+      "category": "Direct",
+      "lines": [
+        {
+          "id": 370,
+          "name": "JB",
+          "uniCode": "JB LINE",
+          "sectionId": 96,
+          "department": 63
+        },
+        {
+          "id": 320,
+          "name": "Line-1",
+          "uniCode": "SRC Line-1",
+          "sectionId": 96,
+          "department": 63
+        },
+        {
+          "id": 323,
+          "name": "Line-2",
+          "uniCode": "SRC Line-2",
+          "sectionId": 96,
+          "department": 63
+        },
+        {
+          "id": 324,
+          "name": "Line-3",
+          "uniCode": "SRC Line-3",
+          "sectionId": 96,
+          "department": 63
+        },
+        {
+          "id": 325,
+          "name": "Line-4",
+          "uniCode": "SRC Line-4",
+          "sectionId": 96,
+          "department": 63
+        },
+        {
+          "id": 326,
+          "name": "Line-5",
+          "uniCode": "SRC Line-5",
+          "sectionId": 96,
+          "department": 63
+        },
+        {
+          "id": 346,
+          "name": "Pass through",
+          "uniCode": "Offline-1",
+          "sectionId": 96,
+          "department": 63
+        }
+      ]
+    },
+    {
+      "id": 106,
+      "name": "Store",
+      "uniCode": "STR1-1",
+      "departmentId": 64,
+      "category": "Indirect",
+      "lines": [
+        {
+          "id": 431,
+          "name": "Store",
+          "uniCode": "ST",
+          "sectionId": 106,
+          "department": 64
+        }
+      ]
+    },
+    {
+      "id": 100,
+      "name": "Training cell ",
+      "uniCode": "TC01",
+      "departmentId": 66,
+      "category": "Indirect",
+      "lines": [
+        {
+          "id": 332,
+          "name": "Training cell ",
+          "uniCode": "Tc01",
+          "sectionId": 100,
+          "department": 66
+        }
+      ]
+    },
+    {
+      "id": 79,
+      "name": "TUBE CUTTING",
+      "uniCode": "WAP1-5",
+      "departmentId": 62,
+      "category": "Direct",
+      "lines": [
+        {
+          "id": 231,
+          "name": "TUBE CUTTING",
+          "uniCode": "TC-01",
+          "sectionId": 79,
+          "department": 62
+        }
+      ]
+    },
+    {
+      "id": 125,
+      "name": "Utility",
+      "uniCode": "MT1-01",
+      "departmentId": 70,
+      "category": "Indirect",
+      "lines": [
+        {
+          "id": 445,
+          "name": "Utility",
+          "uniCode": "UT01",
+          "sectionId": 125,
+          "department": 70
+        }
+      ]
+    }
   ]
 }

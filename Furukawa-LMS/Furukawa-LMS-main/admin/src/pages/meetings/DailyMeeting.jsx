@@ -34,6 +34,10 @@ import ExcelClone from "@/components/tables/spreadsheet/ExcelClone.jsx";
 import ExcelGraph from "@/components/tables/spreadsheet/ExcelGraph.jsx";
 import ExcelErrorBoundary from "@/components/tables/spreadsheet/ErrorBoundary.jsx";
 
+// Loaded on demand: the LPA page is large and only needed once the LPA tab is opened.
+const LpaPage = React.lazy(() => import("@/pages/lpa/LpaPage.jsx"));
+const LPA_VIEW_CONTEXT = { setIsFormView: () => { } };
+
 const formatMeetingDate = (dateStr) => {
     if (!dateStr) return "";
     const d = new Date(`${dateStr}T00:00:00`);
@@ -315,7 +319,7 @@ function MeetingsTable({ meetings, isLoading, onView, onEdit, onDeleteRequest, o
 // Owns the ExcelClone ref + live sheet snapshot for one section's daily
 // meetings: a list/view/edit space where each meeting gets its own
 // independent spreadsheet + chart snapshot instead of one shared sheet.
-function SectionMeetingSpace({ sectionId, departmentId }) {
+function SectionMeetingSpace({ sectionId, departmentId, isLpaEnabled = false }) {
     const [searchParams, setSearchParams] = useSearchParams();
     const authUser = useSelector((state) => state.auth.user);
 
@@ -330,7 +334,11 @@ function SectionMeetingSpace({ sectionId, departmentId }) {
     // Meeting-workspace state (which tab, which meeting, view vs edit) lives in the
     // URL instead of component state, so a refresh (or a shared link) lands the user
     // back where they were instead of resetting to the section's meeting list.
-    const activeTab = searchParams.get("mtab") === "all" ? "all" : "month";
+    const rawTab = searchParams.get("mtab");
+    const activeTab = rawTab === "all" ? "all" : (rawTab === "lpa" && isLpaEnabled ? "lpa" : "month");
+    // Once opened, the LPA tab stays mounted (hidden) so unsaved LPA edits survive switching sub-tabs.
+    const [lpaMounted, setLpaMounted] = useState(false);
+    useEffect(() => { if (activeTab === "lpa") setLpaMounted(true); }, [activeTab]);
     const selectedMeetingId = searchParams.get("meeting") || null;
     // A URL edited by hand to force ?mode=edit still can't bypass canUpdate — this
     // downgrades to view instead of trusting the query string.
@@ -537,7 +545,7 @@ function SectionMeetingSpace({ sectionId, departmentId }) {
                             <IconEye className="w-3 h-3" /> View only
                         </span>
                     )}
-                    {canCreate && (
+                    {canCreate && activeTab !== "lpa" && (
                         <Button size="sm" onClick={() => setCreateOpen(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer flex items-center gap-1.5">
                             <IconPlus className="w-4 h-4" /> Management Information System
                         </Button>
@@ -545,14 +553,31 @@ function SectionMeetingSpace({ sectionId, departmentId }) {
                 </div>
             </div>
 
-            <Tabs value={activeTab} onValueChange={(val) => updateParams({ mtab: val === "all" ? "all" : null })} className="w-full">
+            <Tabs value={activeTab} onValueChange={(val) => updateParams({ mtab: val === "month" ? null : val })} className="w-full">
                 <TabsList className="bg-slate-100/80 p-1 rounded-lg h-auto border border-slate-200/50 w-fit">
                     <TabsTrigger value="month" className="text-xs font-semibold px-3 py-1.5 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">This Month's Management Information System</TabsTrigger>
+                    {isLpaEnabled && (
+                        <TabsTrigger value="lpa" className="text-xs font-semibold px-3 py-1.5 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">LPA</TabsTrigger>
+                    )}
                     <TabsTrigger value="all" className="text-xs font-semibold px-3 py-1.5 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">All Management Information System</TabsTrigger>
                 </TabsList>
                 <TabsContent value="month" className="mt-3">
                     <MeetingsTable meetings={monthMeetings} isLoading={isListLoading} onView={openView} onEdit={openEdit} onDeleteRequest={setDeleteTarget} onCloneRequest={setCloneTarget} canUpdate={canUpdate} canDelete={canDelete} canCreate={canCreate} />
                 </TabsContent>
+                {isLpaEnabled && lpaMounted && (
+                    <TabsContent value="lpa" forceMount className="mt-3 data-[state=inactive]:hidden">
+                        <div className="rounded-xl border border-slate-200/80 bg-white shadow-sm overflow-hidden min-h-[650px] p-2 sm:p-4">
+                            <React.Suspense fallback={
+                                <div className="flex items-center justify-center py-20 text-slate-500 text-sm">
+                                    <IconLoader2 className="w-5 h-5 animate-spin text-indigo-600 mr-2" />
+                                    Loading LPA...
+                                </div>
+                            }>
+                                <LpaPage viewContext={LPA_VIEW_CONTEXT} />
+                            </React.Suspense>
+                        </div>
+                    </TabsContent>
+                )}
                 <TabsContent value="all" className="mt-3">
                     <MeetingsTable meetings={meetings} isLoading={isListLoading} onView={openView} onEdit={openEdit} onDeleteRequest={setDeleteTarget} onCloneRequest={setCloneTarget} canUpdate={canUpdate} canDelete={canDelete} canCreate={canCreate} />
                 </TabsContent>
@@ -592,12 +617,14 @@ function AdminConfigPanel({ departmentId, sections, allSectionsLoading }) {
     const [saveConfig, { isLoading: isSaving }] = useSaveDailyMeetingConfigMutation();
 
     const [shutter, setShutter] = useState(false);
+    const [lpaShutter, setLpaShutter] = useState(false);
     const [selectedSections, setSelectedSections] = useState([]);
     const [popoverOpen, setPopoverOpen] = useState(false);
 
     useEffect(() => {
         if (configData?.data) {
             setShutter(!!configData.data.shutter);
+            setLpaShutter(!!configData.data.lpaShutter);
             setSelectedSections(configData.data.sections || []);
         }
     }, [configData]);
@@ -607,7 +634,8 @@ function AdminConfigPanel({ departmentId, sections, allSectionsLoading }) {
             await saveConfig({
                 departmentId,
                 shutter,
-                sections: selectedSections
+                sections: selectedSections,
+                lpaShutter
             }).unwrap();
             toast.success("Management Information System settings saved successfully!");
         } catch (err) {
@@ -658,6 +686,22 @@ function AdminConfigPanel({ departmentId, sections, allSectionsLoading }) {
                             setShutter(val);
                             if (val) setSelectedSections([]);
                         }}
+                    />
+                </div>
+
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 bg-white rounded-xl border border-slate-100">
+                    <div className="space-y-0.5">
+                        <Label htmlFor={`lpa-shutter-${departmentId}`} className="text-sm font-semibold text-slate-900 cursor-pointer">
+                            Enable LPA Tab
+                        </Label>
+                        <p className="text-xs text-slate-500 max-w-md">
+                            When enabled, an LPA tab is shown between "This Month's" and "All" meetings in every section of this department.
+                        </p>
+                    </div>
+                    <Switch
+                        id={`lpa-shutter-${departmentId}`}
+                        checked={lpaShutter}
+                        onCheckedChange={setLpaShutter}
                     />
                 </div>
 
@@ -730,6 +774,7 @@ function SectionTabsView({ departmentId, sections, allSectionsLoading, isPreview
     const { data: configData, isLoading: configLoading } = useGetDailyMeetingConfigQuery(departmentId);
 
     const shutter = configData?.data ? !!configData.data.shutter : false;
+    const isLpaEnabled = !!configData?.data?.lpaShutter;
     const selectedSectionsList = configData?.data?.sections || [];
 
     const visibleSections = useMemo(() => {
@@ -844,7 +889,7 @@ function SectionTabsView({ departmentId, sections, allSectionsLoading, isPreview
                                 </CardHeader>
                             )}
                             <CardContent className="p-0 bg-white">
-                                <SectionMeetingSpace sectionId={String(sec.id || sec._id)} departmentId={departmentId} />
+                                <SectionMeetingSpace sectionId={String(sec.id || sec._id)} departmentId={departmentId} isLpaEnabled={isLpaEnabled} />
                             </CardContent>
                         </Card>
                     </TabsContent>

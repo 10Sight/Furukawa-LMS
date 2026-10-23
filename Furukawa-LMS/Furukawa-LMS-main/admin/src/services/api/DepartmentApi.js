@@ -240,10 +240,10 @@ export const departmentApi = createApi({
         }),
 
         saveDailyMeetingConfig: builder.mutation({
-            query: ({ departmentId, shutter, sections }) => ({
+            query: ({ departmentId, shutter, sections, lpaShutter }) => ({
                 url: `/api/daily-meeting-configs/save`,
                 method: "POST",
-                data: { departmentId, shutter, sections }
+                data: { departmentId, shutter, sections, lpaShutter }
             }),
             invalidatesTags: (result, error, { departmentId }) => [{ type: 'Department', id: `daily-meeting-config-${departmentId}` }],
         }),

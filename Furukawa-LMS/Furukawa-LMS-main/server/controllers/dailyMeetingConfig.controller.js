@@ -23,6 +23,7 @@ export const getDailyMeetingConfig = async (req, res) => {
             data: {
                 departmentId,
                 shutter: config ? !!config.shutter : false,
+                lpaShutter: config ? !!config.lpaShutter : false,
                 sections: config ? parseSections(config.sections) : []
             }
         });
@@ -34,12 +35,12 @@ export const getDailyMeetingConfig = async (req, res) => {
 
 export const saveDailyMeetingConfig = async (req, res) => {
     try {
-        const { departmentId, shutter, sections } = req.body;
+        const { departmentId, shutter, sections, lpaShutter } = req.body;
         if (!departmentId) {
             return res.status(400).json({ success: false, message: "Department ID is required" });
         }
         const sectionsList = Array.isArray(sections) ? sections : [];
-        const config = await DailyMeetingConfig.upsert(departmentId, !!shutter, sectionsList);
+        const config = await DailyMeetingConfig.upsert(departmentId, !!shutter, sectionsList, !!lpaShutter);
 
         return res.status(200).json({
             success: true,
@@ -47,6 +48,7 @@ export const saveDailyMeetingConfig = async (req, res) => {
             data: {
                 departmentId: config.departmentId,
                 shutter: !!config.shutter,
+                lpaShutter: !!config.lpaShutter,
                 sections: parseSections(config.sections)
             }
         });

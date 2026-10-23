@@ -11,6 +11,7 @@ class DailyMeetingConfig {
                         id INT IDENTITY(1,1) PRIMARY KEY,
                         departmentId INT NOT NULL UNIQUE,
                         shutter BIT DEFAULT 0,
+                        lpaShutter BIT DEFAULT 0,
                         sections NVARCHAR(MAX) DEFAULT '[]',
                         createdAt DATETIME DEFAULT GETDATE(),
                         updatedAt DATETIME DEFAULT GETDATE(),
@@ -18,6 +19,7 @@ class DailyMeetingConfig {
                     )
                 `);
             }
+            await migrationHelper.ensureColumnExists('daily_meeting_configs', 'lpaShutter', 'BIT DEFAULT 0');
             logger.info("Checked/Created daily_meeting_configs table in MSSQL");
         } catch (error) {
             logger.error("Failed to initialize daily_meeting_configs table", error);
@@ -32,21 +34,22 @@ class DailyMeetingConfig {
         return rows.length > 0 ? rows[0] : null;
     }
 
-    static async upsert(departmentId, shutter, sections) {
+    static async upsert(departmentId, shutter, sections, lpaShutter = false) {
         const sectionsJson = JSON.stringify(sections);
         const shutterVal = shutter ? 1 : 0;
+        const lpaShutterVal = lpaShutter ? 1 : 0;
         const existing = await DailyMeetingConfig.findByDepartmentId(departmentId);
 
         if (existing) {
             await executeQuery(
-                "UPDATE daily_meeting_configs SET shutter = ?, sections = ?, updatedAt = GETDATE() WHERE departmentId = ?",
-                [shutterVal, sectionsJson, departmentId]
+                "UPDATE daily_meeting_configs SET shutter = ?, lpaShutter = ?, sections = ?, updatedAt = GETDATE() WHERE departmentId = ?",
+                [shutterVal, lpaShutterVal, sectionsJson, departmentId]
             );
         } else {
             await executeQuery(
-                `INSERT INTO daily_meeting_configs (departmentId, shutter, sections, createdAt, updatedAt)
-                 VALUES (?, ?, ?, GETDATE(), GETDATE())`,
-                [departmentId, shutterVal, sectionsJson]
+                `INSERT INTO daily_meeting_configs (departmentId, shutter, lpaShutter, sections, createdAt, updatedAt)
+                 VALUES (?, ?, ?, ?, GETDATE(), GETDATE())`,
+                [departmentId, shutterVal, lpaShutterVal, sectionsJson]
             );
         }
 

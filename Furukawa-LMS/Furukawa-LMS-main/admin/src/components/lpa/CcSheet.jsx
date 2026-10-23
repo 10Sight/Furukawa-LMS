@@ -282,11 +282,17 @@ export default function CcSheet({
 
   const hasColumnData = useCallback((colGroup) => {
     if (!colGroup) return false;
+    const hasEnteredObservations = sheet.rows.some((row, rowIndex) => {
+      if (rowIndex < 4 || rowIndex > 34) return false;
+      const observation = row?.[colGroup.obsCol]?.value ?? row?.[colGroup.obsCol]?.formatted;
+      return observation != null && String(observation).trim() !== '' && String(observation).trim() !== '-';
+    });
+    if (hasEnteredObservations) return true;
     if (colGroup.shift === 'A') return Boolean(sourceShiftStatus.A);
     if (colGroup.shift === 'B') return Boolean(sourceShiftStatus.B);
     if (colGroup.level === 'L2' && sheetTargetLevel === 'L1') return Boolean(sourceShiftStatus.L2);
     return true;
-  }, [sourceShiftStatus, sheetTargetLevel]);
+  }, [sheet.rows, sourceShiftStatus, sheetTargetLevel]);
 
   const isLevelReadOnly = useCallback((colGroup) => {
     if (!colGroup) return false;
@@ -626,6 +632,7 @@ export default function CcSheet({
                     isLevelHeader ? 'cc-level-group-header' : '',
                     isSubHeader ? 'cc-sub-header' : '',
                     rowIndex === 35 || rowIndex === 36 ? 'cc-total' : '',
+                    (rowIndex === 35 || rowIndex === 36) && columnIndex === 0 ? 'cc-summary-label' : '',
                     rowIndex === 37 ? 'cc-legend-heading' : '',
                     rowIndex >= 39 && rowIndex <= 43 ? 'cc-legend-row' : '',
                     rowIndex === 44 ? 'cc-footer' : '',
@@ -638,6 +645,8 @@ export default function CcSheet({
                   ].filter(Boolean).join(' ');
                   const isVertical = classes.split(' ').includes('cc-vertical');
                   let cellDisplay = rowIndex === 2 && columnIndex === 0 ? 'S.No' : value;
+                  if (rowIndex === 35 && columnIndex === 0) cellDisplay = 'Total Marks:';
+                  if (rowIndex === 36 && columnIndex === 0) cellDisplay = 'Percentage (%):';
 
                   // Row 35: Total Marks (col 6) and Total Scores for each group
                   if (rowIndex === 35) {
@@ -677,6 +686,11 @@ export default function CcSheet({
                           {cellDisplay}
                         </div>
                       )}
+                      {!isVertical && !isBaseHeader && (rowIndex === 35 || rowIndex === 36) && (
+                        <div className={`cc-summary-value${cellDisplay === 'No data' ? ' cc-summary-empty' : ''}`}>
+                          {cellDisplay}
+                        </div>
+                      )}
                       {!isVertical && isObservation && (
                         isLevelReadOnly(activeObsGroup) ? (
                           <div
@@ -698,7 +712,7 @@ export default function CcSheet({
                           </select>
                         )
                       )}
-                      {!isVertical && !isObservation && !isLevelHeader && !isSubHeader && !isBaseHeader && (
+                      {!isVertical && rowIndex !== 35 && rowIndex !== 36 && !isObservation && !isLevelHeader && !isSubHeader && !isBaseHeader && (
                         (activeScoreGroup && isLevelReadOnly(activeScoreGroup) && rowIndex >= 4 && rowIndex <= 34) ? (
                           <div className="flex items-center justify-center font-bold text-xs text-slate-800 bg-slate-50/70 py-1 select-none w-full h-full">
                             <span>{cellDisplay && String(cellDisplay).trim() && cellDisplay !== '0' ? cellDisplay : (cellDisplay === '0' ? '0' : '-')}</span>

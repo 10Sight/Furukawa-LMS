@@ -1117,7 +1117,7 @@ export default function AssemblySheet({
           <thead>
             {/* Header Row 1: Fixed / Sticky */}
             <tr className="assembly-header-row-1" style={{ height: 32 }}>
-              <th rowSpan={2} className="assembly-header-th assembly-sticky-th">Sl No</th>
+              <th rowSpan={2} className="assembly-header-th assembly-sticky-th">S. NO</th>
               <th rowSpan={2} className="assembly-header-th assembly-sticky-th">Focus</th>
               <th rowSpan={2} className="assembly-header-th assembly-sticky-th">CHECKS POINTS</th>
               <th rowSpan={2} className="assembly-header-th assembly-sticky-th">Area</th>

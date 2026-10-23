@@ -405,7 +405,7 @@ export default function DashboardPage() {
         onCancel={() => { setDeleteTarget(null); setDeleteError(''); }}
         onDelete={confirmDeletePDCA}
       />
-      <SendMailModal isOpen={isSendMailOpen} onClose={() => setIsSendMailOpen(false)} formType="pdca" title="PDCA Report" metadata={{ auditDate: selectedDate, unit: selectedPlant }} />
+      <SendMailModal isOpen={isSendMailOpen} onClose={() => setIsSendMailOpen(false)} formType="pdca" pdcaOnly pdcaLabel="PDCA Sheet" title="PDCA Report" metadata={{ auditDate: selectedDate, unit: selectedPlant }} />
     </div>
   );
 }

@@ -174,9 +174,10 @@
 }
 
 .assembly-form-table .assembly-number textarea {
-  text-align: center;
-  align-content: center;
+  text-align: center !important;
+  align-content: center !important;
   overflow-wrap: anywhere;
+  padding: 0 !important;
 }
 
 .assembly-form-table td.assembly-number { text-align: center; overflow: hidden; }
@@ -531,6 +532,15 @@
   overflow: hidden !important;
 }
 
+/* Let the short Assembly Area rowspan size itself around its vertical label. */
+.assembly-area-wrapper {
+  position: relative !important;
+  inset: auto !important;
+  min-height: 64px;
+  width: 100%;
+  overflow: visible !important;
+}
+
 .assembly-vertical-cell-text {
   writing-mode: vertical-rl !important;
   transform: rotate(180deg) !important;
@@ -559,6 +569,8 @@
   font-size: 12px !important;
   font-weight: 800 !important;
   color: #0f172a !important;
+  max-height: none !important;
+  max-width: none !important;
 }
 
 .assembly-form-table td.assembly-area-cell textarea,

@@ -38,7 +38,7 @@ const hasSavedPdcaRows = sheet => sheet.rows.some(row => row && [
   row.confirmation, row.imageBefore, row.imageAfter
 ].some(value => value !== undefined && value !== null && String(value).trim() !== ""));
 
-const buildSheetEmail = (assembly, pdca, portalBaseUrl = ENV.ADMIN_URL || ENV.FRONTEND_URL, remarks = "") => {
+const buildSheetEmail = (assembly, pdca, portalBaseUrl = ENV.ADMIN_URL || ENV.FRONTEND_URL, remarks = "", { pdcaOnly = false } = {}) => {
   const baseUrl = portalBaseUrl;
   let base;
   try {
@@ -48,11 +48,13 @@ const buildSheetEmail = (assembly, pdca, portalBaseUrl = ENV.ADMIN_URL || ENV.FR
   }
   if (!/^https?:$/.test(base.protocol)) throw new ApiError("The CMS Portal URL is not configured for email links.", 503);
 
-  const assemblyParams = new URLSearchParams({
-    viewWorkbookId: String(assembly.workbookId),
-    sheetIndex: String(assembly.sheetIndex)
-  });
-  const assemblyUrl = new URL(`/cms/lpa?${assemblyParams}`, base).toString();
+  const assemblyUrl = assembly ? (() => {
+    const assemblyParams = new URLSearchParams({
+      viewWorkbookId: String(assembly.workbookId),
+      sheetIndex: String(assembly.sheetIndex)
+    });
+    return new URL(`/cms/lpa?${assemblyParams}`, base).toString();
+  })() : null;
   const pdcaParams = new URLSearchParams({ viewPdcaSheetId: String(pdca.id) });
   let pdcaPath = "/cms/pdca";
   if (pdca.source === "lpa") {
@@ -65,8 +67,8 @@ const buildSheetEmail = (assembly, pdca, portalBaseUrl = ENV.ADMIN_URL || ENV.FR
   }
   const pdcaUrl = new URL(`${pdcaPath}?${pdcaParams}`, base).toString();
 
-  const moduleName = assembly.section === "cc" || (pdca.source === "lpa" && pdca.section === "cc") ? "C&C" : "Assembly";
-  const assemblyTitle = assembly.section === "cc" ? "LPA C&C Sheet" : "LPA Assembly Sheet";
+  const moduleName = assembly?.section === "cc" || (!assembly && pdca.section === "cc") || (pdca.source === "lpa" && pdca.section === "cc") ? "C&C" : "Assembly";
+  const assemblyTitle = assembly?.section === "cc" ? "LPA C&C Sheet" : "LPA Assembly Sheet";
   const pdcaTitle = pdca.source === "lpa" ? `LPA Observation ${moduleName} PDCA` : `${moduleName} PDCA Sheet`;
   const sheetButtonRow = (label, url) => `<table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="width:100%;table-layout:fixed;margin:0 0 12px;"><tr><td width="65%" valign="middle" style="width:65%;padding:8px 10px 8px 0;font-family:Arial,sans-serif;font-size:14px;line-height:20px;color:#334155;word-break:break-word;"><strong>${escapeHtml(label)}</strong></td><td width="35%" align="center" valign="middle" style="width:35%;padding:8px 0;text-align:center;"><table role="presentation" border="0" cellpadding="0" cellspacing="0" align="center" style="margin:0 auto;"><tr><td align="center" bgcolor="#2563eb" style="background-color:#2563eb;border:1px solid #2563eb;border-radius:6px;"><a href="${escapeHtml(url)}" target="_blank" style="display:inline-block;padding:12px 20px;font-family:Arial,sans-serif;font-size:14px;line-height:18px;font-weight:bold;color:#ffffff;text-decoration:none;border-radius:6px;white-space:nowrap;">Click Here to Open</a></td></tr></table></td></tr></table>`;
   const remarksHtml = remarks
@@ -75,11 +77,11 @@ const buildSheetEmail = (assembly, pdca, portalBaseUrl = ENV.ADMIN_URL || ENV.FR
   const html = [
     `<p style="margin:0 0 12px;font:14px Arial,sans-serif;color:#1e293b;">Dear Sir,</p>`,
     `<p style="margin:0 0 18px;font:700 15px Arial,sans-serif;color:#1e293b;">Safety First</p>`,
-    sheetButtonRow(`${assemblyTitle}:`, assemblyUrl),
-    sheetButtonRow(`${pdcaTitle}: ${moduleName} -`, pdcaUrl),
+    ...(assembly ? [sheetButtonRow(`${assemblyTitle}:`, assemblyUrl)] : []),
+    sheetButtonRow(pdcaOnly ? `${pdcaTitle}:` : `${pdcaTitle}: ${moduleName} -`, pdcaUrl),
     remarksHtml
   ].join("");
-  return { html, assemblyUrl, pdcaUrl };
+  return { html, ...(assemblyUrl ? { assemblyUrl } : {}), pdcaUrl };
 };
 
 function pruneAttempts(attemptStore, now = Date.now()) {
@@ -88,7 +90,7 @@ function pruneAttempts(attemptStore, now = Date.now()) {
   }
 }
 
-export const createSendLpaEmailHandler = ({ sendMailFn = sendMail, log = logger, attemptStore = attempts, portalBaseUrl, getLpaRecord = LpaRecord.getRecordById.bind(LpaRecord), getPdcaRecord = PDCAModel.findByRecordId.bind(PDCAModel), getPdcaSheet = PDCAModel.getSheet.bind(PDCAModel) } = {}) => asyncHandler(async (req, res) => {
+export const createSendLpaEmailHandler = ({ sendMailFn = sendMail, log = logger, attemptStore = attempts, portalBaseUrl, getLpaRecord = (id, user) => LpaRecord.getRecordById(id, user, { authoritative: true }), getPdcaRecord = PDCAModel.findByRecordId.bind(PDCAModel), getPdcaSheet = PDCAModel.getSheet.bind(PDCAModel) } = {}) => asyncHandler(async (req, res) => {
   const userId = req.user?.id || req.user?._id;
   const idempotencyKey = String(req.get("Idempotency-Key") || "").trim();
   if (!userId) throw new ApiError("You are not logged in.", 401);
@@ -112,15 +114,16 @@ export const createSendLpaEmailHandler = ({ sendMailFn = sendMail, log = logger,
   }
   const assembly = req.body?.assemblySheet;
   const pdca = req.body?.pdcaSheet;
-  if (!assembly?.workbookId || !Number.isInteger(Number(assembly.sheetIndex)) || Number(assembly.sheetIndex) < 0) {
+  const pdcaOnly = req.body?.emailMode === "pdca-only";
+  if (!pdcaOnly && (!assembly?.workbookId || !Number.isInteger(Number(assembly.sheetIndex)) || Number(assembly.sheetIndex) < 0)) {
     attemptStore.delete(attemptKey);
     throw new ApiError("Select a valid Assembly sheet before sending.", 400);
   }
   if (!pdca?.id || !["lpa", "pdca"].includes(pdca.source)) {
     throw new ApiError("Select a valid PDCA sheet before sending.", 400);
   }
-  const section = assembly.section === "cc" ? "cc" : "assembly";
-  if (pdca.source === "lpa" && pdca.section && pdca.section !== section) {
+  const section = assembly ? (assembly.section === "cc" ? "cc" : "assembly") : (pdca.section === "cc" ? "cc" : "assembly");
+  if (!pdcaOnly && pdca.source === "lpa" && pdca.section && pdca.section !== section) {
     throw new ApiError("The selected LPA sheets must belong to the same module.", 400);
   }
 
@@ -129,10 +132,12 @@ export const createSendLpaEmailHandler = ({ sendMailFn = sendMail, log = logger,
   attemptStore.set(attemptKey, pending);
 
   try {
-    const workbook = await getLpaRecord(String(assembly.workbookId), req.user);
-    if (!workbook || workbook.section !== section) throw new ApiError(`The selected ${section === "cc" ? "LPA C&C" : "LPA Assembly"} sheet is unavailable or no longer accessible.`, 404);
-    const assemblySheetData = workbook.sheets?.[Number(assembly.sheetIndex)];
-    if (!assemblySheetData?.rows?.length) throw new ApiError("The selected LPA sheet has no saved table data. Save the sheet before sending.", 422);
+    if (!pdcaOnly) {
+      const workbook = await getLpaRecord(String(assembly.workbookId), req.user);
+      if (!workbook || workbook.section !== section) throw new ApiError(`The selected ${section === "cc" ? "LPA C&C" : "LPA Assembly"} sheet is unavailable or no longer accessible.`, 404);
+      const assemblySheetData = workbook.sheets?.[Number(assembly.sheetIndex)];
+      if (!assemblySheetData?.rows?.length) throw new ApiError("The selected LPA sheet has no saved table data. Save the sheet before sending.", 422);
+    }
 
     if (pdca.source === "lpa" && !String(pdca.id).startsWith("PDCA-LPA")) {
       throw new ApiError("The selected LPA Observation PDCA sheet is invalid.", 400);
@@ -149,8 +154,10 @@ export const createSendLpaEmailHandler = ({ sendMailFn = sendMail, log = logger,
       throw new ApiError(`The selected ${pdca.source === "lpa" ? "LPA Observation PDCA" : "PDCA"} sheet has no saved table data. Save the sheet before sending.`, 422);
     }
 
-    const subject = `${section === "cc" ? "LPA C&C Sheet" : "LPA Assembly Sheet"} and ${pdca.source === "lpa" ? "LPA Observation PDCA" : "PDCA Sheet"}`;
-    const { html, assemblyUrl, pdcaUrl } = buildSheetEmail(assembly, pdca, portalBaseUrl, remarks);
+    const subject = pdcaOnly
+      ? (pdca.source === "lpa" ? `LPA Observation ${section === "cc" ? "C&C" : "Assembly"} PDCA` : `${section === "cc" ? "C&C" : "Assembly"} PDCA Sheet`)
+      : `${section === "cc" ? "LPA C&C Sheet" : "LPA Assembly Sheet"} and ${pdca.source === "lpa" ? "LPA Observation PDCA" : "PDCA Sheet"}`;
+    const { html, assemblyUrl, pdcaUrl } = buildSheetEmail(assembly || null, pdca, portalBaseUrl, remarks, { pdcaOnly });
     const info = await sendMailFn(to, subject, html, [], cc);
     const accepted = Array.isArray(info?.accepted) ? info.accepted.map(String) : [];
     const rejected = Array.isArray(info?.rejected) ? info.rejected.map(String) : [];
@@ -168,7 +175,7 @@ export const createSendLpaEmailHandler = ({ sendMailFn = sendMail, log = logger,
     const body = new ApiResponse(200, {
       messageId: info?.messageId || null,
       accepted,
-      links: { assembly: assemblyUrl, pdca: pdcaUrl }
+      links: { ...(assemblyUrl ? { assembly: assemblyUrl } : {}), pdca: pdcaUrl }
     }, "Email accepted by the configured mail service.");
     attemptStore.set(attemptKey, { status: 200, body, expiresAt: Date.now() + ATTEMPT_TTL_MS });
     log.info(`[LPA_EMAIL] Provider accepted email user=${userId} recipients=${accepted.length} messageId=${info?.messageId || "unknown"}`);

@@ -562,11 +562,8 @@ export default function PDCAMonthlyGraph({
           <div className="bg-slate-50/50 rounded-xl border border-slate-200/80 p-3 relative">
             <div className="flex flex-col md:flex-row items-stretch gap-3">
               {/* Cumulative Section (Month and its Cumulative) */}
-<<<<<<< HEAD
               {showCumulativeSection && (
-                <div className="w-full md:w-36 lg:w-40 shrink-0 bg-white rounded-lg border border-slate-200 shadow-2xs flex flex-col overflow-hidden animate-in fade-in duration-150">
-=======
-              {isCumulativeCollapsed ? (
+                isCumulativeCollapsed ? (
                 <button
                   type="button"
                   onClick={() => setIsCumulativeCollapsed(false)}
@@ -583,8 +580,7 @@ export default function PDCAMonthlyGraph({
                   </span>
                 </button>
               ) : (
-                <div className="w-full md:w-36 lg:w-40 shrink-0 bg-white rounded-lg border border-slate-200 shadow-2xs flex flex-col overflow-hidden">
->>>>>>> b326c8f8 (FME Changes)
+                <div className="w-full md:w-36 lg:w-40 shrink-0 bg-white rounded-lg border border-slate-200 shadow-2xs flex flex-col overflow-hidden animate-in fade-in duration-150">
                   <div className="px-2.5 py-1.5 bg-slate-100/90 border-b border-slate-200 flex items-center justify-between">
                     <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
                       Cumulative
@@ -595,20 +591,20 @@ export default function PDCAMonthlyGraph({
                       </span>
                       <button
                         type="button"
-<<<<<<< HEAD
                         onClick={() => setShowCumulativeSection(false)}
                         className="p-0.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
                         title="Hide Cumulative panel"
                       >
                         <X className="w-3 h-3" />
-=======
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => setIsCumulativeCollapsed(true)}
                         className="p-0.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
                         title="Collapse Cumulative section"
                         aria-label="Collapse Cumulative section"
                       >
                         <ChevronLeft className="w-3.5 h-3.5" />
->>>>>>> b326c8f8 (FME Changes)
                       </button>
                     </div>
                   </div>
@@ -651,7 +647,7 @@ export default function PDCAMonthlyGraph({
                     <span className="text-right font-mono text-indigo-700">{allMonthsCumulative.total}</span>
                   </div>
                 </div>
-              )}
+              ))}
 
               {/* Right Column: Metrics Row & SVG Graph */}
               <div className="flex-1 min-w-0 flex flex-col">

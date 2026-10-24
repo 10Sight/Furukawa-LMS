@@ -2,21 +2,31 @@ import { executeQuery } from "../db/mssqlHelper.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { readSystemSettingsStore, writeSystemSettingsStore, updateSystemSettingsStore, DEFAULT_SYSTEM_SETTINGS } from "../db/systemSettingsStore.js";
 
 // Helper to ensure settings exist
 const ensureSettingsExist = async (userId = null) => {
-    const [rows] = await executeQuery("SELECT TOP 1 * FROM system_settings");
-    if (rows.length > 0) return rows[0];
+    try {
+        const [rows] = await executeQuery("SELECT TOP 1 * FROM system_settings");
+        if (rows && rows.length > 0) return rows[0];
 
-    // Create default
-    const [result] = await executeQuery(`
-        INSERT INTO system_settings (lastModifiedBy, createdAt, updatedAt)
-        OUTPUT INSERTED.id
-        VALUES (?, GETDATE(), GETDATE())
-    `, [userId]);
+        // Create default in DB
+        const [result] = await executeQuery(`
+            INSERT INTO system_settings (lastModifiedBy, createdAt, updatedAt)
+            OUTPUT INSERTED.id
+            VALUES (?, GETDATE(), GETDATE())
+        `, [userId]);
 
-    const [newSettings] = await executeQuery("SELECT * FROM system_settings WHERE id = ?", [result[0].id]);
-    return newSettings[0];
+        if (result && result.length > 0 && result[0]?.id) {
+            const [newSettings] = await executeQuery("SELECT * FROM system_settings WHERE id = ?", [result[0].id]);
+            if (newSettings && newSettings.length > 0) return newSettings[0];
+        }
+    } catch {
+        // Fall back to JSON file store when DB is offline or table does not exist
+    }
+
+    const fileStore = readSystemSettingsStore();
+    return { id: 1, ...fileStore };
 };
 
 // Get current system settings
@@ -26,8 +36,12 @@ export const getSystemSettings = asyncHandler(async (req, res) => {
     // Populate lastModifiedBy
     let lastModifiedBy = null;
     if (settings.lastModifiedBy) {
-        const [users] = await executeQuery("SELECT id, fullName, email FROM users WHERE id = ?", [settings.lastModifiedBy]);
-        if (users.length > 0) lastModifiedBy = users[0];
+        try {
+            const [users] = await executeQuery("SELECT id, fullName, email FROM users WHERE id = ?", [settings.lastModifiedBy]);
+            if (users && users.length > 0) lastModifiedBy = users[0];
+        } catch {
+            // ignore if DB is offline
+        }
     }
 
     res.json(new ApiResponse(200, { ...settings, lastModifiedBy }, "System settings fetched successfully"));
@@ -116,16 +130,42 @@ export const updateSystemSettings = asyncHandler(async (req, res) => {
 
     const currentSettings = await ensureSettingsExist(userId);
 
-    await executeQuery(`UPDATE system_settings SET ${updates.join(', ')} WHERE id = ?`, [...values, currentSettings.id]);
+    // Filter updateData to only allowed fields
+    const safeUpdateData = {};
+    Object.keys(updateData).forEach(key => {
+        if (allowedFields.includes(key)) {
+            safeUpdateData[key] = updateData[key];
+        }
+    });
 
-    const [updatedRows] = await executeQuery("SELECT * FROM system_settings WHERE id = ?", [currentSettings.id]);
-    let newSettings = updatedRows[0];
+    try {
+        await executeQuery(`UPDATE system_settings SET ${updates.join(', ')} WHERE id = ?`, [...values, currentSettings.id]);
+    } catch {
+        // DB offline - continue to file store
+    }
+
+    // Always persist to JSON file store
+    const fileStoreUpdated = updateSystemSettingsStore({ ...safeUpdateData, lastModifiedBy: userId });
+
+    let newSettings = { ...currentSettings, ...fileStoreUpdated };
+    try {
+        const [updatedRows] = await executeQuery("SELECT * FROM system_settings WHERE id = ?", [currentSettings.id]);
+        if (updatedRows && updatedRows.length > 0) {
+            newSettings = { ...newSettings, ...updatedRows[0] };
+        }
+    } catch {
+        // ignore if DB is offline
+    }
 
     // Populate
     let lastModifiedBy = null;
     if (newSettings.lastModifiedBy) {
-        const [users] = await executeQuery("SELECT id, fullName, email FROM users WHERE id = ?", [newSettings.lastModifiedBy]);
-        if (users.length > 0) lastModifiedBy = users[0];
+        try {
+            const [users] = await executeQuery("SELECT id, fullName, email FROM users WHERE id = ?", [newSettings.lastModifiedBy]);
+            if (users && users.length > 0) lastModifiedBy = users[0];
+        } catch {
+            // ignore if DB is offline
+        }
     }
 
     res.json(new ApiResponse(200, { ...newSettings, lastModifiedBy }, "System settings updated successfully"));
@@ -133,8 +173,15 @@ export const updateSystemSettings = asyncHandler(async (req, res) => {
 
 // Reset system settings to default
 export const resetSystemSettings = asyncHandler(async (req, res) => {
-    // Delete all
-    await executeQuery("DELETE FROM system_settings");
+    // Delete all from DB if connected
+    try {
+        await executeQuery("DELETE FROM system_settings");
+    } catch {
+        // ignore if DB is offline
+    }
+
+    // Reset JSON file store
+    writeSystemSettingsStore(DEFAULT_SYSTEM_SETTINGS);
 
     // Create Default
     const defaultSettings = await ensureSettingsExist(req.user?.id);
@@ -142,8 +189,12 @@ export const resetSystemSettings = asyncHandler(async (req, res) => {
     // Populate
     let lastModifiedBy = null;
     if (defaultSettings.lastModifiedBy) {
-        const [users] = await executeQuery("SELECT id, fullName, email FROM users WHERE id = ?", [defaultSettings.lastModifiedBy]);
-        if (users.length > 0) lastModifiedBy = users[0];
+        try {
+            const [users] = await executeQuery("SELECT id, fullName, email FROM users WHERE id = ?", [defaultSettings.lastModifiedBy]);
+            if (users && users.length > 0) lastModifiedBy = users[0];
+        } catch {
+            // ignore if DB is offline
+        }
     }
 
     res.json(new ApiResponse(200, { ...defaultSettings, lastModifiedBy }, "System settings reset to default successfully"));

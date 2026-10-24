@@ -3600,7 +3600,7 @@ export default function PDCASheet({
           {/* Table Column Headers - Frozen on vertical scroll */}
           <thead className="sticky top-0 z-20 bg-white shadow-xs">
             {/* Row 1: 会議名 (Meeting Name) [Left] & 作成者 : (Prepared By) [Right] */}
-            {!isLpaObservationSheet && <tr className="bg-white text-[15px]">
+            <tr className="bg-white text-[15px]">
               <th
                 colSpan={2}
                 className="text-slate-900 font-bold text-center border-r border-b border-[#94A3B8] py-1.5 px-2 select-none whitespace-nowrap text-[16px] tracking-wider"
@@ -3643,7 +3643,7 @@ export default function PDCASheet({
                   className={`w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-900 font-medium text-base ${!canEditEntireSheet ? 'cursor-default' : 'focus:bg-blue-50/20'}`}
                 />
               </th>
-            </tr>}
+            </tr>
 
             {/* Row 2: 出席者 (Attendees) [Left] & 議事録No (Minutes / Audit No) [Right] */}
             <tr className="bg-white text-[15px]">

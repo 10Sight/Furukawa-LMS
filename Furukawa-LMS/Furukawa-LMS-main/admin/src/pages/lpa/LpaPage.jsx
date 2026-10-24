@@ -760,10 +760,6 @@ function LpaPageContent({ viewContext }) {
 
   const handleCreateCustomPdcaSheet = (e) => {
     e.preventDefault();
-    if (!isAdmin) {
-      alert('Only administrators are authorized to add new PDCA sheets.');
-      return;
-    }
     const targetUnit = newPdcaForm.unit || selectedUnit || 'Bawal';
     const newId = `PDCA-LPA-${activeSection.toUpperCase()}-${targetUnit}-${Date.now()}`;
     const newSheet = {
@@ -778,8 +774,12 @@ function LpaPageContent({ viewContext }) {
         name: effectiveAuthUser.name || effectiveAuthUser.userName,
         code: effectiveAuthUser.code || effectiveAuthUser.empCode,
         userName: effectiveAuthUser.userName
-      } : null,
-      createdById: effectiveAuthUser?.id || effectiveAuthUser?._id || null
+      } : {
+        id: 'user_anonymous',
+        name: 'User',
+        userName: 'user'
+      },
+      createdById: effectiveAuthUser?.id || effectiveAuthUser?._id || 'user_anonymous'
     };
 
     const initialTopic = getLpaPdcaTopic({
@@ -816,7 +816,11 @@ function LpaPageContent({ viewContext }) {
   };
 
   const handleDeletePdcaSheet = (sheet) => {
-    if (!isAdmin) return;
+    const canDelete = isAdmin || isRecordCreator(sheet, effectiveAuthUser);
+    if (!canDelete) {
+      alert('Only administrators or the sheet creator are authorized to delete this PDCA sheet.');
+      return;
+    }
     if (!confirm(`Are you sure you want to delete "${sheet.title}"?`)) return;
     try {
       if (sheet.isDefault) {
@@ -933,7 +937,7 @@ function LpaPageContent({ viewContext }) {
       currentDate={pdcaDate}
       onDateChange={setPdcaDate}
       currentUser={effectiveAuthUser}
-      isCreator={isRecordCreator(pdcaTopic, effectiveAuthUser)}
+      isCreator={isAdmin || isRecordCreator(pdcaTopic, effectiveAuthUser) || Boolean(pdcaTopic?.isBaseSheet)}
       emailPdcaSheets={[{
         id: pdcaTopic.id,
         title: pdcaTopic.topic,
@@ -1161,26 +1165,24 @@ function LpaPageContent({ viewContext }) {
                   </div>
 
                   <div className="flex items-center gap-2.5">
-                    {/* Create PDCA Option - Admin Only */}
-                    {isAdmin && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setNewPdcaForm({
-                            title: `${activeSection === 'assembly' ? 'Assembly' : 'C&C'} - PDCA Sheet #${allPdcaSheets.length + 1}`,
-                            date: pdcaDate || todayIso,
-                            unit: selectedUnit || 'Bawal',
-                            department: activeSection === 'assembly' ? 'Assembly' : 'C&C'
-                          });
-                          setIsCreatePdcaModalOpen(true);
-                        }}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 text-white font-semibold text-xs hover:bg-blue-700 transition-all cursor-pointer shadow-xs active:scale-98"
-                        title="Create new PDCA Sheet (Admin Only)"
-                      >
-                        <Plus size={15} />
-                        <span>Create PDCA</span>
-                      </button>
-                    )}
+                    {/* Create PDCA Option - Available to all users */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewPdcaForm({
+                          title: `${activeSection === 'assembly' ? 'Assembly' : 'C&C'} - PDCA Sheet #${allPdcaSheets.length + 1}`,
+                          date: pdcaDate || todayIso,
+                          unit: selectedUnit || 'Bawal',
+                          department: activeSection === 'assembly' ? 'Assembly' : 'C&C'
+                        });
+                        setIsCreatePdcaModalOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 text-white font-semibold text-xs hover:bg-blue-700 transition-all cursor-pointer shadow-xs active:scale-98"
+                      title="Create new PDCA Sheet"
+                    >
+                      <Plus size={15} />
+                      <span>Create PDCA</span>
+                    </button>
                   </div>
                 </div>
 
@@ -1281,7 +1283,7 @@ function LpaPageContent({ viewContext }) {
                                   >
                                     <Eye size={14} /> Open
                                   </button>
-                                  {isAdmin && (
+                                  {(isAdmin || isRecordCreator(sh, effectiveAuthUser)) && (
                                     <button
                                       type="button"
                                       onClick={() => handleDeletePdcaSheet(sh)}
@@ -1479,8 +1481,8 @@ function LpaPageContent({ viewContext }) {
         initialDate={pdcaDate}
       />
 
-      {/* Create New PDCA Sheet Modal (Admin Only) */}
-      {isCreatePdcaModalOpen && isAdmin && (
+      {/* Create New PDCA Sheet Modal - Available to all users */}
+      {isCreatePdcaModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
@@ -1488,9 +1490,6 @@ function LpaPageContent({ viewContext }) {
                 <ClipboardList className="text-blue-600" size={18} />
                 <span>Create New PDCA Sheet</span>
               </h3>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-                Admin Only
-              </span>
             </div>
             <form onSubmit={handleCreateCustomPdcaSheet} className="space-y-4">
               <div>

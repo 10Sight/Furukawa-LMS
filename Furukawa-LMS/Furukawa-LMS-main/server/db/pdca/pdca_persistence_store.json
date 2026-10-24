@@ -8635,6 +8635,19 @@
       "url": "/uploads/1791961662156-4135899.png",
       "uploadedBy": "System User",
       "createdAt": "2026-10-14T07:07:42.189Z"
+    },
+    {
+      "id": 1792840039893,
+      "pdcaRecordId": "PDCA-9245d001-57fb-45a6-b618-84eecedd359f",
+      "rowId": "row-1",
+      "fieldName": "imageBefore",
+      "filename": "1792840039825-235471016.png",
+      "originalFilename": "Screenshot 2026-08-10 160555.png",
+      "mimeType": "image/png",
+      "size": 289904,
+      "url": "/uploads/1792840039825-235471016.png",
+      "uploadedBy": "Joy Dastidar (ST080014)",
+      "createdAt": "2026-10-24T11:07:19.893Z"
     }
   ],
   "auditLogs": [

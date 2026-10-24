@@ -3805,15 +3805,15 @@ export default function PDCASheet({
             <col style={{ width: `${actionTakenWidth}px`, minWidth: `${actionTakenWidth}px` }} />
             <col style={{ width: `${counterMeasureWidth}px`, minWidth: `${counterMeasureWidth}px` }} />
             <col style={{ width: '150px', minWidth: '140px' }} />
-            <col style={{ width: '80px', minWidth: '75px' }} />
-            <col style={{ width: '56px', minWidth: '52px' }} />
-            <col style={{ width: '120px', minWidth: '110px' }} />
+            <col style={{ width: '115px', minWidth: '105px' }} />
+            <col style={{ width: '105px', minWidth: '95px' }} />
+            <col style={{ width: '135px', minWidth: '120px' }} />
             <col style={{ width: '120px', minWidth: '105px' }} />
-            <col style={{ width: '85px', minWidth: '75px' }} />
-            <col style={{ width: '155px', minWidth: '140px' }} />
+            <col style={{ width: '90px', minWidth: '80px' }} />
+            <col style={{ width: '160px', minWidth: '145px' }} />
             <col style={{ width: '95px', minWidth: '85px' }} />
-            <col style={{ width: '120px', minWidth: '110px' }} />
-            {canEditEntireSheet && <col style={{ width: '44px', minWidth: '40px' }} />}
+            <col style={{ width: '150px', minWidth: '140px' }} />
+            {canEditEntireSheet && <col style={{ width: '55px', minWidth: '45px' }} />}
           </colgroup>
 
           {/* Table Column Headers - Frozen on vertical scroll */}
@@ -4138,58 +4138,58 @@ export default function PDCASheet({
               <th rowSpan={2} className="py-1.5 px-1 w-[150px] min-w-[140px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px]">
                 Image After
               </th>
-              <th rowSpan={2} className="py-1 px-1 w-[80px] min-w-[75px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] leading-tight text-[10px]">
-                <div className="font-semibold text-slate-800">Std. Duration</div>
-                <div className="font-semibold text-[9.5px] text-slate-600">in min</div>
+              <th rowSpan={2} className="py-1.5 px-1.5 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 leading-tight select-none">
+                <div>Std. Duration</div>
+                <div className="text-[12px] font-semibold text-slate-600">in min</div>
               </th>
-              <th rowSpan={2} className="py-1 px-0.5 w-[82px] min-w-[78px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] leading-tight">
-                <div className="text-[10px] leading-tight font-semibold">Response</div>
-                <div className="text-[10px] leading-tight font-semibold">Date</div>
+              <th rowSpan={2} className="py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 leading-tight select-none">
+                <div>Response</div>
+                <div>Date</div>
               </th>
               <th
                 rowSpan={2}
-                className="py-1 px-1 w-[120px] min-w-[110px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] leading-tight text-[10px]"
+                className="py-1.5 px-1.5 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 leading-tight select-none"
                 title="Past revisions of Response Date. Only administrators have permission to delete revised dates."
               >
-                <div className="font-semibold text-slate-800">No. of time</div>
-                <div className="font-semibold text-slate-800 flex items-center justify-center gap-1">
+                <div>No. of time</div>
+                <div className="flex items-center justify-center gap-1">
                   <span>Revised</span>
                   {isAdmin && (
-                    <span className="text-[8px] font-bold text-amber-700 bg-amber-100/90 px-1 py-0.2 rounded border border-amber-300" title="Administrator access: you can delete revised dates">
+                    <span className="text-[10px] font-bold text-amber-800 bg-amber-100/90 px-1.5 py-0.5 rounded border border-amber-300" title="Administrator access: you can delete revised dates">
                       Admin
                     </span>
                   )}
                 </div>
               </th>
-              <th colSpan={4} className="py-1 px-0 border-r border-b border-[#475569] bg-[#ECEFF1] text-center">
-                <div className="text-center font-bold text-[9.5px] text-slate-700 px-1">
+              <th colSpan={4} className="py-1.5 px-1 border-r border-b border-[#475569] bg-[#ECEFF1] text-center select-none">
+                <div className="text-center font-bold text-[14px] text-slate-800 px-1 tracking-wide">
                   Responsible Person
                 </div>
               </th>
-              <th rowSpan={2} className="py-2 px-1 w-[185px] min-w-[175px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] leading-tight select-none">
-                <div className="flex items-center justify-center gap-1 text-[10px] font-bold text-slate-800 leading-tight">
-                  <Lock className="w-3 h-3 text-slate-600 flex-shrink-0" />
+              <th rowSpan={2} className="py-1.5 px-1.5 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 leading-tight select-none">
+                <div className="flex items-center justify-center gap-1.5 text-[14px] font-bold text-slate-800 leading-tight">
+                  <Lock className="w-3.5 h-3.5 text-slate-700 flex-shrink-0" />
                   <span>Confirmation</span>
                 </div>
               </th>
               {canEditEntireSheet && (
-                <th rowSpan={2} className="py-1.5 px-1 w-[44px] min-w-[40px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-semibold select-none">
+                <th rowSpan={2} className="py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 select-none">
                   Actions
                 </th>
               )}
             </tr>
 
-            <tr className="bg-[#ECEFF1] text-slate-600 font-semibold text-[13px] select-none text-center">
-              <th className="py-0.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] w-[120px] min-w-[105px]">
+            <tr className="bg-[#ECEFF1] text-slate-800 font-bold text-[14px] select-none text-center">
+              <th className="py-1 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800">
                 Unit
               </th>
-              <th className="py-0.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] w-[85px] min-w-[75px]">
+              <th className="py-1 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800">
                 Dept
               </th>
-              <th className="py-0.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] w-[155px] min-w-[140px]">
+              <th className="py-1 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800">
                 <span>Staff Name</span> <span className="text-red-500 font-bold">*</span>
               </th>
-              <th className="py-0.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] w-[95px] min-w-[85px]">
+              <th className="py-1 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800">
                 CFT
               </th>
             </tr>

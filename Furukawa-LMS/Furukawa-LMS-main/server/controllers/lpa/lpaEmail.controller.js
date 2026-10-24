@@ -196,7 +196,8 @@ export const createSendLpaEmailHandler = ({ sendMailFn = sendMail, log = logger,
       : [];
     const pdcaPoints = clientPoints.length ? clientPoints : extractPdcaPoints(pdcaSheetData);
 
-    const { html, assemblyUrl, pdcaUrl } = buildSheetEmail(assembly || null, pdca, portalBaseUrl, remarks, { pdcaOnly, pdcaPoints });
+    const effectiveBaseUrl = portalBaseUrl || req.body?.portalBaseUrl || req.headers?.origin || ENV.ADMIN_URL || ENV.FRONTEND_URL || "http://localhost:5173";
+    const { html, assemblyUrl, pdcaUrl } = buildSheetEmail(assembly || null, pdca, effectiveBaseUrl, remarks, { pdcaOnly, pdcaPoints });
     const info = await sendMailFn(to, subject, html, [], cc);
     const accepted = Array.isArray(info?.accepted) ? info.accepted.map(String) : [];
     const rejected = Array.isArray(info?.rejected) ? info.rejected.map(String) : [];
@@ -205,8 +206,8 @@ export const createSendLpaEmailHandler = ({ sendMailFn = sendMail, log = logger,
     const rejectedAddresses = [...new Set([...rejected, ...unaccepted])];
 
     if (rejectedAddresses.length) {
+      attemptStore.delete(attemptKey);
       const body = new ApiResponse(502, { accepted, rejected: rejectedAddresses }, "The email service rejected one or more recipients.");
-      attemptStore.set(attemptKey, { status: 502, body, expiresAt: Date.now() + ATTEMPT_TTL_MS });
       log.error(`[LPA_EMAIL] Provider rejected recipients user=${userId} accepted=${accepted.length} rejected=${rejectedAddresses.length} responseCode=${info?.responseCode || "unknown"}`);
       return res.status(502).json(body);
     }
@@ -220,18 +221,17 @@ export const createSendLpaEmailHandler = ({ sendMailFn = sendMail, log = logger,
     log.info(`[LPA_EMAIL] Provider accepted email user=${userId} recipients=${accepted.length} messageId=${info?.messageId || "unknown"}`);
     return res.status(200).json(body);
   } catch (error) {
+    attemptStore.delete(attemptKey);
     if (error?.statuscode && error.statuscode < 500) {
-      attemptStore.delete(attemptKey);
       return res.status(error.statuscode).json(new ApiResponse(error.statuscode, null, error.message));
     }
     const code = error?.code || "unknown";
     const responseCode = error?.responseCode || "unknown";
     const command = String(error?.command || "unknown").replace(/[^a-z0-9_-]/gi, "").slice(0, 40);
-    log.error(`[LPA_EMAIL] Send failed user=${userId} code=${code} responseCode=${responseCode} command=${command}`);
+    log.error(`[LPA_EMAIL] Send failed user=${userId} code=${code} responseCode=${responseCode} command=${command} message=${error?.message}`);
     const body = new ApiResponse(502, null, error?.code === "SMTP_NOT_CONFIGURED"
       ? "Email service is not configured. Contact your administrator."
       : "The email service could not accept this message. Please try again later.");
-    attemptStore.set(attemptKey, { status: 502, body, expiresAt: Date.now() + ATTEMPT_TTL_MS });
     return res.status(502).json(body);
   }
 });

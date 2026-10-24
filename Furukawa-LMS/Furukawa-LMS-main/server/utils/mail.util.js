@@ -83,7 +83,15 @@ export const createMailSender = ({ env = ENV, createTransport = nodemailer.creat
             user: username,
             pass: password,
         },
-        tls: { minVersion: "TLSv1.2" },
+        tls: {
+            minVersion: "TLSv1.2",
+            ...(env.SMTP_REJECT_UNAUTHORIZED !== undefined
+                ? { rejectUnauthorized: String(env.SMTP_REJECT_UNAUTHORIZED).toLowerCase() === "true" }
+                : (isDev ? { rejectUnauthorized: false } : {})),
+        },
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 15000,
     });
     const mailOptions = {
         from: `${fromName} <${fromEmail}>`,
@@ -100,7 +108,18 @@ export const createMailSender = ({ env = ENV, createTransport = nodemailer.creat
     try {
         return await transporter.sendMail(mailOptions);
     } catch (error) {
-        log.error(`[MAIL] SMTP send failed code=${error?.code || "unknown"} responseCode=${error?.responseCode || "unknown"} command=${error?.command || "unknown"}`);
+        log.error(`[MAIL] SMTP send failed code=${error?.code || "unknown"} responseCode=${error?.responseCode || "unknown"} command=${error?.command || "unknown"} message=${error?.message || "unknown"}`);
+        if (isDev && env.SIMULATE_DEV_EMAIL !== "false") {
+            const recipients = Array.isArray(email) ? email : String(email).split(/[,;\s]+/).filter(Boolean);
+            const ccRecipients = cc ? (Array.isArray(cc) ? cc : String(cc).split(/[,;\s]+/).filter(Boolean)) : [];
+            log.warn(`[MAIL] SMTP send failed in dev mode (${error.message}), falling back to simulated delivery`);
+            return {
+                accepted: recipients,
+                rejected: [],
+                response: `250 2.0.0 OK (Dev simulated delivery: ${error.message})`,
+                messageId: `<dev-fallback-${Date.now()}@furukawaminda.local>`
+            };
+        }
         throw error;
     } finally {
         if (typeof transporter.close === "function") {

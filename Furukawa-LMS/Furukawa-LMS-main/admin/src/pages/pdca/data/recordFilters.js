@@ -234,15 +234,12 @@ export function isUserInResponsibleDepartment(row, user) {
   if (isUserResponsibleForRow(row, user)) return true;
 
   // 2. Department matching: check selected Responsible Person Confirmation department
-  const targetDepts = [
-    row.responsiblePersonDept,
-    row.department,
-    ...(Array.isArray(row.departments) ? row.departments : [])
-  ]
-    .filter(Boolean)
-    .map(d => String(d).trim().toLowerCase());
+  // When creator selects a department in responsiblePersonDept, that department gets edit access to action columns
+  const respDept = row.responsiblePersonDept || row.respDept;
+  if (!respDept || respDept === 'CFT') return false;
 
-  if (targetDepts.length === 0) return false;
+  const targetDept = String(respDept).trim().toLowerCase();
+  if (!targetDept) return false;
 
   const userDepts = [];
   if (user.deptName) userDepts.push(user.deptName);
@@ -256,7 +253,7 @@ export function isUserInResponsibleDepartment(row, user) {
   }
 
   const normalizedUserDepts = userDepts.map(d => String(d).trim().toLowerCase());
-  return normalizedUserDepts.some(ud => targetDepts.some(td => ud === td || ud.includes(td) || td.includes(ud)));
+  return normalizedUserDepts.some(ud => ud === targetDept || ud.includes(targetDept) || targetDept.includes(ud));
 }
 
 export function isUserResponsibleForAnyRow(rows, user) {

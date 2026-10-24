@@ -227,18 +227,27 @@ function LpaPageContent({ viewContext }) {
     openSheet(record, sheetIndex).then(() => navigate('/cms/lpa', { replace: true }));
   }, [location.search, loading, records, navigate]);
   const authUser = useSelector(state => state.auth?.user);
+  const effectiveAuthUser = useMemo(() => {
+    if (authUser) return authUser;
+    try {
+      const stored = (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('user') : null) ||
+        (typeof localStorage !== 'undefined' ? localStorage.getItem('user') : null);
+      if (stored) return JSON.parse(stored);
+    } catch { }
+    return null;
+  }, [authUser]);
+
   const isAdmin = Boolean(
-    authUser?.isAdmin ||
-    authUser?.role === 'ADMIN' ||
-    authUser?.role === 'SUPERADMIN' ||
-    authUser?.role === 'superadmin' ||
-    authUser?.role === 'admin'
+    effectiveAuthUser?.isAdmin === true ||
+    effectiveAuthUser?.isAdmin === 1 ||
+    String(effectiveAuthUser?.role || '').toUpperCase() === 'ADMIN' ||
+    String(effectiveAuthUser?.role || '').toUpperCase() === 'SUPERADMIN'
   );
 
   const canEditCurrentRecord = useMemo(() => {
     if (!editor) return true;
-    return canEditRecord(editor, authUser);
-  }, [editor, authUser]);
+    return canEditRecord(editor, effectiveAuthUser);
+  }, [editor, effectiveAuthUser]);
 
   const updateSheetMetadata = useCallback((metadata) => {
     if (!canEditCurrentRecord) return;
@@ -717,6 +726,8 @@ function LpaPageContent({ viewContext }) {
       section: activeSection,
       scope: 'Company',
       plant: sheetItem.unit || selectedUnit || 'Bawal',
+      createdBy: sheetItem.createdBy || sheetData?.createdBy,
+      createdById: sheetItem.createdById || sheetData?.createdById,
       sheet: sheetData
     });
     setIsPdcaSheetOpen(true);
@@ -761,7 +772,14 @@ function LpaPageContent({ viewContext }) {
       date: newPdcaForm.date || pdcaDate || todayIso,
       unit: targetUnit,
       department: newPdcaForm.department || (activeSection === 'assembly' ? 'Assembly' : 'C&C'),
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      createdBy: effectiveAuthUser ? {
+        id: effectiveAuthUser.id || effectiveAuthUser._id,
+        name: effectiveAuthUser.name || effectiveAuthUser.userName,
+        code: effectiveAuthUser.code || effectiveAuthUser.empCode,
+        userName: effectiveAuthUser.userName
+      } : null,
+      createdById: effectiveAuthUser?.id || effectiveAuthUser?._id || null
     };
 
     const initialTopic = getLpaPdcaTopic({
@@ -778,8 +796,11 @@ function LpaPageContent({ viewContext }) {
       rows: Array.from({ length: 10 }, () => createEmptyPdcaRow()),
       headerInfo: {
         ...(initialTopic.sheet?.headerInfo || {}),
-        topicName: newSheet.title
-      }
+        topicName: newSheet.title,
+        preparedBy: effectiveAuthUser?.name || effectiveAuthUser?.userName || ''
+      },
+      createdBy: newSheet.createdBy,
+      createdById: newSheet.createdById
     };
     saveLpaPdcaSnapshot(newId, customSnapshot);
 
@@ -896,6 +917,8 @@ function LpaPageContent({ viewContext }) {
       topic: `${secName} - LPA Observation (PDCA)`,
       scope: 'Company',
       plant: record.unit || selectedUnit || 'Bawal',
+      createdBy: record.createdBy,
+      createdById: record.createdById,
       sheet: loadedSheet
     });
     setActiveSubTab('pdca');
@@ -909,8 +932,8 @@ function LpaPageContent({ viewContext }) {
       onSave={handleSavePDCA}
       currentDate={pdcaDate}
       onDateChange={setPdcaDate}
-      currentUser={authUser}
-      isCreator={true}
+      currentUser={effectiveAuthUser}
+      isCreator={isRecordCreator(pdcaTopic, effectiveAuthUser)}
       emailPdcaSheets={[{
         id: pdcaTopic.id,
         title: pdcaTopic.topic,

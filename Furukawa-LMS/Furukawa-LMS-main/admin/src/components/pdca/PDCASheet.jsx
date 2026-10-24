@@ -44,7 +44,8 @@ import {
   isRecordCreator,
   isUserResponsibleForRow,
   isUserInResponsibleDepartment,
-  isUserResponsibleForAnyRow
+  isUserResponsibleForAnyRow,
+  EDITABLE_RESPONSIBLE_COLUMNS
 } from '../../pages/pdca/data/recordFilters.js';
 import {
   parseStaffEmployee,
@@ -2137,6 +2138,10 @@ export default function PDCASheet({
       const updated = [...prev];
       const current = updated[rowIndex];
       if (!current) return prev;
+      if (!canEditEntireSheet) {
+        if (!EDITABLE_RESPONSIBLE_COLUMNS.includes(field)) return prev;
+        if (!isUserInResponsibleDepartment(current, effectiveUser)) return prev;
+      }
       if (field === 'stdDurationMin' && !current.responseDate?.trim() && value) {
         if (typeof showToast === 'function') {
           showToast(`Row ${rowIndex + 1}: Select Response Date first before entering Std. Duration.`);
@@ -3303,10 +3308,12 @@ export default function PDCASheet({
   };
 
   const handleAddRow = () => {
+    if (!canEditEntireSheet) return;
     setRows((prev) => [...prev, createEmptyRow()]);
   };
 
   const handleInsertRowAbove = (rowIndex) => {
+    if (!canEditEntireSheet) return;
     setRows((prev) => {
       const updated = [...prev];
       updated.splice(rowIndex, 0, createEmptyRow());
@@ -3315,6 +3322,7 @@ export default function PDCASheet({
   };
 
   const handleDeleteRow = (rowIndex) => {
+    if (!canEditEntireSheet) return;
     if (rows.length <= 1) {
       setRows([createEmptyRow()]);
       return;
@@ -3413,7 +3421,7 @@ export default function PDCASheet({
   const canUserEditActionColsForModalRow = Boolean(
     !readOnly && (
       canEditEntireSheet ||
-      (evidenceModal.rowIndex !== null && rows[evidenceModal.rowIndex] && isUserResponsibleForRow(rows[evidenceModal.rowIndex], effectiveUser))
+      (evidenceModal.rowIndex !== null && rows[evidenceModal.rowIndex] && isUserInResponsibleDepartment(rows[evidenceModal.rowIndex], effectiveUser))
     )
   );
 
@@ -3608,10 +3616,10 @@ export default function PDCASheet({
                 <input
                   type="text"
                   value={headerInfo.topicName}
-                  readOnly={effectiveReadOnly}
-                  disabled={effectiveReadOnly}
+                  readOnly={!canEditEntireSheet}
+                  disabled={!canEditEntireSheet}
                   onChange={(e) => setHeaderInfo({ ...headerInfo, topicName: e.target.value })}
-                  className={`w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-900 font-semibold text-base ${effectiveReadOnly ? 'cursor-default' : 'focus:bg-blue-50/20'}`}
+                  className={`w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-900 font-semibold text-base ${!canEditEntireSheet ? 'cursor-default' : 'focus:bg-blue-50/20'}`}
                 />
               </th>
               <th
@@ -3629,10 +3637,10 @@ export default function PDCASheet({
                 <input
                   type="text"
                   value={stripEmployeeId(headerInfo.preparedBy)}
-                  readOnly={effectiveReadOnly}
-                  disabled={effectiveReadOnly}
+                  readOnly={!canEditEntireSheet}
+                  disabled={!canEditEntireSheet}
                   onChange={(e) => setHeaderInfo({ ...headerInfo, preparedBy: stripEmployeeId(e.target.value) })}
-                  className={`w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-900 font-medium text-base ${effectiveReadOnly ? 'cursor-default' : 'focus:bg-blue-50/20'}`}
+                  className={`w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-900 font-medium text-base ${!canEditEntireSheet ? 'cursor-default' : 'focus:bg-blue-50/20'}`}
                 />
               </th>
             </tr>}
@@ -3654,10 +3662,10 @@ export default function PDCASheet({
                 <input
                   type="text"
                   value={headerInfo.attendees}
-                  readOnly={effectiveReadOnly}
-                  disabled={effectiveReadOnly}
+                  readOnly={!canEditEntireSheet}
+                  disabled={!canEditEntireSheet}
                   onChange={(e) => setHeaderInfo({ ...headerInfo, attendees: e.target.value })}
-                  className={`w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-800 font-normal text-xs ${effectiveReadOnly ? 'cursor-default' : 'focus:bg-blue-50/20'}`}
+                  className={`w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-800 font-normal text-xs ${!canEditEntireSheet ? 'cursor-default' : 'focus:bg-blue-50/20'}`}
                 />
               </th>
               <th
@@ -3675,10 +3683,10 @@ export default function PDCASheet({
                 <input
                   type="text"
                   value={headerInfo.auditNo}
-                  readOnly={effectiveReadOnly}
-                  disabled={effectiveReadOnly}
+                  readOnly={!canEditEntireSheet}
+                  disabled={!canEditEntireSheet}
                   onChange={(e) => setHeaderInfo({ ...headerInfo, auditNo: e.target.value })}
-                  className={`w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-900 font-medium text-xs ${effectiveReadOnly ? 'cursor-default' : 'focus:bg-blue-50/20'}`}
+                  className={`w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-900 font-medium text-xs ${!canEditEntireSheet ? 'cursor-default' : 'focus:bg-blue-50/20'}`}
                 />
               </th>
             </tr>

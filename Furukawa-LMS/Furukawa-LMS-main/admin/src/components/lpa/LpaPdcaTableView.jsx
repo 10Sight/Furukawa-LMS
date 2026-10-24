@@ -42,11 +42,19 @@ export default function LpaPdcaTableView({
     }
   }, [pdcaDate, mode]);
 
-  // Filter records by unit and section
+
+  // Filter records by unit and section.
+  // Only include records whose ID starts with 'PDCA-LPA-' — those are the sheets created
+  // from the LPA PDCA Page. Regular PDCA records (created from the PDCA Dashboard) must
+  // never appear here, even if their section/department/topic happens to contain 'assembly'
+  // or 'c&c'.
   const sectionScopedRecords = useMemo(() => {
     if (!Array.isArray(allRecords)) return [];
     return allRecords.filter((item) => {
       if (item.isDeleted) return false;
+      // Strict: only LPA-originated records belong in this view
+      const id = String(item.id || item.recordId || '');
+      if (!id.startsWith('PDCA-LPA-')) return false;
       if (!matchesPlant(item, selectedUnit)) return false;
       return section === 'assembly' ? isAssemblyRecord(item) : isCcRecord(item);
     });

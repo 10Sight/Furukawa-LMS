@@ -16,8 +16,21 @@ export const VERIFIED_EMPLOYEE_MASTER = [
   { id: 'emp-bw092301', name: 'Manish Joshi', code: 'BW092301', department: 'Maintenance', email: 'm.joshi@fme-minda.co.in' },
   { id: 'emp-st080014', name: 'Joy Dastidar', code: 'ST080014', department: 'D&D', email: 'st080014@furukawaminda.com' },
   { id: 'emp-bw019283', name: 'Sanjeev Verma', code: 'BW019283', department: 'Store', email: 's.verma@fme-minda.co.in' },
-  { id: 'emp-gj058291', name: 'Anita Deshmukh', code: 'GJ058291', department: 'IT', email: 'a.deshmukh@fme-minda.co.in' }
 ];
+
+/**
+ * Strips any employee code / ID in parentheses from an employee name string.
+ * e.g. "VIKRAM SINGH (GJ034112)" -> "VIKRAM SINGH"
+ * e.g. "JOY DASTIDAR (ST080014)" -> "JOY DASTIDAR"
+ */
+export const stripEmployeeId = (input) => {
+  if (!input) return '';
+  if (typeof input === 'object') {
+    return stripEmployeeId(input.name || input.fullName || '');
+  }
+  return String(input).replace(/\s*\([^)]*\)/g, '').trim();
+};
+
 
 /**
  * Parses employee input (e.g. "Deepak Mehta (GJ045819)") into separate name and code.

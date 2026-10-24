@@ -49,6 +49,7 @@ import {
 import {
   parseStaffEmployee,
   findEmployeeDepartment,
+  stripEmployeeId,
   VERIFIED_EMPLOYEE_MASTER
 } from '../../pages/pdca/data/pdcaEmployees.js';
 import SearchableLineAreaSelect, { getCachedDbSections } from './SearchableLineAreaSelect';
@@ -117,10 +118,10 @@ function CheckboxMultiSelect({ value = [], options = [], onChange, disabled = fa
         aria-expanded={open}
         onClick={() => setOpen(current => !current)}
         title={label}
-        className={`flex w-full min-h-[30px] items-center justify-between gap-1 rounded-md border px-1.5 py-1 text-left text-[10px] leading-tight transition-colors ${selected.length ? 'border-blue-200 bg-blue-50/60 text-slate-800' : 'border-slate-200 bg-white text-slate-500'} ${open ? 'border-blue-400 ring-1 ring-blue-100' : 'hover:border-blue-300 hover:bg-blue-50/40'} disabled:cursor-default disabled:opacity-60`}
+        className={`flex w-full min-h-[30px] items-center justify-between gap-1 rounded-md border px-1.5 py-1 text-left text-[11px] leading-tight transition-colors ${selected.length ? 'border-blue-200 bg-blue-50/60 text-slate-800' : 'border-slate-200 bg-white text-slate-500'} ${open ? 'border-blue-400 ring-1 ring-blue-100' : 'hover:border-blue-300 hover:bg-blue-50/40'} disabled:cursor-default disabled:opacity-60`}
       >
-        <span className="min-w-0 flex-1 truncate">{label || placeholder}</span>
-        {selected.length > 0 && <span className="shrink-0 rounded-full bg-blue-100 px-1.5 py-0.5 text-[9px] font-semibold text-blue-700">{selected.length}</span>}
+        <span className="min-w-0 flex-1 truncate font-medium">{label || placeholder}</span>
+        {selected.length > 1 && <span className="shrink-0 rounded-full bg-blue-100 px-1 py-0.2 text-[9px] font-semibold text-blue-700">({selected.length})</span>}
         <ChevronDown className={`h-3 w-3 shrink-0 text-slate-400 transition-transform ${open ? 'rotate-180 text-blue-600' : ''}`} />
       </button>
       {open && menuPosition && createPortal(
@@ -414,23 +415,24 @@ function CompactDateCell({ value, onChange, readOnly = false, smallText = false 
       />
 
       {display ? (
-        // When date is selected: Date is shown perfectly center-aligned and fully visible without cutting off
-        <div className="relative w-full flex items-center justify-center text-center pointer-events-none px-0.5 whitespace-nowrap">
-          <span className={`${smallText ? 'text-[12px]' : 'text-[15px]'} font-semibold text-slate-800 text-center tracking-tight whitespace-nowrap`}>
-            {display}
-          </span>
+        <>
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
               onChange('');
             }}
-            className="absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-auto z-20 opacity-0 group-hover:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 p-0.5 transition-opacity rounded cursor-pointer"
+            className="absolute right-0.5 top-0.5 pointer-events-auto z-20 opacity-0 group-hover:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-0.5 transition-all rounded cursor-pointer shadow-2xs"
             title="Clear date"
           >
             <X className="w-2.5 h-2.5 stroke-[2.5]" />
           </button>
-        </div>
+          <div className="w-full flex items-center justify-center text-center pointer-events-none px-0.5 whitespace-nowrap">
+            <span className={`${smallText ? 'text-[12px]' : 'text-[15px]'} font-semibold text-slate-800 text-center tracking-tight whitespace-nowrap`}>
+              {display}
+            </span>
+          </div>
+        </>
       ) : (
         // When empty: Only calendar icon is shown, centered
         <div className="w-full flex items-center justify-center text-center pointer-events-none">
@@ -442,15 +444,30 @@ function CompactDateCell({ value, onChange, readOnly = false, smallText = false 
 }
 
 // Std. Duration in min cell with automatic 'min' suffix
-function DurationMinCell({ value, readOnly, onChange, cellRef, requiredActionAllowed = false }) {
+function DurationMinCell({ value, readOnly, onChange, cellRef, requiredActionAllowed = false, hasResponseDate = true, onDisabledClick }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editVal, setEditVal] = useState('');
 
   const numStr = value !== undefined && value !== null ? String(value).replace(/[^0-9.]/g, '') : '';
   const displayVal = numStr ? `${numStr} min` : '';
 
-  if (readOnly) {
-    return <span className={`text-base font-medium whitespace-nowrap ${requiredActionAllowed ? 'text-red-700' : 'text-slate-800'}`}>{displayVal || '-'}</span>;
+  if (readOnly || !hasResponseDate) {
+    return (
+      <div
+        ref={cellRef}
+        onClick={() => {
+          if (!hasResponseDate && typeof onDisabledClick === 'function') {
+            onDisabledClick();
+          }
+        }}
+        title={!hasResponseDate ? "Select Response Date first to enter duration (min)" : undefined}
+        className={`w-full py-1 text-base text-center font-medium whitespace-nowrap ${!hasResponseDate ? 'cursor-not-allowed opacity-50 select-none' : ''}`}
+      >
+        <span className={`text-base font-medium whitespace-nowrap ${requiredActionAllowed ? 'text-red-700' : 'text-slate-800'}`}>
+          {displayVal || '-'}
+        </span>
+      </div>
+    );
   }
 
   if (isEditing) {
@@ -545,6 +562,7 @@ export default function PDCASheet({
     Boolean(topic?.lpaSource) ||
     /lpa\s*observation/.test(lpaSheetIdentity) ||
     ['assembly', 'c&c', 'c & c'].includes(lpaSheetTitle);
+  const usesCheckboxMultiSelects = true;
   const effectiveUser = currentUser || userContext?.user;
 
   // Determine if the current user has Administrator privileges
@@ -626,15 +644,15 @@ export default function PDCASheet({
     const imagesAfter = Array.isArray(row.imagesAfter) && !isDocAfter
       ? row.imagesAfter
       : (!isDocAfter && row.imageAfter ? [{ id: 'legacy-after-0', url: row.imageAfter, name: row.imageAfterName || 'After Image', type: row.fileTypeAfter || 'image' }] : []);
-    let staffEmployee = (row.staffEmployee || row.responsiblePersonConfirmation || '').trim();
+    let staffEmployee = stripEmployeeId(row.staffEmployee || row.responsiblePersonConfirmation || '');
     let staffEmployees = Array.isArray(row.staffEmployees) ? row.staffEmployees : [];
     let staffId = (row.staffId || row.employeeId || '').trim();
-    let staffName = (row.staffName || '').trim();
+    let staffName = stripEmployeeId(row.staffName || '');
 
     if (staffEmployees.length > 0) {
       staffEmployees = staffEmployees.map((emp) => {
         const p = parseStaffEmployee(emp.name ? (emp.code ? `${emp.name} (${emp.code})` : emp.name) : emp);
-        const name = emp.name || p.name || '';
+        const name = stripEmployeeId(emp.name || p.name || '');
         const code = (emp.code || emp.empId || p.code || '').toUpperCase();
         const dbDept = findEmployeeDepartment(`${name} (${code})`, dbEmployees) ||
           findEmployeeDepartment(`${name} (${code})`, VERIFIED_EMPLOYEE_MASTER);
@@ -649,7 +667,7 @@ export default function PDCASheet({
 
       if (!staffEmployee) {
         staffEmployee = staffEmployees
-          .map((e) => ((e.code || e.empId) ? `${e.name || e.fullName} (${e.code || e.empId})` : (e.name || e.fullName)))
+          .map((e) => stripEmployeeId(e.name || e.fullName))
           .join(', ');
       }
       if (!staffName) staffName = staffEmployees[0].name || staffEmployees[0].fullName || '';
@@ -658,21 +676,22 @@ export default function PDCASheet({
       const parts = staffEmployee.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
       staffEmployees = parts.map((part) => {
         const { name, code } = parseStaffEmployee(part);
+        const cleanName = stripEmployeeId(name);
         const dbDept = findEmployeeDepartment(part, dbEmployees) ||
           findEmployeeDepartment(part, VERIFIED_EMPLOYEE_MASTER);
         const dept = dbDept || (row.department && row.department !== 'CFT' ? row.department : '');
-        return { name, code, department: dept };
+        return { name: cleanName, code, department: dept };
       });
       if (!staffName || !staffId) {
         const primary = parseStaffEmployee(staffEmployee);
-        if (!staffName) staffName = primary.name || '';
+        if (!staffName) staffName = stripEmployeeId(primary.name || '');
         if (!staffId) staffId = primary.code || '';
       }
     } else if (staffName) {
       const dbDept = findEmployeeDepartment(`${staffName} (${staffId})`, dbEmployees) ||
         findEmployeeDepartment(`${staffName} (${staffId})`, VERIFIED_EMPLOYEE_MASTER);
       const dept = dbDept || (row.department && row.department !== 'CFT' ? row.department : '');
-      staffEmployee = staffId ? `${staffName} (${staffId})` : staffName;
+      staffEmployee = stripEmployeeId(staffName);
       staffEmployees = [{ name: staffName, code: staffId, department: dept }];
     }
 
@@ -731,7 +750,7 @@ export default function PDCASheet({
     }, currentDate) : '';
 
     // Section P Unit
-    const units = isLpaObservationSheet
+    const units = usesCheckboxMultiSelects
       ? (Array.isArray(row.units) && row.units.length ? [...new Set(row.units.map(String).filter(Boolean))] : (row.unit ? [row.unit] : []))
       : (row.unit ? [row.unit] : []);
     const unit = units[0] || '';
@@ -742,7 +761,7 @@ export default function PDCASheet({
     const respUnit = (row.respUnit === 'Bawal' || row.respUnit === 'Gujrat')
       ? row.respUnit
       : (row.responsiblePersonUnit || row.respUnit || '');
-    const respUnits = isLpaObservationSheet
+    const respUnits = usesCheckboxMultiSelects
       ? (Array.isArray(row.respUnits) && row.respUnits.length ? [...new Set(row.respUnits.map(String).filter(Boolean))] : (respUnit ? [respUnit] : []))
       : (respUnit ? [respUnit] : []);
 
@@ -812,7 +831,7 @@ export default function PDCASheet({
     const fallback = topic?.topic || (topic?.section === 'cc' ? 'C&C - LPA Observation (PDCA)' : 'Assembly - LPA Observation (PDCA)');
     return {
       topicName: raw.topicName && raw.topicName !== 'PDCA - M Tanaka San Audit' ? raw.topicName : fallback,
-      preparedBy: raw.preparedBy || '',
+      preparedBy: stripEmployeeId(raw.preparedBy || ''),
       auditNo: raw.auditNo || '',
       attendees: raw.attendees || ''
     };
@@ -878,6 +897,7 @@ export default function PDCASheet({
   const responsibleConfirmationReasonRefs = useRef({});
   const responsibleConfirmationSelectRefs = useRef({});
   const revisionReasonRefs = useRef({});
+  const revisionDeleteRefs = useRef({});
   const durationCellRefs = useRef({});
   const lastAllowedUrlRef = useRef(typeof window !== 'undefined' ? window.location.href : '');
   const lastRequiredNoticeAtRef = useRef(0);
@@ -897,7 +917,10 @@ export default function PDCASheet({
     ? [responsibleConfirmationReasonRefs.current[requiredInput.rowIndex], responsibleConfirmationSelectRefs.current[requiredInput.rowIndex]]
     : requiredInput.type === 'duration'
       ? [durationCellRefs.current[requiredInput.rowIndex]]
-      : [revisionReasonRefs.current[`${requiredInput.rowIndex}:${requiredInput.revisionIndex}`]];
+      : [
+        revisionReasonRefs.current[`${requiredInput.rowIndex}:${requiredInput.revisionIndex}`],
+        revisionDeleteRefs.current[`${requiredInput.rowIndex}:${requiredInput.revisionIndex}`]
+      ];
   const requireConfirmationReasonBeforeContinuing = () => {
     const requiredInput = missingRequiredInputs[0];
     if (!requiredInput) return false;
@@ -1644,10 +1667,11 @@ export default function PDCASheet({
     const map = new Map();
     // 1. From database employee records
     dbEmployees.forEach((emp) => {
-      const label = emp.code ? `${emp.name} (${emp.code})` : emp.name;
-      map.set(label, {
-        label,
-        name: emp.name,
+      const cleanName = stripEmployeeId(emp.name);
+      if (!cleanName) return;
+      map.set(cleanName, {
+        label: cleanName,
+        name: cleanName,
         code: emp.code || '',
         department: emp.department || ''
       });
@@ -1656,12 +1680,12 @@ export default function PDCASheet({
     // 2. From CFT topic assigned members if any
     (topic?.assignedMembers || []).forEach((m) => {
       if (m.name) {
-        const label = m.code ? `${m.name} (${m.code})` : m.name;
-        if (!map.has(label)) {
-          const dept = findEmployeeDepartment(label, dbEmployees);
-          map.set(label, {
-            label,
-            name: m.name,
+        const cleanName = stripEmployeeId(m.name);
+        if (cleanName && !map.has(cleanName)) {
+          const dept = findEmployeeDepartment(m.name, dbEmployees);
+          map.set(cleanName, {
+            label: cleanName,
+            name: cleanName,
             code: m.code || '',
             department: dept || ''
           });
@@ -1672,12 +1696,12 @@ export default function PDCASheet({
     // 3. From any existing rows loaded from saved sheet (so historical entries remain visible)
     rows.forEach((r) => {
       if (r.staffEmployee?.trim()) {
-        const label = r.staffEmployee.trim();
-        if (!map.has(label)) {
-          const dept = findEmployeeDepartment(label, dbEmployees);
-          map.set(label, {
-            label,
-            name: label,
+        const cleanName = stripEmployeeId(r.staffEmployee);
+        if (cleanName && !map.has(cleanName)) {
+          const dept = findEmployeeDepartment(r.staffEmployee, dbEmployees);
+          map.set(cleanName, {
+            label: cleanName,
+            name: cleanName,
             code: '',
             department: dept || r.department || ''
           });
@@ -2112,6 +2136,13 @@ export default function PDCASheet({
     setRows((prev) => {
       const updated = [...prev];
       const current = updated[rowIndex];
+      if (!current) return prev;
+      if (field === 'stdDurationMin' && !current.responseDate?.trim() && value) {
+        if (typeof showToast === 'function') {
+          showToast(`Row ${rowIndex + 1}: Select Response Date first before entering Std. Duration.`);
+        }
+        return prev;
+      }
       if (field === 'unit' && current.unit !== value) {
         updated[rowIndex] = {
           ...current,
@@ -2437,6 +2468,7 @@ export default function PDCASheet({
           ...curr,
           initialResponseDate: hasRevisionHistory ? (curr.initialResponseDate || oldDate || '') : '',
           responseDate: restoredDate,
+          stdDurationMin: restoredDate ? curr.stdDurationMin : '',
           revisedDates: [],
           noOfTimeRevised: 0,
           status: restoredDate ? computePDCAStatus({ ...curr, responseDate: restoredDate }, currentDate) : ''
@@ -2494,10 +2526,20 @@ export default function PDCASheet({
     });
   };
 
+  // Number of revisions for a row in the last saved/loaded baseline. Revisions at or
+  // beyond this index were added in the current session and are not yet saved.
+  const getSavedRevisionCount = (rowIndex) => {
+    const savedRow = initialStateRef.current?.rows?.[rowIndex];
+    return Array.isArray(savedRow?.revisedDates) ? savedRow.revisedDates.length : 0;
+  };
+
   // Delete and persist a revision date (Administrators only). This action is
   // intentionally independent of the normal sheet edit permission/save flow.
+  // A revision that has not been saved yet can also be cancelled by the editor;
+  // in that case the Response Date reverts to its previous value locally.
   const handleDeleteRevisedDate = async (rowIndex, dateIndex) => {
-    if (!isAdmin) {
+    const isPendingRevision = dateIndex >= getSavedRevisionCount(rowIndex);
+    if (!isAdmin && !isPendingRevision) {
       if (typeof showToast === 'function') {
         showToast('Access Denied: Only administrators have access to delete revised dates.');
       }
@@ -2532,6 +2574,11 @@ export default function PDCASheet({
     const nextRows = rows.map((row, index) => index === rowIndex
       ? { ...tempRow, status: computePDCAStatus(tempRow, currentDate) }
       : row);
+    if (!isAdmin) {
+      // Cancel an unsaved revision: revert locally, the normal Save persists it.
+      setRows(nextRows);
+      return;
+    }
     const nextSnapshot = { rows: nextRows, headerInfo };
     const targetId = topic?.id || topic?.recordId || (headerInfo.topicName?.trim() ? encodeURIComponent(headerInfo.topicName.trim()) : 'current_topic');
 
@@ -2565,9 +2612,12 @@ export default function PDCASheet({
       const resolvedUser = userName || effectiveUser?.fullName || effectiveUser?.name || 'Administrator';
       let nextConfirmedBy = curr.confirmedBy || '';
 
-      if (value === 'Confirmed') {
+      const isConf = value === 'Confirmed' || value === 'Confirm';
+      const isNotConf = value === 'Not - Confirmed' || value === 'Not-Confirmed' || value === 'Not-Confirm';
+
+      if (isConf) {
         nextConfirmedBy = resolvedUser;
-      } else if (value === 'Not - Confirmed' || value === 'Not-Confirmed') {
+      } else if (isNotConf) {
         nextConfirmedBy = resolvedUser;
       } else {
         nextConfirmedBy = '';
@@ -2579,7 +2629,14 @@ export default function PDCASheet({
         confirmedBy: nextConfirmedBy
       };
 
-      const nextStatus = computePDCAStatus(tempRow, currentDate);
+      let nextStatus = '';
+      if (isConf) {
+        nextStatus = 'Done';
+      } else if (isNotConf) {
+        nextStatus = 'In- Progress';
+      } else {
+        nextStatus = computePDCAStatus(tempRow, currentDate);
+      }
 
       updated[rowIndex] = {
         ...tempRow,
@@ -2746,18 +2803,19 @@ export default function PDCASheet({
     }
 
     const trimmedStaff = staffValue.trim();
-    const { name: staffName, code: staffCode } = parseStaffEmployee(trimmedStaff);
+    const { name: parsedStaffName, code: staffCode } = parseStaffEmployee(trimmedStaff);
+    const cleanStaffName = stripEmployeeId(parsedStaffName || trimmedStaff);
 
     let rawList = Array.isArray(employeeList) && employeeList.length > 0
       ? employeeList
       : trimmedStaff.split(/[,;]/).map((s) => s.trim()).filter(Boolean).map((part) => {
         const p = parseStaffEmployee(part);
-        return { name: p.name, code: p.code };
+        return { name: stripEmployeeId(p.name), code: p.code };
       });
 
     const employeesArray = rawList.map((emp) => {
       const p = parseStaffEmployee(emp.name ? (emp.code ? `${emp.name} (${emp.code})` : emp.name) : emp);
-      const name = emp.name || p.name || '';
+      const name = stripEmployeeId(emp.name || p.name || '');
       const code = (emp.code || emp.empId || p.code || '').toUpperCase();
       const dbDept = findEmployeeDepartment(`${name} (${code})`, dbEmployees) ||
         findEmployeeDepartment(`${name} (${code})`, VERIFIED_EMPLOYEE_MASTER);
@@ -2779,12 +2837,12 @@ export default function PDCASheet({
 
       const newRow = {
         ...currentRow,
-        staffEmployee: trimmedStaff,
+        staffEmployee: cleanStaffName,
         staffEmployees: employeesArray,
-        staffName: staffName || currentRow.staffName || employeesArray[0]?.name || '',
+        staffName: cleanStaffName || currentRow.staffName || employeesArray[0]?.name || '',
         staffId: staffCode || currentRow.staffId || employeesArray[0]?.code || '',
         employeeId: staffCode || currentRow.employeeId || employeesArray[0]?.code || '',
-        responsiblePersonConfirmation: trimmedStaff
+        responsiblePersonConfirmation: cleanStaffName
       };
 
       if (primaryDept && primaryDept !== 'CFT') {
@@ -3367,7 +3425,7 @@ export default function PDCASheet({
   );
 
   return (
-    <div className="pdca-form-root w-full min-w-0 space-y-4 animate-in fade-in duration-150 overflow-x-hidden">
+    <div className="pdca-form-root w-full min-w-0 flex-1 flex flex-col min-h-0 space-y-2 animate-in fade-in duration-150 overflow-hidden">
       {/* Control Bar: Back Button, Save, Calendar Date, Excel Export, Search & Add Row */}
       <div className="sticky top-0 z-30 w-full min-w-0 bg-white rounded-xl border border-[#D5DCE5] shadow-[0_1px_3px_rgba(0,0,0,0.03)] overflow-hidden">
         {/* Control Toolbar */}
@@ -3449,28 +3507,12 @@ export default function PDCASheet({
               onClick={() => setShowMonthlyGraph(prev => !prev)}
               title="Toggle PDCA Status Graph (Daily & Monthly analytics for In-Progress, Done, Delay, Not-Started)"
               className={`flex items-center gap-1.5 px-3 py-1 rounded-lg border text-xs font-semibold shadow-2xs cursor-pointer transition-colors flex-shrink-0 ${showMonthlyGraph
-                  ? 'border-indigo-600 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold'
-                  : 'border-slate-300 bg-white hover:bg-slate-50 text-slate-700'
+                ? 'border-indigo-600 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold'
+                : 'border-slate-300 bg-white hover:bg-slate-50 text-slate-700'
                 }`}
             >
               <BarChart3 className="w-3.5 h-3.5 text-indigo-600" />
               <span>PDCA Graph</span>
-            </button>
-            {/* Live Cumulative Points Badge */}
-            <button
-              type="button"
-              onClick={() => setShowMonthlyGraph(true)}
-              title="Live cumulative points of all PDCA Month analysis across this sheet. Click to open detailed monthly graph & table."
-              className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100/80 border border-indigo-200 text-indigo-900 text-xs font-semibold shadow-2xs transition-all cursor-pointer flex-shrink-0"
-            >
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-slate-600 font-medium">Cumulative Points:</span>
-                <span className="font-mono font-black text-indigo-700 text-xs sm:text-[13px]">{liveCumulativeStats.total}</span>
-              </span>
-              <span className="text-[10px] text-slate-500 hidden lg:inline">
-                (Done: <span className="text-emerald-700 font-bold">{liveCumulativeStats.done}</span>, In-Prog: <span className="text-amber-700 font-bold">{liveCumulativeStats.inProgress}</span>, Delay: <span className="text-rose-700 font-bold">{liveCumulativeStats.delay}</span>)
-              </span>
             </button>
             {headerInfo.auditNo ? (
               <span className="text-slate-500 text-xs">
@@ -3520,14 +3562,14 @@ export default function PDCASheet({
       )}
 
       {/* Spreadsheet Matrix Table Grid */}
-      <div className="w-full min-w-0 bg-white border border-[#B0BEC5] shadow-xs overflow-auto max-h-[calc(100vh-140px)]">
+      <div className="w-full min-w-0 flex-1 min-h-0 bg-white border border-[#B0BEC5] shadow-xs overflow-auto max-h-[calc(100vh-62px)]">
         <table className="w-full min-w-max text-left table-fixed border-separate border-spacing-0 border-t border-l border-[#B0BEC5] text-[11px]">
           <colgroup>
             <col style={{ width: '56px', minWidth: '52px' }} />
             <col style={{ width: '38px', minWidth: '34px' }} />
             <col style={{ width: '34px', minWidth: '30px' }} />
             <col style={{ width: '124px', minWidth: '118px' }} />
-            <col style={{ width: '80px', minWidth: '75px' }} />
+            <col style={{ width: '115px', minWidth: '100px' }} />
             <col style={{ width: '95px', minWidth: '90px' }} />
             <col style={{ width: `${sectionColWidth}px`, minWidth: `${sectionColWidth}px` }} />
             <col style={{ width: `${lineAreaColWidth}px`, minWidth: `${lineAreaColWidth}px` }} />
@@ -3539,7 +3581,7 @@ export default function PDCASheet({
             <col style={{ width: '80px', minWidth: '75px' }} />
             <col style={{ width: '56px', minWidth: '52px' }} />
             <col style={{ width: '120px', minWidth: '110px' }} />
-            <col style={{ width: '80px', minWidth: '75px' }} />
+            <col style={{ width: '120px', minWidth: '105px' }} />
             <col style={{ width: '85px', minWidth: '75px' }} />
             <col style={{ width: '155px', minWidth: '140px' }} />
             <col style={{ width: '95px', minWidth: '85px' }} />
@@ -3549,16 +3591,6 @@ export default function PDCASheet({
 
           {/* Table Column Headers - Frozen on vertical scroll */}
           <thead className="sticky top-0 z-20 bg-white shadow-xs">
-            {/* Title Row: Centered Page Title */}
-            {!isLpaObservationSheet && <tr className="bg-white">
-              <th
-                colSpan={totalCols}
-                className="py-4 px-6 text-center font-extrabold text-slate-900 text-2xl sm:text-3xl md:text-4xl tracking-wide select-none bg-white border-r border-b border-[#94A3B8]"
-              >
-                {headerInfo.topicName || topic?.topic || (topic?.section === 'cc' ? 'C&C - LPA Observation (PDCA)' : 'Assembly - LPA Observation (PDCA)')}
-              </th>
-            </tr>}
-
             {/* Row 1: 会議名 (Meeting Name) [Left] & 作成者 : (Prepared By) [Right] */}
             {!isLpaObservationSheet && <tr className="bg-white text-[15px]">
               <th
@@ -3596,10 +3628,10 @@ export default function PDCASheet({
               >
                 <input
                   type="text"
-                  value={headerInfo.preparedBy}
+                  value={stripEmployeeId(headerInfo.preparedBy)}
                   readOnly={effectiveReadOnly}
                   disabled={effectiveReadOnly}
-                  onChange={(e) => setHeaderInfo({ ...headerInfo, preparedBy: e.target.value })}
+                  onChange={(e) => setHeaderInfo({ ...headerInfo, preparedBy: stripEmployeeId(e.target.value) })}
                   className={`w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-900 font-medium text-base ${effectiveReadOnly ? 'cursor-default' : 'focus:bg-blue-50/20'}`}
                 />
               </th>
@@ -3709,7 +3741,7 @@ export default function PDCASheet({
               <th rowSpan={2} className="py-1.5 px-1 w-[124px] min-w-[118px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] whitespace-nowrap">
                 <span>Status</span> <span className="text-red-500 font-bold">*</span>
               </th>
-              <th rowSpan={2} className="py-1.5 px-1 w-[80px] min-w-[75px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px]">
+              <th rowSpan={2} className="py-1.5 px-1 w-[115px] min-w-[100px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px]">
                 <span>Unit</span>
               </th>
               <th rowSpan={2} className="py-1.5 px-1 w-[95px] min-w-[90px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px]">
@@ -3892,7 +3924,7 @@ export default function PDCASheet({
             </tr>
 
             <tr className="bg-[#ECEFF1] text-slate-600 font-semibold text-[13px] select-none text-center">
-              <th className="py-0.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] w-[80px] min-w-[75px]">
+              <th className="py-0.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] w-[120px] min-w-[105px]">
                 Unit
               </th>
               <th className="py-0.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] w-[85px] min-w-[75px]">
@@ -3912,10 +3944,10 @@ export default function PDCASheet({
             {rows.map((row, idx) => {
               const sNo = idx + 1;
               const canEditEntireRow = canEditEntireSheet;
-              const unitSelected = isLpaObservationSheet
+              const unitSelected = usesCheckboxMultiSelects
                 ? (row.units || (row.unit ? [row.unit] : [])).some(unit => PDCA_UNITS.includes(unit))
                 : ['Bawal', 'Gujrat'].includes(row.unit);
-              const responsibleUnitSelected = isLpaObservationSheet
+              const responsibleUnitSelected = usesCheckboxMultiSelects
                 ? (row.respUnits || (row.respUnit || row.responsiblePersonUnit ? [row.respUnit || row.responsiblePersonUnit] : [])).some(unit => PDCA_UNITS.includes(unit))
                 : ['Bawal', 'Gujrat'].includes(row.respUnit || row.responsiblePersonUnit);
               const isDeptMember = isUserInResponsibleDepartment(row, effectiveUser);
@@ -3972,9 +4004,9 @@ export default function PDCASheet({
                         value={row.status ? normalizePDCAStatus(row.status) : ''}
                         onChange={event => handleStatusChange(idx, event.target.value)}
                         className={`w-full min-w-full rounded-md border px-1.5 py-1 text-[15px] font-medium outline-none whitespace-nowrap ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer focus:ring-2 focus:ring-blue-300'} text-center ${normalizePDCAStatus(row.status) === 'Done' ? 'bg-green-50 text-green-700 border-green-200' :
-                            normalizePDCAStatus(row.status) === 'In- Progress' ? 'bg-yellow-50 text-yellow-800 border-yellow-300' :
-                              normalizePDCAStatus(row.status) === 'Delay' ? 'bg-red-50 text-red-700 border-red-200' :
-                                'bg-blue-50 text-blue-700 border-blue-200'
+                          normalizePDCAStatus(row.status) === 'In- Progress' ? 'bg-yellow-50 text-yellow-800 border-yellow-300' :
+                            normalizePDCAStatus(row.status) === 'Delay' ? 'bg-red-50 text-red-700 border-red-200' :
+                              'bg-blue-50 text-blue-700 border-blue-200'
                           }`}
                       >
                         <option value="">Select...</option>
@@ -3987,8 +4019,8 @@ export default function PDCASheet({
                   </td>
 
                   {/* 5. Unit (Section P) - Immediately before Department */}
-                  <td className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[80px] min-w-[75px] focus-within:bg-blue-50/30">
-                    {isLpaObservationSheet ? <CheckboxMultiSelect
+                  <td className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[115px] min-w-[100px] focus-within:bg-blue-50/30">
+                    {usesCheckboxMultiSelects ? <CheckboxMultiSelect
                       disabled={!canEditEntireRow}
                       value={row.units || (row.unit ? [row.unit] : [])}
                       options={PDCA_UNITS.map(unit => ({ value: unit, label: unit }))}
@@ -4004,7 +4036,7 @@ export default function PDCASheet({
 
                   {/* 6. Department */}
                   <td className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[95px] min-w-[90px]">
-                    {isLpaObservationSheet ? <CheckboxMultiSelect
+                    {usesCheckboxMultiSelects ? <CheckboxMultiSelect
                       disabled={!canEditEntireRow || !unitSelected}
                       value={row.departments || (row.department ? [row.department] : [])}
                       options={departmentsList.map(department => ({ value: department, label: department }))}
@@ -4036,7 +4068,7 @@ export default function PDCASheet({
 
                   {/* 7. Section */}
                   <td style={{ width: `${sectionColWidth}px`, minWidth: `${sectionColWidth}px` }} className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150">
-                    {isLpaObservationSheet ? <CheckboxMultiSelect
+                    {usesCheckboxMultiSelects ? <CheckboxMultiSelect
                       disabled={!canEditEntireRow}
                       value={row.sections?.length ? row.sections.map(section => section.sectionId ?? section.section) : (row.sectionId || row.section ? [row.sectionId || row.section] : [])}
                       options={VERIFIED_SECTION_MASTER
@@ -4067,13 +4099,23 @@ export default function PDCASheet({
 
                   {/* 8. Line/Area */}
                   <td style={{ width: `${lineAreaColWidth}px`, minWidth: `${lineAreaColWidth}px` }} className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150">
-                    {isLpaObservationSheet ? <CheckboxMultiSelect
+                    {usesCheckboxMultiSelects ? <CheckboxMultiSelect
                       disabled={!canEditEntireRow || !(row.sections?.length || row.section)}
                       value={row.lineAreas?.length ? row.lineAreas.map(line => line.lineArea) : (row.lineArea ? [row.lineArea] : [])}
                       options={[...new Set([
-                        ...((getCachedDbSections() || getDefaultSectionsWithLines())
-                          .filter(section => (row.sections || []).some(selected => String(selected.sectionId) === String(section.id) || selected.section === section.name) || String(row.sectionId) === String(section.id) || row.section === section.name)
-                          .flatMap(section => (section.lines || []).map(line => line?.name || line))),
+                        ...(() => {
+                          const cachedSections = getCachedDbSections() || [];
+                          const fallbackSections = getDefaultSectionsWithLines();
+                          const selectedSections = cachedSections.length ? cachedSections : fallbackSections;
+                          return selectedSections
+                            .filter(section => (row.sections || []).some(selected => String(selected.sectionId) === String(section.id) || selected.section === section.name) || String(row.sectionId) === String(section.id) || row.section === section.name)
+                            .flatMap(section => {
+                              const lines = section.lines?.length
+                                ? section.lines
+                                : (fallbackSections.find(fallback => String(fallback.id) === String(section.id))?.lines || []);
+                              return lines.map(line => line?.name || line);
+                            });
+                        })(),
                         ...(row.lineAreas || []).map(line => line.lineArea)
                       ].filter(Boolean))].map(line => ({ value: line, label: line }))}
                       placeholder="Line/Area..."
@@ -4383,6 +4425,10 @@ export default function PDCASheet({
                       <DurationMinCell
                         value={row.stdDurationMin}
                         readOnly={!canEditActionCols}
+                        hasResponseDate={Boolean(row.responseDate?.trim())}
+                        onDisabledClick={() => {
+                          showToast(`Row ${idx + 1}: Select Response Date first before entering Std. Duration.`);
+                        }}
                         cellRef={(element) => {
                           if (element) durationCellRefs.current[idx] = element;
                           else delete durationCellRefs.current[idx];
@@ -4421,14 +4467,22 @@ export default function PDCASheet({
                                 <span className="flex-1 text-[11px] font-semibold text-slate-800 whitespace-nowrap text-center">
                                   {rIdx + 1}) {formatDisplayDate(revDate)}
                                 </span>
-                                {isAdmin && (
+                                {(isAdmin || (canEditActionCols && rIdx >= getSavedRevisionCount(idx))) && (
                                   <button
                                     type="button"
+                                    ref={(element) => {
+                                      const key = `${idx}:${rIdx}`;
+                                      if (element) revisionDeleteRefs.current[key] = element;
+                                      else delete revisionDeleteRefs.current[key];
+                                    }}
+                                    data-required-action-allowed="true"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       handleDeleteRevisedDate(idx, rIdx);
                                     }}
-                                    title={`Delete Revision ${rIdx + 1} (${formatDisplayDate(revDate)}) - Admin only`}
+                                    title={isAdmin
+                                      ? `Delete Revision ${rIdx + 1} (${formatDisplayDate(revDate)}) - Admin only`
+                                      : `Cancel Revision ${rIdx + 1} (${formatDisplayDate(revDate)})`}
                                     className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-0.5 rounded transition-colors cursor-pointer shrink-0 opacity-70 group-hover/rev:opacity-100"
                                   >
                                     <X className="w-3 h-3 stroke-[2.5]" />
@@ -4461,8 +4515,8 @@ export default function PDCASheet({
                   </td>
 
                   {/* Unit in Responsible Person Confirmation */}
-                  <td className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[80px] min-w-[75px]">
-                    {isLpaObservationSheet ? <CheckboxMultiSelect
+                  <td className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[120px] min-w-[105px]">
+                    {usesCheckboxMultiSelects ? <CheckboxMultiSelect
                       disabled={!canEditEntireRow}
                       value={row.respUnits || (row.respUnit ? [row.respUnit] : [])}
                       options={PDCA_UNITS.map(unit => ({ value: unit, label: unit }))}
@@ -4574,7 +4628,7 @@ export default function PDCASheet({
                       {row.staffEmployees && row.staffEmployees.length > 1 ? (
                         <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
                           {row.staffEmployees.map((emp, empIdx) => {
-                            const empDisplay = emp.code ? `${emp.name} (${emp.code})` : emp.name;
+                            const empDisplay = stripEmployeeId(emp.name);
                             return (
                               <div
                                 key={empIdx}
@@ -4596,7 +4650,7 @@ export default function PDCASheet({
                                       handleRemoveStaffEmployee(idx, empIdx);
                                     }}
                                     className="opacity-0 group-hover/emp:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 p-0.5 rounded transition-all cursor-pointer flex-shrink-0 absolute right-1 top-1/2 -translate-y-1/2"
-                                    title={`Remove ${emp.name} from group`}
+                                    title={`Remove ${empDisplay} from group`}
                                   >
                                     <X className="w-2.5 h-2.5 stroke-[2.5]" />
                                   </button>
@@ -4609,7 +4663,7 @@ export default function PDCASheet({
                         <div className="relative w-full pl-1.5 pr-6 py-1 flex items-center justify-between gap-0.5 group">
                           {!canEditEntireRow ? (
                             <span className="text-[10px] font-semibold text-slate-800 truncate w-full text-center select-text">
-                              {row.staffEmployee}
+                              {stripEmployeeId(row.staffEmployee)}
                             </span>
                           ) : (
                             <>
@@ -4617,10 +4671,10 @@ export default function PDCASheet({
                                 type="button"
                                 onClick={(e) => handleToggleStaffDropdown(idx, e)}
                                 className="staff-trigger-btn flex-1 min-w-0 flex flex-col items-center justify-center text-center cursor-pointer hover:opacity-85 transition-opacity"
-                                title={`Click to search/change staff: ${row.staffEmployee}`}
+                                title={`Click to search/change staff: ${stripEmployeeId(row.staffEmployee)}`}
                               >
                                 <span className="text-[10px] font-semibold text-slate-800 truncate w-full text-center hover:text-blue-600 transition-colors">
-                                  {row.staffEmployee}
+                                  {stripEmployeeId(row.staffEmployee)}
                                 </span>
                               </button>
                               <button
@@ -4695,8 +4749,8 @@ export default function PDCASheet({
                               <div className="flex items-center gap-0.5 mt-0.5">
                                 <span
                                   className={`text-[8.5px] font-medium truncate max-w-[80px] px-0.5 py-0.2 rounded leading-tight ${row.cftSelectedType === 'member'
-                                      ? 'text-blue-700 bg-blue-50 border border-blue-200'
-                                      : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                                    ? 'text-blue-700 bg-blue-50 border border-blue-200'
+                                    : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
                                     }`}
                                   title={row.cftSelectedName}
                                 >
@@ -4797,19 +4851,20 @@ export default function PDCASheet({
           </tbody>
         </table>
 
-        {/* Footer info matching reference screenshot bottom strip */}
-        <div className="bg-[#F8FAFC] border-t border-[#B0BEC5] px-4 py-2 flex items-center justify-between text-xs text-slate-500">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-            <span>Infinite rows active</span>
+        {/* Compact bottom strip */}
+        <div className="bg-[#F8FAFC] border-t border-[#CBD5E1] px-3 py-1 flex items-center justify-between text-[11px] text-slate-500 shrink-0">
+          <div className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+            <span>{rows.length} rows</span>
           </div>
 
           {canEditEntireSheet && (
             <button
+              type="button"
               onClick={handleAddRow}
-              className="flex items-center gap-1.5 px-3 py-1 bg-white hover:bg-slate-100 text-slate-700 font-semibold border border-slate-300 rounded shadow-2xs cursor-pointer text-xs"
+              className="flex items-center gap-1 px-2 py-0.5 bg-white hover:bg-slate-100 text-slate-700 font-medium border border-slate-300 rounded shadow-2xs cursor-pointer text-[11px]"
             >
-              <Plus className="w-3.5 h-3.5 text-blue-600" />
+              <Plus className="w-3 h-3 text-blue-600" />
               <span>Add Row</span>
             </button>
           )}
@@ -5133,8 +5188,8 @@ export default function PDCASheet({
                           type="button"
                           onClick={() => handleSelectTopic(openCFTDropdown.rowIndex, topicItem)}
                           className={`w-full text-left px-2.5 py-2 rounded-lg transition-colors flex items-center justify-between cursor-pointer group ${isSelected
-                              ? 'bg-blue-50 text-blue-900 font-semibold border border-blue-200'
-                              : 'hover:bg-slate-100/80 text-slate-800 border border-transparent'
+                            ? 'bg-blue-50 text-blue-900 font-semibold border border-blue-200'
+                            : 'hover:bg-slate-100/80 text-slate-800 border border-transparent'
                             }`}
                           title={`Select "${topicItem.name}" (${topicItem.id})`}
                         >
@@ -5228,8 +5283,8 @@ export default function PDCASheet({
                               handleSelectCFTMember(openCFTDropdown.rowIndex, member, 'member')
                             }
                             className={`w-full text-left px-2.5 py-1.5 rounded-md transition-colors flex items-center justify-between cursor-pointer ${isSelected
-                                ? 'bg-blue-50 text-blue-900 border border-blue-200 font-medium'
-                                : 'hover:bg-slate-50 text-slate-800'
+                              ? 'bg-blue-50 text-blue-900 border border-blue-200 font-medium'
+                              : 'hover:bg-slate-50 text-slate-800'
                               }`}
                           >
                             <div className="flex items-center gap-2 min-w-0">
@@ -5278,8 +5333,8 @@ export default function PDCASheet({
                               handleSelectCFTMember(openCFTDropdown.rowIndex, emp, 'assigned')
                             }
                             className={`w-full text-left px-2.5 py-1.5 rounded-md transition-colors flex items-center justify-between cursor-pointer ${isSelected
-                                ? 'bg-emerald-50 text-emerald-900 border border-emerald-200 font-medium'
-                                : 'hover:bg-slate-50 text-slate-800'
+                              ? 'bg-emerald-50 text-emerald-900 border border-emerald-200 font-medium'
+                              : 'hover:bg-slate-50 text-slate-800'
                               }`}
                           >
                             <div className="flex items-center gap-2 min-w-0">
@@ -5406,8 +5461,8 @@ export default function PDCASheet({
                       setOpenStaffDropdown(null);
                     }}
                     className={`w-full text-left px-2.5 py-1.5 rounded-lg transition-colors flex items-center justify-between cursor-pointer group text-xs ${isSelected
-                        ? 'bg-blue-50 text-blue-900 font-semibold border border-blue-200'
-                        : 'hover:bg-slate-100/80 text-slate-800 border border-transparent'
+                      ? 'bg-blue-50 text-blue-900 font-semibold border border-blue-200'
+                      : 'hover:bg-slate-100/80 text-slate-800 border border-transparent'
                       }`}
                   >
                     <div className="flex items-center gap-2 min-w-0 pr-1 truncate">
@@ -5426,8 +5481,8 @@ export default function PDCASheet({
                       {empDept && (
                         <span
                           className={`text-[9.5px] font-medium px-1.5 py-0.5 rounded border ${isDeptMatch
-                              ? 'bg-blue-100/80 text-blue-800 border-blue-300 font-semibold'
-                              : 'bg-slate-100 text-slate-600 border-slate-200'
+                            ? 'bg-blue-100/80 text-blue-800 border-blue-300 font-semibold'
+                            : 'bg-slate-100 text-slate-600 border-slate-200'
                             }`}
                         >
                           {empDept}
@@ -5508,23 +5563,40 @@ export default function PDCASheet({
       )}
 
       {/* Send Mail Modal */}
-      <SendMailModal
-        isOpen={isSendMailOpen}
-        onClose={() => setIsSendMailOpen(false)}
-        formType="pdca"
-        pdcaLabel={Array.isArray(emailPdcaSheets) ? 'LPA Observation PDCA' : 'PDCA'}
-        title={topic?.topic || headerInfo?.topic || 'Assembly - LPA Observation (PDCA)'}
-        metadata={{
+      {(() => {
+        const currentPdcaSheet = {
+          id: topic?.id || topic?.recordId || `PDCA-${Date.now()}`,
+          source: isLpaObservationSheet ? 'lpa' : (topic?.source || 'pdca'),
+          topic: headerInfo?.topicName || topic?.topic || (topic?.section === 'cc' ? 'C&C - LPA Observation (PDCA)' : 'Assembly - LPA Observation (PDCA)'),
+          title: headerInfo?.topicName || topic?.topic || (topic?.section === 'cc' ? 'C&C - LPA Observation (PDCA)' : 'Assembly - LPA Observation (PDCA)'),
+          section: topic?.section || (String(headerInfo?.topicName || topic?.topic || '').toLowerCase().includes('c&c') ? 'cc' : 'assembly'),
+          plant: topic?.plant || topic?.unit || 'Bawal',
+          unit: topic?.plant || topic?.unit || 'Bawal',
           date: formDate,
-          auditDate: formDate,
-          unit: topic?.plant || 'Bawal',
-          section: headerInfo?.section || 'Assembly',
-          sectionName: headerInfo?.section || 'Assembly',
-          topicName: topic?.topic || headerInfo?.topic || 'Assembly - LPA Observation (PDCA)',
-          auditNo: headerInfo?.auditNo
-        }}
-        {...(Array.isArray(emailPdcaSheets) ? { pdcaSheets: emailPdcaSheets.map(item => ({ ...item, source: 'lpa', sheet: sheetSnapshot })) } : {})}
-      />
+          sheet: sheetSnapshot
+        };
+        return (
+          <SendMailModal
+            isOpen={isSendMailOpen}
+            onClose={() => setIsSendMailOpen(false)}
+            formType="pdca"
+            pdcaOnly={true}
+            currentPdcaSheet={currentPdcaSheet}
+            pdcaLabel={isLpaObservationSheet ? 'LPA Observation PDCA' : 'PDCA'}
+            title={currentPdcaSheet.title}
+            metadata={{
+              date: formDate,
+              auditDate: formDate,
+              unit: currentPdcaSheet.unit,
+              section: currentPdcaSheet.section,
+              sectionName: currentPdcaSheet.section === 'cc' ? 'C&C' : 'Assembly',
+              topicName: currentPdcaSheet.title,
+              auditNo: headerInfo?.auditNo
+            }}
+            pdcaSheets={[currentPdcaSheet]}
+          />
+        );
+      })()}
     </div>
   );
 }

@@ -50,12 +50,15 @@ export default function SendMailModal({
   pdcaOnly = false,
   assemblySheets: suppliedAssemblySheets,
   pdcaSheets: suppliedPdcaSheets,
+  currentPdcaSheet,
   onViewAssemblySheet,
   onViewPDCASheet,
   onSendSuccess
 }) {
   const navigate = useNavigate();
   const { data: contextPdcaSheets = [], userContext } = usePDCA();
+  const isPdcaOnly = Boolean(pdcaOnly || formType === 'pdca' || currentPdcaSheet);
+  const autoPdcaSheet = currentPdcaSheet || null;
   const [toInput, setToInput] = useState('');
   const [recipients, setRecipients] = useState([]);
   const [ccEmails, setCcEmails] = useState(['']);
@@ -88,7 +91,7 @@ export default function SendMailModal({
 
   // When modal opens, all input fields are reset to blank, CC is optional/hidden by default
   useEffect(() => {
-    if (!isOpen || !pdcaOnly) return undefined;
+    if (!isOpen || !isPdcaOnly || autoPdcaSheet || Array.isArray(suppliedPdcaSheets)) return undefined;
     let active = true;
     setAuthoritativePdcaRecords([]);
     (async () => {
@@ -116,7 +119,7 @@ export default function SendMailModal({
         }
       });
     return () => { active = false; };
-  }, [isOpen, pdcaOnly]);
+  }, [isOpen, isPdcaOnly, autoPdcaSheet, suppliedPdcaSheets]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -171,7 +174,7 @@ export default function SendMailModal({
     // The LPA page supplies its current, already-filtered workbook list. Reuse
     // that source so the popup cannot resurrect records from a separate/stale
     // list request after a workbook has been deleted.
-    if (!isOpen || pdcaOnly || Array.isArray(suppliedAssemblySheets)) return undefined;
+    if (!isOpen || isPdcaOnly || Array.isArray(suppliedAssemblySheets)) return undefined;
     let active = true;
     setAssemblyRecords([]);
     setSheetsLoading(true);
@@ -184,7 +187,7 @@ export default function SendMailModal({
 
   const assemblySheetLabel = selectedSection === 'cc' ? 'LPA C&C Sheet' : 'LPA Assembly Sheet';
   const pdcaSheetPrompt = /\bsheet$/i.test(pdcaLabel) ? pdcaLabel : `${pdcaLabel} sheet`;
-  const assemblyOptions = (Array.isArray(suppliedAssemblySheets) ? suppliedAssemblySheets : assemblyRecords)
+  const assemblyOptions = isPdcaOnly ? [] : (Array.isArray(suppliedAssemblySheets) ? suppliedAssemblySheets : assemblyRecords)
     .filter((record) => {
       if (!record || record.section !== selectedSection || record.sampleData) return false;
       if (selectedSection !== 'assembly') return true;
@@ -198,15 +201,49 @@ export default function SendMailModal({
       sheetIndex,
       label: [sheet.name || `Sheet ${sheetIndex + 1}`, record.unit, record.auditDate || record.date].filter(Boolean).join(' · ')
     })));
-  const pdcaOptions = (pdcaOnly ? authoritativePdcaRecords : (Array.isArray(suppliedPdcaSheets) ? suppliedPdcaSheets : contextPdcaSheets))
-    .filter((sheet) => sheet && !sheet.isDeleted && (sheet.id || sheet._id))
+  const DUMMY_IDS = new Set(['PDCA-GJ-101', 'PDCA-BW-102', 'PDCA-GJ-103', 'PDCA-BW-104', 'CFT-GJ-201', 'CFT-BW-202']);
+  const DUMMY_TOPICS = new Set([
+    'Reduction of Solder Bridge Defects in ECU Assembly',
+    'Die-Casting Cycle Time Optimization on Cell #4',
+    'Forklift Traffic Collision Prevention IoT Radar',
+    'Air Compressor Energy Leakage Elimination',
+    'Team Composition & Role',
+    'Alignment & Goal Setting',
+    'Assembly Line 3 - Pneumatic Crimper Pressure Drop Detection Alarm',
+    'Assembly Line 2 - Conveyor Belt Speed Synchronization with Pick-and-Place',
+    'C&C Area - CNC Milling Center #3 Spindle Runout Laser Alignment Audit',
+    'Press Shop - Progressive Stamping Die Strip Mis-feed Optical Sensor Calibration',
+    'Die Casting Area - Mold Water Cooling Channel Descaling & Flow Rate Verification',
+    'Zero Defect Assembly CFT',
+    'Automated Line Solder Inspection Updated'
+  ]);
+
+  const rawPdcaList = Array.isArray(suppliedPdcaSheets)
+    ? suppliedPdcaSheets
+    : (isPdcaOnly && !autoPdcaSheet ? authoritativePdcaRecords : (contextPdcaSheets || []));
+
+  const pdcaOptions = rawPdcaList
+    .filter((sheet) => {
+      if (!sheet || sheet.isDeleted || (!sheet.id && !sheet._id)) return false;
+      const id = String(sheet.id || sheet._id || '');
+      if (DUMMY_IDS.has(id) || id.startsWith('PDCA-ASY-BW-') || id.startsWith('PDCA-CC-BW-')) return false;
+      const topic = String(sheet.topic || sheet.title || '').trim();
+      if (topic && DUMMY_TOPICS.has(topic)) return false;
+      return true;
+    })
     .map((sheet, index) => ({
       key: `${sheet.source === 'lpa' ? 'lpa-' : ''}${sheet.id || sheet._id}-${index}`,
       sheet,
       label: [sheet.topic || sheet.title || 'PDCA Sheet', sheet.plant || sheet.unit, sheet.date].filter(Boolean).join(' · ')
     }));
-  const selectedAssembly = assemblyOptions.find((option) => option.key === assemblySelection);
-  const selectedPdca = pdcaOptions.find((option) => option.key === pdcaSelection);
+  const selectedAssembly = isPdcaOnly ? null : assemblyOptions.find((option) => option.key === assemblySelection);
+  const selectedPdca = autoPdcaSheet
+    ? {
+        key: autoPdcaSheet.id || autoPdcaSheet.key || 'auto-current-pdca',
+        sheet: autoPdcaSheet,
+        label: autoPdcaSheet.topic || autoPdcaSheet.title || 'PDCA Sheet'
+      }
+    : pdcaOptions.find((option) => option.key === pdcaSelection);
 
   const openAssemblySheet = () => {
     if (!selectedAssembly) return;
@@ -319,15 +356,13 @@ export default function SendMailModal({
     }
   };
 
-  const addDefaultEmailsToRecipients = async () => {
+  const addDefaultEmailsToRecipients = () => {
     if (defaultMailsLoading) return;
-    setDefaultMailsLoading(true);
-    try {
-    const attached = await lpaApi.attachDefaultMailRecipients();
-    const to = Array.isArray(attached?.to) ? attached.to : [];
-    const cc = Array.isArray(attached?.cc) ? attached.cc : [];
-    setDefaultToEmails(to);
-    setDefaultCcEmails(cc);
+    // Use the default emails that were already fetched when the modal opened.
+    // Do NOT make another API call here — that call was overwriting defaultToEmails/defaultCcEmails
+    // with whatever the server returned (could be empty), which deleted all saved defaults from the UI.
+    const to = defaultToEmails;
+    const cc = defaultCcEmails;
     const hasDefaults = to.length > 0 || cc.length > 0;
     const addedTo = to.filter(email => !recipients.some(existing => existing.trim().toLowerCase() === email.toLowerCase()));
     const currentCc = ccEmails.flatMap(value => value.split(/[,;\s]+/).map(email => email.trim()).filter(Boolean));
@@ -363,11 +398,6 @@ export default function SendMailModal({
     setAttachedDefaultCcEmails(current => [...new Set([...current, ...addedCc.map(email => email.toLowerCase())])]);
     if (hasDefaults) toast.success('Saved default To and CC addresses added to their matching fields.');
     else toast.info('No default To or CC addresses are configured.');
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Could not attach saved default email addresses.');
-    } finally {
-      setDefaultMailsLoading(false);
-    }
   };
 
   const removeAttachedDefaultEmails = () => {
@@ -450,11 +480,12 @@ export default function SendMailModal({
 
   const handleSend = async () => {
     if (requestInFlightRef.current || sentSuccess) return;
-    if (!pdcaOnly && !selectedAssembly) {
+    if (!isPdcaOnly && !selectedAssembly) {
       toast.error('Please select an Assembly sheet before sending the email.');
       return;
     }
-    if (!selectedPdca) {
+    const targetPdca = autoPdcaSheet || selectedPdca?.sheet;
+    if (!targetPdca) {
       toast.error('Please select a PDCA sheet before sending the email.');
       return;
     }
@@ -493,25 +524,23 @@ export default function SendMailModal({
         date: selectedAssembly.record.auditDate || selectedAssembly.record.date || ''
       } : null;
       const selectedPdcaPayload = {
-        id: selectedPdca.sheet.id || selectedPdca.sheet._id,
-        source: selectedPdca.sheet.source === 'lpa' ? 'lpa' : 'pdca',
-        name: selectedPdca.sheet.topic || selectedPdca.sheet.title || 'PDCA Sheet',
-        section: selectedPdca.sheet.section || selectedSection,
-        unit: selectedPdca.sheet.plant || selectedPdca.sheet.unit || '',
-        date: selectedPdca.sheet.date || '',
+        id: targetPdca.id || targetPdca._id,
+        source: targetPdca.source === 'lpa' ? 'lpa' : 'pdca',
+        name: targetPdca.topic || targetPdca.title || 'PDCA Sheet',
+        section: targetPdca.section || selectedSection,
+        unit: targetPdca.plant || targetPdca.unit || '',
+        date: targetPdca.date || '',
         // LPA Observation PDCA sheets are saved as LPA snapshots, not as
         // standard PDCA records. Include the selected saved snapshot so the
         // email service can render that sheet when no PDCA record exists.
-        ...(selectedPdca.sheet.source === 'lpa' && selectedPdca.sheet.sheet
-          ? { sheetData: selectedPdca.sheet.sheet }
-          : {})
+        ...(targetPdca.sheet ? { sheetData: targetPdca.sheet } : {})
       };
       const emailPayload = {
         to: finalRecipients,
         cc: finalCcList,
         remarks,
         pdcaSheet: selectedPdcaPayload,
-        ...(pdcaOnly ? { emailMode: 'pdca-only' } : { assemblySheet: selectedAssemblyPayload })
+        ...(isPdcaOnly ? { emailMode: 'pdca-only' } : { assemblySheet: selectedAssemblyPayload })
       };
       const providerResult = await lpaApi.sendEmail(emailPayload, idempotencyKeyRef.current);
 
@@ -525,7 +554,7 @@ export default function SendMailModal({
             remarks,
             assemblySheet: selectedAssembly ? { ...selectedAssemblyPayload, data: selectedAssembly.sheet } : null,
             pdcaSheet: selectedPdcaPayload.id,
-            pdcaSheetData: selectedPdca.sheet,
+            pdcaSheetData: selectedPdca?.sheet || targetPdca,
             providerResult
           });
         } catch (callbackError) {
@@ -735,56 +764,72 @@ export default function SendMailModal({
             />
           </div>
 
-          <div className={`grid grid-cols-1 ${pdcaOnly ? '' : 'sm:grid-cols-2'} gap-4`}>
-            {!pdcaOnly && <div className="min-w-0">
-              <label htmlFor="mail-assembly-sheet" className="block font-semibold text-slate-700 mb-1.5">
-                {assemblySheetLabel} <span className="text-red-500">*</span>
-              </label>
-              <select
-                id="mail-assembly-sheet"
-                required
-                value={assemblySelection}
-                onChange={(event) => setAssemblySelection(event.target.value)}
-                className="w-full min-w-0 px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
-              >
-                <option value="">{sheetsLoading ? 'Loading sheets…' : `Select a ${assemblySheetLabel}…`}</option>
-                {assemblyOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
-              </select>
-              {selectedAssembly && (
-                <button type="button" onClick={openAssemblySheet} className="mt-1.5 text-blue-600 hover:text-blue-800 hover:underline font-semibold">
-                  View Sheet
-                </button>
+          {(!isPdcaOnly || !autoPdcaSheet) && (
+            <div className={`grid grid-cols-1 ${isPdcaOnly ? '' : 'sm:grid-cols-2'} gap-4`}>
+              {!isPdcaOnly && (
+                <div className="min-w-0">
+                  <label htmlFor="mail-assembly-sheet" className="block font-semibold text-slate-700 mb-1.5">
+                    {assemblySheetLabel} <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    id="mail-assembly-sheet"
+                    required
+                    value={assemblySelection}
+                    onChange={(event) => setAssemblySelection(event.target.value)}
+                    className="w-full min-w-0 px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
+                  >
+                    <option value="">{sheetsLoading ? 'Loading sheets…' : `Select a ${assemblySheetLabel}…`}</option>
+                    {assemblyOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+                  </select>
+                  {selectedAssembly && (
+                    <button type="button" onClick={openAssemblySheet} className="mt-1.5 text-blue-600 hover:text-blue-800 hover:underline font-semibold">
+                      View Sheet
+                    </button>
+                  )}
+                </div>
               )}
-            </div>}
 
-            <div className="min-w-0">
-              <label htmlFor="mail-pdca-sheet" className="block font-semibold text-slate-700 mb-1.5">
-                {pdcaLabel} <span className="text-red-500">*</span>
-              </label>
-              <select
-                id="mail-pdca-sheet"
-                required
-                value={pdcaSelection}
-                onChange={(event) => setPdcaSelection(event.target.value)}
-                className="w-full min-w-0 px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
-              >
-                <option value="">Select a {pdcaSheetPrompt}…</option>
-                {pdcaOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
-              </select>
-              {selectedPdca && (
-                <button type="button" onClick={openPdcaSheet} className="mt-1.5 text-blue-600 hover:text-blue-800 hover:underline font-semibold">
-                  View Sheet
-                </button>
+              {!autoPdcaSheet && (
+                <div className="min-w-0">
+                  <label htmlFor="mail-pdca-sheet" className="block font-semibold text-slate-700 mb-1.5">
+                    {pdcaLabel} <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    id="mail-pdca-sheet"
+                    required
+                    value={pdcaSelection}
+                    onChange={(event) => setPdcaSelection(event.target.value)}
+                    className="w-full min-w-0 px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
+                  >
+                    <option value="">Select a {pdcaSheetPrompt}…</option>
+                    {pdcaOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+                  </select>
+                  {selectedPdca && (
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <button type="button" onClick={openPdcaSheet} className="text-blue-600 hover:text-blue-800 hover:underline font-semibold">
+                        View Sheet
+                      </button>
+                      <span className="text-slate-300">·</span>
+                      <button type="button" onClick={() => setPdcaSelection('')} className="text-slate-500 hover:text-rose-600 hover:underline font-semibold">
+                        Clear Selection
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
-          </div>
+          )}
         </div>
 
         {/* Modal Footer */}
         <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
-          <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
-            <Info className="w-3.5 h-3.5 text-blue-600" />
-            <span>Select the requested sheets before sending the email</span>
+          <div className="flex items-center gap-1.5 text-[11px] text-slate-500 truncate max-w-md">
+            <Info className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+            <span className="truncate">
+              {autoPdcaSheet
+                ? `Attached: ${autoPdcaSheet.topic || autoPdcaSheet.title || title || 'Current PDCA Sheet'}`
+                : 'Select the requested sheets before sending the email'}
+            </span>
           </div>
 
           <div className="flex items-center gap-2">

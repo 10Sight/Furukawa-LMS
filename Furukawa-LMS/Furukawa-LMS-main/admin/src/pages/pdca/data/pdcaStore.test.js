@@ -33,7 +33,7 @@ test('createDefaultRows initializes exactly 10 blank rows with correct schema by
   const rows = createDefaultRows(10);
   assert.equal(rows.length, 10);
   rows.forEach((row) => {
-    assert.equal(row.status, 'Open');
+    assert.equal(row.status, '');
     assert.equal(row.date, '');
     assert.equal(row.shift, '');
     assert.equal(row.lineArea, '');

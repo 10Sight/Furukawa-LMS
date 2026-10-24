@@ -774,7 +774,8 @@ function LpaPageContent({ viewContext }) {
     });
     const customSnapshot = {
       ...initialTopic.sheet,
-      rows: (initialTopic.sheet?.rows || []).map(row => ({ ...row, date: '', status: '' })),
+      // A newly created sheet always starts completely blank (no copied dates, status, shifts or observations).
+      rows: Array.from({ length: 10 }, () => createEmptyPdcaRow()),
       headerInfo: {
         ...(initialTopic.sheet?.headerInfo || {}),
         topicName: newSheet.title
@@ -900,7 +901,7 @@ function LpaPageContent({ viewContext }) {
     setActiveSubTab('pdca');
   };
 
-  if (isPdcaFormOpen && pdcaTopic) return <div className="fixed inset-0 z-40 h-dvh w-full bg-white text-slate-800 flex flex-col overflow-auto p-2 sm:p-4">
+  if (isPdcaFormOpen && pdcaTopic) return <div className="fixed inset-0 z-40 h-dvh w-full bg-white text-slate-800 flex flex-col overflow-hidden p-1.5 sm:p-2 pb-0.5 sm:pb-1">
     <PDCASheet
       key={`${pdcaTopic.id}-${pdcaDate}`}
       topic={pdcaTopic}
@@ -1279,19 +1280,9 @@ function LpaPageContent({ viewContext }) {
               </div>
             ) : (
               <div>
-                <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 p-3">
-                  {dateRangeControls}
-                  <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
-                    <CalendarDays size={17} />
-                    <span>Audit date</span>
-                    <input
-                      type="date"
-                      value={pdcaDate}
-                      onChange={event => setPdcaDate(event.target.value)}
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                    />
-                  </label>
-                  <label className="relative min-w-[240px] flex-1">
+                <div className="flex flex-nowrap items-center gap-2 rounded-xl border border-slate-100 p-3 overflow-x-auto">
+                  <div className="shrink-0">{dateRangeControls}</div>
+                  <label className="relative min-w-[180px] flex-1">
                     <Search size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input
                       value={searchQuery}
@@ -1300,17 +1291,17 @@ function LpaPageContent({ viewContext }) {
                       className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-blue-400"
                     />
                   </label>
-                  <button type="button" onClick={() => setIsSendMailOpen(true)} className="inline-flex items-center gap-1.5 rounded-lg border border-blue-600 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"><Mail size={15} />Send Mail</button>
+                  <button type="button" onClick={() => setIsSendMailOpen(true)} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-blue-600 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"><Mail size={15} />Send Mail</button>
                   <button
                     type="button"
                     disabled={busy || !selectedUnit}
                     onClick={handleOpenCreateModal}
-                    className={primary}
+                    className={`${primary} shrink-0`}
                     title="Create a new blank LPA check sheet"
                   >
                     <Plus size={16} />Create LPA
                   </button>
-                  <button type="button" onClick={exportAllRecords} className={button}>
+                  <button type="button" onClick={exportAllRecords} className={`${button} shrink-0`}>
                     <Download size={16} />Export Excel
                   </button>
                   {isAdmin && (
@@ -1318,7 +1309,7 @@ function LpaPageContent({ viewContext }) {
                       type="button"
                       disabled={busy || !selectedUnit}
                       onClick={() => { uploadSection.current = activeSection; fileInput.current?.click(); }}
-                      className={button}
+                      className={`${button} shrink-0`}
                       title="Upload Excel workbook (Admin only)"
                     >
                       <Upload size={16} />Upload Excel

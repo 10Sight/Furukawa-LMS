@@ -44,7 +44,7 @@ import {
   isUserResponsibleForRow,
   isUserInResponsibleDepartment
 } from '../../pages/pdca/data/recordFilters.js';
-import { parseStaffEmployee, findEmployeeDepartment, VERIFIED_EMPLOYEE_MASTER } from '../../pages/pdca/data/pdcaEmployees.js';
+import { parseStaffEmployee, findEmployeeDepartment, stripEmployeeId, VERIFIED_EMPLOYEE_MASTER } from '../../pages/pdca/data/pdcaEmployees.js';
 import SearchableLineAreaSelect, { getCachedDbSections } from '../pdca/SearchableLineAreaSelect';
 import SearchableSectionSelect, { VERIFIED_SECTION_MASTER, isSectionRelatedToDepartment } from '../pdca/SearchableSectionSelect';
 
@@ -193,16 +193,29 @@ function CompactDateCell({ value, onChange, smallText = false }) {
       />
 
       {display ? (
-        <div className="flex flex-col items-center leading-none text-center pointer-events-none">
-          <span className={`${smallText ? 'text-[12px]' : 'text-[15px]'} font-bold text-slate-800 tracking-tight`}>
-            {display.line1}
-          </span>
-          {display.line2 && (
-            <span className={`${smallText ? 'text-[10px]' : 'text-[13px]'} font-semibold text-slate-500 mt-0.5`}>
-              /{display.line2}
+        <>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onChange('');
+            }}
+            className="absolute right-0.5 top-0.5 z-20 opacity-0 group-hover:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-0.5 transition-all rounded cursor-pointer shadow-2xs"
+            title="Clear date"
+          >
+            <X className="w-2.5 h-2.5 stroke-[2.5]" />
+          </button>
+          <div className="flex flex-col items-center leading-none text-center pointer-events-none">
+            <span className={`${smallText ? 'text-[12px]' : 'text-[15px]'} font-bold text-slate-800 tracking-tight`}>
+              {display.line1}
             </span>
-          )}
-        </div>
+            {display.line2 && (
+              <span className={`${smallText ? 'text-[10px]' : 'text-[13px]'} font-semibold text-slate-500 mt-0.5`}>
+                /{display.line2}
+              </span>
+            )}
+          </div>
+        </>
       ) : (
         <div className="w-full flex items-center justify-center text-center pointer-events-none">
           <Calendar className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors mx-auto" />
@@ -315,13 +328,20 @@ export default function LpaPdcaSheet({
 
       if (!staffEmployee) {
         staffEmployee = staffEmployees
-          .map((e) => ((e.code || e.empId) ? `${e.name || e.fullName} (${e.code || e.empId})` : (e.name || e.fullName)))
+          .map((e) => (e.name || e.fullName || ''))
+          .join(', ');
+      } else {
+        // Strip any (CODE) suffixes from stored staffEmployee display string
+        staffEmployee = staffEmployees
+          .map((e) => stripEmployeeId(e.name || e.fullName || ''))
           .join(', ');
       }
       if (!staffName) staffName = staffEmployees[0].name || staffEmployees[0].fullName || '';
       if (!staffId) staffId = staffEmployees[0].code || staffEmployees[0].empId || '';
     } else if (staffEmployee) {
-      const parts = staffEmployee.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+      // Strip IDs from stored string before re-parsing
+      const cleanedEmployee = stripEmployeeId(staffEmployee);
+      const parts = cleanedEmployee.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
       staffEmployees = parts.map((part) => {
         const { name, code } = parseStaffEmployee(part);
         const dbDept = findEmployeeDepartment(part, dbEmployees) ||
@@ -329,6 +349,7 @@ export default function LpaPdcaSheet({
         const dept = dbDept || (row.department && row.department !== 'CFT' ? row.department : '');
         return { name, code, department: dept };
       });
+      staffEmployee = cleanedEmployee;
       if (!staffName || !staffId) {
         const primary = parseStaffEmployee(staffEmployee);
         if (!staffName) staffName = primary.name || '';
@@ -338,8 +359,8 @@ export default function LpaPdcaSheet({
       const dbDept = findEmployeeDepartment(`${staffName} (${staffId})`, dbEmployees) ||
         findEmployeeDepartment(`${staffName} (${staffId})`, VERIFIED_EMPLOYEE_MASTER);
       const dept = dbDept || (row.department && row.department !== 'CFT' ? row.department : '');
-      staffEmployee = staffId ? `${staffName} (${staffId})` : staffName;
-      staffEmployees = [{ name: staffName, code: staffId, department: dept }];
+      staffEmployee = stripEmployeeId(staffName);
+      staffEmployees = [{ name: stripEmployeeId(staffName), code: staffId, department: dept }];
     }
 
     let confirmation = (row.confirmation || '').trim();
@@ -654,7 +675,7 @@ export default function LpaPdcaSheet({
     const raw = topic?.sheet?.headerInfo || {};
     return {
       topicName: raw.topicName && raw.topicName !== 'PDCA - M Tanaka San Audit' ? raw.topicName : defaultLpaTopic,
-      preparedBy: raw.preparedBy || '',
+      preparedBy: stripEmployeeId(raw.preparedBy || ''),
       auditNo: raw.auditNo || '',
       attendees: raw.attendees || ''
     };
@@ -945,18 +966,20 @@ export default function LpaPdcaSheet({
   const employeeOptionList = useMemo(() => {
     const map = new Map();
     dbEmployees.forEach((emp) => {
-      const label = emp.code ? `${emp.name} (${emp.code})` : emp.name;
-      map.set(label, {
-        label,
-        name: emp.name,
-        code: emp.code || '',
-        department: emp.department || ''
-      });
+      const label = emp.name;
+      if (!map.has(label)) {
+        map.set(label, {
+          label,
+          name: emp.name,
+          code: emp.code || '',
+          department: emp.department || ''
+        });
+      }
     });
 
     (topic?.assignedMembers || []).forEach((m) => {
       if (m?.name) {
-        const label = m.code ? `${m.name} (${m.code})` : m.name;
+        const label = m.name;
         if (!map.has(label)) {
           map.set(label, {
             label,
@@ -1073,22 +1096,22 @@ export default function LpaPdcaSheet({
         if (personObj) {
           const personDept = personObj.department || findEmployeeDepartment(personObj.code ? `${personObj.name} (${personObj.code})` : personObj.name, dbEmployees) || '';
           newStaffEmployees = [{
-            name: personObj.name,
+            name: stripEmployeeId(personObj.name),
             code: personObj.code || '',
             department: personDept
           }];
-          newStaffEmployee = personObj.code ? `${personObj.name} (${personObj.code})` : personObj.name;
+          newStaffEmployee = stripEmployeeId(personObj.name);
           if (personDept && !newDept) newDept = personDept;
         } else if (Array.isArray(topicObj.assignedEmployees) && topicObj.assignedEmployees.length > 0) {
           newStaffEmployees = topicObj.assignedEmployees.map((ae) => {
             const aeDept = ae.department || findEmployeeDepartment(ae.code ? `${ae.name} (${ae.code})` : ae.name, dbEmployees) || '';
             return {
-              name: ae.name,
+              name: stripEmployeeId(ae.name),
               code: ae.code || '',
               department: aeDept
             };
           });
-          newStaffEmployee = newStaffEmployees.map(e => e.code ? `${e.name} (${e.code})` : e.name).join(', ');
+          newStaffEmployee = newStaffEmployees.map(e => e.name).join(', ');
           if (newStaffEmployees[0]?.department && !newDept) {
             newDept = newStaffEmployees[0].department;
           }
@@ -1192,7 +1215,7 @@ export default function LpaPdcaSheet({
         };
       } else {
         const formatted = currentList
-          .map((e) => (e.code ? `${e.name} (${e.code})` : e.name))
+          .map((e) => stripEmployeeId(e.name || ''))
           .join(', ');
         const primary = currentList[0];
         updated[rowIndex] = {
@@ -1253,14 +1276,15 @@ export default function LpaPdcaSheet({
       const updated = [...prev];
       const currentRow = updated[rowIndex] || {};
 
+      const cleanStaff = stripEmployeeId(trimmedStaff);
       const newRow = {
         ...currentRow,
-        staffEmployee: trimmedStaff,
-        staffEmployees: employeesArray,
-        staffName: staffName || currentRow.staffName || '',
+        staffEmployee: cleanStaff,
+        staffEmployees: employeesArray.map((e) => ({ ...e, name: stripEmployeeId(e.name || '') })),
+        staffName: stripEmployeeId(staffName || currentRow.staffName || ''),
         staffId: staffCode || currentRow.staffId || '',
         employeeId: staffCode || currentRow.employeeId || '',
-        responsiblePersonConfirmation: trimmedStaff
+        responsiblePersonConfirmation: cleanStaff
       };
 
       if (matchedDept) {
@@ -1500,9 +1524,12 @@ export default function LpaPdcaSheet({
       const resolvedUser = userName || effectiveUser?.fullName || effectiveUser?.name || 'Administrator';
       let nextConfirmedBy = curr.confirmedBy || '';
 
-      if (value === 'Confirmed') {
+      const isConf = value === 'Confirmed' || value === 'Confirm';
+      const isNotConf = value === 'Not - Confirmed' || value === 'Not-Confirmed' || value === 'Not-Confirm';
+
+      if (isConf) {
         nextConfirmedBy = resolvedUser;
-      } else if (value === 'Not - Confirmed' || value === 'Not-Confirmed') {
+      } else if (isNotConf) {
         nextConfirmedBy = resolvedUser;
       } else {
         nextConfirmedBy = '';
@@ -1514,7 +1541,14 @@ export default function LpaPdcaSheet({
         confirmedBy: nextConfirmedBy
       };
 
-      const nextStatus = computePDCAStatus(tempRow, currentDate);
+      let nextStatus = '';
+      if (isConf) {
+        nextStatus = 'Done';
+      } else if (isNotConf) {
+        nextStatus = 'In- Progress';
+      } else {
+        nextStatus = computePDCAStatus(tempRow, currentDate);
+      }
 
       updated[rowIndex] = {
         ...tempRow,
@@ -1748,22 +1782,6 @@ export default function LpaPdcaSheet({
               <BarChart3 className="w-3.5 h-3.5 text-indigo-600" />
               <span>PDCA Graph</span>
             </button>
-            {/* Live Cumulative Points Badge */}
-            <button
-              type="button"
-              onClick={() => setShowMonthlyGraph(true)}
-              title="Live cumulative points of all PDCA Month analysis across this sheet. Click to open detailed monthly graph & table."
-              className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100/80 border border-indigo-200 text-indigo-900 text-xs font-semibold shadow-2xs transition-all cursor-pointer flex-shrink-0"
-            >
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-slate-600 font-medium">Cumulative Points:</span>
-                <span className="font-mono font-black text-indigo-700 text-xs sm:text-[13px]">{liveCumulativeStats.total}</span>
-              </span>
-              <span className="text-[10px] text-slate-500 hidden lg:inline">
-                (Done: <span className="text-emerald-700 font-bold">{liveCumulativeStats.done}</span>, In-Prog: <span className="text-amber-700 font-bold">{liveCumulativeStats.inProgress}</span>, Delay: <span className="text-rose-700 font-bold">{liveCumulativeStats.delay}</span>)
-              </span>
-            </button>
           </div>
 
           {/* Right: Search & Add Row */}
@@ -1859,8 +1877,8 @@ export default function LpaPdcaSheet({
                   >
                     <input
                       type="text"
-                      value={headerInfo.preparedBy}
-                      onChange={(e) => setHeaderInfo({ ...headerInfo, preparedBy: e.target.value })}
+                      value={stripEmployeeId(headerInfo.preparedBy)}
+                      onChange={(e) => setHeaderInfo({ ...headerInfo, preparedBy: stripEmployeeId(e.target.value) })}
                       className="w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-900 font-medium text-xs focus:bg-blue-50/20"
                     />
                   </th>
@@ -2538,7 +2556,7 @@ export default function LpaPdcaSheet({
                           min="0"
                           step="any"
                           value={String(row.stdDurationMin ?? '').replace(/\s*min$/i, '')}
-                          disabled={!canEditActionCols}
+                          disabled={!canEditActionCols || !row.responseDate?.trim()}
                           required={Boolean(row.responseDate?.trim())}
                           aria-required={row.responseDate?.trim() ? 'true' : undefined}
                           aria-invalid={row.responseDate?.trim() && !hasValidStdDuration(row.stdDurationMin ?? row.stdDuration) ? 'true' : undefined}
@@ -2644,7 +2662,7 @@ export default function LpaPdcaSheet({
                           {row.staffEmployees && row.staffEmployees.length > 1 ? (
                             <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
                               {row.staffEmployees.map((emp, empIdx) => {
-                                const empDisplay = emp.code ? `${emp.name} (${emp.code})` : emp.name;
+                                const empDisplay = stripEmployeeId(emp.name || '');
                                 return (
                                   <div
                                     key={empIdx}
@@ -2683,10 +2701,10 @@ export default function LpaPdcaSheet({
                                 disabled={!canEditEntireRow}
                                 onClick={(e) => canEditEntireRow && handleToggleStaffDropdown(idx, e)}
                                 className={`staff-trigger-btn flex-1 min-w-0 flex flex-col items-center justify-center text-center ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer hover:opacity-85'} transition-opacity`}
-                                title={canEditEntireRow ? `Click to search/change staff: ${row.staffEmployee}` : row.staffEmployee}
+                                title={canEditEntireRow ? `Click to search/change staff: ${stripEmployeeId(row.staffEmployee)}` : stripEmployeeId(row.staffEmployee)}
                               >
                                 <span className={`text-[10px] font-semibold text-slate-800 truncate w-full text-center ${canEditEntireRow ? 'hover:text-blue-600' : ''} transition-colors`}>
-                                  {row.staffEmployee}
+                                  {stripEmployeeId(row.staffEmployee)}
                                 </span>
                               </button>
                               {canEditEntireRow && (
@@ -3255,21 +3273,39 @@ export default function LpaPdcaSheet({
       )}
 
       {/* Send Mail Modal */}
-      <SendMailModal
-        isOpen={isSendMailOpen}
-        onClose={() => setIsSendMailOpen(false)}
-        formType="pdca"
-        title={topic?.topic || headerInfo?.topicName || 'Assembly - LPA Observation (PDCA)'}
-        metadata={{
-          date: currentDate,
-          auditDate: currentDate,
-          unit: topic?.plant || 'Bawal',
+      {(() => {
+        const currentPdcaSheet = {
+          id: topic?.id || topic?.recordId || `PDCA-${Date.now()}`,
+          source: 'lpa',
+          topic: topic?.topic || headerInfo?.topicName || 'Assembly - LPA Observation (PDCA)',
+          title: topic?.topic || headerInfo?.topicName || 'Assembly - LPA Observation (PDCA)',
           section: topic?.section || 'Assembly',
-          sectionName: topic?.section || 'Assembly',
-          topicName: topic?.topic || headerInfo?.topicName || 'Assembly - LPA Observation (PDCA)',
-          auditNo: headerInfo?.auditNo
-        }}
-      />
+          plant: topic?.plant || 'Bawal',
+          unit: topic?.plant || 'Bawal',
+          date: currentDate,
+          sheet: sheetSnapshot
+        };
+        return (
+          <SendMailModal
+            isOpen={isSendMailOpen}
+            onClose={() => setIsSendMailOpen(false)}
+            formType="pdca"
+            pdcaOnly={true}
+            currentPdcaSheet={currentPdcaSheet}
+            title={currentPdcaSheet.title}
+            metadata={{
+              date: currentDate,
+              auditDate: currentDate,
+              unit: currentPdcaSheet.unit,
+              section: currentPdcaSheet.section,
+              sectionName: currentPdcaSheet.section === 'cc' ? 'C&C' : 'Assembly',
+              topicName: currentPdcaSheet.title,
+              auditNo: headerInfo?.auditNo
+            }}
+            pdcaSheets={[currentPdcaSheet]}
+          />
+        );
+      })()}
     </div>
   );
 }

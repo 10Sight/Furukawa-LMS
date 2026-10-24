@@ -12,7 +12,7 @@ export function createEmptyRow(customDefaults = {}) {
         date: customDefaults.date || '',
         shift: customDefaults.shift || '',
         lineArea: customDefaults.lineArea || '',
-        status: customDefaults.status || 'Open',
+        status: customDefaults.status || '',
         observation: customDefaults.observation || '',
         imagesBefore: Array.isArray(customDefaults.imagesBefore)
             ? customDefaults.imagesBefore

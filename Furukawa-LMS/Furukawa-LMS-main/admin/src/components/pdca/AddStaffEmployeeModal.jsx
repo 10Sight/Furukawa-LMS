@@ -100,7 +100,7 @@ export default function AddStaffEmployeeModal({
     }
 
     const formattedValue = validEmployees
-      .map((emp) => (emp.code ? `${emp.name} (${emp.code})` : emp.name))
+      .map((emp) => emp.name)
       .join(', ');
 
     if (typeof onSave === 'function') {

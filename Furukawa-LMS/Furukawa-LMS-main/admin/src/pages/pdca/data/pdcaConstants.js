@@ -79,9 +79,14 @@ export const computePDCAStatus = (row = {}, currentDateStr = '') => {
   const normStatus = normalizePDCAStatus(row.status);
   const conf = String(row.confirmation || row.responsiblePersonConfirmation || '').trim();
 
-  // If work is done
-  if (normStatus === 'Done' || conf === 'Confirmed') {
+  // If confirmation is Confirm / Confirmed -> Status is Done
+  if (normStatus === 'Done' || conf === 'Confirmed' || conf === 'Confirm') {
     return 'Done';
+  }
+
+  // If confirmation is Not-Confirm / Not-Confirmed -> Status is In-Progress
+  if (conf === 'Not-Confirmed' || conf === 'Not - Confirmed' || conf === 'Not-Confirm') {
+    return 'In- Progress';
   }
 
   // Today's date in YYYY-MM-DD

@@ -388,6 +388,7 @@ const AppRoutes = () => {
             </ProtectedRoute>
           }>
             <Route index element={<Daily5MDashboard />} />
+            <Route path="daily-5m-dashboard" element={<Daily5MDashboard />} />
             <Route path="add-question-paper" element={<AddQuestionPaper />} />
             <Route path="daily-5m-recording" element={
               <RequireAccess allow="daily5m:read">

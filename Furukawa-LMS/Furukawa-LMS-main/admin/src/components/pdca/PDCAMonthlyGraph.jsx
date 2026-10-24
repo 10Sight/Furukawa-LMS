@@ -5,7 +5,9 @@ import {
   ChevronDown,
   Calendar,
   Filter,
-  Info
+  Info,
+  Columns,
+  X
 } from 'lucide-react';
 import { normalizePDCAStatus } from '../../pages/pdca/data/pdcaConstants.js';
 
@@ -36,6 +38,7 @@ export default function PDCAMonthlyGraph({
   const [chartType, setChartType] = useState('stacked'); // default to 'stacked' (single candle per date)
   const [dataScope, setDataScope] = useState('sheet'); // 'sheet' | 'all'
   const [hoveredIndex, setHoveredIndex] = useState(null);
+  const [showCumulativeSection, setShowCumulativeSection] = useState(true);
 
   // Active series visibility toggles
   const [visibleSeries, setVisibleSeries] = useState({
@@ -54,8 +57,8 @@ export default function PDCAMonthlyGraph({
     });
   };
 
-  // Determine baseline year & month
-  const { defaultYear, defaultMonth } = useMemo(() => {
+  // Determine baseline year & month, plus current date and real today date strings
+  const { defaultYear, defaultMonth, targetTodayStr, realTodayStr } = useMemo(() => {
     let d = new Date();
     if (currentDate) {
       const parsed = new Date(currentDate);
@@ -64,9 +67,15 @@ export default function PDCAMonthlyGraph({
       const parsed = new Date(topic.date);
       if (!isNaN(parsed.getTime())) d = parsed;
     }
+
+    const sysD = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+
     return {
       defaultYear: d.getFullYear(),
-      defaultMonth: d.getMonth() // 0-11
+      defaultMonth: d.getMonth(), // 0-11
+      targetTodayStr: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+      realTodayStr: `${sysD.getFullYear()}-${pad(sysD.getMonth() + 1)}-${pad(sysD.getDate())}`
     };
   }, [currentDate, topic?.date]);
 
@@ -177,13 +186,43 @@ export default function PDCAMonthlyGraph({
 
   // Daily statistics for selectedMonth & selectedYear
   const dailyStats = useMemo(() => {
-    const data = [];
+    // Cumulative entry for past month
+    const prevMonth = selectedMonth === 0 ? 11 : selectedMonth - 1;
+    const prevYear = selectedMonth === 0 ? selectedYear - 1 : selectedYear;
+    const prevMonthName = monthNames[prevMonth];
+
+    const pastCumulative = {
+      isPastMonthCumulative: true,
+      day: 0,
+      label: `${prevMonthName} Cumul`,
+      fullDateStr: `Past Month (${fullMonthNames[prevMonth]} ${prevYear})`,
+      inProgress: 0,
+      done: 0,
+      delay: 0,
+      notStarted: 0,
+      total: 0
+    };
+
+    activeItems.forEach(item => {
+      if (item.year === prevYear && item.month === prevMonth) {
+        pastCumulative.total += 1;
+        if (item.category === 'inProgress') pastCumulative.inProgress += 1;
+        else if (item.category === 'done') pastCumulative.done += 1;
+        else if (item.category === 'delay') pastCumulative.delay += 1;
+        else pastCumulative.notStarted += 1;
+      }
+    });
+
+    const data = [pastCumulative];
     for (let d = 1; d <= daysInSelectedMonth; d++) {
       const dStr = String(d).padStart(2, '0');
       const mStr = String(selectedMonth + 1).padStart(2, '0');
       const dateKey = `${selectedYear}-${mStr}-${dStr}`;
+      const isCurrentDate = (dateKey === targetTodayStr || dateKey === realTodayStr);
 
       data.push({
+        isPastMonthCumulative: false,
+        isCurrentDate,
         day: d,
         label: `${d} ${monthNames[selectedMonth]}`,
         fullDateStr: dateKey,
@@ -197,8 +236,9 @@ export default function PDCAMonthlyGraph({
 
     activeItems.forEach(item => {
       if (item.year === selectedYear && item.month === selectedMonth) {
-        const dayIdx = item.day - 1;
-        if (dayIdx >= 0 && dayIdx < data.length) {
+        // Since pastCumulative is at index 0, day 1 is at index 1: item.day
+        const dayIdx = item.day;
+        if (dayIdx >= 1 && dayIdx < data.length) {
           data[dayIdx].total += 1;
           if (item.category === 'inProgress') data[dayIdx].inProgress += 1;
           else if (item.category === 'done') data[dayIdx].done += 1;
@@ -209,7 +249,7 @@ export default function PDCAMonthlyGraph({
     });
 
     return data;
-  }, [activeItems, selectedYear, selectedMonth, daysInSelectedMonth]);
+  }, [activeItems, selectedYear, selectedMonth, daysInSelectedMonth, targetTodayStr, realTodayStr]);
 
   // Monthly statistics for selectedYear
   const monthlyStats = useMemo(() => {
@@ -268,6 +308,8 @@ export default function PDCAMonthlyGraph({
     let notStarted = 0;
 
     baseData.forEach(d => {
+      // Exclude past month cumulative from current month's KPI totals
+      if (viewTimeframe === 'daily' && d.isPastMonthCumulative) return;
       total += d.total;
       inProgress += d.inProgress;
       done += d.done;
@@ -307,11 +349,11 @@ export default function PDCAMonthlyGraph({
 
   // SVG Chart Geometry
   const slotCount = currentDataset.length;
-  const minSlotWidth = viewTimeframe === 'daily' ? 46 : 70;
-  const padding = { top: 30, right: 25, bottom: 46, left: 45 };
+  const minSlotWidth = viewTimeframe === 'daily' ? 52 : 70;
+  const padding = { top: 30, right: 25, bottom: 60, left: 45 };
   const graphWidth = Math.max(880, slotCount * minSlotWidth);
   const svgWidth = graphWidth + padding.left + padding.right;
-  const svgHeight = 360;
+  const svgHeight = 385;
   const graphHeight = svgHeight - padding.top - padding.bottom;
 
   // Y-Scale helper
@@ -482,6 +524,21 @@ export default function PDCAMonthlyGraph({
             </button>
           </div>
 
+          {/* Toggle Cumulative Section */}
+          <button
+            type="button"
+            onClick={() => setShowCumulativeSection(prev => !prev)}
+            className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer inline-flex items-center gap-1.5 border ${
+              showCumulativeSection
+                ? 'bg-indigo-50 text-indigo-700 border-indigo-200 shadow-2xs'
+                : 'bg-white text-slate-600 border-slate-200 hover:text-slate-900 hover:bg-slate-50'
+            }`}
+            title={showCumulativeSection ? 'Hide Cumulative section' : 'Show Cumulative section'}
+          >
+            <Columns className="w-3.5 h-3.5 text-indigo-600" />
+            <span>{showCumulativeSection ? 'Hide Cumulative' : 'Show Cumulative'}</span>
+          </button>
+
           {/* Collapse/Expand Toggle */}
           {onToggleCollapse && (
             <button
@@ -502,54 +559,66 @@ export default function PDCAMonthlyGraph({
           <div className="bg-slate-50/50 rounded-xl border border-slate-200/80 p-3 relative">
             <div className="flex flex-col md:flex-row items-stretch gap-3">
               {/* Cumulative Section (Month and its Cumulative) */}
-              <div className="w-full md:w-36 lg:w-40 shrink-0 bg-white rounded-lg border border-slate-200 shadow-2xs flex flex-col overflow-hidden">
-                <div className="px-2.5 py-1.5 bg-slate-100/90 border-b border-slate-200 flex items-center justify-between">
-                  <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
-                    Cumulative
-                  </span>
-                  <span className="text-[10px] font-bold font-mono px-1.5 py-0.2 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
-                    {selectedYear}
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 px-2.5 py-1 bg-slate-50/80 border-b border-slate-200/70 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                  <span>Month</span>
-                  <span className="text-right">Cumulative</span>
-                </div>
-                <div className="flex-1 divide-y divide-slate-100 text-xs overflow-y-auto max-h-[260px] md:max-h-none">
-                  {monthlyStats.map((m, idx) => {
-                    const isSelected = viewTimeframe === 'daily' && selectedMonth === idx;
-                    return (
-                      <div
-                        key={m.month}
-                        onClick={() => {
-                          if (viewTimeframe === 'daily') setSelectedMonth(idx);
-                        }}
-                        className={`grid grid-cols-2 px-2.5 py-1 items-center transition-colors ${
-                          viewTimeframe === 'daily' ? 'cursor-pointer' : ''
-                        } ${
-                          isSelected
-                            ? 'bg-indigo-50 font-bold text-indigo-900'
-                            : m.total > 0
-                            ? 'hover:bg-slate-50 text-slate-800'
-                            : 'hover:bg-slate-50 text-slate-500'
-                        }`}
-                        title={viewTimeframe === 'daily' ? `Switch to ${m.fullName}` : `${m.fullName}`}
+              {showCumulativeSection && (
+                <div className="w-full md:w-36 lg:w-40 shrink-0 bg-white rounded-lg border border-slate-200 shadow-2xs flex flex-col overflow-hidden animate-in fade-in duration-150">
+                  <div className="px-2.5 py-1.5 bg-slate-100/90 border-b border-slate-200 flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                      Cumulative
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <span className="text-[10px] font-bold font-mono px-1.5 py-0.2 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
+                        {selectedYear}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowCumulativeSection(false)}
+                        className="p-0.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
+                        title="Hide Cumulative panel"
                       >
-                        <span className="text-xs truncate">{m.month}</span>
-                        <span className={`text-right font-mono text-xs font-semibold ${
-                          m.total > 0 ? 'text-indigo-600 font-bold' : 'text-slate-400'
-                        }`}>
-                          {m.total}
-                        </span>
-                      </div>
-                    );
-                  })}
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 px-2.5 py-1 bg-slate-50/80 border-b border-slate-200/70 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    <span>Month</span>
+                    <span className="text-right">Cumulative</span>
+                  </div>
+                  <div className="flex-1 divide-y divide-slate-100 text-xs overflow-y-auto max-h-[260px] md:max-h-none">
+                    {monthlyStats.map((m, idx) => {
+                      const isSelected = viewTimeframe === 'daily' && selectedMonth === idx;
+                      return (
+                        <div
+                          key={m.month}
+                          onClick={() => {
+                            if (viewTimeframe === 'daily') setSelectedMonth(idx);
+                          }}
+                          className={`grid grid-cols-2 px-2.5 py-1 items-center transition-colors ${
+                            viewTimeframe === 'daily' ? 'cursor-pointer' : ''
+                          } ${
+                            isSelected
+                              ? 'bg-indigo-50 font-bold text-indigo-900'
+                              : m.total > 0
+                              ? 'hover:bg-slate-50 text-slate-800'
+                              : 'hover:bg-slate-50 text-slate-500'
+                          }`}
+                          title={viewTimeframe === 'daily' ? `Switch to ${m.fullName}` : `${m.fullName}`}
+                        >
+                          <span className="text-xs truncate">{m.month}</span>
+                          <span className={`text-right font-mono text-xs font-semibold ${
+                            m.total > 0 ? 'text-indigo-600 font-bold' : 'text-slate-400'
+                          }`}>
+                            {m.total}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="grid grid-cols-2 px-2.5 py-1.5 bg-slate-100 border-t border-slate-200 text-xs font-bold text-slate-800">
+                    <span>Total</span>
+                    <span className="text-right font-mono text-indigo-700">{allMonthsCumulative.total}</span>
+                  </div>
                 </div>
-                <div className="grid grid-cols-2 px-2.5 py-1.5 bg-slate-100 border-t border-slate-200 text-xs font-bold text-slate-800">
-                  <span>Total</span>
-                  <span className="text-right font-mono text-indigo-700">{allMonthsCumulative.total}</span>
-                </div>
-              </div>
+              )}
 
               {/* Right Column: Metrics Row & SVG Graph */}
               <div className="flex-1 min-w-0 flex flex-col">
@@ -638,12 +707,12 @@ export default function PDCAMonthlyGraph({
             </div>
 
             {/* SVG Graph View inside horizontal scroll */}
-            <div className="w-full overflow-x-auto pb-1 flex-1 flex flex-col justify-end">
-              <div style={{ minWidth: `${Math.max(680, svgWidth)}px` }} className="flex-1 flex flex-col">
+            <div className="w-full overflow-x-auto pb-3.5 pt-1 flex-1 flex flex-col justify-end">
+              <div style={{ minWidth: `${Math.max(680, svgWidth)}px` }} className="flex-1 flex flex-col mb-1.5">
                 <svg
                   viewBox={`0 0 ${svgWidth} ${svgHeight}`}
                   className="w-full h-auto select-none flex-1"
-                  style={{ minHeight: '350px' }}
+                  style={{ minHeight: '365px' }}
                 >
                   <defs>
                     <linearGradient id="inProgressGrad" x1="0" y1="0" x2="0" y2="1">
@@ -749,15 +818,37 @@ export default function PDCAMonthlyGraph({
                         onMouseLeave={() => setHoveredIndex(null)}
                         className="cursor-pointer"
                       >
-                        {/* Hover Column Background Highlight */}
+                        {/* Hover Column Background Highlight (Full height to prevent hover gaps) */}
                         <rect
                           x={colX + 1}
                           y={padding.top}
                           width={slotWidth - 2}
-                          height={graphHeight}
-                          fill={isHovered ? 'rgba(59, 130, 246, 0.08)' : 'transparent'}
+                          height={graphHeight + padding.bottom - 4}
+                          fill={
+                            isHovered
+                              ? 'rgba(59, 130, 246, 0.12)'
+                              : item.isCurrentDate
+                              ? 'rgba(59, 130, 246, 0.06)'
+                              : item.isPastMonthCumulative
+                              ? 'rgba(99, 102, 241, 0.06)'
+                              : 'transparent'
+                          }
+                          stroke={
+                            item.isCurrentDate
+                              ? 'rgba(59, 130, 246, 0.35)'
+                              : item.isPastMonthCumulative
+                              ? 'rgba(99, 102, 241, 0.25)'
+                              : 'none'
+                          }
+                          strokeDasharray={
+                            item.isCurrentDate
+                              ? '3 2'
+                              : item.isPastMonthCumulative
+                              ? '3 3'
+                              : 'none'
+                          }
                           rx="4"
-                          className="transition-colors duration-150"
+                          className="transition-colors duration-100"
                         />
 
                         {/* Chart Render: Grouped Bars */}
@@ -826,7 +917,9 @@ export default function PDCAMonthlyGraph({
                                     x={xCenter}
                                     y={baseY - accumulatedH - 4}
                                     textAnchor="middle"
-                                    className="text-[9.5px] font-bold fill-slate-700 font-mono"
+                                    className={`text-[9.5px] font-bold font-mono ${
+                                      item.isPastMonthCumulative ? 'fill-indigo-700 font-extrabold' : 'fill-slate-700'
+                                    }`}
                                   >
                                     {item.total}
                                   </text>
@@ -836,17 +929,35 @@ export default function PDCAMonthlyGraph({
                           </g>
                         )}
 
-                        {/* X-Axis Label (e.g. '18 Oct' or Month name) */}
+                        {/* Current Date Badge Indicator (Behind Label) */}
+                        {item.isCurrentDate && (
+                          <rect
+                            x={xCenter - 24}
+                            y={svgHeight - 37}
+                            width="48"
+                            height="20"
+                            rx="5"
+                            fill="#EFF6FF"
+                            stroke="#3B82F6"
+                            strokeWidth="1.5"
+                          />
+                        )}
+
+                        {/* X-Axis Label (e.g. '18 Oct' or 'Sep Cumul' or Month name) */}
                         <text
                           x={xCenter}
-                          y={svgHeight - 14}
+                          y={svgHeight - 23}
                           textAnchor="middle"
-                          className={`text-[9.5px] font-semibold transition-all ${
-                            isHovered
-                              ? 'fill-blue-700 font-bold scale-105'
+                          className={`text-[11.5px] tracking-tight transition-colors ${
+                            item.isCurrentDate
+                              ? 'fill-blue-700 font-black'
+                              : item.isPastMonthCumulative
+                              ? 'fill-indigo-700 font-extrabold'
+                              : isHovered
+                              ? 'fill-blue-600 font-bold'
                               : item.total > 0
-                              ? 'fill-slate-800'
-                              : 'fill-slate-400'
+                              ? 'fill-slate-800 font-bold'
+                              : 'fill-slate-400 font-semibold'
                           }`}
                         >
                           {item.label}
@@ -856,9 +967,19 @@ export default function PDCAMonthlyGraph({
                         {item.total > 0 && (
                           <circle
                             cx={xCenter}
-                            cy={svgHeight - 4}
-                            r="1.8"
-                            fill={isHovered ? '#2563EB' : item.delay > 0 ? '#EF4444' : '#94A3B8'}
+                            cy={svgHeight - 9}
+                            r="2"
+                            fill={
+                              item.isCurrentDate
+                                ? '#2563EB'
+                                : item.isPastMonthCumulative
+                                ? '#6366F1'
+                                : isHovered
+                                ? '#2563EB'
+                                : item.delay > 0
+                                ? '#EF4444'
+                                : '#94A3B8'
+                            }
                           />
                         )}
                       </g>
@@ -985,61 +1106,89 @@ export default function PDCAMonthlyGraph({
           </div>
         </div>
 
-            {/* Hover Tooltip Overlay */}
-            {hoveredIndex !== null && currentDataset[hoveredIndex] && (
-              <div className="mt-2.5 p-2.5 bg-white border border-slate-200 rounded-lg shadow-sm flex flex-wrap items-center justify-between gap-3 text-xs animate-in fade-in duration-100">
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-slate-800 text-sm">
-                    {viewTimeframe === 'daily'
-                      ? `${fullMonthNames[selectedMonth]} ${currentDataset[hoveredIndex].day}, ${selectedYear}`
-                      : `${currentDataset[hoveredIndex].fullName} ${selectedYear}`}
-                  </span>
-                  <span className="text-[10px] text-slate-400 font-medium">
-                    Total: {currentDataset[hoveredIndex].total}
-                  </span>
+            {/* Bottom Info / Hover Detail Bar (Fixed height to prevent sheet jumping/blinking) */}
+            <div className="mt-2.5 min-h-[46px] p-2.5 bg-white border border-slate-200 rounded-lg shadow-2xs flex flex-wrap items-center justify-between gap-3 text-xs">
+              {hoveredIndex !== null && currentDataset[hoveredIndex] ? (
+                <>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-slate-800 text-sm">
+                      {currentDataset[hoveredIndex].isPastMonthCumulative
+                        ? currentDataset[hoveredIndex].fullDateStr
+                        : viewTimeframe === 'daily'
+                        ? `${fullMonthNames[selectedMonth]} ${currentDataset[hoveredIndex].day}, ${selectedYear}`
+                        : `${currentDataset[hoveredIndex].fullName} ${selectedYear}`}
+                    </span>
+                    {currentDataset[hoveredIndex].isPastMonthCumulative && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200">
+                        Past Month Cumulative
+                      </span>
+                    )}
+                    {viewTimeframe === 'daily' && currentDataset[hoveredIndex].isCurrentDate && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200">
+                        Current Date
+                      </span>
+                    )}
+                    <span className="text-[10px] text-slate-400 font-medium">
+                      Total: {currentDataset[hoveredIndex].total}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center flex-wrap gap-4">
+                    {/* In-Progress */}
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                      <span className="text-slate-500 font-medium">In-Progress:</span>
+                      <span className="font-bold text-amber-700 font-mono text-sm">
+                        {currentDataset[hoveredIndex].inProgress}
+                      </span>
+                    </div>
+
+                    {/* Done */}
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-600" />
+                      <span className="text-slate-500 font-medium">Done:</span>
+                      <span className="font-bold text-emerald-700 font-mono text-sm">
+                        {currentDataset[hoveredIndex].done}
+                      </span>
+                    </div>
+
+                    {/* Delay */}
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-rose-600" />
+                      <span className="text-slate-500 font-medium">Delay:</span>
+                      <span className={`font-bold font-mono text-sm ${
+                        currentDataset[hoveredIndex].delay > 0 ? 'text-rose-700 font-extrabold' : 'text-slate-500'
+                      }`}>
+                        {currentDataset[hoveredIndex].delay}
+                      </span>
+                    </div>
+
+                    {/* Not-Started */}
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-blue-600" />
+                      <span className="text-slate-500 font-medium">Not-Started:</span>
+                      <span className="font-bold text-blue-700 font-mono text-sm">
+                        {currentDataset[hoveredIndex].notStarted}
+                      </span>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="w-full flex items-center justify-between text-slate-400 text-xs">
+                  <div className="flex items-center gap-2">
+                    <Info className="w-3.5 h-3.5 text-blue-500" />
+                    <span className="text-slate-500 font-medium">
+                      {viewTimeframe === 'daily'
+                        ? 'Hover over any date to inspect detailed status breakdown'
+                        : 'Hover over any month to inspect detailed status breakdown'}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-400 font-medium">
+                    {viewTimeframe === 'daily' ? `${fullMonthNames[selectedMonth]} ${selectedYear}` : selectedYear}
+                  </div>
                 </div>
-
-                <div className="flex items-center flex-wrap gap-4">
-                  {/* In-Progress */}
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
-                    <span className="text-slate-500 font-medium">In-Progress:</span>
-                    <span className="font-bold text-amber-700 font-mono text-sm">
-                      {currentDataset[hoveredIndex].inProgress}
-                    </span>
-                  </div>
-
-                  {/* Done */}
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-600" />
-                    <span className="text-slate-500 font-medium">Done:</span>
-                    <span className="font-bold text-emerald-700 font-mono text-sm">
-                      {currentDataset[hoveredIndex].done}
-                    </span>
-                  </div>
-
-                  {/* Delay */}
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-rose-600" />
-                    <span className="text-slate-500 font-medium">Delay:</span>
-                    <span className={`font-bold font-mono text-sm ${
-                      currentDataset[hoveredIndex].delay > 0 ? 'text-rose-700 font-extrabold' : 'text-slate-500'
-                    }`}>
-                      {currentDataset[hoveredIndex].delay}
-                    </span>
-                  </div>
-
-                  {/* Not-Started */}
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-blue-600" />
-                    <span className="text-slate-500 font-medium">Not-Started:</span>
-                    <span className="font-bold text-blue-700 font-mono text-sm">
-                      {currentDataset[hoveredIndex].notStarted}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       )}

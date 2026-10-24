@@ -3026,7 +3026,7 @@ const Daily5MRecording = () => {
 
     const handleBackToList = () => {
         if (location.state?.fromDashboard) {
-            navigate('/cms/daily-5m-dashboard');
+            navigate(location.pathname.startsWith('/portal') ? '/portal/daily-5m-dashboard' : '/cms');
         } else {
             navigate(location.pathname);
             setShowFormList(true);

@@ -222,16 +222,18 @@ export const createSendLpaEmailHandler = ({ sendMailFn = sendMail, log = logger,
     return res.status(200).json(body);
   } catch (error) {
     attemptStore.delete(attemptKey);
-    if (error?.statuscode && error.statuscode < 500) {
-      return res.status(error.statuscode).json(new ApiResponse(error.statuscode, null, error.message));
+    const statusCode = error?.statuscode || error?.statusCode || error?.status;
+    if (statusCode && statusCode < 500) {
+      return res.status(statusCode).json(new ApiResponse(statusCode, null, error.message));
     }
     const code = error?.code || "unknown";
     const responseCode = error?.responseCode || "unknown";
     const command = String(error?.command || "unknown").replace(/[^a-z0-9_-]/gi, "").slice(0, 40);
     log.error(`[LPA_EMAIL] Send failed user=${userId} code=${code} responseCode=${responseCode} command=${command} message=${error?.message}`);
-    const body = new ApiResponse(502, null, error?.code === "SMTP_NOT_CONFIGURED"
+    const errorMessage = error?.code === "SMTP_NOT_CONFIGURED"
       ? "Email service is not configured. Contact your administrator."
-      : "The email service could not accept this message. Please try again later.");
+      : (error?.message && !error.message.includes("Object") ? error.message : "The email service could not accept this message. Please try again later.");
+    const body = new ApiResponse(502, null, errorMessage);
     return res.status(502).json(body);
   }
 });

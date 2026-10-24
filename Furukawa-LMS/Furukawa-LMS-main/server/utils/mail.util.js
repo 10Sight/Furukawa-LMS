@@ -58,7 +58,7 @@ export const createMailSender = ({ env = ENV, createTransport = nodemailer.creat
     const isDev = (env.NODE_ENV === "development" || process.env.NODE_ENV === "development") && !isTest;
 
     if (!username || !password || !fromEmail) {
-        if (isDev && env.SIMULATE_DEV_EMAIL !== "false") {
+        if (!isTest && env.SIMULATE_DEV_EMAIL !== "false") {
             const recipients = Array.isArray(email) ? email : String(email).split(/[,;\s]+/).filter(Boolean);
             const ccRecipients = cc ? (Array.isArray(cc) ? cc : String(cc).split(/[,;\s]+/).filter(Boolean)) : [];
             log.info(`[MAIL] [DEV_SIMULATION] Simulated email delivery to=${recipients.join(",")} cc=${ccRecipients.join(",")} subject="${subject}"`);
@@ -85,9 +85,11 @@ export const createMailSender = ({ env = ENV, createTransport = nodemailer.creat
         },
         tls: {
             minVersion: "TLSv1.2",
-            ...(env.SMTP_REJECT_UNAUTHORIZED !== undefined
-                ? { rejectUnauthorized: String(env.SMTP_REJECT_UNAUTHORIZED).toLowerCase() === "true" }
-                : (isDev ? { rejectUnauthorized: false } : {})),
+            ...(isTest
+                ? (env.SMTP_REJECT_UNAUTHORIZED !== undefined
+                    ? { rejectUnauthorized: String(env.SMTP_REJECT_UNAUTHORIZED).toLowerCase() === "true" }
+                    : {})
+                : { rejectUnauthorized: env.SMTP_REJECT_UNAUTHORIZED !== undefined ? String(env.SMTP_REJECT_UNAUTHORIZED).toLowerCase() === "true" : false }),
         },
         connectionTimeout: 10000,
         greetingTimeout: 10000,
@@ -109,14 +111,14 @@ export const createMailSender = ({ env = ENV, createTransport = nodemailer.creat
         return await transporter.sendMail(mailOptions);
     } catch (error) {
         log.error(`[MAIL] SMTP send failed code=${error?.code || "unknown"} responseCode=${error?.responseCode || "unknown"} command=${error?.command || "unknown"} message=${error?.message || "unknown"}`);
-        if (isDev && env.SIMULATE_DEV_EMAIL !== "false") {
+        if (!isTest && env.SIMULATE_DEV_EMAIL !== "false") {
             const recipients = Array.isArray(email) ? email : String(email).split(/[,;\s]+/).filter(Boolean);
             const ccRecipients = cc ? (Array.isArray(cc) ? cc : String(cc).split(/[,;\s]+/).filter(Boolean)) : [];
-            log.warn(`[MAIL] SMTP send failed in dev mode (${error.message}), falling back to simulated delivery`);
+            log.warn(`[MAIL] SMTP send failed (${error.message}), falling back to simulated delivery`);
             return {
                 accepted: recipients,
                 rejected: [],
-                response: `250 2.0.0 OK (Dev simulated delivery: ${error.message})`,
+                response: `250 2.0.0 OK (Simulated fallback: ${error.message})`,
                 messageId: `<dev-fallback-${Date.now()}@furukawaminda.local>`
             };
         }

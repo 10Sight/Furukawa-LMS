@@ -14,6 +14,7 @@ import {
   Search,
   Filter,
   Eye,
+  EyeOff,
   FileSpreadsheet,
   FileText,
   Presentation,
@@ -35,6 +36,7 @@ import FileUploadSelectionModal from './FileUploadSelectionModal';
 import EvidenceViewerModal from './EvidenceViewerModal';
 import AddStaffEmployeeModal from './AddStaffEmployeeModal';
 import SendMailModal from '../common/SendMailModal';
+import PDCAAlertModal from './PDCAAlertModal';
 import PDCAMonthlyGraph from './PDCAMonthlyGraph';
 import ResponsiblePersonInstructionCell from './ResponsiblePersonInstructionCell';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
@@ -108,7 +110,7 @@ function CheckboxMultiSelect({ value = [], options = [], onChange, disabled = fa
       document.removeEventListener('keydown', closeOnEscape);
     };
   }, [open, options.length]);
-
+// that is the code of toodays cass 
   return (
     <div className="w-full min-w-0">
       <button
@@ -157,6 +159,10 @@ export const DEFAULT_ROOT_CAUSE_WIDTH = 135;
 export const MIN_ROOT_CAUSE_WIDTH = 95;
 export const MAX_ROOT_CAUSE_WIDTH = 550;
 
+export const DEFAULT_ACTION_TAKEN_WIDTH = 135;
+export const MIN_ACTION_TAKEN_WIDTH = 95;
+export const MAX_ACTION_TAKEN_WIDTH = 550;
+
 export const DEFAULT_COUNTER_MEASURE_WIDTH = 145;
 export const MIN_COUNTER_MEASURE_WIDTH = 95;
 export const MAX_COUNTER_MEASURE_WIDTH = 550;
@@ -186,6 +192,7 @@ const createEmptyRow = (customDefaults = {}) => ({
   imageBeforeName: customDefaults.imageBeforeName || '',
   fileTypeBefore: customDefaults.fileTypeBefore || 'image',
   rootCause: customDefaults.rootCause || '',
+  actionTaken: customDefaults.actionTaken || '',
   counterMeasure: customDefaults.counterMeasure || '',
   imagesAfter: Array.isArray(customDefaults.imagesAfter)
     ? customDefaults.imagesAfter
@@ -802,6 +809,7 @@ export default function PDCASheet({
       imageAfter: isDocAfter ? row.imageAfter : (imagesAfter[0]?.url || row.imageAfter || null),
       imageAfterName: isDocAfter ? row.imageAfterName : (imagesAfter[0]?.name || row.imageAfterName || ''),
       fileTypeAfter: row.fileTypeAfter || (imagesAfter.length > 0 ? 'image' : ''),
+      actionTaken: row.actionTaken || '',
       staffEmployee,
       staffEmployees,
       staffName,
@@ -935,6 +943,18 @@ export default function PDCASheet({
   const [showDiscardModal, setShowDiscardModal] = useState(false);
   const [isSendMailOpen, setIsSendMailOpen] = useState(false);
   const [showMonthlyGraph, setShowMonthlyGraph] = useState(false);
+  const [showDoneRows, setShowDoneRows] = useState(false);
+  const [alertModal, setAlertModal] = useState({
+    isOpen: false,
+    type: 'mandatory', // 'mandatory' | 'unsaved-changes' | 'send-mail-warning' | 'warning'
+    title: '',
+    message: '',
+    rowNumber: null,
+    missingFields: [],
+    confirmText: '',
+    cancelText: '',
+    onConfirm: null
+  });
 
   useEffect(() => {
     if (!mustCompleteRequiredInput || typeof document === 'undefined') return undefined;
@@ -1155,6 +1175,82 @@ export default function PDCASheet({
     } catch { }
   }, [rootCauseWidth]);
 
+  // Action Taken Column Resizable Width (default 135px, min 95px, max 550px, persisted in localStorage)
+  const [actionTakenWidth, setActionTakenWidth] = useState(() => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const saved = window.localStorage.getItem('pdca_action_taken_col_width');
+        if (saved) {
+          const parsed = parseInt(saved, 10);
+          if (!isNaN(parsed) && parsed >= MIN_ACTION_TAKEN_WIDTH && parsed <= MAX_ACTION_TAKEN_WIDTH) {
+            return parsed;
+          }
+        }
+      }
+    } catch { }
+    return DEFAULT_ACTION_TAKEN_WIDTH;
+  });
+
+  const activeActionTakenResizeRef = useRef(null);
+
+  const startActionTakenResize = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    activeActionTakenResizeRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startWidth: actionTakenWidth,
+    };
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch { }
+  };
+
+  const continueActionTakenResize = (event) => {
+    const active = activeActionTakenResizeRef.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    const deltaX = event.clientX - active.startX;
+    const newWidth = Math.min(
+      MAX_ACTION_TAKEN_WIDTH,
+      Math.max(MIN_ACTION_TAKEN_WIDTH, active.startWidth + deltaX)
+    );
+    setActionTakenWidth(newWidth);
+  };
+
+  const finishActionTakenResize = (event) => {
+    const active = activeActionTakenResizeRef.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch { }
+    activeActionTakenResizeRef.current = null;
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem('pdca_action_taken_col_width', String(actionTakenWidth));
+      }
+    } catch { }
+  };
+
+  const handleActionTakenResizeKeyDown = (event) => {
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      setActionTakenWidth((prev) => Math.max(MIN_ACTION_TAKEN_WIDTH, prev - 15));
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      setActionTakenWidth((prev) => Math.min(MAX_ACTION_TAKEN_WIDTH, prev + 15));
+    }
+  };
+
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem('pdca_action_taken_col_width', String(actionTakenWidth));
+      }
+    } catch { }
+  }, [actionTakenWidth]);
+
   // Counter Measure Column Resizable Width (default 145px, min 95px, max 550px, persisted in localStorage)
   const [counterMeasureWidth, setCounterMeasureWidth] = useState(() => {
     try {
@@ -1330,6 +1426,7 @@ export default function PDCASheet({
         r.imageBefore ||
         (Array.isArray(r.imagesBefore) && r.imagesBefore.length > 0) ||
         r.rootCause?.trim() ||
+        r.actionTaken?.trim() ||
         r.counterMeasure?.trim() ||
         r.imageAfter ||
         (Array.isArray(r.imagesAfter) && r.imagesAfter.length > 0) ||
@@ -1340,6 +1437,7 @@ export default function PDCASheet({
         (Array.isArray(r.departments) && r.departments.some(d => d?.trim())) ||
         (Array.isArray(r.sections) && r.sections.some(s => s?.section?.trim())) ||
         r.staffEmployee?.trim() ||
+        r.staffName?.trim() ||
         r.cftTopic?.trim() ||
         r.responsiblePersonConfirmation?.trim()
       );
@@ -1365,12 +1463,25 @@ export default function PDCASheet({
         if (!r.date?.trim()) missing.push('Date');
         if (!r.shift?.trim()) missing.push('Shift');
         if (!r.status?.trim()) missing.push('Status');
-        const activeLineArea = (r.lineAreas?.[0]?.lineArea || r.lineArea || '').trim();
-        if (!activeLineArea) missing.push('Line/Area');
+        const unitVal = (r.unit || (Array.isArray(r.units) && r.units[0]) || '').trim();
+        if (!unitVal) missing.push('Unit');
+        const deptVal = (r.department || (Array.isArray(r.departments) && r.departments[0]) || '').trim();
+        if (!deptVal) missing.push('Department');
         if (!r.observation?.trim()) missing.push('Observation');
+        const staffVal = (r.staffName || r.staffEmployee || (Array.isArray(r.staffEmployees) && (r.staffEmployees[0]?.name || r.staffEmployees[0]?.fullName)) || '').trim();
+        if (!staffVal) missing.push('Staff name');
 
         if (missing.length > 0) {
-          showToast(`Row ${i + 1}: Mandatory field${missing.length > 1 ? 's' : ''} (${missing.join(', ')}) required.`);
+          setAlertModal({
+            isOpen: true,
+            type: 'mandatory',
+            title: 'Mandatory Columns Required',
+            rowNumber: i + 1,
+            missingFields: missing,
+            message: `Row ${i + 1} has missing mandatory columns. The sheet cannot be saved until all required fields are filled.`,
+            confirmText: "I'll fill them"
+          });
+          showToast(`Row ${i + 1}: Mandatory column${missing.length > 1 ? 's' : ''} (${missing.join(', ')}) required.`);
           return false;
         }
       }
@@ -1427,14 +1538,92 @@ export default function PDCASheet({
     return serializeSheet(rows, headerInfo) !== initialSnapshotRef.current;
   };
 
-  // Navigation Back: Separated strictly from save and mandatory validation
+  // Navigation Back: Prompt if unsaved changes exist
   const handleBack = () => {
     if (requireConfirmationReasonBeforeContinuing()) return;
     if (hasUnsavedChanges()) {
-      setShowDiscardModal(true);
+      setAlertModal({
+        isOpen: true,
+        type: 'unsaved-changes',
+        title: 'Unsaved Changes',
+        message: 'Changes are not saved yet. Are you sure you want to go back? Unsaved edits will be lost.',
+        confirmText: 'Discard & Go Back',
+        cancelText: 'Stay & Keep Editing',
+        onConfirm: () => handleDiscardAndGoBack()
+      });
     } else {
       onBack?.();
     }
+  };
+
+  // Send Mail handler: Block if unsaved changes or missing mandatory fields
+  const handleSendMailClick = () => {
+    if (hasUnsavedChanges()) {
+      setAlertModal({
+        isOpen: true,
+        type: 'send-mail-warning',
+        title: 'Save Sheet Before Sending Mail',
+        message: 'You have unsaved changes in this sheet. Please save the sheet before sending email.',
+        confirmText: 'Understood'
+      });
+      showToast('Please save changes before sending mail.');
+      return;
+    }
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const hasContent = Boolean(
+        r.date?.trim() ||
+        r.shift?.trim() ||
+        r.lineArea?.trim() ||
+        (Array.isArray(r.lineAreas) && r.lineAreas.some(l => l?.lineArea?.trim())) ||
+        r.observation?.trim() ||
+        r.imageBefore ||
+        (Array.isArray(r.imagesBefore) && r.imagesBefore.length > 0) ||
+        r.rootCause?.trim() ||
+        r.actionTaken?.trim() ||
+        r.counterMeasure?.trim() ||
+        r.imageAfter ||
+        (Array.isArray(r.imagesAfter) && r.imagesAfter.length > 0) ||
+        r.responseDate?.trim() ||
+        r.unit?.trim() ||
+        (r.respUnit || r.responsiblePersonUnit || '').trim() ||
+        r.department?.trim() ||
+        (Array.isArray(r.departments) && r.departments.some(d => d?.trim())) ||
+        (Array.isArray(r.sections) && r.sections.some(s => s?.section?.trim())) ||
+        r.staffEmployee?.trim() ||
+        r.staffName?.trim() ||
+        r.cftTopic?.trim() ||
+        r.responsiblePersonConfirmation?.trim()
+      );
+      if (hasContent) {
+        const missing = [];
+        if (!r.date?.trim()) missing.push('Date');
+        if (!r.shift?.trim()) missing.push('Shift');
+        if (!r.status?.trim()) missing.push('Status');
+        const unitVal = (r.unit || (Array.isArray(r.units) && r.units[0]) || '').trim();
+        if (!unitVal) missing.push('Unit');
+        const deptVal = (r.department || (Array.isArray(r.departments) && r.departments[0]) || '').trim();
+        if (!deptVal) missing.push('Department');
+        if (!r.observation?.trim()) missing.push('Observation');
+        const staffVal = (r.staffName || r.staffEmployee || (Array.isArray(r.staffEmployees) && (r.staffEmployees[0]?.name || r.staffEmployees[0]?.fullName)) || '').trim();
+        if (!staffVal) missing.push('Staff name');
+
+        if (missing.length > 0) {
+          setAlertModal({
+            isOpen: true,
+            type: 'send-mail-warning',
+            title: 'Cannot Send Email',
+            rowNumber: i + 1,
+            missingFields: missing,
+            message: `Cannot send mail because Row ${i + 1} has mandatory column(s) that are not filled. Please fill all mandatory columns and save before sending email.`,
+            confirmText: 'Understood'
+          });
+          showToast(`Row ${i + 1}: Mandatory columns (${missing.join(', ')}) required before sending mail.`);
+          return;
+        }
+      }
+    }
+    setIsSendMailOpen(true);
   };
 
   // Discard all unsaved edits made during the session and navigate back immediately
@@ -2486,8 +2675,9 @@ export default function PDCASheet({
 
       let nextRevisions = revisions;
       if (!isFirstTime && oldDate && oldDate !== newDate) {
-        // User selected response date for second or subsequent time: record revision
-        nextRevisions = [...revisions, { date: newDate, reason: '', previousDate: oldDate }];
+        // User selected response date for second or subsequent time: record revision with current date
+        const currentDateIso = new Date().toISOString().split('T')[0];
+        nextRevisions = [...revisions, { date: currentDateIso, reason: '', previousDate: oldDate, responseDate: newDate }];
       }
 
       const tempRow = {
@@ -2543,8 +2733,7 @@ export default function PDCASheet({
   // A revision that has not been saved yet can also be cancelled by the editor;
   // in that case the Response Date reverts to its previous value locally.
   const handleDeleteRevisedDate = async (rowIndex, dateIndex) => {
-    const isPendingRevision = dateIndex >= getSavedRevisionCount(rowIndex);
-    if (!isAdmin && !isPendingRevision) {
+    if (!isAdmin) {
       if (typeof showToast === 'function') {
         showToast('Access Denied: Only administrators have access to delete revised dates.');
       }
@@ -2911,7 +3100,13 @@ export default function PDCASheet({
       const oversized = files.filter((f) => f.size > MAX_SIZE);
       if (oversized.length > 0) {
         const sizeMB = (oversized[0].size / (1024 * 1024)).toFixed(1);
-        window.alert(`File "${oversized[0].name}" is ${sizeMB} MB, which exceeds the maximum allowed limit of 15 MB. Please select smaller files.`);
+        setAlertModal({
+          isOpen: true,
+          type: 'warning',
+          title: 'File Too Large',
+          message: `File "${oversized[0].name}" is ${sizeMB} MB, which exceeds the maximum allowed limit of 15 MB. Please select smaller files.`,
+          confirmText: 'Understood'
+        });
         return;
       }
 
@@ -2982,7 +3177,13 @@ export default function PDCASheet({
 
     if (file.size > MAX_SIZE) {
       const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
-      window.alert(`The selected file is ${sizeMB} MB, which exceeds the maximum allowed limit of 15 MB. Please select a smaller file.`);
+      setAlertModal({
+        isOpen: true,
+        type: 'warning',
+        title: 'File Too Large',
+        message: `The selected file is ${sizeMB} MB, which exceeds the maximum allowed limit of 15 MB. Please select a smaller file.`,
+        confirmText: 'Understood'
+      });
       return;
     }
 
@@ -3160,8 +3361,9 @@ export default function PDCASheet({
     });
   };
 
-  // Remove individual evidence image
+  // Remove individual evidence image (Admin only)
   const handleRemoveEvidenceImage = (imageId) => {
+    if (!isAdmin) return;
     const { rowIndex, field } = evidenceModal;
     if (rowIndex === null || !field) return;
 
@@ -3258,6 +3460,7 @@ export default function PDCASheet({
   };
 
   const handleRemoveFile = (rowIndex, field, nameField, typeField) => {
+    if (!isAdmin) return;
     setRows((prev) => {
       const updated = [...prev];
       const imagesField = field === 'imageBefore' ? 'imagesBefore' : 'imagesAfter';
@@ -3322,7 +3525,7 @@ export default function PDCASheet({
   };
 
   const handleDeleteRow = (rowIndex) => {
-    if (!canEditEntireSheet) return;
+    if (!isAdmin) return;
     if (rows.length <= 1) {
       setRows([createEmptyRow()]);
       return;
@@ -3416,7 +3619,7 @@ export default function PDCASheet({
     return { total, inProgress, done, delay, notStarted };
   }, [rows]);
 
-  const totalCols = canEditEntireSheet ? 22 : 21;
+  const totalCols = canEditEntireSheet ? 23 : 22;
 
   const canUserEditActionColsForModalRow = Boolean(
     !readOnly && (
@@ -3502,8 +3705,8 @@ export default function PDCASheet({
             {/* Send Mail Button */}
             <button
               type="button"
-              onClick={() => setIsSendMailOpen(true)}
-              title="Send PDCA report by email"
+              onClick={handleSendMailClick}
+              title="Send PDCA report by email (Requires sheet to be saved and mandatory columns filled)"
               className="flex items-center gap-1.5 px-3 py-1 rounded-lg border border-blue-600 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold text-xs shadow-2xs cursor-pointer transition-colors flex-shrink-0"
             >
               <Mail className="w-3.5 h-3.5 text-blue-600" />
@@ -3522,6 +3725,21 @@ export default function PDCASheet({
               <BarChart3 className="w-3.5 h-3.5 text-indigo-600" />
               <span>PDCA Graph</span>
             </button>
+            {/* Done Rows Visibility Toggle Button */}
+            {liveCumulativeStats.done > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowDoneRows(prev => !prev)}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg border text-xs font-semibold transition-colors cursor-pointer flex-shrink-0 ${showDoneRows
+                  ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
+                  : 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'
+                  }`}
+                title={showDoneRows ? "Click to hide rows with Done status from sheet" : "Click to view rows with Done status in sheet"}
+              >
+                {showDoneRows ? <EyeOff className="w-3.5 h-3.5 text-emerald-600" /> : <Eye className="w-3.5 h-3.5 text-slate-500" />}
+                <span>{showDoneRows ? 'Hide Done Rows' : `Done Rows Hidden (${liveCumulativeStats.done})`}</span>
+              </button>
+            )}
             {headerInfo.auditNo ? (
               <span className="text-slate-500 text-xs">
                 Audit No: <span className="font-semibold text-slate-700 font-mono">{headerInfo.auditNo}</span>
@@ -3584,6 +3802,7 @@ export default function PDCASheet({
             <col style={{ width: `${observationWidth}px`, minWidth: `${observationWidth}px` }} />
             <col style={{ width: '150px', minWidth: '140px' }} />
             <col style={{ width: `${rootCauseWidth}px`, minWidth: `${rootCauseWidth}px` }} />
+            <col style={{ width: `${actionTakenWidth}px`, minWidth: `${actionTakenWidth}px` }} />
             <col style={{ width: `${counterMeasureWidth}px`, minWidth: `${counterMeasureWidth}px` }} />
             <col style={{ width: '150px', minWidth: '140px' }} />
             <col style={{ width: '80px', minWidth: '75px' }} />
@@ -3710,7 +3929,7 @@ export default function PDCASheet({
 
               {/* D: Do */}
               <th
-                colSpan={5}
+                colSpan={6}
                 className="bg-white text-slate-900 font-bold border-r border-b-2 border-slate-700 py-1 px-2 text-center text-xs tracking-widest"
                 title="Do (D)"
               >
@@ -3728,7 +3947,7 @@ export default function PDCASheet({
 
               {/* A: Act */}
               <th
-                colSpan={totalCols - 20}
+                colSpan={totalCols - 21}
                 className="bg-white text-slate-900 font-bold border-r border-b-2 border-slate-700 py-1 px-2 text-center text-xs tracking-widest"
                 title="Act (A)"
               >
@@ -3750,10 +3969,10 @@ export default function PDCASheet({
                 <span>Status</span> <span className="text-red-500 font-bold">*</span>
               </th>
               <th rowSpan={2} className="py-1.5 px-1 w-[115px] min-w-[100px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px]">
-                <span>Unit</span>
+                <span>Unit</span> <span className="text-red-500 font-bold">*</span>
               </th>
               <th rowSpan={2} className="py-1.5 px-1 w-[95px] min-w-[90px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px]">
-                <span>Department</span>
+                <span>Department</span> <span className="text-red-500 font-bold">*</span>
               </th>
               <th
                 rowSpan={2}
@@ -3773,7 +3992,7 @@ export default function PDCASheet({
                 }}
                 className="py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] whitespace-nowrap transition-[width] duration-150"
               >
-                <span>Line/Area</span> <span className="text-red-500 font-bold">*</span>
+                <span>Line/Area</span>
               </th>
               <th
                 rowSpan={2}
@@ -3850,6 +4069,41 @@ export default function PDCASheet({
               <th
                 rowSpan={2}
                 style={{
+                  width: `${actionTakenWidth}px`,
+                  minWidth: `${actionTakenWidth}px`,
+                  maxWidth: `${actionTakenWidth}px`
+                }}
+                className="relative py-1.5 px-2 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] select-none"
+              >
+                <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-2">
+                  <span>Action taken</span>
+                </div>
+
+                {/* Draggable Resize Handle */}
+                <span
+                  role="separator"
+                  aria-label="Resize Action taken column width"
+                  aria-orientation="vertical"
+                  aria-valuemin={MIN_ACTION_TAKEN_WIDTH}
+                  aria-valuemax={MAX_ACTION_TAKEN_WIDTH}
+                  aria-valuenow={actionTakenWidth}
+                  tabIndex={0}
+                  title={`Drag horizontally or use arrow keys to adjust Action taken column width (${actionTakenWidth}px)`}
+                  onPointerDown={startActionTakenResize}
+                  onPointerMove={continueActionTakenResize}
+                  onPointerUp={finishActionTakenResize}
+                  onPointerCancel={finishActionTakenResize}
+                  onLostPointerCapture={finishActionTakenResize}
+                  onKeyDown={handleActionTakenResizeKeyDown}
+                  className="group absolute inset-y-0 right-0 z-20 flex w-3 cursor-col-resize touch-none items-center justify-center hover:bg-blue-100/70 active:bg-blue-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500 transition-colors"
+                >
+                  <span className="h-4 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 transition-opacity" />
+                </span>
+              </th>
+
+              <th
+                rowSpan={2}
+                style={{
                   width: `${counterMeasureWidth}px`,
                   minWidth: `${counterMeasureWidth}px`,
                   maxWidth: `${counterMeasureWidth}px`
@@ -3909,19 +4163,13 @@ export default function PDCASheet({
               </th>
               <th colSpan={4} className="py-1 px-0 border-r border-b border-[#475569] bg-[#ECEFF1] text-center">
                 <div className="text-center font-bold text-[9.5px] text-slate-700 px-1">
-                  Responsible Person Confirmation
+                  Responsible Person
                 </div>
               </th>
               <th rowSpan={2} className="py-2 px-1 w-[185px] min-w-[175px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] leading-tight select-none">
-                <div className="flex flex-col items-center justify-center gap-0.5">
-                  <div className="flex items-center justify-center gap-1 text-[10px] font-bold text-slate-800 leading-tight">
-                    <Lock className="w-3 h-3 text-slate-600 flex-shrink-0" />
-                    <span>Responsible Person Confirmation</span>
-                  </div>
-                  <div className="flex items-center justify-center gap-1 text-[8.5px] font-semibold text-slate-500 leading-tight">
-                    <Lock className="w-2.5 h-2.5 text-slate-400 flex-shrink-0" />
-                    <span>Admin / Sheet Creator only</span>
-                  </div>
+                <div className="flex items-center justify-center gap-1 text-[10px] font-bold text-slate-800 leading-tight">
+                  <Lock className="w-3 h-3 text-slate-600 flex-shrink-0" />
+                  <span>Confirmation</span>
                 </div>
               </th>
               {canEditEntireSheet && (
@@ -3939,7 +4187,7 @@ export default function PDCASheet({
                 Dept
               </th>
               <th className="py-0.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] w-[155px] min-w-[140px]">
-                Staff Name
+                <span>Staff Name</span> <span className="text-red-500 font-bold">*</span>
               </th>
               <th className="py-0.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] w-[95px] min-w-[85px]">
                 CFT
@@ -3949,8 +4197,13 @@ export default function PDCASheet({
 
           {/* Table Rows with thin bordered cells matching reference style */}
           <tbody className="bg-white">
-            {rows.map((row, idx) => {
-              const sNo = idx + 1;
+            {(() => {
+              let visibleCounter = 0;
+              const renderedRows = rows.map((row, idx) => {
+                const isDone = normalizePDCAStatus(row.status) === 'Done';
+                if (!showDoneRows && isDone) return null;
+                visibleCounter += 1;
+                const sNo = visibleCounter;
               const canEditEntireRow = canEditEntireSheet;
               const unitSelected = usesCheckboxMultiSelects
                 ? (row.units || (row.unit ? [row.unit] : [])).some(unit => PDCA_UNITS.includes(unit))
@@ -4298,6 +4551,28 @@ export default function PDCASheet({
                     </div>
                   </td>
 
+                  {/* 8b. Action taken (Auto-expanding, resizable width, vertically and horizontally centered) */}
+                  <td
+                    style={{
+                      width: `${actionTakenWidth}px`,
+                      minWidth: `${actionTakenWidth}px`,
+                      maxWidth: `${actionTakenWidth}px`
+                    }}
+                    className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-center overflow-hidden"
+                  >
+                    <div className="w-full flex items-center justify-center">
+                      <AutoResizeTextarea
+                        inputRef={(el) => registerRef(idx, 'actionTaken', el)}
+                        value={row.actionTaken || ''}
+                        readOnly={!canEditActionCols}
+                        onChange={(e) => handleCellChange(idx, 'actionTaken', e.target.value)}
+                        onKeyDown={(e) => handleKeyDown(e, idx, 'actionTaken')}
+                        placeholder={canEditActionCols ? "Action taken..." : ""}
+                        className="w-full bg-transparent border-0 outline-none p-1.5 text-base text-slate-800 text-center leading-snug whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center"
+                      />
+                    </div>
+                  </td>
+
                   {/* 9. Counter Measure (Auto-expanding, resizable width, vertically and horizontally centered) */}
                   <td
                     style={{
@@ -4475,7 +4750,7 @@ export default function PDCASheet({
                                 <span className="flex-1 text-[11px] font-semibold text-slate-800 whitespace-nowrap text-center">
                                   {rIdx + 1}) {formatDisplayDate(revDate)}
                                 </span>
-                                {(isAdmin || (canEditActionCols && rIdx >= getSavedRevisionCount(idx))) && (
+                                {isAdmin && (
                                   <button
                                     type="button"
                                     ref={(element) => {
@@ -4488,9 +4763,7 @@ export default function PDCASheet({
                                       e.stopPropagation();
                                       handleDeleteRevisedDate(idx, rIdx);
                                     }}
-                                    title={isAdmin
-                                      ? `Delete Revision ${rIdx + 1} (${formatDisplayDate(revDate)}) - Admin only`
-                                      : `Cancel Revision ${rIdx + 1} (${formatDisplayDate(revDate)})`}
+                                    title={`Delete Revision ${rIdx + 1} (${formatDisplayDate(revDate)}) - Admin only`}
                                     className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-0.5 rounded transition-colors cursor-pointer shrink-0 opacity-70 group-hover/rev:opacity-100"
                                   >
                                     <X className="w-3 h-3 stroke-[2.5]" />
@@ -4841,22 +5114,47 @@ export default function PDCASheet({
                         >
                           <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteRow(idx)}
-                          className="flex items-center justify-center w-5 h-5 shrink-0 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-400 hover:bg-rose-50 transition-all shadow-2xs cursor-pointer"
-                          title="Delete this row"
-                        >
-                          <Trash2 className="w-3.5 h-3.5 stroke-[2]" />
-                        </button>
+                        {isAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteRow(idx)}
+                            className="flex items-center justify-center w-5 h-5 shrink-0 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-400 hover:bg-rose-50 transition-all shadow-2xs cursor-pointer"
+                            title="Delete this row"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 stroke-[2]" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   )}
 
                 </tr>
               );
-            })}
-          </tbody>
+            });
+
+            if (renderedRows.filter(Boolean).length === 0) {
+              return (
+                <tr>
+                  <td colSpan={totalCols} className="py-8 text-center text-slate-500 bg-slate-50/50">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <Check className="w-8 h-8 text-emerald-600" />
+                      <span className="font-semibold text-slate-700">All rows are marked as Done and currently hidden from sheet view.</span>
+                      <span className="text-xs text-slate-500">Done status records are fully preserved in graph calculations and Excel exports.</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowDoneRows(true)}
+                        className="mt-1 px-3 py-1 text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 cursor-pointer"
+                      >
+                        Show Hidden Done Rows ({rows.filter(r => normalizePDCAStatus(r.status) === 'Done').length})
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            }
+            return renderedRows;
+          })()}
+        </tbody>
         </table>
 
         {/* Compact bottom strip */}
@@ -4928,6 +5226,7 @@ export default function PDCASheet({
         onClose={() => setEvidenceModal({ isOpen: false, rowIndex: null, field: null })}
         field={evidenceModal.field}
         readOnly={evidenceModal.field === 'imageAfter' ? !canUserEditActionColsForModalRow : !canEditEntireSheet}
+        canDelete={isAdmin}
         rowIndex={evidenceModal.rowIndex ?? 0}
         images={
           evidenceModal.rowIndex !== null && evidenceModal.field
@@ -5034,8 +5333,8 @@ export default function PDCASheet({
                   <span className="hidden sm:inline">Download</span>
                 </button>
 
-                {/* Delete Button (Only if user has edit permission for this field) */}
-                {canUserEditActionColsForSelectedImage && (
+                {/* Delete Button (Only administrators) */}
+                {isAdmin && (
                   <button
                     type="button"
                     onClick={() => {
@@ -5534,41 +5833,19 @@ export default function PDCASheet({
         onClose={() => setStaffEmployeeModal((prev) => ({ ...prev, isOpen: false }))}
       />
 
-      {/* Discard Unsaved Changes Confirmation Modal */}
-      {showDiscardModal && typeof document !== 'undefined' && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-150">
-            <div className="p-6">
-              <div className="w-12 h-12 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 mb-4 mx-auto sm:mx-0">
-                <AlertCircle className="w-6 h-6" />
-              </div>
-              <h3 className="text-base font-bold text-slate-800 text-center sm:text-left">
-                Discard unsaved changes?
-              </h3>
-              <p className="mt-2 text-xs text-slate-500 leading-relaxed text-center sm:text-left">
-                You have unsaved changes in this PDCA form. If you leave now, all unsaved edits will be discarded.
-              </p>
-            </div>
-            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex flex-col sm:flex-row-reverse items-center gap-2.5">
-              <button
-                type="button"
-                onClick={handleDiscardAndGoBack}
-                className="w-full sm:w-auto px-4 py-2 rounded-xl text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 shadow-xs cursor-pointer transition-colors"
-              >
-                Discard Changes &amp; Go Back
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowDiscardModal(false)}
-                className="w-full sm:w-auto px-4 py-2 rounded-xl text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 shadow-2xs cursor-pointer transition-colors"
-              >
-                Stay on Page
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+      {/* Upgraded PDCA Alert & Confirmation Modal */}
+      <PDCAAlertModal
+        isOpen={alertModal.isOpen}
+        onClose={() => setAlertModal((prev) => ({ ...prev, isOpen: false }))}
+        type={alertModal.type}
+        title={alertModal.title}
+        message={alertModal.message}
+        rowNumber={alertModal.rowNumber}
+        missingFields={alertModal.missingFields}
+        confirmText={alertModal.confirmText}
+        cancelText={alertModal.cancelText}
+        onConfirm={alertModal.onConfirm}
+      />
 
       {/* Send Mail Modal */}
       {(() => {

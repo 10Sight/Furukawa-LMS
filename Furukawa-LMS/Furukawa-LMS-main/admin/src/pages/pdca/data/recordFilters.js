@@ -169,6 +169,7 @@ export function canEditRecord(record, currentUser) {
 
 export const EDITABLE_RESPONSIBLE_COLUMNS = [
   'rootCause',
+  'actionTaken',
   'counterMeasure',
   'imageAfter',
   'imagesAfter',

@@ -7415,7 +7415,7 @@
         {
           "date": "",
           "shift": "",
-          "status": "",
+          "status": "Delay",
           "department": "",
           "unit": "",
           "section": "",
@@ -7436,8 +7436,8 @@
           "imageAfter": null,
           "imageAfterName": "",
           "fileTypeAfter": "image",
-          "stdDurationMin": "",
-          "responseDate": "",
+          "stdDurationMin": "22 min",
+          "responseDate": "2026-10-23",
           "noOfTimeRevised": 0,
           "responsiblePersonDept": "",
           "respUnit": "",
@@ -7454,7 +7454,17 @@
           "cftSelectedName": "",
           "cftSelectedCode": "",
           "confirmation": "",
-          "responsiblePersonConfirmation": ""
+          "responsiblePersonConfirmation": "",
+          "initialResponseDate": "2026-10-23",
+          "departments": [],
+          "units": [],
+          "revisedDates": [],
+          "respUnits": [],
+          "confirmedBy": "",
+          "instruction": "",
+          "sections": [],
+          "lineAreas": [],
+          "actionTaken": ""
         },
         {
           "date": "",
@@ -7498,7 +7508,17 @@
           "cftSelectedName": "",
           "cftSelectedCode": "",
           "confirmation": "",
-          "responsiblePersonConfirmation": ""
+          "responsiblePersonConfirmation": "",
+          "initialResponseDate": "",
+          "departments": [],
+          "units": [],
+          "revisedDates": [],
+          "respUnits": [],
+          "confirmedBy": "",
+          "instruction": "",
+          "sections": [],
+          "lineAreas": [],
+          "actionTaken": ""
         },
         {
           "date": "",
@@ -7542,7 +7562,17 @@
           "cftSelectedName": "",
           "cftSelectedCode": "",
           "confirmation": "",
-          "responsiblePersonConfirmation": ""
+          "responsiblePersonConfirmation": "",
+          "initialResponseDate": "",
+          "departments": [],
+          "units": [],
+          "revisedDates": [],
+          "respUnits": [],
+          "confirmedBy": "",
+          "instruction": "",
+          "sections": [],
+          "lineAreas": [],
+          "actionTaken": ""
         },
         {
           "date": "",
@@ -7586,7 +7616,17 @@
           "cftSelectedName": "",
           "cftSelectedCode": "",
           "confirmation": "",
-          "responsiblePersonConfirmation": ""
+          "responsiblePersonConfirmation": "",
+          "initialResponseDate": "",
+          "departments": [],
+          "units": [],
+          "revisedDates": [],
+          "respUnits": [],
+          "confirmedBy": "",
+          "instruction": "",
+          "sections": [],
+          "lineAreas": [],
+          "actionTaken": ""
         },
         {
           "date": "",
@@ -7630,7 +7670,17 @@
           "cftSelectedName": "",
           "cftSelectedCode": "",
           "confirmation": "",
-          "responsiblePersonConfirmation": ""
+          "responsiblePersonConfirmation": "",
+          "initialResponseDate": "",
+          "departments": [],
+          "units": [],
+          "revisedDates": [],
+          "respUnits": [],
+          "confirmedBy": "",
+          "instruction": "",
+          "sections": [],
+          "lineAreas": [],
+          "actionTaken": ""
         },
         {
           "date": "",
@@ -7674,7 +7724,17 @@
           "cftSelectedName": "",
           "cftSelectedCode": "",
           "confirmation": "",
-          "responsiblePersonConfirmation": ""
+          "responsiblePersonConfirmation": "",
+          "initialResponseDate": "",
+          "departments": [],
+          "units": [],
+          "revisedDates": [],
+          "respUnits": [],
+          "confirmedBy": "",
+          "instruction": "",
+          "sections": [],
+          "lineAreas": [],
+          "actionTaken": ""
         },
         {
           "date": "",
@@ -7718,7 +7778,17 @@
           "cftSelectedName": "",
           "cftSelectedCode": "",
           "confirmation": "",
-          "responsiblePersonConfirmation": ""
+          "responsiblePersonConfirmation": "",
+          "initialResponseDate": "",
+          "departments": [],
+          "units": [],
+          "revisedDates": [],
+          "respUnits": [],
+          "confirmedBy": "",
+          "instruction": "",
+          "sections": [],
+          "lineAreas": [],
+          "actionTaken": ""
         },
         {
           "date": "",
@@ -7762,7 +7832,17 @@
           "cftSelectedName": "",
           "cftSelectedCode": "",
           "confirmation": "",
-          "responsiblePersonConfirmation": ""
+          "responsiblePersonConfirmation": "",
+          "initialResponseDate": "",
+          "departments": [],
+          "units": [],
+          "revisedDates": [],
+          "respUnits": [],
+          "confirmedBy": "",
+          "instruction": "",
+          "sections": [],
+          "lineAreas": [],
+          "actionTaken": ""
         },
         {
           "date": "",
@@ -7806,7 +7886,17 @@
           "cftSelectedName": "",
           "cftSelectedCode": "",
           "confirmation": "",
-          "responsiblePersonConfirmation": ""
+          "responsiblePersonConfirmation": "",
+          "initialResponseDate": "",
+          "departments": [],
+          "units": [],
+          "revisedDates": [],
+          "respUnits": [],
+          "confirmedBy": "",
+          "instruction": "",
+          "sections": [],
+          "lineAreas": [],
+          "actionTaken": ""
         },
         {
           "date": "",
@@ -7850,7 +7940,17 @@
           "cftSelectedName": "",
           "cftSelectedCode": "",
           "confirmation": "",
-          "responsiblePersonConfirmation": ""
+          "responsiblePersonConfirmation": "",
+          "initialResponseDate": "",
+          "departments": [],
+          "units": [],
+          "revisedDates": [],
+          "respUnits": [],
+          "confirmedBy": "",
+          "instruction": "",
+          "sections": [],
+          "lineAreas": [],
+          "actionTaken": ""
         }
       ]
     },
@@ -8538,6 +8638,14 @@
     }
   ],
   "auditLogs": [
+    {
+      "id": 1792838001610,
+      "pdcaRecordId": "PDCA-9245d001-57fb-45a6-b618-84eecedd359f",
+      "action": "SAVE_SHEET",
+      "actor": "Joy Dastidar (ST080014)",
+      "details": "Saved sheet with 10 rows",
+      "createdAt": "2026-10-24T10:33:21.610Z"
+    },
     {
       "id": 1792824156701,
       "pdcaRecordId": "PDCA-LPA-ASSEMBLY-Bawal-1792823708112",

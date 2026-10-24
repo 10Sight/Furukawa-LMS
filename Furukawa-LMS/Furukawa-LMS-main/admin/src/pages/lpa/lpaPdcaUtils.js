@@ -174,6 +174,7 @@ export function createEmptyPdcaRow(customDefaults = {}) {
     imageBeforeName: customDefaults.imageBeforeName || '',
     fileTypeBefore: customDefaults.fileTypeBefore || 'image',
     rootCause: customDefaults.rootCause || '',
+    actionTaken: customDefaults.actionTaken || '',
     counterMeasure: customDefaults.counterMeasure || '',
     imageAfter: customDefaults.imageAfter || null,
     imageAfterName: customDefaults.imageAfterName || '',

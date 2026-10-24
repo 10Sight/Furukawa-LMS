@@ -81,16 +81,17 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
     { key: 'observation', width: 35 },     // I
     { key: 'imageBefore', width: 22 },     // J
     { key: 'rootCause', width: 25 },       // K
-    { key: 'counterMeasure', width: 28 },   // L
-    { key: 'imageAfter', width: 22 },      // M
-    { key: 'stdDurationMin', width: 18 },   // N (Std. Duration in min)
-    { key: 'responseDate', width: 14 },    // O
-    { key: 'noOfTimeRevised', width: 18 }, // P (No. of time Revised)
-    { key: 'respUnit', width: 12 },        // Q (Unit - Section C)
-    { key: 'respDept', width: 14 },        // R
-    { key: 'respStaff', width: 24 },       // S
-    { key: 'cft', width: 16 },             // T
-    { key: 'remarks', width: 30 },         // U
+    { key: 'actionTaken', width: 28 },     // L
+    { key: 'counterMeasure', width: 28 },  // M
+    { key: 'imageAfter', width: 22 },      // N
+    { key: 'stdDurationMin', width: 18 },  // O (Std. Duration in min)
+    { key: 'responseDate', width: 14 },    // P
+    { key: 'noOfTimeRevised', width: 18 }, // Q (No. of time Revised)
+    { key: 'respUnit', width: 12 },        // R (Unit - Section C)
+    { key: 'respDept', width: 14 },        // S
+    { key: 'respStaff', width: 24 },       // T
+    { key: 'cft', width: 16 },             // U
+    { key: 'remarks', width: 30 },         // V
   ];
 
   // Helper for applying cell border & font
@@ -120,7 +121,7 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
   };
 
   // Row 1: Main Title
-  worksheet.mergeCells('A1:U1');
+  worksheet.mergeCells('A1:V1');
   const titleCell = worksheet.getCell('A1');
   titleCell.value = `${topicTitle.toUpperCase()} ${id ? `[${id}]` : ''} ${plant ? `· Plant: ${plant}` : ''}`.trim();
   applyCellStyle(titleCell, { bg: 'FFFFFF', bold: true, size: 16, align: 'center', color: '1E293B' });
@@ -132,18 +133,18 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
   r2Label1.value = '会議名 (Meeting)';
   applyCellStyle(r2Label1, { bg: 'FFFF99', bold: true, size: 10, align: 'center' });
 
-  worksheet.mergeCells('C2:M2');
+  worksheet.mergeCells('C2:N2');
   const r2Val1 = worksheet.getCell('C2');
   r2Val1.value = topicTitle;
   applyCellStyle(r2Val1, { bg: 'FFFFFF', bold: true, size: 10, align: 'left' });
 
-  worksheet.mergeCells('N2:O2');
-  const r2Label2 = worksheet.getCell('N2');
+  worksheet.mergeCells('O2:P2');
+  const r2Label2 = worksheet.getCell('O2');
   r2Label2.value = '作成者 (Prepared By)';
   applyCellStyle(r2Label2, { bg: 'FFFF99', bold: true, size: 10, align: 'center' });
 
-  worksheet.mergeCells('P2:U2');
-  const r2Val2 = worksheet.getCell('P2');
+  worksheet.mergeCells('Q2:V2');
+  const r2Val2 = worksheet.getCell('Q2');
   r2Val2.value = preparedBy;
   applyCellStyle(r2Val2, { bg: 'FFFFFF', bold: false, size: 10, align: 'left' });
   worksheet.getRow(2).height = 24;
@@ -154,18 +155,18 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
   r3Label1.value = '出席者 (Attendees)';
   applyCellStyle(r3Label1, { bg: 'FFFF99', bold: true, size: 10, align: 'center' });
 
-  worksheet.mergeCells('C3:M3');
+  worksheet.mergeCells('C3:N3');
   const r3Val1 = worksheet.getCell('C3');
   r3Val1.value = attendees;
   applyCellStyle(r3Val1, { bg: 'FFFFFF', bold: false, size: 10, align: 'left' });
 
-  worksheet.mergeCells('N3:O3');
-  const r3Label2 = worksheet.getCell('N3');
+  worksheet.mergeCells('O3:P3');
+  const r3Label2 = worksheet.getCell('O3');
   r3Label2.value = '議事録No (Audit No)';
   applyCellStyle(r3Label2, { bg: 'FFFF99', bold: true, size: 10, align: 'center' });
 
-  worksheet.mergeCells('P3:U3');
-  const r3Val2 = worksheet.getCell('P3');
+  worksheet.mergeCells('Q3:V3');
+  const r3Val2 = worksheet.getCell('Q3');
   r3Val2.value = auditNo;
   applyCellStyle(r3Val2, { bg: 'FFFFFF', bold: false, size: 10, align: 'left' });
   worksheet.getRow(3).height = 24;
@@ -179,17 +180,17 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
   pCell.value = 'P (PLAN)';
   applyCellStyle(pCell, { bg: 'E2E8F0', bold: true, size: 12, align: 'center', color: '1E3A8A' });
 
-  worksheet.mergeCells('L4:P4');
+  worksheet.mergeCells('L4:Q4');
   const dCell = worksheet.getCell('L4');
   dCell.value = 'D (DO)';
   applyCellStyle(dCell, { bg: 'E2E8F0', bold: true, size: 12, align: 'center', color: '1E3A8A' });
 
-  worksheet.mergeCells('Q4:T4');
-  const cCell = worksheet.getCell('Q4');
+  worksheet.mergeCells('R4:U4');
+  const cCell = worksheet.getCell('R4');
   cCell.value = 'C (CHECK)';
   applyCellStyle(cCell, { bg: 'E2E8F0', bold: true, size: 12, align: 'center', color: '1E3A8A' });
 
-  const aCell = worksheet.getCell('U4');
+  const aCell = worksheet.getCell('V4');
   aCell.value = 'A (ACT)';
   applyCellStyle(aCell, { bg: 'E2E8F0', bold: true, size: 12, align: 'center', color: '1E3A8A' });
   worksheet.getRow(4).height = 24;
@@ -200,20 +201,21 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
     'Shift *',
     'S.No',
     'Status *',
-    'Unit',
-    'Department',
+    'Unit *',
+    'Department *',
     'Section',
     'Line / Area',
     'Observation *',
     'Image Before',
     'Root Cause',
+    'Action taken',
     'Counter Measure',
     'Image After',
     'Std. Duration in min',
     'Response Date',
     'No. of time Revised',
-    'Responsible Person Confirmation', '', '', '', // Q, R, S, T merged across 4 subcolumns
-    '(Responsible person instructions, etc.)'
+    'Responsible Person', '', '', '', // R, S, T, U merged across 4 subcolumns
+    'Confirmation'
   ];
 
   const r5 = worksheet.getRow(5);
@@ -223,23 +225,23 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
     cell.value = hdr;
     applyCellStyle(cell, { bg: 'ECEFF1', bold: true, size: 10, align: 'center', color: '1E293B' });
   });
-  worksheet.mergeCells('Q5:T5');
+  worksheet.mergeCells('R5:U5');
 
   // Row 6: Subheaders for Responsible Person (Unit / Dept / Staff / CFT)
   const r6 = worksheet.getRow(6);
   r6.height = 20;
-  for (let c = 1; c <= 21; c++) {
+  for (let c = 1; c <= 22; c++) {
     const cell = r6.getCell(c);
     applyCellStyle(cell, { bg: 'ECEFF1', bold: true, size: 9, align: 'center', color: '334155' });
   }
   // Set subheader labels
-  r6.getCell(17).value = 'Unit';
-  r6.getCell(18).value = 'Dept';
-  r6.getCell(19).value = 'Staff Name';
-  r6.getCell(20).value = 'CFT';
+  r6.getCell(18).value = 'Unit';
+  r6.getCell(19).value = 'Dept';
+  r6.getCell(20).value = 'Staff Name *';
+  r6.getCell(21).value = 'CFT';
 
   // Merge rows 5 and 6 for non-subdivided columns
-  ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'U'].forEach(col => {
+  ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'V'].forEach(col => {
     worksheet.mergeCells(`${col}5:${col}6`);
   });
 
@@ -347,30 +349,35 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
     cellRoot.value = r.rootCause || '';
     applyCellStyle(cellRoot, { align: 'left', size: 9 });
 
-    // L: Counter Measure
-    const cellCounter = rowObj.getCell(12);
+    // L: Action taken
+    const cellAction = rowObj.getCell(12);
+    cellAction.value = r.actionTaken || '';
+    applyCellStyle(cellAction, { align: 'left', size: 9 });
+
+    // M: Counter Measure
+    const cellCounter = rowObj.getCell(13);
     cellCounter.value = r.counterMeasure || '';
     applyCellStyle(cellCounter, { align: 'left', size: 9 });
 
-    // M: Image After (placeholder text or image embedded below)
-    const cellImgAfter = rowObj.getCell(13);
+    // N: Image After (placeholder text or image embedded below)
+    const cellImgAfter = rowObj.getCell(14);
     cellImgAfter.value = '';
     applyCellStyle(cellImgAfter, { align: 'center', size: 8, color: '64748B' });
 
-    // N: Std. Duration in min
-    const cellDuration = rowObj.getCell(14);
+    // O: Std. Duration in min
+    const cellDuration = rowObj.getCell(15);
     const durRaw = r.stdDurationMin !== undefined && r.stdDurationMin !== null ? String(r.stdDurationMin) : (r.stdDuration ? String(r.stdDuration) : '');
     const durNum = Number(durRaw.replace(/[^0-9.]/g, ''));
     cellDuration.value = !isNaN(durNum) && durRaw.trim() !== '' ? `${durNum} min` : '';
     applyCellStyle(cellDuration, { align: 'center', size: 9 });
 
-    // O: Response Date
-    const cellRespDate = rowObj.getCell(15);
+    // P: Response Date
+    const cellRespDate = rowObj.getCell(16);
     cellRespDate.value = r.responseDate || '';
     applyCellStyle(cellRespDate, { align: 'center', size: 9 });
 
-    // P: No. of time Revised
-    const cellRevised = rowObj.getCell(16);
+    // Q: No. of time Revised
+    const cellRevised = rowObj.getCell(17);
     if (Array.isArray(r.revisedDates) && r.revisedDates.length > 0) {
       cellRevised.value = r.revisedDates.map((item, i) => {
         if (typeof item === 'string') return `${i + 1}. ${item}`;
@@ -383,8 +390,8 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
     }
     applyCellStyle(cellRevised, { align: 'center', size: 9 });
 
-    // Q: Unit (Section C / Responsible Person Confirmation)
-    const cellUnitC = rowObj.getCell(17);
+    // R: Unit (Section C / Responsible Person)
+    const cellUnitC = rowObj.getCell(18);
     cellUnitC.value = r.respUnit || r.responsiblePersonUnit || '';
     applyCellStyle(cellUnitC, { align: 'center', size: 9 });
     cellUnitC.dataValidation = {
@@ -393,23 +400,23 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
       formulae: [unitListStr]
     };
 
-    // R: Responsible Person Dept
-    const cellRespDept = rowObj.getCell(18);
+    // S: Responsible Person Dept
+    const cellRespDept = rowObj.getCell(19);
     cellRespDept.value = r.responsiblePersonDept || r.department || '';
     applyCellStyle(cellRespDept, { align: 'center', size: 9 });
 
-    // S: Staff Employee
-    const cellStaff = rowObj.getCell(19);
+    // T: Staff Employee
+    const cellStaff = rowObj.getCell(20);
     cellStaff.value = r.staffEmployee || r.responsiblePersonConfirmation || '';
     applyCellStyle(cellStaff, { align: 'left', size: 9 });
 
-    // T: CFT
-    const cellCft = rowObj.getCell(20);
+    // U: CFT
+    const cellCft = rowObj.getCell(21);
     cellCft.value = r.cftTopic || r.cftSelectedName || '';
     applyCellStyle(cellCft, { align: 'center', size: 9 });
 
-    // U: Responsible Person Instruction / Confirmation
-    const cellRemarks = rowObj.getCell(21);
+    // V: Confirmation (Section A)
+    const cellRemarks = rowObj.getCell(22);
     const confVal = r.confirmation || (r.responsiblePersonConfirmation === 'Confirmed' || r.responsiblePersonConfirmation === 'Not - Confirmed' || r.responsiblePersonConfirmation === 'Not-Confirmed' ? r.responsiblePersonConfirmation : '');
     const otherRemarks = r.instruction || (r.responsiblePersonConfirmation && r.responsiblePersonConfirmation !== 'Confirmed' && r.responsiblePersonConfirmation !== 'Not - Confirmed' && r.responsiblePersonConfirmation !== 'Not-Confirmed' ? r.responsiblePersonConfirmation : (r.remarks || ''));
     const confirmedByStr = r.confirmedBy ? ` (${r.confirmedBy})` : '';
@@ -441,7 +448,7 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
       cellImgBefore.value = '-';
     }
 
-    // Embed After Image if available (Column M is index 13, so 0-based col is 12.1)
+    // Embed After Image if available (Column N is index 14, so 0-based col is 13.1)
     const afterUrl = r.imageAfter || (Array.isArray(r.imagesAfter) && r.imagesAfter[0]?.url);
     if (afterUrl) {
       try {
@@ -452,7 +459,7 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
             extension: imgData.extension
           });
           worksheet.addImage(imageId, {
-            tl: { col: 12.1, row: rowNum - 1 + 0.1 },
+            tl: { col: 13.1, row: rowNum - 1 + 0.1 },
             ext: { width: 110, height: 75 },
             editAs: 'oneCell'
           });

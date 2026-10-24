@@ -217,8 +217,8 @@ export default function PDCATable({
                       <Copy className="w-4 h-4" />
                     </button>
 
-                    {/* Delete - Only visible to record creator */}
-                    {isRecordCreator(row, currentUser) && (
+                    {/* Delete - Only visible to administrators */}
+                    {Boolean(currentUser?.role === 'admin' || currentUser?.isAdmin) && (
                       <button
                         onClick={() => handleDeleteClick(row.id)}
                         title="Delete"

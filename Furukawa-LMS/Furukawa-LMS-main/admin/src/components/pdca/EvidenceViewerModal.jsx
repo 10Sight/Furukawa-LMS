@@ -24,6 +24,7 @@ export default function EvidenceViewerModal({
   rowIndex = 0,
   images = [],
   readOnly = false,
+  canDelete = false,
   onAddImages,
   onRemoveImage,
   onReplaceImage,
@@ -389,8 +390,8 @@ export default function EvidenceViewerModal({
                               </button>
                             </div>
 
-                            {/* Delete Button - Only if not read-only */}
-                            {!readOnly && (
+                            {/* Delete Button - Only if not read-only and user has delete permission (admin only) */}
+                            {!readOnly && canDelete && (
                               <button
                                 type="button"
                                 onClick={() => setConfirmDeleteId(img.id)}

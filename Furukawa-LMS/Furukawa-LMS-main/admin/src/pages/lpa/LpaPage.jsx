@@ -331,8 +331,8 @@ function LpaPageContent({ viewContext }) {
   };
   const deleteWorkbook = async record => {
     if (!record.id || requestInFlight.current) return;
-    if (!canEditRecord(record, effectiveAuthUser)) {
-      setMessage({ error: true, text: 'You do not have permission to delete this LPA record. Only the creator or an admin can delete it.' });
+    if (!isAdmin) {
+      setMessage({ error: true, text: 'Only administrators have permission to delete LPA records.' });
       return;
     }
     if (!confirmFormDeletion(`${record.name} and all its saved worksheets`)) return;
@@ -816,9 +816,8 @@ function LpaPageContent({ viewContext }) {
   };
 
   const handleDeletePdcaSheet = (sheet) => {
-    const canDelete = isAdmin || isRecordCreator(sheet, effectiveAuthUser);
-    if (!canDelete) {
-      alert('Only administrators or the sheet creator are authorized to delete this PDCA sheet.');
+    if (!isAdmin) {
+      alert('Only administrators are authorized to delete this PDCA sheet.');
       return;
     }
     if (!confirm(`Are you sure you want to delete "${sheet.title}"?`)) return;
@@ -1283,7 +1282,7 @@ function LpaPageContent({ viewContext }) {
                                   >
                                     <Eye size={14} /> Open
                                   </button>
-                                  {(isAdmin || isRecordCreator(sh, effectiveAuthUser)) && (
+                                  {isAdmin && (
                                     <button
                                       type="button"
                                       onClick={() => handleDeletePdcaSheet(sh)}
@@ -1427,7 +1426,7 @@ function LpaPageContent({ viewContext }) {
                             <td className="px-4 py-4 text-slate-700">{secVal}</td>
                             <td className="px-4 py-4 text-slate-700">{lineVal}</td>
                             <td className="px-4 py-4 text-right">
-                              {record.id && canEditRecord(record, authUser) ? (
+                              {record.id && isAdmin ? (
                                 <button
                                   type="button"
                                   disabled={busy}

@@ -168,11 +168,12 @@ export default function DashboardPage() {
     handleUpdatePDCA(item);
     revealSavedForm(item);
   };
+  const isUserAdmin = Boolean(userContext?.user?.role === 'admin' || userContext?.user?.isAdmin);
   const requestDeletePDCA = id => {
     const item = data.find(record => String(record.id) === String(id));
     if (!item) return;
-    if (!isRecordCreator(item, userContext?.user)) {
-      showToast('Only the record creator can delete this PDCA record.');
+    if (!isUserAdmin) {
+      showToast('Only administrators have access to delete PDCA records.');
       return;
     }
     setDeleteError('');
@@ -180,8 +181,8 @@ export default function DashboardPage() {
   };
   const confirmDeletePDCA = () => {
     if (!deleteTarget) return;
-    if (!isRecordCreator(deleteTarget, userContext?.user)) {
-      setDeleteError('Only the record creator can delete this PDCA record.');
+    if (!isUserAdmin) {
+      setDeleteError('Only administrators have access to delete PDCA records.');
       return;
     }
     try {

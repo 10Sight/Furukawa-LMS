@@ -12,8 +12,7 @@ export const LPA_LEVEL_OPTIONS = [
     title: 'Level 3',
     badge: 'L3',
     freqText: 'Level 3',
-    levelsIncluded: ['L3'],
-    columnsDesc: 'Shift A / Shift B check'
+    levelsIncluded: ['L3']
   },
   {
     id: 'L2',
@@ -22,8 +21,7 @@ export const LPA_LEVEL_OPTIONS = [
     title: 'Level 2',
     badge: 'L2',
     freqText: 'Level 2',
-    levelsIncluded: ['L2'],
-    columnsDesc: 'Fetches same-day L3 Shift A & B'
+    levelsIncluded: ['L2']
   },
   {
     id: 'L1',
@@ -32,8 +30,7 @@ export const LPA_LEVEL_OPTIONS = [
     title: 'Level 1',
     badge: 'L1',
     freqText: 'Level 1',
-    levelsIncluded: ['L1'],
-    columnsDesc: 'Fetches same-day L2 & L3 shifts'
+    levelsIncluded: ['L1']
   }
 ];
 
@@ -252,39 +249,34 @@ export default function CreateLpaModal({
                   <div
                     key={lvl.id}
                     onClick={() => handleSelectLevel(lvl.id)}
-                    className={`relative p-2.5 rounded-xl border-2 transition-all cursor-pointer select-none flex flex-col justify-between ${isSelected
+                    className={`relative px-3 py-2.5 rounded-xl border-2 transition-all cursor-pointer select-none flex items-center justify-between ${isSelected
                         ? 'border-blue-600 bg-blue-50/60 shadow-xs ring-1 ring-blue-500/25'
                         : 'border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50/60'
                       }`}
                   >
-                    <div className="flex items-center justify-between gap-1 mb-1">
-                      <div className="flex items-center gap-1.5">
-                        <div
-                          className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center transition-colors ${isSelected
-                              ? 'bg-blue-600 border-blue-600 text-white'
-                              : 'border-slate-300 bg-white'
-                            }`}
-                        >
-                          {isSelected && <Check size={10} strokeWidth={3} />}
-                        </div>
-                        <span className="font-extrabold text-xs text-slate-900">
-                          {lvl.title}
-                        </span>
-                      </div>
-                      <span
-                        className={`text-[9px] font-bold px-1.5 py-0.2 rounded uppercase tracking-wider ${lvl.id === 'L3'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : lvl.id === 'L2'
-                              ? 'bg-blue-100 text-blue-800'
-                              : 'bg-purple-100 text-purple-800'
+                    <div className="flex items-center gap-1.5">
+                      <div
+                        className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center transition-colors ${isSelected
+                            ? 'bg-blue-600 border-blue-600 text-white'
+                            : 'border-slate-300 bg-white'
                           }`}
                       >
-                        {lvl.badge}
+                        {isSelected && <Check size={10} strokeWidth={3} />}
+                      </div>
+                      <span className="font-extrabold text-xs text-slate-900">
+                        {lvl.title}
                       </span>
                     </div>
-                    <div className="text-[10px] text-slate-600 font-medium">
-                      {lvl.columnsDesc}
-                    </div>
+                    <span
+                      className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${lvl.id === 'L3'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : lvl.id === 'L2'
+                            ? 'bg-blue-100 text-blue-800'
+                            : 'bg-purple-100 text-purple-800'
+                        }`}
+                    >
+                      {lvl.badge}
+                    </span>
                   </div>
                 );
               })}

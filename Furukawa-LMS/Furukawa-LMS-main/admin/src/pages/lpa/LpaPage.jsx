@@ -331,7 +331,7 @@ function LpaPageContent({ viewContext }) {
   };
   const deleteWorkbook = async record => {
     if (!record.id || requestInFlight.current) return;
-    if (!canEditRecord(record, authUser)) {
+    if (!canEditRecord(record, effectiveAuthUser)) {
       setMessage({ error: true, text: 'You do not have permission to delete this LPA record. Only the creator or an admin can delete it.' });
       return;
     }
@@ -339,7 +339,7 @@ function LpaPageContent({ viewContext }) {
     requestInFlight.current = true;
     setBusy(true);
     try {
-      await deleteLPAWorkbook(userId, record.id);
+      await deleteLPAWorkbook(effectiveAuthUser?.id || effectiveAuthUser?._id || userId, record.id);
       setRecords(previous => previous.filter(item => item.id !== record.id));
       try { localStorage.removeItem(draftKey(record.id)); } catch { /* The saved workbook has already been removed. */ }
       if (editor?.id === record.id) { setEditor(null); setDirty(false); }

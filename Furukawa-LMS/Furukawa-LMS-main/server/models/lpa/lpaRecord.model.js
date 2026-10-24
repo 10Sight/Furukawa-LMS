@@ -926,13 +926,28 @@ export class LpaRecord {
 
     if (dbActive) {
       try {
+        const [rows] = await executeQuery(
+          "SELECT id FROM lpa_records WHERE recordId = ? OR id = ?",
+          [idStr, isNaN(Number(idStr)) ? -1 : Number(idStr)]
+        );
+        const dbId = rows?.[0]?.id;
+        if (dbId) {
+          try { await executeQuery("DELETE FROM lpa_record_auditors WHERE recordId = ?", [dbId]); } catch (e) {
+            logger.warn("Deleting lpa_record_auditors failed:", e.message);
+          }
+          try { await executeQuery("DELETE FROM lpa_record_observations WHERE recordId = ?", [dbId]); } catch (e) {
+            logger.warn("Deleting lpa_record_observations failed:", e.message);
+          }
+          try { await executeQuery("DELETE FROM lpa_record_revisions WHERE recordId = ?", [dbId]); } catch (e) {
+            logger.warn("Deleting lpa_record_revisions failed:", e.message);
+          }
+        }
         await executeQuery("DELETE FROM lpa_records WHERE recordId = ? OR id = ?", [
           idStr,
           isNaN(Number(idStr)) ? -1 : Number(idStr)
         ]);
       } catch (err) {
-        logger.error("Failed deleting lpa_record from DB:", err.message);
-        throw err;
+        logger.error("Failed deleting lpa_record from DB, proceeding with disk store removal:", err.message);
       }
     }
 

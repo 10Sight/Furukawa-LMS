@@ -159,8 +159,8 @@ export const DEFAULT_ROOT_CAUSE_WIDTH = 135;
 export const MIN_ROOT_CAUSE_WIDTH = 95;
 export const MAX_ROOT_CAUSE_WIDTH = 550;
 
-export const DEFAULT_ACTION_TAKEN_WIDTH = 135;
-export const MIN_ACTION_TAKEN_WIDTH = 95;
+export const DEFAULT_ACTION_TAKEN_WIDTH = 150;
+export const MIN_ACTION_TAKEN_WIDTH = 100;
 export const MAX_ACTION_TAKEN_WIDTH = 550;
 
 export const DEFAULT_COUNTER_MEASURE_WIDTH = 145;
@@ -4076,19 +4076,19 @@ export default function PDCASheet({
                 className="relative py-1.5 px-2 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] select-none"
               >
                 <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-2">
-                  <span>Action taken</span>
+                  <span>Corrective Action</span>
                 </div>
 
                 {/* Draggable Resize Handle */}
                 <span
                   role="separator"
-                  aria-label="Resize Action taken column width"
+                  aria-label="Resize Corrective Action column width"
                   aria-orientation="vertical"
                   aria-valuemin={MIN_ACTION_TAKEN_WIDTH}
                   aria-valuemax={MAX_ACTION_TAKEN_WIDTH}
                   aria-valuenow={actionTakenWidth}
                   tabIndex={0}
-                  title={`Drag horizontally or use arrow keys to adjust Action taken column width (${actionTakenWidth}px)`}
+                  title={`Drag horizontally or use arrow keys to adjust Corrective Action column width (${actionTakenWidth}px)`}
                   onPointerDown={startActionTakenResize}
                   onPointerMove={continueActionTakenResize}
                   onPointerUp={finishActionTakenResize}
@@ -4567,7 +4567,7 @@ export default function PDCASheet({
                         readOnly={!canEditActionCols}
                         onChange={(e) => handleCellChange(idx, 'actionTaken', e.target.value)}
                         onKeyDown={(e) => handleKeyDown(e, idx, 'actionTaken')}
-                        placeholder={canEditActionCols ? "Action taken..." : ""}
+                        placeholder={canEditActionCols ? "Corrective action..." : ""}
                         className="w-full bg-transparent border-0 outline-none p-1.5 text-base text-slate-800 text-center leading-snug whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center"
                       />
                     </div>

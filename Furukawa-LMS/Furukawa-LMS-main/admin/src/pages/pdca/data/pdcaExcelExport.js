@@ -208,7 +208,7 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
     'Observation *',
     'Image Before',
     'Root Cause',
-    'Action taken',
+    'Corrective Action',
     'Counter Measure',
     'Image After',
     'Std. Duration in min',

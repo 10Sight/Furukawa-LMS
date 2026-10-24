@@ -336,12 +336,11 @@ export class LpaRecord {
             updatedAt: r.updatedAt
           };
         }
-        // Email selection validates against the DB when connected. A disk
-        // fallback there could resurrect a workbook deleted from the DB.
-        if (authoritative) return null;
       } catch (err) {
-        if (authoritative) throw err;
-        logger.warn("Querying lpa_record by ID failed:", err.message);
+        logger.warn("Querying lpa_record by ID failed, falling back to disk store:", err.message);
+        if (err.message && err.message.includes("lpa_records")) {
+          initLpaTables().catch(() => {});
+        }
       }
     }
 

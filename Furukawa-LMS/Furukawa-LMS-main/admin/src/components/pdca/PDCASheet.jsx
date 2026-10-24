@@ -5567,9 +5567,9 @@ export default function PDCASheet({
         const currentPdcaSheet = {
           id: topic?.id || topic?.recordId || `PDCA-${Date.now()}`,
           source: isLpaObservationSheet ? 'lpa' : (topic?.source || 'pdca'),
-          topic: headerInfo?.topicName || topic?.topic || (topic?.section === 'cc' ? 'C&C - LPA Observation (PDCA)' : 'Assembly - LPA Observation (PDCA)'),
-          title: headerInfo?.topicName || topic?.topic || (topic?.section === 'cc' ? 'C&C - LPA Observation (PDCA)' : 'Assembly - LPA Observation (PDCA)'),
-          section: topic?.section || (String(headerInfo?.topicName || topic?.topic || '').toLowerCase().includes('c&c') ? 'cc' : 'assembly'),
+          topic: headerInfo?.topicName || topic?.topic || (isLpaObservationSheet ? (topic?.section === 'cc' ? 'C&C - LPA Observation (PDCA)' : 'Assembly - LPA Observation (PDCA)') : 'PDCA Sheet'),
+          title: headerInfo?.topicName || topic?.topic || (isLpaObservationSheet ? (topic?.section === 'cc' ? 'C&C - LPA Observation (PDCA)' : 'Assembly - LPA Observation (PDCA)') : 'PDCA Sheet'),
+          section: isLpaObservationSheet ? (topic?.section || (String(headerInfo?.topicName || topic?.topic || '').toLowerCase().includes('c&c') ? 'cc' : 'assembly')) : '',
           plant: topic?.plant || topic?.unit || 'Bawal',
           unit: topic?.plant || topic?.unit || 'Bawal',
           date: formDate,
@@ -5589,7 +5589,7 @@ export default function PDCASheet({
               auditDate: formDate,
               unit: currentPdcaSheet.unit,
               section: currentPdcaSheet.section,
-              sectionName: currentPdcaSheet.section === 'cc' ? 'C&C' : 'Assembly',
+              sectionName: isLpaObservationSheet ? (currentPdcaSheet.section === 'cc' ? 'C&C' : 'Assembly') : '',
               topicName: currentPdcaSheet.title,
               auditNo: headerInfo?.auditNo
             }}

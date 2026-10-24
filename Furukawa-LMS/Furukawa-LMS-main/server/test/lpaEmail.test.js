@@ -182,8 +182,9 @@ test("PDCA-only email sends the selected PDCA sheet without requiring an LPA wor
 
   assert.equal(res.statusCode, 200);
   assert.equal(lpaLookupCount, 0);
-  assert.equal(sentSubject, "Assembly PDCA Sheet");
+  assert.equal(sentSubject, "PDCA Sheet");
   assert.match(sentHtml, /sheet=pdca-9/);
+  assert.match(sentHtml, /Saved PDCA observation/);
   assert.doesNotMatch(sentHtml, /viewWorkbookId=/);
   assert.equal(res.responseBody.data.links.assembly, undefined);
   assert.equal(res.responseBody.data.links.pdca, "https://portal.example/cms/pdca?sheet=pdca-9");
@@ -233,6 +234,11 @@ test("email endpoint rejects an Assembly workbook that no longer exists", async 
 test("email endpoint reports provider rejection without claiming success", async () => {
   const sendHandler = createSendLpaEmailHandler({
     sendMailFn: async to => ({ accepted: [to[0]], rejected: [to[1]], responseCode: 550 }),
+    getLpaRecord: async () => ({
+      section: "cc",
+      sheets: [{ rows: [{ value: 1 }] }, { rows: [{ value: 1 }] }]
+    }),
+    getPdcaRecord: async id => ({ id, sheet: { rows: [{ observation: "Saved observation" }] } }),
     attemptStore: new Map(),
     portalBaseUrl: "https://portal.example"
   });
@@ -240,8 +246,8 @@ test("email endpoint reports provider rejection without claiming success", async
     to: ["one@example.com", "two@example.com"],
     cc: [],
     subject: "Selected CMS sheets",
-    assemblySheet: { workbookId: "book-1", sheetIndex: 1 },
-    pdcaSheet: { id: "lpa-pdca-1", source: "lpa", section: "cc" }
+    assemblySheet: { workbookId: "book-1", sheetIndex: 1, section: "cc" },
+    pdcaSheet: { id: "PDCA-LPA-1", source: "lpa", section: "cc" }
   }, "request-rejected");
   await invokeHandler(sendHandler, req, res);
   assert.equal(res.statusCode, 502);

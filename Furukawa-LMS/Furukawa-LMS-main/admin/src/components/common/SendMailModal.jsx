@@ -87,7 +87,7 @@ export default function SendMailModal({
   const selectedSection = formType === 'cc' || [metadata.section, metadata.sectionName, metadata.category]
     .some((value) => /c\s*&\s*c|\bcc\b/i.test(String(value || '')))
     ? 'cc'
-    : 'assembly';
+    : (formType === 'pdca' ? '' : 'assembly');
 
   // When modal opens, all input fields are reset to blank, CC is optional/hidden by default
   useEffect(() => {
@@ -523,13 +523,19 @@ export default function SendMailModal({
         unit: selectedAssembly.record.unit || '',
         date: selectedAssembly.record.auditDate || selectedAssembly.record.date || ''
       } : null;
+      const rawRows = targetPdca.sheet?.rows || [];
+      const extractedPoints = rawRows
+        .map(row => String(row?.observation || '').trim())
+        .filter(Boolean);
+      const isLpaTarget = targetPdca.source === 'lpa';
       const selectedPdcaPayload = {
         id: targetPdca.id || targetPdca._id,
-        source: targetPdca.source === 'lpa' ? 'lpa' : 'pdca',
-        name: targetPdca.topic || targetPdca.title || 'PDCA Sheet',
-        section: targetPdca.section || selectedSection,
+        source: isLpaTarget ? 'lpa' : 'pdca',
+        name: targetPdca.topic || targetPdca.title || (isLpaTarget ? `${selectedSection === 'cc' ? 'C&C' : 'Assembly'} PDCA Sheet` : 'PDCA Sheet'),
+        section: isLpaTarget ? (targetPdca.section || selectedSection) : '',
         unit: targetPdca.plant || targetPdca.unit || '',
         date: targetPdca.date || '',
+        points: extractedPoints,
         // LPA Observation PDCA sheets are saved as LPA snapshots, not as
         // standard PDCA records. Include the selected saved snapshot so the
         // email service can render that sheet when no PDCA record exists.

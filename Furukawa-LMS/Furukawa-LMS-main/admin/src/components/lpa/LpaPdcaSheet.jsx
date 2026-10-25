@@ -773,7 +773,8 @@ export default function LpaPdcaSheet({
       onSave?.(sheetSnapshot);
       return true;
     } catch (error) {
-      notify(error.message || 'Could not save PDCA form. Please try again.', 'error');
+      const errorMsg = error?.response?.data?.message || error?.response?.data?.error || error?.message || 'Could not save PDCA form. Please try again.';
+      notify(errorMsg, 'error');
       return false;
     } finally {
       setIsSaving(false);

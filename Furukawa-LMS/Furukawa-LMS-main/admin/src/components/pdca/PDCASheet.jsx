@@ -1501,7 +1501,7 @@ export default function PDCASheet({
 
     try {
       setIsSaving(true);
-      const targetId = topic?.id || topic?.recordId || (headerInfo.topicName?.trim() ? encodeURIComponent(headerInfo.topicName.trim()) : 'current_topic');
+      const targetId = topic?.id || topic?.recordId || (headerInfo.topicName?.trim() ? encodeURIComponent(headerInfo.topicName.trim().replace(/\//g, '-')) : 'current_topic');
       if (targetId) {
         await pdcaApi.saveSheet(targetId, sheetSnapshot);
       }
@@ -1517,7 +1517,8 @@ export default function PDCASheet({
       return true;
     } catch (error) {
       persistSheet(sheetSnapshot);
-      showToast(error.message || 'Could not save PDCA. Keep the form open and try again.');
+      const errorMsg = error?.response?.data?.message || error?.response?.data?.error || error?.message || 'Could not save PDCA. Keep the form open and try again.';
+      showToast(errorMsg);
       return false;
     } finally {
       setIsSaving(false);

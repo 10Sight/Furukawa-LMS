@@ -337,46 +337,58 @@ export const savePDCASheet = asyncHandler(async (req, res) => {
         }, actor);
     }
 
-    // Validate selected CFT records referenced in rows
+    // Validate selected CFT records referenced in rows (gracefully verify without blocking sheet save)
     const rowsToValidate = Array.isArray(req.body?.rows) ? req.body.rows : (req.body?.sheetData || []);
     for (const rowItem of rowsToValidate) {
         if (rowItem?.cftTopicId && typeof rowItem.cftTopicId === 'string' && rowItem.cftTopicId.trim()) {
             const cftTopicId = rowItem.cftTopicId.trim();
-            const cftRecord = await PDCAModel.findByRecordId(cftTopicId);
-            if (!cftRecord || cftRecord.isDeleted) {
-                throw new ApiError(`Invalid or deleted CFT record referenced: "${cftTopicId}"`, 400);
+            try {
+                const cftRecord = await PDCAModel.findByRecordId(cftTopicId);
+                if (!cftRecord || cftRecord.isDeleted) {
+                    console.warn(`[savePDCASheet] Referenced CFT record "${cftTopicId}" not found in database; allowing row to save`);
+                }
+            } catch (cftErr) {
+                console.warn(`[savePDCASheet] Could not verify CFT topic "${cftTopicId}":`, cftErr?.message);
             }
         }
     }
 
-    // Validate that each selected Line/Area belongs to its selected Section (lines.sectionId -> sections.id)
+    // Validate and auto-link Line/Area to Section hierarchy without throwing 400
     const rowsWithLineArea = rowsToValidate.filter(
         (r) => r && r.lineAreaId !== undefined && r.lineAreaId !== null && r.lineAreaId !== ''
     );
     if (rowsWithLineArea.length > 0) {
-        const hierarchy = await PDCAModel.getSectionsWithLines();
-        if (Array.isArray(hierarchy) && hierarchy.length > 0) {
-            for (const r of rowsWithLineArea) {
-                const targetSecId = r.sectionId ?? r.lineAreaSectionId;
-                if (targetSecId) {
-                    const section = hierarchy.find((s) => String(s.id) === String(targetSecId));
-                    const line = section && (section.lines || []).find((l) => String(l.id) === String(r.lineAreaId));
-                    if (!section || !line) {
-                        throw new ApiError(
-                            `Invalid Line/Area selection "${r.lineArea || r.lineAreaId}": it does not belong to the selected Section.`,
-                            400
-                        );
-                    }
-                } else {
-                    const parentSec = hierarchy.find((s) => (s.lines || []).some((l) => String(l.id) === String(r.lineAreaId)));
-                    if (parentSec) {
-                        r.sectionId = parentSec.id;
-                        r.lineAreaSectionId = parentSec.id;
-                        if (!r.section) r.section = parentSec.name;
-                        if (!r.sectionCode) r.sectionCode = parentSec.uniCode || '';
+        try {
+            const hierarchy = await PDCAModel.getSectionsWithLines();
+            if (Array.isArray(hierarchy) && hierarchy.length > 0) {
+                for (const r of rowsWithLineArea) {
+                    const targetSecId = r.sectionId ?? r.lineAreaSectionId;
+                    if (targetSecId) {
+                        const section = hierarchy.find((s) => String(s.id) === String(targetSecId));
+                        const line = section && (section.lines || []).find((l) => String(l.id) === String(r.lineAreaId));
+                        if (!section || !line) {
+                            // If not matched under targetSecId, attempt to locate parent section across hierarchy
+                            const parentSec = hierarchy.find((s) => (s.lines || []).some((l) => String(l.id) === String(r.lineAreaId)));
+                            if (parentSec) {
+                                r.sectionId = parentSec.id;
+                                r.lineAreaSectionId = parentSec.id;
+                                if (!r.section) r.section = parentSec.name;
+                                if (!r.sectionCode) r.sectionCode = parentSec.uniCode || '';
+                            }
+                        }
+                    } else {
+                        const parentSec = hierarchy.find((s) => (s.lines || []).some((l) => String(l.id) === String(r.lineAreaId)));
+                        if (parentSec) {
+                            r.sectionId = parentSec.id;
+                            r.lineAreaSectionId = parentSec.id;
+                            if (!r.section) r.section = parentSec.name;
+                            if (!r.sectionCode) r.sectionCode = parentSec.uniCode || '';
+                        }
                     }
                 }
             }
+        } catch (hierarchyErr) {
+            console.warn('[savePDCASheet] Could not verify line/area hierarchy:', hierarchyErr?.message);
         }
     }
 

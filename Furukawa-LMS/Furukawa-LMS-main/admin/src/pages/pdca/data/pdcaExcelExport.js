@@ -252,7 +252,7 @@ export async function exportPDCASheetToExcel({ topic, sheet, rows: directRows, h
   const shiftListStr = '"A,B,C,General"';
 
   // Data Rows (Starting at row 7)
-  let currentRowIdx = 7; 
+  let currentRowIdx = 7;
   const displayRows = (rows && rows.length > 0) ? rows : Array.from({ length: 10 }, () => ({}));
 
   for (let idx = 0; idx < displayRows.length; idx++) {

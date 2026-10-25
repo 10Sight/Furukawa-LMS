@@ -29,7 +29,8 @@ import {
   AlertCircle,
   Mail,
   BarChart3,
-  Lock
+  Lock,
+  Clock
 } from 'lucide-react';
 import ImageEditorModal from './ImageEditorModal';
 import FileUploadSelectionModal from './FileUploadSelectionModal';
@@ -37,11 +38,12 @@ import EvidenceViewerModal from './EvidenceViewerModal';
 import AddStaffEmployeeModal from './AddStaffEmployeeModal';
 import SendMailModal from '../common/SendMailModal';
 import PDCAAlertModal from './PDCAAlertModal';
+import DurationWatchPicker from './DurationWatchPicker';
 import PDCAMonthlyGraph from './PDCAMonthlyGraph';
 import ResponsiblePersonInstructionCell from './ResponsiblePersonInstructionCell';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import pdcaApi from '@/services/api/pdcaApi.js';
-import { PDCA_DEPARTMENTS, PDCA_UNITS, PDCA_STATUS_OPTIONS, normalizePDCAStatus, computePDCAStatus } from '../../pages/pdca/data/pdcaConstants.js';
+import { PDCA_DEPARTMENTS, PDCA_UNITS, PDCA_STATUS_OPTIONS, normalizePDCAStatus, computePDCAStatus, UNIT_DEPARTMENT_MAPPING, getDepartmentsForUnit } from '../../pages/pdca/data/pdcaConstants.js';
 import {
   isRecordCreator,
   isUserResponsibleForRow,
@@ -60,7 +62,7 @@ import { getDefaultSectionsWithLines } from './CascadingLineAreaSelect.jsx';
 import SearchableSectionSelect, { VERIFIED_SECTION_MASTER, isSectionRelatedToDepartment } from './SearchableSectionSelect';
 import { getMediaUrl } from '@/utils/mediaUtils.js';
 
-function CheckboxMultiSelect({ value = [], options = [], onChange, disabled = false, placeholder }) {
+function CheckboxMultiSelect({ value = [], options = [], onChange, disabled = false, placeholder, renderTrigger = null }) {
   const [open, setOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState(null);
   const buttonRef = useRef(null);
@@ -98,7 +100,10 @@ function CheckboxMultiSelect({ value = [], options = [], onChange, disabled = fa
       if (!buttonRef.current?.contains(event.target) && !menuRef.current?.contains(event.target)) setOpen(false);
     };
     const closeOnEscape = event => { if (event.key === 'Escape') setOpen(false); };
-    const closeOnScroll = () => setOpen(false);
+    const closeOnScroll = event => {
+      if (menuRef.current && event?.target && menuRef.current.contains(event.target)) return;
+      setOpen(false);
+    };
     window.addEventListener('resize', updateMenuPosition);
     window.addEventListener('scroll', closeOnScroll, true);
     document.addEventListener('mousedown', closeOnOutsideClick);
@@ -110,23 +115,27 @@ function CheckboxMultiSelect({ value = [], options = [], onChange, disabled = fa
       document.removeEventListener('keydown', closeOnEscape);
     };
   }, [open, options.length]);
-// that is the code of toodays cass 
+
   return (
-    <div className="w-full min-w-0">
-      <button
-        ref={buttonRef}
-        type="button"
-        disabled={disabled}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={() => setOpen(current => !current)}
-        title={label}
-        className={`flex w-full min-h-[30px] items-center justify-between gap-1 rounded-md border px-1.5 py-1 text-left text-[11px] leading-tight transition-colors ${selected.length ? 'border-blue-200 bg-blue-50/60 text-slate-800' : 'border-slate-200 bg-white text-slate-500'} ${open ? 'border-blue-400 ring-1 ring-blue-100' : 'hover:border-blue-300 hover:bg-blue-50/40'} disabled:cursor-default disabled:opacity-60`}
-      >
-        <span className="min-w-0 flex-1 truncate font-medium">{label || placeholder}</span>
-        {selected.length > 1 && <span className="shrink-0 rounded-full bg-blue-100 px-1 py-0.2 text-[9px] font-semibold text-blue-700">({selected.length})</span>}
-        <ChevronDown className={`h-3 w-3 shrink-0 text-slate-400 transition-transform ${open ? 'rotate-180 text-blue-600' : ''}`} />
-      </button>
+    <div className="w-full min-w-0" data-required-action-allowed="true" data-duration-picker="true">
+      {renderTrigger ? (
+        renderTrigger({ open, setOpen, label, selected, buttonRef })
+      ) : (
+        <button
+          ref={buttonRef}
+          type="button"
+          disabled={disabled}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          onClick={() => setOpen(current => !current)}
+          title={label}
+          className={`flex w-full min-h-[30px] items-center justify-between gap-1 rounded-md border px-1.5 py-1 text-left text-[11px] leading-tight transition-colors ${selected.length ? 'border-blue-200 bg-blue-50/60 text-slate-800' : 'border-slate-200 bg-white text-slate-500'} ${open ? 'border-blue-400 ring-1 ring-blue-100' : 'hover:border-blue-300 hover:bg-blue-50/40'} disabled:cursor-default disabled:opacity-60`}
+        >
+          <span className="min-w-0 flex-1 truncate font-medium">{label || placeholder}</span>
+          {selected.length > 1 && <span className="shrink-0 rounded-full bg-blue-100 px-1 py-0.2 text-[9px] font-semibold text-blue-700">({selected.length})</span>}
+          <ChevronDown className={`h-3 w-3 shrink-0 text-slate-400 transition-transform ${open ? 'rotate-180 text-blue-600' : ''}`} />
+        </button>
+      )}
       {open && menuPosition && createPortal(
         <div
           ref={menuRef}
@@ -324,7 +333,7 @@ function AutoWidthInput({
   if (readOnly) {
     return (
       <span
-        className="text-[10px] text-slate-700 italic px-1 py-0.5 truncate block max-w-full select-text text-center"
+        className="text-[12px] font-medium text-slate-700 italic px-1 py-0.5 truncate block max-w-full select-text text-center"
         title={title || value || '-'}
       >
         {value || '-'}
@@ -347,9 +356,9 @@ function AutoWidthInput({
         fieldSizing: 'content',
         width: `${chLen + 2}ch`,
         maxWidth: '100%',
-        minWidth: '65px',
+        minWidth: '80px',
       }}
-      className={className}
+      className={className || "text-[12px] font-medium text-slate-800 bg-white border border-slate-200 focus:border-blue-500 rounded px-1.5 py-1 text-center"}
     />
   );
 }
@@ -366,7 +375,11 @@ export const formatDisplayDate = (isoStr) => {
 };
 
 const hasValidStdDuration = (value) => {
-  const normalized = String(value ?? '').replace(/\s*min$/i, '').trim();
+  if (value === null || value === undefined) return false;
+  const str = String(value).trim();
+  if (!str) return false;
+  if (/^\d{1,2}:\d{1,2}/.test(str)) return true;
+  const normalized = str.replace(/\s*(min|hrs|hr)$/i, '').trim();
   return normalized !== '' && Number.isFinite(Number(normalized)) && Number(normalized) >= 0;
 };
 
@@ -451,24 +464,39 @@ function CompactDateCell({ value, onChange, readOnly = false, smallText = false 
   );
 }
 
-// Std. Duration in min cell with automatic 'min' suffix
+// Std. Duration in min cell with watch time picker
 function DurationMinCell({ value, readOnly, onChange, cellRef, requiredActionAllowed = false, hasResponseDate = true, onDisabledClick }) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [editVal, setEditVal] = useState('');
+  const [isWatchPickerOpen, setIsWatchPickerOpen] = useState(false);
+  const [anchorRect, setAnchorRect] = useState(null);
+  const containerRef = useRef(null);
 
-  const numStr = value !== undefined && value !== null ? String(value).replace(/[^0-9.]/g, '') : '';
-  const displayVal = numStr ? `${numStr} min` : '';
+  const rawVal = value !== undefined && value !== null ? String(value).trim() : '';
+  const displayVal = rawVal;
+
+  const handleOpenWatch = (e) => {
+    if (readOnly) return;
+    if (!hasResponseDate) {
+      onDisabledClick?.();
+      return;
+    }
+    const rect = containerRef.current?.getBoundingClientRect() || e?.currentTarget?.getBoundingClientRect();
+    setAnchorRect(rect);
+    setIsWatchPickerOpen(true);
+  };
 
   if (readOnly || !hasResponseDate) {
     return (
       <div
-        ref={cellRef}
+        ref={(el) => {
+          containerRef.current = el;
+          if (cellRef) cellRef(el);
+        }}
         onClick={() => {
           if (!hasResponseDate && typeof onDisabledClick === 'function') {
             onDisabledClick();
           }
         }}
-        title={!hasResponseDate ? "Select Response Date first to enter duration (min)" : undefined}
+        title={!hasResponseDate ? "Select Response Date first to enter duration" : undefined}
         className={`w-full py-1 text-base text-center font-medium whitespace-nowrap ${!hasResponseDate ? 'cursor-not-allowed opacity-50 select-none' : ''}`}
       >
         <span className={`text-base font-medium whitespace-nowrap ${requiredActionAllowed ? 'text-red-700' : 'text-slate-800'}`}>
@@ -478,69 +506,43 @@ function DurationMinCell({ value, readOnly, onChange, cellRef, requiredActionAll
     );
   }
 
-  if (isEditing) {
-    return (
+  return (
+    <>
       <div
-        ref={cellRef}
+        ref={(el) => {
+          containerRef.current = el;
+          if (cellRef) cellRef(el);
+        }}
         data-required-action-allowed={requiredActionAllowed ? 'true' : undefined}
         tabIndex={requiredActionAllowed ? 0 : undefined}
-        className={`w-full rounded ${requiredActionAllowed ? 'border border-red-500 bg-red-50' : ''}`}
+        onClick={handleOpenWatch}
+        className={`group/watch w-full py-1 px-1 flex items-center justify-center gap-1.5 text-base font-semibold rounded transition-all cursor-pointer select-none whitespace-nowrap ${
+          requiredActionAllowed
+            ? 'border border-red-500 bg-red-50 text-red-700'
+            : 'text-slate-800 hover:bg-blue-50/70'
+        }`}
+        title="Click to select duration via watch (HH:MM)"
       >
-        <input
-          type="text"
-          autoFocus
-          aria-invalid={requiredActionAllowed ? 'true' : undefined}
-          value={editVal}
-          onChange={(e) => {
-            const cleaned = e.target.value.replace(/[^0-9.]/g, '');
-            setEditVal(cleaned);
-            onChange(cleaned ? `${cleaned} min` : '');
-          }}
-          onBlur={() => {
-            setIsEditing(false);
-            const finalVal = editVal.trim();
-            onChange(finalVal ? `${finalVal} min` : '');
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              setIsEditing(false);
-              const finalVal = editVal.trim();
-              onChange(finalVal ? `${finalVal} min` : '');
-            }
-          }}
-          placeholder="0"
-          className={`w-full rounded px-1 py-0.5 text-base text-center font-semibold outline-none ${requiredActionAllowed ? 'bg-red-50 border border-red-500 text-red-800 focus:border-red-600' : 'bg-white border border-blue-500 text-slate-800'}`}
-        />
+        <Clock className={`w-3.5 h-3.5 flex-shrink-0 transition-colors ${
+          displayVal ? 'text-blue-600' : 'text-slate-400 group-hover/watch:text-blue-600'
+        }`} />
+        <span className={displayVal ? 'font-bold text-slate-800' : (requiredActionAllowed ? 'text-red-500 font-bold' : 'text-slate-300')}>
+          {displayVal || '--:--'}
+        </span>
       </div>
-    );
-  }
 
-  return (
-    <div
-      ref={cellRef}
-      data-required-action-allowed={requiredActionAllowed ? 'true' : undefined}
-      aria-invalid={requiredActionAllowed ? 'true' : undefined}
-      tabIndex={requiredActionAllowed ? 0 : undefined}
-      onClick={() => {
-        setEditVal(numStr);
-        setIsEditing(true);
-      }}
-      onKeyDown={(e) => {
-        if (requiredActionAllowed && (e.key === 'Enter' || e.key === ' ')) {
-          e.preventDefault();
-          setEditVal(numStr);
-          setIsEditing(true);
-        }
-      }}
-      className={`w-full py-1 text-base text-center font-medium cursor-text rounded transition-colors whitespace-nowrap ${requiredActionAllowed ? 'border border-red-500 bg-red-50 text-red-700' : 'text-slate-800 hover:bg-blue-50/50'}`}
-      title="Click to enter duration (min)"
-    >
-      {displayVal ? (
-        <span className="font-semibold text-slate-800">{displayVal}</span>
-      ) : (
-        <span className={requiredActionAllowed ? 'text-red-500' : 'text-slate-300'}>-</span>
+      {isWatchPickerOpen && (
+        <DurationWatchPicker
+          isOpen={isWatchPickerOpen}
+          initialValue={displayVal}
+          anchorRect={anchorRect}
+          onClose={() => setIsWatchPickerOpen(false)}
+          onSelect={(newTime) => {
+            onChange(newTime);
+          }}
+        />
       )}
-    </div>
+    </>
   );
 }
 
@@ -787,6 +789,7 @@ export default function PDCASheet({
       respUnit,
       respUnits,
       responsiblePersonUnit: respUnit,
+      respDeptsByUnit: row.respDeptsByUnit || {},
       confirmation,
       confirmedBy,
       instruction,
@@ -966,7 +969,10 @@ export default function PDCASheet({
     requiredInputElement(firstRequiredInput)?.focus();
     showToastRef.current?.(message);
 
-    const isReasonInput = (target) => target instanceof Element && Boolean(target.closest('[data-required-action-allowed="true"]'));
+    const isReasonInput = (target) => target instanceof Element && (
+      Boolean(target.closest('[data-required-action-allowed="true"]')) ||
+      Boolean(target.closest('[data-duration-picker="true"]'))
+    );
     const notifyAndFocus = () => {
       const now = Date.now();
       if (now - lastRequiredNoticeAtRef.current > 800) {
@@ -975,16 +981,22 @@ export default function PDCASheet({
       }
       const currentInput = requiredInputElement(missingRequiredInputs[0]);
       currentInput?.focus();
-      currentInput?.reportValidity();
+      currentInput?.reportValidity?.();
     };
     const blockOutsideReason = (event) => {
-      if (isReasonInput(event.target) && allowedInputs.has(event.target.closest('[data-required-action-allowed="true"]'))) return;
+      if (
+        event.target instanceof Element && (
+          Boolean(event.target.closest('[data-duration-picker="true"]')) ||
+          (isReasonInput(event.target) && allowedInputs.has(event.target.closest('[data-required-action-allowed="true"]')))
+        )
+      ) return;
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation?.();
       notifyAndFocus();
     };
     const blockKeyboardOutsideReason = (event) => {
+      if (event.target instanceof Element && event.target.closest('[data-duration-picker="true"]')) return;
       const navigationKey = event.key === 'Tab' || event.key === 'Escape' || event.altKey ||
         ((event.ctrlKey || event.metaKey) && ['r', 'w', 'l'].includes(event.key.toLowerCase()));
       if (isReasonInput(event.target) && !navigationKey) return;
@@ -1863,7 +1875,8 @@ export default function PDCASheet({
         label: cleanName,
         name: cleanName,
         code: emp.code || '',
-        department: emp.department || ''
+        department: emp.department || '',
+        unit: emp.unit || (emp.code?.toUpperCase().startsWith('GJ') ? 'Gujrat' : (emp.code?.toUpperCase().startsWith('BW') ? 'Bawal' : ''))
       });
     });
 
@@ -1877,7 +1890,8 @@ export default function PDCASheet({
             label: cleanName,
             name: cleanName,
             code: m.code || '',
-            department: dept || ''
+            department: dept || '',
+            unit: m.unit || ''
           });
         }
       }
@@ -1893,7 +1907,8 @@ export default function PDCASheet({
             label: cleanName,
             name: cleanName,
             code: '',
-            department: dept || r.department || ''
+            department: dept || r.department || '',
+            unit: r.unit || r.respUnit || ''
           });
         }
       }
@@ -1902,9 +1917,12 @@ export default function PDCASheet({
     return Array.from(map.values());
   }, [dbEmployees, topic?.assignedMembers, rows]);
 
-  const getStaffOptionsForRow = (rowIndex) => {
+  const getStaffOptionsForRow = (rowIndex, targetUnit = null, targetDept = null) => {
     const row = rows[rowIndex];
-    const currentDept = row?.department?.trim().toLowerCase();
+    const unitToUse = targetUnit || row?.respUnit || row?.responsiblePersonUnit || row?.unit || '';
+    const deptToUse = targetDept || row?.responsiblePersonDept || row?.department || '';
+    const currentUnit = unitToUse.trim().toLowerCase();
+    const currentDept = deptToUse.trim().toLowerCase();
     const query = staffSearchQuery.trim().toLowerCase();
 
     let list = employeeOptionList;
@@ -1912,19 +1930,44 @@ export default function PDCASheet({
       list = list.filter(
         (item) =>
           item.label.toLowerCase().includes(query) ||
-          (item.department && item.department.toLowerCase().includes(query))
+          (item.department && item.department.toLowerCase().includes(query)) ||
+          (item.code && item.code.toLowerCase().includes(query))
       );
     }
 
-    if (currentDept) {
-      // Prioritize staff belonging to the selected department at the top
-      const deptMatches = list.filter(
-        (item) => item.department && item.department.toLowerCase() === currentDept
-      );
-      const others = list.filter(
-        (item) => !item.department || item.department.toLowerCase() !== currentDept
-      );
-      return [...deptMatches, ...others];
+    if (currentUnit || currentDept) {
+      const deptMatches = list.filter((item) => {
+        const itemDept = (item.department || '').toLowerCase();
+        const itemUnit = (item.unit || '').toLowerCase();
+        const itemCode = (item.code || '').toUpperCase();
+
+        let matchesUnit = true;
+        if (currentUnit && itemUnit) {
+          if (currentUnit === 'bawal') {
+            matchesUnit = itemUnit === 'bawal' || itemCode.startsWith('BW');
+          } else if (currentUnit === 'gujrat' || currentUnit === 'gujarat') {
+            matchesUnit = itemUnit === 'gujrat' || itemUnit === 'gujarat' || itemCode.startsWith('GJ');
+          }
+        }
+
+        let matchesDept = true;
+        if (currentDept) {
+          matchesDept = itemDept === currentDept;
+        }
+
+        return matchesUnit && matchesDept;
+      });
+
+      if (deptMatches.length > 0) {
+        return deptMatches;
+      }
+
+      if (currentDept) {
+        const deptOnlyMatches = list.filter((item) => (item.department || '').toLowerCase() === currentDept);
+        if (deptOnlyMatches.length > 0) {
+          return deptOnlyMatches;
+        }
+      }
     }
 
     return list;
@@ -2337,7 +2380,9 @@ export default function PDCASheet({
         }
         return prev;
       }
-      if (field === 'unit' && current.unit !== value) {
+      if (field === 'stdDurationMin') {
+        updated[rowIndex] = { ...current, stdDurationMin: value, stdDuration: value };
+      } else if (field === 'unit' && current.unit !== value) {
         updated[rowIndex] = {
           ...current,
           unit: value,
@@ -2352,27 +2397,220 @@ export default function PDCASheet({
     });
   };
 
-  const handleResponsiblePersonUnitChange = (rowIndex, value, employeeIndex = null) => {
+  const getResponsiblePersonStructure = (row) => {
+    if (!row) return { units: [], deptsByUnit: {} };
+    const units = (Array.isArray(row.respUnits) && row.respUnits.length > 0)
+      ? row.respUnits.filter((u) => PDCA_UNITS.includes(u))
+      : (row.respUnit && PDCA_UNITS.includes(row.respUnit) ? [row.respUnit] : []);
+
+    const deptsByUnit = {};
+    units.forEach((u) => {
+      if (Array.isArray(row.respDeptsByUnit?.[u])) {
+        deptsByUnit[u] = row.respDeptsByUnit[u];
+      } else {
+        const staffDepts = (row.staffEmployees || [])
+          .filter((e) => (e.unit === u || (!e.unit && units.length === 1)))
+          .map((e) => e.department)
+          .filter(Boolean);
+        if (staffDepts.length > 0) {
+          deptsByUnit[u] = [...new Set(staffDepts)];
+        } else if (units.length === 1 && row.responsiblePersonDept && row.responsiblePersonDept !== 'CFT') {
+          deptsByUnit[u] = row.responsiblePersonDept.split(/[,;]/).map((d) => d.trim()).filter(Boolean);
+        } else {
+          deptsByUnit[u] = [];
+        }
+      }
+    });
+
+    return { units, deptsByUnit };
+  };
+
+  const handleResponsibleUnitsChange = (rowIndex, newUnits) => {
     setRows((prev) => {
       const updated = [...prev];
-      const current = updated[rowIndex];
-      if (!current) return prev;
-      const staffEmployees = Array.isArray(current.staffEmployees)
-        ? current.staffEmployees.map((employee, index) => ({
-          ...employee,
-          ...(index === employeeIndex ? { unit: value } : {}),
-          department: ''
-        }))
-        : [];
+      const currentRow = updated[rowIndex];
+      if (!currentRow) return prev;
+
+      const prevDeptsByUnit = currentRow.respDeptsByUnit || {};
+      const updatedDeptsByUnit = {};
+      newUnits.forEach((u) => {
+        updatedDeptsByUnit[u] = prevDeptsByUnit[u] || [];
+      });
+
+      // Filter staffEmployees to only retained units
+      const currentList = Array.isArray(currentRow.staffEmployees) ? [...currentRow.staffEmployees] : [];
+      const updatedStaffList = currentList.filter((emp) => {
+        return !emp.unit || newUnits.includes(emp.unit);
+      });
+
+      const formattedStaff = updatedStaffList
+        .map((e) => (e.code ? `${e.name} (${e.code})` : e.name))
+        .join(', ');
+
+      const primary = updatedStaffList[0] || {};
+      const activeDepts = Object.values(updatedDeptsByUnit).flat();
+
       updated[rowIndex] = {
-        ...current,
-        respUnit: employeeIndex === null || employeeIndex === 0 ? value : current.respUnit,
-        responsiblePersonUnit: employeeIndex === null || employeeIndex === 0 ? value : current.responsiblePersonUnit,
-        responsiblePersonDept: '', staffEmployees,
-        staffEmployee: '', staffName: '', staffId: '', employeeId: ''
+        ...currentRow,
+        respUnits: newUnits,
+        respUnit: newUnits[0] || '',
+        responsiblePersonUnit: newUnits[0] || '',
+        respDeptsByUnit: updatedDeptsByUnit,
+        staffEmployees: updatedStaffList,
+        staffEmployee: formattedStaff,
+        staffName: primary.name || '',
+        staffId: primary.code || '',
+        employeeId: primary.code || '',
+        responsiblePersonDept: activeDepts.join(', ') || ''
       };
       return updated;
     });
+  };
+
+  const handleUnitDepartmentsChange = (rowIndex, unit, newDepts) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const currentRow = updated[rowIndex];
+      if (!currentRow) return prev;
+
+      const prevDeptsByUnit = currentRow.respDeptsByUnit || {};
+      const updatedDeptsByUnit = {
+        ...prevDeptsByUnit,
+        [unit]: newDepts
+      };
+
+      // In staffEmployees, retain employees from other units,
+      // and for this unit, retain only employees whose department is still in newDepts
+      const currentList = Array.isArray(currentRow.staffEmployees) ? [...currentRow.staffEmployees] : [];
+      const updatedStaffList = currentList.filter((emp) => {
+        if (emp.unit && emp.unit !== unit) return true;
+        return newDepts.includes(emp.department);
+      });
+
+      const formattedStaff = updatedStaffList
+        .map((e) => (e.code ? `${e.name} (${e.code})` : e.name))
+        .join(', ');
+
+      const primary = updatedStaffList[0] || {};
+      const activeDepts = Object.values(updatedDeptsByUnit).flat();
+
+      updated[rowIndex] = {
+        ...currentRow,
+        respDeptsByUnit: updatedDeptsByUnit,
+        staffEmployees: updatedStaffList,
+        staffEmployee: formattedStaff,
+        staffName: primary.name || '',
+        staffId: primary.code || '',
+        employeeId: primary.code || '',
+        responsiblePersonDept: activeDepts.join(', ') || (newDepts[0] || '')
+      };
+      return updated;
+    });
+  };
+
+  const handleSelectStaffForUnitDept = (rowIndex, unit, department, empObj) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const currentRow = updated[rowIndex];
+      if (!currentRow) return prev;
+
+      const currentList = Array.isArray(currentRow.staffEmployees) ? [...currentRow.staffEmployees] : [];
+      const filtered = currentList.filter(
+        (emp) => !(emp.unit === unit && emp.department === department)
+      );
+
+      if (empObj && empObj.name) {
+        const cleanName = stripEmployeeId(empObj.name);
+        const code = (empObj.code || '').toUpperCase();
+        filtered.push({
+          id: empObj.id || undefined,
+          name: cleanName,
+          code,
+          department,
+          unit
+        });
+      }
+
+      const formattedStaff = filtered
+        .map((e) => (e.code ? `${e.name} (${e.code})` : e.name))
+        .join(', ');
+
+      const primary = filtered[0] || {};
+      const allDepts = [...new Set(filtered.map((e) => e.department).filter(Boolean))];
+
+      updated[rowIndex] = {
+        ...currentRow,
+        staffEmployees: filtered,
+        staffEmployee: formattedStaff,
+        staffName: primary.name || '',
+        staffId: primary.code || '',
+        employeeId: primary.code || '',
+        responsiblePersonConfirmation: formattedStaff || currentRow.responsiblePersonConfirmation || '',
+        responsiblePersonDept: allDepts.join(', ') || currentRow.responsiblePersonDept || ''
+      };
+      return updated;
+    });
+  };
+
+  const handleToggleStaffDropdownForDept = (rowIndex, unit, department, e) => {
+    e.stopPropagation();
+    if (
+      openStaffDropdown?.rowIndex === rowIndex &&
+      openStaffDropdown?.unit === unit &&
+      openStaffDropdown?.department === department
+    ) {
+      setOpenStaffDropdown(null);
+      return;
+    }
+    setStaffSearchQuery('');
+    const rect = e.currentTarget.getBoundingClientRect();
+    const dropdownWidth = 280;
+    let leftPos = rect.left + (rect.width / 2) - (dropdownWidth / 2);
+    if (leftPos + dropdownWidth > window.innerWidth - 12) {
+      leftPos = window.innerWidth - dropdownWidth - 12;
+    }
+    if (leftPos < 12) {
+      leftPos = 12;
+    }
+
+    let topPos = rect.bottom + 4;
+    const estimatedHeight = 320;
+    if (topPos + estimatedHeight > window.innerHeight - 12 && rect.top - estimatedHeight > 12) {
+      topPos = rect.top - estimatedHeight - 4;
+    }
+
+    setOpenStaffDropdown({
+      rowIndex,
+      unit,
+      department,
+      top: topPos,
+      left: Math.max(12, leftPos),
+      width: dropdownWidth
+    });
+  };
+
+  const handleResponsiblePersonUnitChange = (rowIndex, value, employeeIndex = null) => {
+    if (employeeIndex !== null && employeeIndex > 0) {
+      setRows((prev) => {
+        const updated = [...prev];
+        const current = updated[rowIndex];
+        if (!current) return prev;
+        const staffEmployees = Array.isArray(current.staffEmployees)
+          ? current.staffEmployees.map((employee, index) => ({
+            ...employee,
+            ...(index === employeeIndex ? { unit: value } : {}),
+            department: ''
+          }))
+          : [];
+        updated[rowIndex] = {
+          ...current,
+          staffEmployees
+        };
+        return updated;
+      });
+      return;
+    }
+    handleResponsibleUnitsChange(rowIndex, value ? [value] : []);
   };
 
   // Column 5: Department change handler (Plan phase - before Section)
@@ -4148,7 +4386,7 @@ export default function PDCASheet({
               </th>
               <th
                 rowSpan={2}
-                className="py-1.5 px-1.5 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 leading-tight select-none"
+                className="py-1.5 px-2 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 leading-tight select-none min-w-[130px] w-auto"
                 title="Past revisions of Response Date. Only administrators have permission to delete revised dates."
               >
                 <div>No. of time</div>
@@ -4180,16 +4418,16 @@ export default function PDCASheet({
             </tr>
 
             <tr className="bg-[#ECEFF1] text-slate-800 font-bold text-[14px] select-none text-center">
-              <th className="py-1 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800">
+              <th className="py-1 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 w-[110px] min-w-[100px]">
                 Unit
               </th>
-              <th className="py-1 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800">
+              <th className="py-1 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 w-[145px] min-w-[135px]">
                 Dept
               </th>
-              <th className="py-1 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800">
+              <th className="py-1 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 w-[160px] min-w-[150px]">
                 <span>Staff Name</span> <span className="text-red-500 font-bold">*</span>
               </th>
-              <th className="py-1 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800">
+              <th className="py-1 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 w-[120px] min-w-[110px]">
                 CFT
               </th>
             </tr>
@@ -4300,7 +4538,7 @@ export default function PDCASheet({
                     {usesCheckboxMultiSelects ? <CheckboxMultiSelect
                       disabled={!canEditEntireRow || !unitSelected}
                       value={row.departments || (row.department ? [row.department] : [])}
-                      options={departmentsList.map(department => ({ value: department, label: department }))}
+                      options={getDepartmentsForUnit(row.unit).map(department => ({ value: department, label: department }))}
                       placeholder="Dept..."
                       onChange={values => setRows(prev => prev.map((item, rowIndex) => {
                         if (rowIndex !== idx) return item;
@@ -4318,7 +4556,7 @@ export default function PDCASheet({
                       <div className="flex flex-col divide-y divide-[#CBD5E1]">
                         {((row.departments?.length ? row.departments : (row.department ? [row.department] : ['']))).map((department, deptIndex, all) => <div key={deptIndex} className="relative min-h-[30px] p-0.5">
                           <select disabled={!canEditEntireRow || !unitSelected} value={department || ''} onChange={event => handleUpdateDepartment(idx, deptIndex, event.target.value)} className="w-full bg-transparent px-1 py-1 text-center text-[14px]">
-                            <option value="">Dept...</option>{departmentsList.map(value => <option key={value} value={value}>{value}</option>)}
+                            <option value="">Dept...</option>{getDepartmentsForUnit(row.unit).map(value => <option key={value} value={value}>{value}</option>)}
                           </select>
                           {all.length > 1 && canEditEntireRow && <button type="button" onClick={() => handleRemoveDepartment(idx, deptIndex)} className="absolute right-0 top-1 text-slate-400 hover:text-rose-600" title="Remove Department"><X className="h-2.5 w-2.5" /></button>}
                         </div>)}
@@ -4735,7 +4973,7 @@ export default function PDCASheet({
                   </td>
 
                   {/* No. of time Revised - Stacked past and current response dates */}
-                  <td className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[120px] min-w-[110px]">
+                  <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] min-w-[130px] w-auto">
                     {Array.isArray(row.revisedDates) && row.revisedDates.length > 0 ? (
                       <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
                         {row.revisedDates.map((rItem, rIdx) => {
@@ -4744,10 +4982,10 @@ export default function PDCASheet({
                           return (
                             <div
                               key={rIdx}
-                              className="group/rev w-full py-1 px-1 flex flex-col items-center justify-center text-center gap-1 hover:bg-slate-50 transition-colors"
+                              className="group/rev w-full py-1.5 px-1.5 flex flex-col items-center justify-center text-center gap-1.5 hover:bg-slate-50 transition-colors"
                             >
                               <div className="w-full flex items-center justify-between gap-1">
-                                <span className="flex-1 text-[11px] font-semibold text-slate-800 whitespace-nowrap text-center">
+                                <span className="flex-1 text-[12px] font-semibold text-slate-800 whitespace-nowrap text-center">
                                   {rIdx + 1}) {formatDisplayDate(revDate)}
                                 </span>
                                 {isAdmin && (
@@ -4782,7 +5020,7 @@ export default function PDCASheet({
                                 dataRequiredActionAllowed={!revReason.trim()}
                                 onChange={(e) => handleRevisionReasonChange(idx, rIdx, e.target.value)}
                                 placeholder="Why revised..."
-                                className="text-[10px] text-slate-700 bg-white border border-slate-200 focus:border-blue-500 rounded px-1 py-0.5"
+                                className="w-full text-[12px] font-medium text-slate-800 bg-white border border-slate-300 focus:border-blue-500 rounded px-2 py-1 text-center shadow-2xs focus:outline-none"
                               />
                             </div>
                           );
@@ -4796,216 +5034,297 @@ export default function PDCASheet({
                   </td>
 
                   {/* Unit in Responsible Person Confirmation */}
-                  <td className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[120px] min-w-[105px]">
-                    {usesCheckboxMultiSelects ? <CheckboxMultiSelect
-                      disabled={!canEditEntireRow}
-                      value={row.respUnits || (row.respUnit ? [row.respUnit] : [])}
-                      options={PDCA_UNITS.map(unit => ({ value: unit, label: unit }))}
-                      placeholder="Unit..."
-                      onChange={values => setRows(prev => prev.map((item, rowIndex) => rowIndex === idx ? { ...item, respUnits: values, respUnit: values[0] || '', responsiblePersonUnit: values[0] || '' } : item))}
-                    /> : row.staffEmployees && row.staffEmployees.length > 1 ? <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
-                      {row.staffEmployees.map((employee, employeeIndex) => <div key={employeeIndex} className="relative min-h-[30px] px-1 py-1">
-                        <select disabled={!canEditEntireRow} value={employee.unit || row.respUnit || ''} onChange={event => handleResponsiblePersonUnitChange(idx, event.target.value, employeeIndex)} className="w-full bg-transparent px-1 py-1 text-center text-[10px]">
-                          <option value="">Unit...</option><option value="Bawal">Bawal</option><option value="Gujrat">Gujrat</option>
-                        </select>
-                      </div>)}
-                    </div> : <div className="relative w-full flex items-center justify-center">
-                      <select disabled={!canEditEntireRow} value={row.respUnit || row.responsiblePersonUnit || ''} onChange={event => handleResponsiblePersonUnitChange(idx, event.target.value)} className="w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[10.5px] text-slate-800 text-center font-medium focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 appearance-none truncate">
-                        <option value="">Unit...</option><option value="Bawal">Bawal</option><option value="Gujrat">Gujrat</option>
-                      </select>
-                      {canEditEntireRow && <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />}
-                    </div>}
-                  </td>
-
-                  {/* Department Dropdown in Responsible Person Confirmation */}
-                  <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[85px] min-w-[75px]">
-                    {row.staffEmployees && row.staffEmployees.length > 1 ? (
-                      <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
-                        {row.staffEmployees.map((emp, empIdx) => (
-                          <div
-                            key={empIdx}
-                            className="relative w-full py-1 px-1 flex items-center justify-center min-h-[30px] focus-within:bg-blue-50/30"
-                          >
-                            <select
-                              disabled={!canEditEntireRow || !['Bawal', 'Gujrat'].includes(emp.unit || row.respUnit || row.responsiblePersonUnit)}
-                              value={
-                                (emp.department && emp.department !== 'CFT')
-                                  ? emp.department
-                                  : (findEmployeeDepartment(emp.code ? `${emp.name} (${emp.code})` : emp.name, dbEmployees) ||
-                                    findEmployeeDepartment(emp.code ? `${emp.name} (${emp.code})` : emp.name, VERIFIED_EMPLOYEE_MASTER) ||
-                                    (row.responsiblePersonDept !== 'CFT' ? row.responsiblePersonDept : '') ||
-                                    '')
-                              }
-                              onChange={(e) => {
-                                const newDept = e.target.value;
-                                setRows((prev) => {
-                                  const updated = [...prev];
-                                  const curr = updated[idx];
-                                  const newEmps = [...curr.staffEmployees];
-                                  newEmps[empIdx] = { ...newEmps[empIdx], department: newDept };
-                                  updated[idx] = {
-                                    ...curr,
-                                    staffEmployees: newEmps,
-                                    responsiblePersonDept: empIdx === 0 ? newDept : curr.responsiblePersonDept
-                                  };
-                                  return updated;
-                                });
-                              }}
-                              className={`w-full bg-transparent border-0 outline-none text-[10px] font-semibold text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${!canEditEntireRow || !['Bawal', 'Gujrat'].includes(emp.unit || row.respUnit || row.responsiblePersonUnit) ? 'cursor-default opacity-50' : 'cursor-pointer'} appearance-none truncate`}
-                              title={['Bawal', 'Gujrat'].includes(emp.unit || row.respUnit || row.responsiblePersonUnit)
-                                ? (((emp.department && emp.department !== 'CFT') ? emp.department : (findEmployeeDepartment(emp.code ? `${emp.name} (${emp.code})` : emp.name, dbEmployees) || row.responsiblePersonDept)) || 'Select Department')
-                                : 'Select the Responsible Confirmation Unit first to choose a Department'}
-                            >
-                              <option value="">Dept...</option>
-                              {emp.department && emp.department !== 'CFT' && !departmentsList.includes(emp.department) && (
-                                <option value={emp.department}>{emp.department}</option>
-                              )}
-                              {departmentsList.map((d) => (
-                                <option key={d} value={d}>
-                                  {d}
-                                </option>
-                              ))}
-                            </select>
+                  <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[110px] min-w-[100px]">
+                    {(() => {
+                      const { units, deptsByUnit } = getResponsiblePersonStructure(row);
+                      if (units.length === 0) {
+                        return (
+                          <div className="p-1 w-full">
+                            <CheckboxMultiSelect
+                              disabled={!canEditEntireRow}
+                              value={[]}
+                              options={PDCA_UNITS.map((u) => ({ value: u, label: u }))}
+                              placeholder="Unit..."
+                              onChange={(newUnits) => handleResponsibleUnitsChange(idx, newUnits)}
+                            />
                           </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="relative w-full flex items-center justify-center focus-within:bg-blue-50/30">
-                        <select
-                          disabled={!canEditEntireRow || !responsibleUnitSelected}
-                          value={
-                            (row.responsiblePersonDept && row.responsiblePersonDept !== 'CFT')
-                              ? row.responsiblePersonDept
-                              : (row.staffEmployees?.[0]?.department && row.staffEmployees[0].department !== 'CFT'
-                                ? row.staffEmployees[0].department
-                                : (findEmployeeDepartment(row.staffEmployee, dbEmployees) ||
-                                  findEmployeeDepartment(row.staffEmployee, VERIFIED_EMPLOYEE_MASTER) ||
-                                  ''))
-                          }
-                          onChange={(e) => handleResponsiblePersonDeptChange(idx, e.target.value)}
-                          className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${!canEditEntireRow || !responsibleUnitSelected ? 'cursor-default opacity-50' : 'cursor-pointer'} appearance-none truncate`}
-                          title={responsibleUnitSelected ? (row.responsiblePersonDept || 'Select Department') : 'Select the Responsible Confirmation Unit first to choose a Department'}
-                        >
-                          <option value="">Dept...</option>
-                          {row.responsiblePersonDept && row.responsiblePersonDept !== 'CFT' && !departmentsList.includes(row.responsiblePersonDept) && (
-                            <option value={row.responsiblePersonDept}>{row.responsiblePersonDept}</option>
-                          )}
-                          {departmentsList.map((d) => (
-                            <option key={d} value={d}>
-                              {d}
-                            </option>
-                          ))}
-                        </select>
-                        {canEditEntireRow && (
-                          <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                        )}
-                      </div>
-                    )}
-                  </td>
-
-                  {/* 13. Staff Name (Centered in cell, supports multiple employees in a single cell) */}
-                  <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[155px] min-w-[140px]">
-                    <div className="relative w-full h-full min-h-[34px] flex flex-col justify-center">
-                      {row.staffEmployees && row.staffEmployees.length > 1 ? (
+                        );
+                      }
+                      if (units.length === 1) {
+                        return (
+                          <div className="p-1 w-full">
+                            <CheckboxMultiSelect
+                              disabled={!canEditEntireRow}
+                              value={units}
+                              options={PDCA_UNITS.map((u) => ({ value: u, label: u }))}
+                              placeholder="Unit..."
+                              onChange={(newUnits) => handleResponsibleUnitsChange(idx, newUnits)}
+                            />
+                          </div>
+                        );
+                      }
+                      // Both units selected: Divide into two separate sections: Bawal and Gujrat
+                      return (
                         <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
-                          {row.staffEmployees.map((emp, empIdx) => {
-                            const empDisplay = stripEmployeeId(emp.name);
+                          {units.map((unitName) => {
+                            const unitDepts = deptsByUnit[unitName] || [];
+                            const flexGrow = Math.max(1, unitDepts.length);
                             return (
                               <div
-                                key={empIdx}
-                                className="relative w-full py-1 pl-2 pr-6 flex items-center justify-between gap-1 group/emp min-h-[30px] hover:bg-slate-50/80 transition-colors"
+                                key={unitName}
+                                style={{ flex: flexGrow }}
+                                className="relative min-h-[30px] flex items-center justify-between px-2 py-1 bg-white hover:bg-slate-50 transition-colors"
                               >
-                                <button
-                                  type="button"
-                                  onClick={canEditEntireRow ? () => handleOpenAddStaffModal(idx) : undefined}
-                                  className={`text-[10px] font-semibold text-slate-800 truncate text-left w-full ${!canEditEntireRow ? 'cursor-default' : 'hover:text-blue-600 cursor-pointer'} transition-colors`}
-                                  title={`Group: ${empDisplay}`}
-                                >
-                                  {empDisplay}
-                                </button>
+                                <span className="text-[11px] font-bold text-slate-800">{unitName}</span>
                                 {canEditEntireRow && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleRemoveStaffEmployee(idx, empIdx);
-                                    }}
-                                    className="opacity-0 group-hover/emp:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 p-0.5 rounded transition-all cursor-pointer flex-shrink-0 absolute right-1 top-1/2 -translate-y-1/2"
-                                    title={`Remove ${empDisplay} from group`}
-                                  >
-                                    <X className="w-2.5 h-2.5 stroke-[2.5]" />
-                                  </button>
+                                  <CheckboxMultiSelect
+                                    value={units}
+                                    options={PDCA_UNITS.map((u) => ({ value: u, label: u }))}
+                                    onChange={(newUnits) => handleResponsibleUnitsChange(idx, newUnits)}
+                                    renderTrigger={({ open, setOpen, buttonRef }) => (
+                                      <button
+                                        ref={buttonRef}
+                                        type="button"
+                                        onClick={() => setOpen(!open)}
+                                        className="text-slate-400 hover:text-blue-600 p-0.5 rounded cursor-pointer"
+                                        title={`Change units (currently: ${units.join(', ')})`}
+                                      >
+                                        <ChevronDown className="w-2.5 h-2.5" />
+                                      </button>
+                                    )}
+                                  />
                                 )}
                               </div>
                             );
                           })}
                         </div>
-                      ) : row.staffEmployee ? (
-                        <div className="relative w-full pl-1.5 pr-6 py-1 flex items-center justify-between gap-0.5 group">
-                          {!canEditEntireRow ? (
-                            <span className="text-[10px] font-semibold text-slate-800 truncate w-full text-center select-text">
-                              {stripEmployeeId(row.staffEmployee)}
-                            </span>
-                          ) : (
-                            <>
-                              <button
-                                type="button"
-                                onClick={(e) => handleToggleStaffDropdown(idx, e)}
-                                className="staff-trigger-btn flex-1 min-w-0 flex flex-col items-center justify-center text-center cursor-pointer hover:opacity-85 transition-opacity"
-                                title={`Click to search/change staff: ${stripEmployeeId(row.staffEmployee)}`}
-                              >
-                                <span className="text-[10px] font-semibold text-slate-800 truncate w-full text-center hover:text-blue-600 transition-colors">
-                                  {stripEmployeeId(row.staffEmployee)}
-                                </span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleSelectStaffMember(idx, '');
-                                }}
-                                className="opacity-0 group-hover:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 p-0.5 rounded transition-all cursor-pointer flex-shrink-0 absolute right-4 top-1/2 -translate-y-1/2"
-                                title="Clear staff employee"
-                              >
-                                <X className="w-3 h-3 stroke-[2.5]" />
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      ) : !canEditEntireRow ? (
-                        <div className="w-full py-1.5 flex items-center justify-center text-slate-300 text-[10px] select-none">
-                          -
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={(e) => handleToggleStaffDropdown(idx, e)}
-                          className="staff-trigger-btn w-full py-1.5 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 transition-colors cursor-pointer pl-1 pr-6 group"
-                          title="Click to search and select staff employee"
-                        >
-                          <div className="flex items-center gap-0.5 text-[9.5px] text-slate-400 group-hover:text-blue-600">
-                            <Search className="w-2.5 h-2.5" />
-                            <span className="truncate">Staff...</span>
-                            <ChevronDown className="w-2.5 h-2.5" />
-                          </div>
-                        </button>
-                      )}
+                      );
+                    })()}
+                  </td>
 
-                      {/* Down right side '+' option button (Only if creator/admin) */}
-                      {canEditEntireRow && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenAddStaffModal(idx);
-                          }}
-                          className="absolute bottom-1 right-1 z-10 w-4 h-4 rounded-full bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-600 border border-blue-200/80 flex items-center justify-center cursor-pointer transition-all shadow-2xs hover:shadow-xs"
-                          title="Add employee to this CFT group (+)"
-                        >
-                          <Plus className="w-2.5 h-2.5 stroke-[2.5]" />
-                        </button>
-                      )}
-                    </div>
+                  {/* Department Dropdown in Responsible Person Confirmation */}
+                  <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[145px] min-w-[135px]">
+                    {(() => {
+                      const { units, deptsByUnit } = getResponsiblePersonStructure(row);
+                      if (units.length === 0) {
+                        return (
+                          <div className="w-full py-1 text-center text-slate-300 text-xs select-none" title="Select Unit first">
+                            -
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
+                          {units.map((unitName) => {
+                            const unitDepts = deptsByUnit[unitName] || [];
+                            const unitOptions = getDepartmentsForUnit(unitName).map((d) => ({ value: d, label: d }));
+                            const flexGrow = Math.max(1, unitDepts.length);
+
+                            if (unitDepts.length === 0) {
+                              return (
+                                <div
+                                  key={unitName}
+                                  style={{ flex: flexGrow }}
+                                  className="p-1 min-h-[30px] flex items-center justify-center"
+                                >
+                                  <CheckboxMultiSelect
+                                    disabled={!canEditEntireRow}
+                                    value={[]}
+                                    options={unitOptions}
+                                    placeholder="Dept..."
+                                    onChange={(newDepts) => handleUnitDepartmentsChange(idx, unitName, newDepts)}
+                                  />
+                                </div>
+                              );
+                            }
+
+                            if (unitDepts.length === 1) {
+                              return (
+                                <div
+                                  key={unitName}
+                                  style={{ flex: flexGrow }}
+                                  className="flex-1 min-h-[30px] flex items-center justify-between px-2 py-1 gap-1 hover:bg-blue-50/40 transition-colors"
+                                >
+                                  <span className="text-[11px] font-semibold text-slate-800 whitespace-nowrap text-left" title={unitDepts[0]}>
+                                    {unitDepts[0]}
+                                  </span>
+                                  {canEditEntireRow && (
+                                    <CheckboxMultiSelect
+                                      value={unitDepts}
+                                      options={unitOptions}
+                                      onChange={(newDepts) => handleUnitDepartmentsChange(idx, unitName, newDepts)}
+                                      renderTrigger={({ open, setOpen, buttonRef }) => (
+                                        <button
+                                          ref={buttonRef}
+                                          type="button"
+                                          onClick={() => setOpen(!open)}
+                                          className="text-slate-400 hover:text-blue-600 p-0.5 cursor-pointer ml-1 shrink-0"
+                                          title={`Edit ${unitName} departments`}
+                                        >
+                                          <ChevronDown className="w-2.5 h-2.5" />
+                                        </button>
+                                      )}
+                                    />
+                                  )}
+                                </div>
+                              );
+                            }
+
+                            // Multiple departments selected: Dynamically divide into separate sections
+                            return (
+                              <div
+                                key={unitName}
+                                style={{ flex: flexGrow }}
+                                className="flex flex-col h-full w-full divide-y divide-[#CBD5E1] justify-center"
+                              >
+                                {unitDepts.map((deptName) => (
+                                  <div
+                                    key={deptName}
+                                    className="flex-1 min-h-[30px] flex items-center justify-between px-2 py-1 gap-1 hover:bg-blue-50/40 transition-colors"
+                                  >
+                                    <span className="text-[11px] font-semibold text-slate-800 whitespace-nowrap text-left" title={deptName}>
+                                      {deptName}
+                                    </span>
+                                    {canEditEntireRow && (
+                                      <CheckboxMultiSelect
+                                        value={unitDepts}
+                                        options={unitOptions}
+                                        onChange={(newDepts) => handleUnitDepartmentsChange(idx, unitName, newDepts)}
+                                        renderTrigger={({ open, setOpen, buttonRef }) => (
+                                          <button
+                                            ref={buttonRef}
+                                            type="button"
+                                            onClick={() => setOpen(!open)}
+                                            className="text-slate-400 hover:text-blue-600 p-0.5 cursor-pointer ml-1 shrink-0"
+                                            title={`Edit ${unitName} departments`}
+                                          >
+                                            <ChevronDown className="w-2.5 h-2.5" />
+                                          </button>
+                                        )}
+                                      />
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </td>
+
+                  {/* 13. Staff Name (Centered in cell, supports multiple departments/units aligned) */}
+                  <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[160px] min-w-[150px]">
+                    {(() => {
+                      const { units, deptsByUnit } = getResponsiblePersonStructure(row);
+                      if (units.length === 0) {
+                        return (
+                          <div className="w-full py-1 text-center text-slate-300 text-xs select-none">
+                            -
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
+                          {units.map((unitName) => {
+                            const unitDepts = deptsByUnit[unitName] || [];
+                            const flexGrow = Math.max(1, unitDepts.length);
+
+                            if (unitDepts.length === 0) {
+                              return (
+                                <div
+                                  key={unitName}
+                                  style={{ flex: flexGrow }}
+                                  className="w-full py-1.5 flex items-center justify-center text-slate-300 text-[10px] select-none"
+                                >
+                                  -
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <div
+                                key={unitName}
+                                style={{ flex: flexGrow }}
+                                className="flex flex-col h-full w-full divide-y divide-[#CBD5E1] justify-center"
+                              >
+                                {unitDepts.map((deptName) => {
+                                  const assignedEmp = (row.staffEmployees || []).find(
+                                    (e) => e.department === deptName && (e.unit === unitName || (!e.unit && units.length === 1))
+                                  );
+                                  const assignedDisplay = assignedEmp
+                                    ? stripEmployeeId(assignedEmp.name || assignedEmp.label || '')
+                                    : (units.length === 1 && unitDepts.length === 1 && row.staffEmployee ? stripEmployeeId(row.staffEmployee) : '');
+
+                                  if (assignedDisplay) {
+                                    return (
+                                      <div
+                                        key={deptName}
+                                        className="relative flex-1 w-full min-h-[30px] pl-2 pr-6 py-1 flex items-center justify-between gap-1 group/emp hover:bg-slate-50 transition-colors"
+                                      >
+                                        <button
+                                          type="button"
+                                          disabled={!canEditEntireRow}
+                                          onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, deptName, e)}
+                                          className={`text-[10px] font-semibold text-slate-800 truncate text-left w-full ${!canEditEntireRow ? 'cursor-default' : 'hover:text-blue-600 cursor-pointer'} transition-colors`}
+                                          title={`Click to change staff for ${unitName} - ${deptName}: ${assignedDisplay}`}
+                                        >
+                                          {assignedDisplay}
+                                        </button>
+                                        {canEditEntireRow && (
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleSelectStaffForUnitDept(idx, unitName, deptName, null);
+                                            }}
+                                            className="opacity-0 group-hover/emp:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 p-0.5 rounded transition-all cursor-pointer flex-shrink-0 absolute right-1 top-1/2 -translate-y-1/2"
+                                            title={`Clear staff for ${unitName} - ${deptName}`}
+                                          >
+                                            <X className="w-2.5 h-2.5 stroke-[2.5]" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    );
+                                  }
+
+                                  if (!canEditEntireRow) {
+                                    return (
+                                      <div
+                                        key={deptName}
+                                        className="flex-1 w-full min-h-[30px] flex items-center justify-center text-slate-300 text-[10px] select-none"
+                                      >
+                                        -
+                                      </div>
+                                    );
+                                  }
+
+                                  return (
+                                    <div
+                                      key={deptName}
+                                      className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1"
+                                    >
+                                      <button
+                                        type="button"
+                                        onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, deptName, e)}
+                                        className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 transition-colors cursor-pointer rounded group"
+                                        title={`Select staff for ${unitName} - ${deptName}`}
+                                      >
+                                        <div className="flex items-center gap-0.5 text-[9.5px] text-slate-400 group-hover:text-blue-600">
+                                          <Search className="w-2.5 h-2.5" />
+                                          <span className="truncate">Staff...</span>
+                                          <ChevronDown className="w-2.5 h-2.5" />
+                                        </div>
+                                      </button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
                   </td>
 
                   {/* 14. CFT (Centered in cell) */}
@@ -5705,7 +6024,7 @@ export default function PDCASheet({
             <div className="flex items-center gap-1.5">
               <User className="w-3.5 h-3.5 text-blue-600" />
               <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
-                Select Staff Name
+                {openStaffDropdown.department ? `${openStaffDropdown.unit ? `${openStaffDropdown.unit} - ` : ''}${openStaffDropdown.department} Staff` : 'Select Staff Name'}
               </span>
             </div>
             <button
@@ -5744,11 +6063,15 @@ export default function PDCASheet({
 
           {/* Staff Options List */}
           <div className="py-1 space-y-1 overflow-y-auto flex-1 pr-0.5 max-h-[240px]">
-            {getStaffOptionsForRow(openStaffDropdown.rowIndex).length > 0 ? (
-              getStaffOptionsForRow(openStaffDropdown.rowIndex).map((empItem, i) => {
+            {getStaffOptionsForRow(openStaffDropdown.rowIndex, openStaffDropdown.unit, openStaffDropdown.department).length > 0 ? (
+              getStaffOptionsForRow(openStaffDropdown.rowIndex, openStaffDropdown.unit, openStaffDropdown.department).map((empItem, i) => {
                 const empName = empItem.label;
                 const empDept = empItem.department;
-                const isSelected = rows[openStaffDropdown.rowIndex]?.staffEmployee === empName;
+                const isSelected = openStaffDropdown.unit && openStaffDropdown.department
+                  ? (rows[openStaffDropdown.rowIndex]?.staffEmployees || []).some(
+                      (e) => e.department === openStaffDropdown.department && (e.unit === openStaffDropdown.unit || (!e.unit && (!rows[openStaffDropdown.rowIndex]?.respUnits || rows[openStaffDropdown.rowIndex]?.respUnits?.length <= 1))) && (e.name === empItem.label || e.name === empItem.name)
+                    )
+                  : rows[openStaffDropdown.rowIndex]?.staffEmployee === empName;
                 const isDeptMatch = rows[openStaffDropdown.rowIndex]?.department &&
                   empDept &&
                   empDept.toLowerCase() === rows[openStaffDropdown.rowIndex].department.toLowerCase();
@@ -5762,9 +6085,14 @@ export default function PDCASheet({
                         id: empItem.id,
                         name: empItem.name || empItem.label,
                         code: empItem.code || '',
-                        department: empItem.department || ''
+                        department: openStaffDropdown.department || empItem.department || '',
+                        unit: openStaffDropdown.unit || empItem.unit || ''
                       };
-                      handleSelectStaffMember(openStaffDropdown.rowIndex, empName, [empObj]);
+                      if (openStaffDropdown.unit && openStaffDropdown.department) {
+                        handleSelectStaffForUnitDept(openStaffDropdown.rowIndex, openStaffDropdown.unit, openStaffDropdown.department, empObj);
+                      } else {
+                        handleSelectStaffMember(openStaffDropdown.rowIndex, empName, [empObj]);
+                      }
                       setOpenStaffDropdown(null);
                     }}
                     className={`w-full text-left px-2.5 py-1.5 rounded-lg transition-colors flex items-center justify-between cursor-pointer group text-xs ${isSelected

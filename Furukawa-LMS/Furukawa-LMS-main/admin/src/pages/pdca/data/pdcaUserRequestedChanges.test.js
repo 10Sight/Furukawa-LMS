@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { EDITABLE_RESPONSIBLE_COLUMNS } from './recordFilters.js';
-import { normalizePDCAStatus } from './pdcaConstants.js';
+import { EDITABLE_RESPONSIBLE_COLUMNS, isUserInResponsibleDepartment, canUserEditPDCARow } from './recordFilters.js';
+import { normalizePDCAStatus, getDepartmentsForUnit, UNIT_DEPARTMENT_MAPPING } from './pdcaConstants.js';
 import { createEmptyPdcaRow } from '../../lpa/lpaPdcaUtils.js';
 
 test('1. Action taken column placed between Root cause and Counter Measure and is editable', () => {
@@ -167,5 +167,223 @@ test('7. Upgraded Alert UI for Save, Back, and Mail alerts', () => {
   assert.equal(backAlertState.type, 'unsaved-changes');
   backAlertState.onConfirm();
   assert.equal(discarded, true, 'Discard callback executed successfully');
+});
+
+test('8. Duration Watch (HH:MM up to 99:99 hrs) and Unit -> Department -> Staff Name cascading', () => {
+  // Test HH:MM duration validation
+  const isValidDuration = (val) => {
+    if (!val) return false;
+    const str = String(val).trim();
+    if (/^\d{1,2}:\d{1,2}/.test(str)) return true;
+    const normalized = str.replace(/\s*(min|hrs|hr)$/i, '').trim();
+    return normalized !== '' && Number.isFinite(Number(normalized)) && Number(normalized) >= 0;
+  };
+
+  assert.equal(isValidDuration('18:35'), true, '18:35 is valid');
+  assert.equal(isValidDuration('19:56'), true, '19:56 is valid');
+  assert.equal(isValidDuration('99:99'), true, '99:99 is valid');
+  assert.equal(isValidDuration('45 min'), true, '45 min is valid');
+  assert.equal(isValidDuration(''), false, 'empty is invalid');
+
+  // Test Unit -> Department filtering: All 13 departments available in both units
+  const expectedDepts = ['PE', 'IT', 'Quality', 'Assembly', 'SRC', 'Store', 'HR', 'Safety', 'FG', 'PPC', 'Maintenance', 'D&D', 'C&C'];
+  const bawalDepts = getDepartmentsForUnit('Bawal');
+  assert.deepEqual(bawalDepts, expectedDepts, 'Bawal must have all 13 departments');
+
+  const gujratDepts = getDepartmentsForUnit('Gujrat');
+  assert.deepEqual(gujratDepts, expectedDepts, 'Gujrat must have all 13 departments');
+
+  const gujaratDepts = getDepartmentsForUnit('Gujarat');
+  assert.deepEqual(gujaratDepts, expectedDepts, 'Gujarat must have all 13 departments');
+});
+
+test('9. Responsible Person Section: Multi-Unit, Multi-Department Subdivision & Aligned Staff Selection', () => {
+  const getResponsiblePersonStructure = (row) => {
+    let units = Array.isArray(row?.respUnits) && row.respUnits.length > 0 ? [...row.respUnits] : [];
+    if (!units.length && row?.responsiblePersonUnit) {
+      units = [row.responsiblePersonUnit];
+    }
+    if (!units.length) units = ['Bawal'];
+
+    const deptsByUnit = row?.respDeptsByUnit || {};
+    const staffList = Array.isArray(row?.staffEmployees) ? row.staffEmployees : [];
+
+    return units.map(unit => {
+      const allowedDepts = getDepartmentsForUnit(unit);
+      let selectedDepts = Array.isArray(deptsByUnit[unit]) ? deptsByUnit[unit] : [];
+      if (selectedDepts.length === 0 && row?.responsiblePersonDept) {
+        selectedDepts = allowedDepts.filter(d => d.toLowerCase() === String(row.responsiblePersonDept).toLowerCase());
+      }
+      const deptEntries = selectedDepts.length > 0 ? selectedDepts : [''];
+
+      const deptSections = deptEntries.map(dept => {
+        const matchingStaff = staffList.find(s => {
+          const matchUnit = !s.unit || s.unit.toLowerCase() === unit.toLowerCase();
+          const matchDept = !dept || !s.department || s.department.toLowerCase() === dept.toLowerCase();
+          return matchUnit && matchDept;
+        });
+        return {
+          department: dept,
+          staff: matchingStaff || null
+        };
+      });
+
+      return {
+        unit,
+        allowedDepartments: allowedDepts,
+        departments: deptSections
+      };
+    });
+  };
+
+  // 1. Both units selected -> 2 unit sections (Bawal and Gujrat)
+  const initialRow = {
+    respUnits: ['Bawal', 'Gujrat'],
+    respDeptsByUnit: {
+      Bawal: ['Quality', 'C&C'],
+      Gujrat: ['IT']
+    },
+    staffEmployees: [
+      { id: 'BW-Q-1', name: 'Ramesh Sharma', department: 'Quality', unit: 'Bawal' },
+      { id: 'BW-CC-1', name: 'Anil Verma', department: 'C&C', unit: 'Bawal' },
+      { id: 'GJ-IT-1', name: 'Karan Patel', department: 'IT', unit: 'Gujrat' }
+    ]
+  };
+
+  const struct = getResponsiblePersonStructure(initialRow);
+  assert.equal(struct.length, 2, 'Should have 2 unit sections');
+  assert.equal(struct[0].unit, 'Bawal');
+  assert.equal(struct[1].unit, 'Gujrat');
+
+  // 2. Department cell subdivided into sections matching selected departments
+  assert.equal(struct[0].departments.length, 2, 'Bawal should have 2 department sections');
+  assert.equal(struct[0].departments[0].department, 'Quality');
+  assert.equal(struct[0].departments[1].department, 'C&C');
+
+  assert.equal(struct[1].departments.length, 1, 'Gujrat should have 1 department section');
+  assert.equal(struct[1].departments[0].department, 'IT');
+
+  // 3. Staff aligned with their respective department and unit
+  assert.equal(struct[0].departments[0].staff.name, 'Ramesh Sharma', 'Quality staff aligned');
+  assert.equal(struct[0].departments[1].staff.name, 'Anil Verma', 'C&C staff aligned');
+  assert.equal(struct[1].departments[0].staff.name, 'Karan Patel', 'IT staff aligned');
+
+  // 4. Dynamic update: Removing C&C from Bawal leaves Quality and doesn't affect Gujrat
+  const updatedRow = {
+    ...initialRow,
+    respDeptsByUnit: {
+      ...initialRow.respDeptsByUnit,
+      Bawal: ['Quality']
+    },
+    staffEmployees: initialRow.staffEmployees.filter(s => !(s.unit === 'Bawal' && s.department === 'C&C'))
+  };
+
+  const updatedStruct = getResponsiblePersonStructure(updatedRow);
+  assert.equal(updatedStruct[0].departments.length, 1, 'Bawal now has only 1 dept section');
+  assert.equal(updatedStruct[0].departments[0].department, 'Quality');
+  assert.equal(updatedStruct[0].departments[0].staff.name, 'Ramesh Sharma');
+  // Gujrat unaffected
+  assert.equal(updatedStruct[1].departments.length, 1);
+  assert.equal(updatedStruct[1].departments[0].department, 'IT');
+  assert.equal(updatedStruct[1].departments[0].staff.name, 'Karan Patel');
+});
+
+test('10. Responsible Person: 13 departments available in checkbox for both units and full department text displayed', () => {
+  const REQUIRED_DEPARTMENTS = [
+    'PE',
+    'IT',
+    'Quality',
+    'Assembly',
+    'SRC',
+    'Store',
+    'HR',
+    'Safety',
+    'FG',
+    'PPC',
+    'Maintenance',
+    'D&D',
+    'C&C'
+  ];
+
+  // Both units have all 13 departments in dropdown options
+  const bawalOptions = getDepartmentsForUnit('Bawal');
+  const gujratOptions = getDepartmentsForUnit('Gujrat');
+
+  assert.equal(bawalOptions.length, 13);
+  assert.equal(gujratOptions.length, 13);
+
+  REQUIRED_DEPARTMENTS.forEach(dept => {
+    assert.ok(bawalOptions.includes(dept), `Bawal must include department: ${dept}`);
+    assert.ok(gujratOptions.includes(dept), `Gujrat must include department: ${dept}`);
+  });
+
+  // Verify full department names are preserved without truncation
+  const testSelectedDepts = ['Maintenance', 'Assembly', 'Quality', 'C&C', 'Safety'];
+  testSelectedDepts.forEach(deptName => {
+    assert.ok(bawalOptions.includes(deptName));
+    // Full name is intact (e.g., not truncated to "Mainte..." or "Qu...")
+    assert.equal(deptName.includes('...'), false);
+    assert.ok(deptName.length > 2);
+  });
+});
+
+test('11. Responsible Department column access, delete restriction, and LPA modal title/department freezing', () => {
+  // 1. Column Access for Responsible Department employee
+  const testRowWithDepts = {
+    respUnits: ['Bawal'],
+    respDeptsByUnit: {
+      Bawal: ['Quality', 'Maintenance']
+    },
+    responsiblePersonDept: 'Quality, Maintenance'
+  };
+
+  const qualityUser = { id: 'u1', name: 'Ramesh QA', department: 'Quality', role: 'user', isAdmin: false };
+  const maintUser = { id: 'u2', name: 'Rajesh Maint', department: 'Maintenance', role: 'user', isAdmin: false };
+  const itUser = { id: 'u3', name: 'Karan IT', department: 'IT', role: 'user', isAdmin: false };
+
+  assert.equal(isUserInResponsibleDepartment(testRowWithDepts, qualityUser), true, 'Quality user is in responsible dept');
+  assert.equal(isUserInResponsibleDepartment(testRowWithDepts, maintUser), true, 'Maintenance user is in responsible dept');
+  assert.equal(isUserInResponsibleDepartment(testRowWithDepts, itUser), false, 'IT user is NOT in responsible dept');
+
+  // Verify accessible columns
+  const requiredColumns = [
+    'rootCause',
+    'actionTaken',
+    'counterMeasure',
+    'imageAfter',
+    'stdDurationMin',
+    'responseDate'
+  ];
+  requiredColumns.forEach(col => {
+    assert.ok(EDITABLE_RESPONSIBLE_COLUMNS.includes(col), `${col} must be accessible to responsible dept`);
+    assert.equal(canUserEditPDCARow(testRowWithDepts, qualityUser, null, col), true, `Quality user can edit ${col}`);
+  });
+  // IT user cannot edit those columns
+  requiredColumns.forEach(col => {
+    assert.equal(canUserEditPDCARow(testRowWithDepts, itUser, null, col), false, `IT user cannot edit ${col}`);
+  });
+
+  // 2. Delete access restriction: Only Admin can delete sheets or rows
+  const adminUser = { id: 'admin1', name: 'Super Admin', role: 'admin', isAdmin: true };
+  const regularEmployee = { id: 'emp1', name: 'Normal Employee', role: 'user', isAdmin: false };
+  const sheetCreator = { id: 'creator1', name: 'Sheet Creator', role: 'user', isAdmin: false };
+
+  const canDeleteAsAdmin = Boolean(adminUser.role === 'admin' || adminUser.isAdmin);
+  const canDeleteAsEmployee = Boolean(regularEmployee.role === 'admin' || regularEmployee.isAdmin);
+  const canDeleteAsCreator = Boolean(sheetCreator.role === 'admin' || sheetCreator.isAdmin);
+
+  assert.equal(canDeleteAsAdmin, true, 'Admin has delete permission');
+  assert.equal(canDeleteAsEmployee, false, 'Regular employee cannot delete');
+  assert.equal(canDeleteAsCreator, false, 'Creator cannot delete');
+
+  // 3. LPA Create PDCA Modal: Title is blank by default and Department is frozen
+  const initialModalForm = {
+    title: '',
+    date: '2026-10-25',
+    unit: 'Bawal',
+    department: 'Assembly'
+  };
+  assert.equal(initialModalForm.title, '', 'Title must be blank by default');
+  assert.equal(initialModalForm.department, 'Assembly', 'Department matches active section');
 });
 

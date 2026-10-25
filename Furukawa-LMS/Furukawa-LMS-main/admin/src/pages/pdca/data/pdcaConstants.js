@@ -19,6 +19,16 @@ export const PDCA_UNITS = [
   'Gujrat'
 ];
 
+export const UNIT_DEPARTMENT_MAPPING = {
+  Bawal: [...PDCA_DEPARTMENTS],
+  Gujrat: [...PDCA_DEPARTMENTS],
+  Gujarat: [...PDCA_DEPARTMENTS]
+};
+
+export const getDepartmentsForUnit = (unit) => {
+  return [...PDCA_DEPARTMENTS];
+};
+
 export const DEFAULT_LINE_AREAS = [
   'Assembly Area',
   'Assembly Line 1',

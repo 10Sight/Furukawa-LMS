@@ -11,13 +11,35 @@ export function isCcCheckSheet(sheet) {
     Boolean(sheet?.merges?.some(merge => merge.s.r === 0 && merge.s.c === 0 && merge.e.c >= 8));
 }
 
+export function fixCcCheckPointQuestions(sheet) {
+  if (!sheet?.rows || !Array.isArray(sheet.rows)) return sheet;
+  if (sheet.rows[7]?.[2]) {
+    const val = String(sheet.rows[7][2].value ?? sheet.rows[7][2].formatted ?? '');
+    if (val.includes('attendance board and hourly production board') || val.includes('hourly production board')) {
+      sheet.rows[7][2] = { ...sheet.rows[7][2], value: 'Is the hourly production board updated', formatted: 'Is the hourly production board updated' };
+    }
+  }
+  if (sheet.rows[8]?.[2]) {
+    const val = String(sheet.rows[8][2].value ?? sheet.rows[8][2].formatted ?? '');
+    if (val.includes('attendance board and hourly production board') || val.includes('attendance board')) {
+      sheet.rows[8][2] = { ...sheet.rows[8][2], value: 'Is the attendance board updated', formatted: 'Is the attendance board updated' };
+    }
+  }
+  return sheet;
+}
+
 export function upgradeCcTemplateRecord(record) {
-  if (record?.section !== 'cc' || record.name !== ccTemplate.name) return record;
+  if (record?.section !== 'cc') return record;
+  if (Array.isArray(record.sheets)) {
+    record.sheets.forEach(fixCcCheckPointQuestions);
+  }
+  if (record.name !== ccTemplate.name) return record;
 
   const legacySheet = record.sheets?.find(sheet => sheet.columnCount === 7 && sheet.rows?.length === 41);
   if (!legacySheet) return record;
 
   const replacementSheet = structuredClone(ccTemplate.sheets[0]);
+  fixCcCheckPointQuestions(replacementSheet);
   for (let index = 0; index < 31; index++) {
     const oldRow = legacySheet.rows[index + 3];
     const newRow = replacementSheet.rows[index + 4];
@@ -42,6 +64,7 @@ export function upgradeCcTemplateRecord(record) {
 export function createBlankCcSheet(baseSheet, date, levels = ['L3'], shifts = ['A'], existingSheet = null, targetLevel = null) {
   const targetDate = date || new Date().toISOString().slice(0, 10);
   const sheet = structuredClone(baseSheet || ccTemplate.sheets[0]);
+  fixCcCheckPointQuestions(sheet);
   const safeLevels = Array.isArray(levels) && levels.length > 0 ? levels : ['L3'];
   const safeShifts = Array.isArray(shifts) && shifts.length > 0 ? shifts : ['A'];
   const effectiveTarget = targetLevel || (safeLevels.includes('L1') ? 'L1' : safeLevels.includes('L2') ? 'L2' : 'L3');

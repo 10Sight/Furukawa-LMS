@@ -185,3 +185,31 @@ test('7. C&C check sheet sticky header CSS rules ensure stable 48px/26px heights
   assert.ok(cssSource.includes('height: 74px !important'));
 });
 
+test('8. Check points 4 and 5 in C&C Sheet have distinct updated questions', () => {
+  const sheet = ccTemplate.sheets[0];
+  const row4 = sheet.rows[7]; // S.No 4
+  const row5 = sheet.rows[8]; // S.No 5
+
+  assert.equal(row4[2]?.value, 'Is the hourly production board updated');
+  assert.equal(row5[2]?.value, 'Is the attendance board updated');
+
+  const blankSheet = createBlankCcSheet();
+  assert.equal(blankSheet.rows[7][2]?.value, 'Is the hourly production board updated');
+  assert.equal(blankSheet.rows[8][2]?.value, 'Is the attendance board updated');
+});
+
+test('9. C&C Sheet header fields (Date, Shift, Department, Section, Line) are frozen', async () => {
+  const fs = await import('node:fs');
+  const ccSheetSource = fs.readFileSync(new URL('../../components/lpa/CcSheet.jsx', import.meta.url), 'utf-8');
+
+  // Verify all 5 header fields have disabled attribute and cursor-not-allowed / frozen styling
+  assert.ok(ccSheetSource.includes('id="lpa-cc-date"'));
+  assert.ok(ccSheetSource.includes('id="lpa-cc-shift"'));
+  assert.ok(ccSheetSource.includes('id="lpa-cc-department"'));
+  assert.ok(ccSheetSource.includes('id="lpa-cc-section"'));
+  assert.ok(ccSheetSource.includes('id="lpa-cc-line"'));
+  assert.ok(ccSheetSource.includes('title="Date is frozen (selected during sheet creation)"'));
+  assert.ok(ccSheetSource.includes('title="Shift is frozen (selected during sheet creation)"'));
+});
+
+

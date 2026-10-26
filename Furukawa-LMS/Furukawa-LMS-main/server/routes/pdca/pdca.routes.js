@@ -134,7 +134,7 @@ const optionalAuth = async (req, res, next) => {
                 }
             }
         }
-    } catch {}
+    } catch { }
     next();
 };
 

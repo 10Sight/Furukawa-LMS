@@ -32,6 +32,7 @@ export default function EvidenceViewerModal({
   onViewEnlarged
 }) {
   const [isUploading, setIsUploading] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [replacingImageId, setReplacingImageId] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
@@ -47,11 +48,22 @@ export default function EvidenceViewerModal({
   const handleFileSelect = async (e) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
+    await handleAddFiles(files);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleAddFiles = async (files) => {
+    if (!files.length || isUploading) return;
 
     // Filter valid image types
     const validImages = files.filter((f) => f.type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(f.name));
     if (validImages.length === 0) {
       setErrorMessage('Please select valid image files (JPG, PNG, WEBP).');
+      return;
+    }
+    const oversized = validImages.find((file) => file.size > 15 * 1024 * 1024);
+    if (oversized) {
+      setErrorMessage(`"${oversized.name}" exceeds the 15 MB per-image limit.`);
       return;
     }
 
@@ -66,8 +78,14 @@ export default function EvidenceViewerModal({
       setErrorMessage('Failed to upload one or more images. Please try again.');
     } finally {
       setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
     }
+  };
+
+  const handleImageDrop = async (event) => {
+    event.preventDefault();
+    setIsDragOver(false);
+    if (readOnly || isUploading) return;
+    await handleAddFiles(Array.from(event.dataTransfer?.files || []));
   };
 
   // Trigger file replacement
@@ -268,11 +286,14 @@ export default function EvidenceViewerModal({
               {!readOnly && (
                 <div
                   onClick={() => !isUploading && fileInputRef.current?.click()}
-                  className="border-2 border-dashed border-slate-200 hover:border-blue-400 bg-slate-50/60 hover:bg-blue-50/30 rounded-xl p-3 flex items-center justify-center gap-2 cursor-pointer transition-colors text-slate-600 hover:text-blue-600"
+                  onDragOver={(event) => { event.preventDefault(); if (!readOnly && !isUploading) setIsDragOver(true); }}
+                  onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setIsDragOver(false); }}
+                  onDrop={handleImageDrop}
+                  className={`border-2 border-dashed rounded-xl p-3 flex items-center justify-center gap-2 transition-colors ${isDragOver ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 bg-slate-50/60 text-slate-600 hover:border-blue-400 hover:bg-blue-50/30 hover:text-blue-600'} ${isUploading ? 'cursor-wait opacity-70' : 'cursor-pointer'}`}
                 >
-                  <Upload className="w-4 h-4 text-blue-500" />
-                  <span className="text-xs font-semibold">Click to add more images</span>
-                  <span className="text-[10px] text-slate-400">(JPG, PNG, WEBP)</span>
+                  {isUploading ? <Loader2 className="w-4 h-4 animate-spin text-blue-500" /> : <Upload className="w-4 h-4 text-blue-500" />}
+                  <span className="text-xs font-semibold">{isUploading ? 'Uploading images...' : 'Drag and drop images here, or click to add more'}</span>
+                  <span className="text-[10px] text-slate-400">(JPG, PNG, WEBP, up to 15 MB each)</span>
                 </div>
               )}
 

@@ -129,7 +129,7 @@ function CheckboxMultiSelect({ value = [], options = [], onChange, disabled = fa
           aria-expanded={open}
           onClick={() => setOpen(current => !current)}
           title={label}
-          className={`flex w-full min-h-[30px] items-center justify-between gap-1 rounded-md border px-1.5 py-1 text-left text-[11px] leading-tight transition-colors ${selected.length ? 'border-blue-200 bg-blue-50/60 text-slate-800' : 'border-slate-200 bg-white text-slate-500'} ${open ? 'border-blue-400 ring-1 ring-blue-100' : 'hover:border-blue-300 hover:bg-blue-50/40'} disabled:cursor-default disabled:opacity-60`}
+          className={`flex w-full min-h-[30px] items-center justify-between gap-1 rounded-md border px-1.5 py-1 text-left text-[14px] leading-tight transition-colors ${selected.length ? 'border-blue-200 bg-blue-50/60 text-slate-800' : 'border-slate-200 bg-white text-slate-500'} ${open ? 'border-blue-400 ring-1 ring-blue-100' : 'hover:border-blue-300 hover:bg-blue-50/40'} disabled:cursor-default disabled:opacity-60`}
         >
           <span className="min-w-0 flex-1 truncate font-medium">{label || placeholder}</span>
           {selected.length > 1 && <span className="shrink-0 rounded-full bg-blue-100 px-1 py-0.2 text-[9px] font-semibold text-blue-700">({selected.length})</span>}
@@ -147,7 +147,7 @@ function CheckboxMultiSelect({ value = [], options = [], onChange, disabled = fa
           {options.map(option => {
             const optionValue = String(option.value);
             const checked = selected.includes(optionValue);
-            return <label key={optionValue} className={`flex min-h-8 cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-[11px] transition-colors ${checked ? 'bg-blue-50 text-blue-800' : 'text-slate-700 hover:bg-slate-50'}`}>
+            return <label key={optionValue} className={`flex min-h-8 cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-[13.5px] transition-colors ${checked ? 'bg-blue-50 text-blue-800' : 'text-slate-700 hover:bg-slate-50'}`}>
               <input className="h-3.5 w-3.5 shrink-0 accent-blue-600" type="checkbox" checked={checked} onChange={() => onChange(checked ? selected.filter(item => item !== optionValue) : [...selected, optionValue])} />
               <span className="min-w-0 flex-1 truncate">{option.label}</span>
             </label>;
@@ -179,7 +179,7 @@ export const MAX_COUNTER_MEASURE_WIDTH = 550;
 const createEmptyRow = (customDefaults = {}) => ({
   date: customDefaults.date || '',
   shift: customDefaults.shift || '',
-  status: customDefaults.status ? normalizePDCAStatus(customDefaults.status) : '',
+  status: customDefaults.status ? normalizePDCAStatus(customDefaults.status) : (customDefaults.date ? 'Not-Started' : ''),
   department: customDefaults.department || '',
   departments: Array.isArray(customDefaults.departments) ? customDefaults.departments : (customDefaults.department ? [customDefaults.department] : []),
   unit: customDefaults.unit || '',
@@ -405,7 +405,7 @@ function CompactDateCell({ value, onChange, readOnly = false, smallText = false 
   if (readOnly) {
     return (
       <div className="relative w-full h-full min-h-[42px] flex items-center justify-center p-1 select-none whitespace-nowrap">
-        <span className={`${smallText ? 'text-[12px]' : 'text-[15px]'} font-semibold text-slate-800 text-center tracking-tight whitespace-nowrap`}>
+        <span className="text-[14px] font-semibold text-slate-800 text-center tracking-tight whitespace-nowrap">
           {display || '-'}
         </span>
       </div>
@@ -449,7 +449,7 @@ function CompactDateCell({ value, onChange, readOnly = false, smallText = false 
             <X className="w-2.5 h-2.5 stroke-[2.5]" />
           </button>
           <div className="w-full flex items-center justify-center text-center pointer-events-none px-0.5 whitespace-nowrap">
-            <span className={`${smallText ? 'text-[12px]' : 'text-[15px]'} font-semibold text-slate-800 text-center tracking-tight whitespace-nowrap`}>
+            <span className="text-[14px] font-semibold text-slate-800 text-center tracking-tight whitespace-nowrap">
               {display}
             </span>
           </div>
@@ -497,9 +497,9 @@ function DurationMinCell({ value, readOnly, onChange, cellRef, requiredActionAll
           }
         }}
         title={!hasResponseDate ? "Select Response Date first to enter duration" : undefined}
-        className={`w-full py-1 text-base text-center font-medium whitespace-nowrap ${!hasResponseDate ? 'cursor-not-allowed opacity-50 select-none' : ''}`}
+        className={`w-full py-1 text-[14px] text-center font-medium whitespace-nowrap ${!hasResponseDate ? 'cursor-not-allowed opacity-50 select-none' : ''}`}
       >
-        <span className={`text-base font-medium whitespace-nowrap ${requiredActionAllowed ? 'text-red-700' : 'text-slate-800'}`}>
+        <span className={`text-[14px] font-medium whitespace-nowrap ${requiredActionAllowed ? 'text-red-700' : 'text-slate-800'}`}>
           {displayVal || '-'}
         </span>
       </div>
@@ -516,7 +516,7 @@ function DurationMinCell({ value, readOnly, onChange, cellRef, requiredActionAll
         data-required-action-allowed={requiredActionAllowed ? 'true' : undefined}
         tabIndex={requiredActionAllowed ? 0 : undefined}
         onClick={handleOpenWatch}
-        className={`group/watch w-full py-1 px-1 flex items-center justify-center gap-1.5 text-base font-semibold rounded transition-all cursor-pointer select-none whitespace-nowrap ${
+        className={`group/watch w-full py-1 px-1 flex items-center justify-center gap-1.5 text-[14px] font-semibold rounded transition-all cursor-pointer select-none whitespace-nowrap ${
           requiredActionAllowed
             ? 'border border-red-500 bg-red-50 text-red-700'
             : 'text-slate-800 hover:bg-blue-50/70'
@@ -1920,8 +1920,8 @@ export default function PDCASheet({
 
   const getStaffOptionsForRow = (rowIndex, targetUnit = null, targetDept = null) => {
     const row = rows[rowIndex];
-    const unitToUse = targetUnit || row?.respUnit || row?.responsiblePersonUnit || row?.unit || '';
-    const deptToUse = targetDept || row?.responsiblePersonDept || row?.department || '';
+    const unitToUse = targetUnit || '';
+    const deptToUse = targetDept || '';
     const currentUnit = unitToUse.trim().toLowerCase();
     const currentDept = deptToUse.trim().toLowerCase();
     const query = staffSearchQuery.trim().toLowerCase();
@@ -2278,13 +2278,15 @@ export default function PDCASheet({
   const [staffEmployeeModal, setStaffEmployeeModal] = useState({
     isOpen: false,
     rowIndex: null,
+    unit: null,
+    department: null,
     initialValue: '',
     initialEmployees: null
   });
 
-  const handleOpenAddStaffModal = (rowIndex) => {
+  const handleOpenAddStaffModal = (rowIndex, unit = null, department = null) => {
     const row = rows[rowIndex];
-    const existing = Array.isArray(row?.staffEmployees) && row.staffEmployees.length > 0
+    const allExisting = Array.isArray(row?.staffEmployees) && row.staffEmployees.length > 0
       ? row.staffEmployees
       : (row?.staffEmployee
         ? row.staffEmployee.split(/[,;]/).map((s) => s.trim()).filter(Boolean).map((p) => {
@@ -2296,6 +2298,9 @@ export default function PDCASheet({
           };
         })
         : []);
+    const existing = unit && department
+      ? allExisting.filter((employee) => employee.department === department && (employee.unit === unit || !employee.unit))
+      : allExisting;
 
     // When clicking (+) on an existing group, append an empty row for immediate entry
     const initialEmployees = existing.length > 0
@@ -2305,6 +2310,8 @@ export default function PDCASheet({
     setStaffEmployeeModal({
       isOpen: true,
       rowIndex,
+      unit,
+      department,
       initialValue: row?.staffEmployee || '',
       initialEmployees
     });
@@ -2350,6 +2357,37 @@ export default function PDCASheet({
     });
   };
 
+  const handleRemoveDepartmentEmployee = (rowIndex, unit, department, employee) => {
+    setRows((prev) => prev.map((row, index) => {
+      if (index !== rowIndex) return row;
+      const staffEmployees = (Array.isArray(row.staffEmployees) ? row.staffEmployees : []).filter((entry) => {
+        const sameDepartment = entry.department === department && (entry.unit === unit || !entry.unit);
+        const sameEmployee = employee.code ? entry.code === employee.code : entry.name === employee.name;
+        return !(sameDepartment && sameEmployee);
+      });
+      const primary = staffEmployees[0] || {};
+      const staffEmployee = staffEmployees.map((entry) => entry.code ? `${entry.name} (${entry.code})` : entry.name).join(', ');
+      return { ...row, staffEmployees, staffEmployee, staffName: primary.name || '', staffId: primary.code || '', employeeId: primary.code || '', responsiblePersonConfirmation: staffEmployee };
+    }));
+  };
+
+  const handleSaveDepartmentStaff = (_rowIndex, _formattedValue, employees) => {
+    const { rowIndex, unit, department } = staffEmployeeModal;
+    if (rowIndex == null || !unit || !department) return;
+    setRows((prev) => prev.map((row, index) => {
+      if (index !== rowIndex) return row;
+      const current = Array.isArray(row.staffEmployees) ? row.staffEmployees : [];
+      const retained = current.filter((employee) => !(employee.department === department && (employee.unit === unit || !employee.unit)));
+      const additions = employees
+        .filter((employee) => employee.name)
+        .map((employee) => ({ ...employee, department, unit }));
+      const staffEmployees = [...retained, ...additions];
+      const primary = staffEmployees[0] || {};
+      const staffEmployee = staffEmployees.map((employee) => employee.code ? `${employee.name} (${employee.code})` : employee.name).join(', ');
+      return { ...row, staffEmployees, staffEmployee, staffName: primary.name || '', staffId: primary.code || '', employeeId: primary.code || '', responsiblePersonConfirmation: staffEmployee };
+    }));
+  };
+
   const handleSaveStaffEmployee = (rowIndex, formattedValue, employeeList = []) => {
     handleSelectStaffMember(rowIndex, formattedValue, employeeList);
   };
@@ -2383,6 +2421,9 @@ export default function PDCASheet({
       }
       if (field === 'stdDurationMin') {
         updated[rowIndex] = { ...current, stdDurationMin: value, stdDuration: value };
+      } else if (field === 'date') {
+        const nextStatus = value ? (current.responseDate ? computePDCAStatus({ ...current, date: value }) : 'Not-Started') : '';
+        updated[rowIndex] = { ...current, date: value, status: nextStatus };
       } else if (field === 'unit' && current.unit !== value) {
         updated[rowIndex] = {
           ...current,
@@ -2515,9 +2556,22 @@ export default function PDCASheet({
       const currentRow = updated[rowIndex];
       if (!currentRow) return prev;
 
+      let targetDept = department;
+      let targetUnit = unit;
+
+      if (empObj && empObj.name) {
+        const cleanName = stripEmployeeId(empObj.name);
+        const code = (empObj.code || '').toUpperCase();
+        const autoDept = empObj.department || findEmployeeDepartment(`${cleanName} (${code})`, dbEmployees) || findEmployeeDepartment(`${cleanName} (${code})`, VERIFIED_EMPLOYEE_MASTER) || '';
+        targetDept = targetDept || autoDept;
+        if (!targetUnit) {
+          targetUnit = empObj.unit || (code.startsWith('GJ') ? 'Gujrat' : (code.startsWith('BW') ? 'Bawal' : (currentRow.respUnit || currentRow.unit || 'Bawal')));
+        }
+      }
+
       const currentList = Array.isArray(currentRow.staffEmployees) ? [...currentRow.staffEmployees] : [];
       const filtered = currentList.filter(
-        (emp) => !(emp.unit === unit && emp.department === department)
+        (emp) => !(targetUnit && emp.unit === targetUnit && (targetDept ? emp.department === targetDept : true))
       );
 
       if (empObj && empObj.name) {
@@ -2527,8 +2581,8 @@ export default function PDCASheet({
           id: empObj.id || undefined,
           name: cleanName,
           code,
-          department,
-          unit
+          department: targetDept,
+          unit: targetUnit
         });
       }
 
@@ -2538,6 +2592,12 @@ export default function PDCASheet({
 
       const primary = filtered[0] || {};
       const allDepts = [...new Set(filtered.map((e) => e.department).filter(Boolean))];
+      const finalUnit = targetUnit || primary.unit || currentRow.respUnit || 'Bawal';
+      const prevDeptsByUnit = currentRow.respDeptsByUnit || {};
+      const updatedDeptsByUnit = {
+        ...prevDeptsByUnit,
+        [finalUnit]: allDepts.length > 0 ? allDepts : (prevDeptsByUnit[finalUnit] || [])
+      };
 
       updated[rowIndex] = {
         ...currentRow,
@@ -2546,6 +2606,10 @@ export default function PDCASheet({
         staffName: primary.name || '',
         staffId: primary.code || '',
         employeeId: primary.code || '',
+        respUnit: finalUnit,
+        respUnits: (currentRow.respUnits && currentRow.respUnits.length > 0) ? currentRow.respUnits : [finalUnit],
+        responsiblePersonUnit: finalUnit,
+        respDeptsByUnit: updatedDeptsByUnit,
         responsiblePersonConfirmation: formattedStaff || currentRow.responsiblePersonConfirmation || '',
         responsiblePersonDept: allDepts.join(', ') || currentRow.responsiblePersonDept || ''
       };
@@ -3262,11 +3326,25 @@ export default function PDCASheet({
     });
 
     // Match against verified employee records in database using Staff ID and Staff Name
-    const primaryDept = employeesArray[0]?.department || findEmployeeDepartment(trimmedStaff, dbEmployees) || findEmployeeDepartment(trimmedStaff, VERIFIED_EMPLOYEE_MASTER);
+    const primaryDept = employeesArray[0]?.department || findEmployeeDepartment(trimmedStaff, dbEmployees) || findEmployeeDepartment(trimmedStaff, VERIFIED_EMPLOYEE_MASTER) || '';
+    const empCode = employeesArray[0]?.code || staffCode || '';
+    const empUnit = employeesArray[0]?.unit || (empCode.startsWith('GJ') ? 'Gujrat' : (empCode.startsWith('BW') ? 'Bawal' : ''));
 
     setRows((prev) => {
       const updated = [...prev];
       const currentRow = updated[rowIndex] || {};
+      const targetUnit = empUnit || currentRow.respUnit || (currentRow.respUnits && currentRow.respUnits[0]) || currentRow.unit || 'Bawal';
+
+      if (employeesArray.length > 0) {
+        employeesArray[0].department = primaryDept || employeesArray[0].department || '';
+        employeesArray[0].unit = targetUnit;
+      }
+
+      const prevDeptsByUnit = currentRow.respDeptsByUnit || {};
+      const updatedDeptsByUnit = {
+        ...prevDeptsByUnit,
+        [targetUnit]: primaryDept ? [primaryDept] : (prevDeptsByUnit[targetUnit] || [])
+      };
 
       const newRow = {
         ...currentRow,
@@ -3275,12 +3353,16 @@ export default function PDCASheet({
         staffName: cleanStaffName || currentRow.staffName || employeesArray[0]?.name || '',
         staffId: staffCode || currentRow.staffId || employeesArray[0]?.code || '',
         employeeId: staffCode || currentRow.employeeId || employeesArray[0]?.code || '',
-        responsiblePersonConfirmation: cleanStaffName
+        responsiblePersonConfirmation: cleanStaffName,
+        respUnit: targetUnit,
+        respUnits: (currentRow.respUnits && currentRow.respUnits.length > 0) ? currentRow.respUnits : [targetUnit],
+        responsiblePersonUnit: targetUnit,
+        respDeptsByUnit: updatedDeptsByUnit,
+        responsiblePersonDept: primaryDept || currentRow.responsiblePersonDept || ''
       };
 
       if (primaryDept && primaryDept !== 'CFT') {
         newRow.department = primaryDept;
-        newRow.responsiblePersonDept = primaryDept;
       }
 
       updated[rowIndex] = newRow;
@@ -4195,7 +4277,7 @@ export default function PDCASheet({
             </tr>
 
             <tr className="bg-[#ECEFF1] text-slate-800 text-[15px] font-semibold select-none text-center">
-              <th rowSpan={2} className="py-1.5 px-0.5 w-[82px] min-w-[78px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1]">
+              <th rowSpan={2} className="py-1.5 px-0.5 w-[110px] min-w-[105px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1]">
                 <span>Date</span> <span className="text-red-500 font-bold">*</span>
               </th>
               <th rowSpan={2} className="py-1.5 px-0.5 w-[38px] min-w-[34px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[11px]">
@@ -4459,7 +4541,7 @@ export default function PDCASheet({
                   className="group/row transition-colors"
                 >
                   {/* 1. Date (Stacked: Format on top, Calendar icon below) */}
-                  <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[82px] min-w-[78px]">
+                  <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[110px] min-w-[105px]">
                     <div className="w-full flex items-center justify-center">
                       <CompactDateCell
                         value={row.date}
@@ -4476,7 +4558,7 @@ export default function PDCASheet({
                         disabled={!canEditEntireRow}
                         value={row.shift === 'General' ? 'G' : (row.shift || '')}
                         onChange={(e) => handleCellChange(idx, 'shift', e.target.value)}
-                        className={`w-full bg-transparent border-0 outline-none px-1 py-1 text-base text-slate-800 font-semibold text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${!canEditEntireRow ? 'cursor-default appearance-none' : 'cursor-pointer'} transition-colors appearance-none`}
+                        className={`w-full bg-transparent border-0 outline-none px-1 py-1 text-[14px] text-slate-800 font-semibold text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${!canEditEntireRow ? 'cursor-default appearance-none' : 'cursor-pointer'} transition-colors appearance-none`}
                       >
                         <option value="">-</option>
                         <option value="A">A</option>
@@ -4491,19 +4573,19 @@ export default function PDCASheet({
                   </td>
 
                   {/* 3. S.No (Clean uneditable number, centered) */}
-                  <td className="p-1 align-middle text-center border-r border-b border-[#64748B] font-semibold text-slate-600 bg-[#FAFAFA] group-hover/row:bg-[#F1F5F9] select-none w-[34px] min-w-[30px] text-base">
+                  <td className="p-1 align-middle text-center border-r border-b border-[#64748B] font-semibold text-slate-600 bg-[#FAFAFA] group-hover/row:bg-[#F1F5F9] select-none w-[34px] min-w-[30px] text-[14px]">
                     {sNo}
                   </td>
 
-                  {/* 4. Status (Centered in cell) */}
+                  {/* 4. Status (Frozen - visible dropdown styling but user cannot select) */}
                   <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[124px] min-w-[118px]">
                     <div className="w-full flex items-center justify-center">
                       <select
-                        disabled={!canEditEntireRow}
+                        disabled={true}
+                        tabIndex={-1}
                         aria-label={`Status for row ${sNo}`}
                         value={row.status ? normalizePDCAStatus(row.status) : ''}
-                        onChange={event => handleStatusChange(idx, event.target.value)}
-                        className={`w-full min-w-full rounded-md border px-1.5 py-1 text-[15px] font-medium outline-none whitespace-nowrap ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer focus:ring-2 focus:ring-blue-300'} text-center ${normalizePDCAStatus(row.status) === 'Done' ? 'bg-green-50 text-green-700 border-green-200' :
+                        className={`w-full min-w-full rounded-md border px-1.5 py-1 text-[14px] font-medium outline-none whitespace-nowrap cursor-not-allowed pointer-events-none select-none text-center ${normalizePDCAStatus(row.status) === 'Done' ? 'bg-green-50 text-green-700 border-green-200' :
                           normalizePDCAStatus(row.status) === 'In- Progress' ? 'bg-yellow-50 text-yellow-800 border-yellow-300' :
                             normalizePDCAStatus(row.status) === 'Delay' ? 'bg-red-50 text-red-700 border-red-200' :
                               'bg-blue-50 text-blue-700 border-blue-200'
@@ -4657,7 +4739,7 @@ export default function PDCASheet({
                       onChange={(e) => handleCellChange(idx, 'observation', e.target.value)}
                       onKeyDown={(e) => handleKeyDown(e, idx, 'observation')}
                       placeholder="Observation details..."
-                      className="w-full bg-transparent border-0 outline-none p-1.5 text-base text-slate-800 text-left leading-relaxed focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 whitespace-pre-wrap break-words"
+                      className="w-full bg-transparent border-0 outline-none p-1.5 text-[14px] text-slate-800 text-left leading-relaxed focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 whitespace-pre-wrap break-words"
                     />
                   </td>
 
@@ -4785,7 +4867,7 @@ export default function PDCASheet({
                         onChange={(e) => handleCellChange(idx, 'rootCause', e.target.value)}
                         onKeyDown={(e) => handleKeyDown(e, idx, 'rootCause')}
                         placeholder="Root cause..."
-                        className="w-full bg-transparent border-0 outline-none p-1.5 text-base text-slate-800 text-center leading-snug whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center"
+                        className="w-full bg-transparent border-0 outline-none p-1.5 text-[14px] text-slate-800 text-center leading-snug whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center"
                       />
                     </div>
                   </td>
@@ -4807,7 +4889,7 @@ export default function PDCASheet({
                         onChange={(e) => handleCellChange(idx, 'actionTaken', e.target.value)}
                         onKeyDown={(e) => handleKeyDown(e, idx, 'actionTaken')}
                         placeholder={canEditActionCols ? "Corrective action..." : ""}
-                        className="w-full bg-transparent border-0 outline-none p-1.5 text-base text-slate-800 text-center leading-snug whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center"
+                        className="w-full bg-transparent border-0 outline-none p-1.5 text-[14px] text-slate-800 text-center leading-snug whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center"
                       />
                     </div>
                   </td>
@@ -4829,7 +4911,7 @@ export default function PDCASheet({
                         onChange={(e) => handleCellChange(idx, 'counterMeasure', e.target.value)}
                         onKeyDown={(e) => handleKeyDown(e, idx, 'counterMeasure')}
                         placeholder="Counter measure..."
-                        className="w-full bg-transparent border-0 outline-none p-1.5 text-base text-slate-800 text-center leading-snug whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center"
+                        className="w-full bg-transparent border-0 outline-none p-1.5 text-[14px] text-slate-800 text-center leading-snug whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center"
                       />
                     </div>
                   </td>
@@ -4986,7 +5068,7 @@ export default function PDCASheet({
                               className="group/rev w-full py-1.5 px-1.5 flex flex-col items-center justify-center text-center gap-1.5 hover:bg-slate-50 transition-colors"
                             >
                               <div className="w-full flex items-center justify-between gap-1">
-                                <span className="flex-1 text-[12px] font-semibold text-slate-800 whitespace-nowrap text-center">
+                                <span className="flex-1 text-[14px] font-semibold text-slate-800 whitespace-nowrap text-center">
                                   {rIdx + 1}) {formatDisplayDate(revDate)}
                                 </span>
                                 {isAdmin && (
@@ -5021,7 +5103,7 @@ export default function PDCASheet({
                                 dataRequiredActionAllowed={!revReason.trim()}
                                 onChange={(e) => handleRevisionReasonChange(idx, rIdx, e.target.value)}
                                 placeholder="Why revised..."
-                                className="w-full text-[12px] font-medium text-slate-800 bg-white border border-slate-300 focus:border-blue-500 rounded px-2 py-1 text-center shadow-2xs focus:outline-none"
+                                className="w-full text-[14px] font-medium text-slate-800 bg-white border border-slate-300 focus:border-blue-500 rounded px-2 py-1 text-center shadow-2xs focus:outline-none"
                               />
                             </div>
                           );
@@ -5076,7 +5158,7 @@ export default function PDCASheet({
                                 style={{ flex: flexGrow }}
                                 className="relative min-h-[30px] flex items-center justify-between px-2 py-1 bg-white hover:bg-slate-50 transition-colors"
                               >
-                                <span className="text-[11px] font-bold text-slate-800">{unitName}</span>
+                                <span className="text-[14px] font-bold text-slate-800">{unitName}</span>
                                 {canEditEntireRow && (
                                   <CheckboxMultiSelect
                                     value={units}
@@ -5109,7 +5191,7 @@ export default function PDCASheet({
                       const { units, deptsByUnit } = getResponsiblePersonStructure(row);
                       if (units.length === 0) {
                         return (
-                          <div className="w-full py-1 text-center text-slate-300 text-xs select-none" title="Select Unit first">
+                          <div className="w-full py-1 text-center text-slate-300 text-[14px] select-none" title="Select Staff Name to auto-fetch Department">
                             -
                           </div>
                         );
@@ -5146,7 +5228,7 @@ export default function PDCASheet({
                                   style={{ flex: flexGrow }}
                                   className="flex-1 min-h-[30px] flex items-center justify-between px-2 py-1 gap-1 hover:bg-blue-50/40 transition-colors"
                                 >
-                                  <span className="text-[11px] font-semibold text-slate-800 whitespace-nowrap text-left" title={unitDepts[0]}>
+                                  <span className="text-[14px] font-semibold text-slate-800 whitespace-nowrap text-left" title={unitDepts[0]}>
                                     {unitDepts[0]}
                                   </span>
                                   {canEditEntireRow && (
@@ -5183,7 +5265,7 @@ export default function PDCASheet({
                                     key={deptName}
                                     className="flex-1 min-h-[30px] flex items-center justify-between px-2 py-1 gap-1 hover:bg-blue-50/40 transition-colors"
                                   >
-                                    <span className="text-[11px] font-semibold text-slate-800 whitespace-nowrap text-left" title={deptName}>
+                                    <span className="text-[14px] font-semibold text-slate-800 whitespace-nowrap text-left" title={deptName}>
                                       {deptName}
                                     </span>
                                     {canEditEntireRow && (
@@ -5214,14 +5296,48 @@ export default function PDCASheet({
                     })()}
                   </td>
 
-                  {/* 13. Staff Name (Centered in cell, supports multiple departments/units aligned) */}
+                  {/* 13. Staff Name (Centered in cell, supports multiple departments/units aligned, or selecting staff directly without department) */}
                   <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[160px] min-w-[150px]">
                     {(() => {
                       const { units, deptsByUnit } = getResponsiblePersonStructure(row);
                       if (units.length === 0) {
+                        const assignedEmps = row.staffEmployees || [];
+                        const legacyDisplay = !assignedEmps.length ? (row.staffEmployee ? stripEmployeeId(row.staffEmployee) : '') : '';
+                        if (assignedEmps.length || legacyDisplay) {
+                          return (
+                            <div className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors">
+                              {(assignedEmps.length ? assignedEmps : [{ name: legacyDisplay, legacy: true }]).map((employee, employeeIndex) => (
+                                <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
+                                  <button type="button" disabled={!canEditEntireRow} onClick={(e) => handleToggleStaffDropdown(idx, e)} className={`min-w-0 flex-1 truncate text-left text-[14px] font-semibold text-slate-800 ${canEditEntireRow ? 'cursor-pointer hover:text-blue-600' : 'cursor-default'}`} title={`Staff: ${employee.name}`}>
+                                    {stripEmployeeId(employee.name || employee.label || '')}
+                                  </button>
+                                  {canEditEntireRow && <button type="button" onClick={() => handleSelectStaffMember(idx, '')} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>}
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        }
+                        if (!canEditEntireRow) {
+                          return (
+                            <div className="w-full py-1 text-center text-slate-300 text-[14px] select-none">
+                              -
+                            </div>
+                          );
+                        }
                         return (
-                          <div className="w-full py-1 text-center text-slate-300 text-xs select-none">
-                            -
+                          <div className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1">
+                            <button
+                              type="button"
+                              onClick={(e) => handleToggleStaffDropdown(idx, e)}
+                              className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer"
+                              title="Select staff name (Department will auto-fetch)"
+                            >
+                              <div className="flex items-center gap-1 text-[14px]">
+                                <Search className="h-3.5 w-3.5" />
+                                <span>Staff...</span>
+                                <ChevronDown className="h-3 w-3" />
+                              </div>
+                            </button>
                           </div>
                         );
                       }
@@ -5232,13 +5348,60 @@ export default function PDCASheet({
                             const flexGrow = Math.max(1, unitDepts.length);
 
                             if (unitDepts.length === 0) {
+                              const assignedEmps = (row.staffEmployees || []).filter(
+                                (e) => e.unit === unitName || (!e.unit && units.length === 1)
+                              );
+                              const legacyDisplay = units.length === 1 && !assignedEmps.length ? (row.staffEmployee ? stripEmployeeId(row.staffEmployee) : '') : '';
+
+                              if (assignedEmps.length || legacyDisplay) {
+                                return (
+                                  <div
+                                    key={unitName}
+                                    style={{ flex: flexGrow }}
+                                    className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors"
+                                  >
+                                    {(assignedEmps.length ? assignedEmps : [{ name: legacyDisplay, legacy: true }]).map((employee, employeeIndex) => (
+                                      <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
+                                        <button type="button" disabled={!canEditEntireRow} onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, '', e)} className={`min-w-0 flex-1 truncate text-left text-[14px] font-semibold text-slate-800 ${canEditEntireRow ? 'cursor-pointer hover:text-blue-600' : 'cursor-default'}`} title={`${unitName}: ${employee.name}`}>
+                                          {stripEmployeeId(employee.name || employee.label || '')}
+                                        </button>
+                                        {canEditEntireRow && <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(idx, unitName, '', null) : handleRemoveDepartmentEmployee(idx, unitName, '', employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>}
+                                      </div>
+                                    ))}
+                                  </div>
+                                );
+                              }
+
+                              if (!canEditEntireRow) {
+                                return (
+                                  <div
+                                    key={unitName}
+                                    style={{ flex: flexGrow }}
+                                    className="w-full py-1.5 flex items-center justify-center text-slate-300 text-[14px] select-none"
+                                  >
+                                    -
+                                  </div>
+                                );
+                              }
+
                               return (
                                 <div
                                   key={unitName}
                                   style={{ flex: flexGrow }}
-                                  className="w-full py-1.5 flex items-center justify-center text-slate-300 text-[10px] select-none"
+                                  className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1"
                                 >
-                                  -
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, '', e)}
+                                    className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer"
+                                    title={`Select staff for ${unitName} (Department will auto-fetch)`}
+                                  >
+                                    <div className="flex items-center gap-1 text-[14px]">
+                                      <Search className="h-3.5 w-3.5" />
+                                      <span>Staff...</span>
+                                      <ChevronDown className="h-3 w-3" />
+                                    </div>
+                                  </button>
                                 </div>
                               );
                             }
@@ -5250,41 +5413,26 @@ export default function PDCASheet({
                                 className="flex flex-col h-full w-full divide-y divide-[#CBD5E1] justify-center"
                               >
                                 {unitDepts.map((deptName) => {
-                                  const assignedEmp = (row.staffEmployees || []).find(
+                                  const assignedEmps = (row.staffEmployees || []).filter(
                                     (e) => e.department === deptName && (e.unit === unitName || (!e.unit && units.length === 1))
                                   );
-                                  const assignedDisplay = assignedEmp
-                                    ? stripEmployeeId(assignedEmp.name || assignedEmp.label || '')
-                                    : (units.length === 1 && unitDepts.length === 1 && row.staffEmployee ? stripEmployeeId(row.staffEmployee) : '');
+                                  const legacyDisplay = units.length === 1 && unitDepts.length === 1 && !(row.staffEmployees || []).length ? row.staffEmployee : '';
 
-                                  if (assignedDisplay) {
+                                  if (assignedEmps.length || legacyDisplay) {
                                     return (
                                       <div
                                         key={deptName}
-                                        className="relative flex-1 w-full min-h-[30px] pl-2 pr-6 py-1 flex items-center justify-between gap-1 group/emp hover:bg-slate-50 transition-colors"
+                                        className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors"
                                       >
-                                        <button
-                                          type="button"
-                                          disabled={!canEditEntireRow}
-                                          onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, deptName, e)}
-                                          className={`text-[10px] font-semibold text-slate-800 truncate text-left w-full ${!canEditEntireRow ? 'cursor-default' : 'hover:text-blue-600 cursor-pointer'} transition-colors`}
-                                          title={`Click to change staff for ${unitName} - ${deptName}: ${assignedDisplay}`}
-                                        >
-                                          {assignedDisplay}
-                                        </button>
-                                        {canEditEntireRow && (
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleSelectStaffForUnitDept(idx, unitName, deptName, null);
-                                            }}
-                                            className="opacity-0 group-hover/emp:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 p-0.5 rounded transition-all cursor-pointer flex-shrink-0 absolute right-1 top-1/2 -translate-y-1/2"
-                                            title={`Clear staff for ${unitName} - ${deptName}`}
-                                          >
-                                            <X className="w-2.5 h-2.5 stroke-[2.5]" />
-                                          </button>
-                                        )}
+                                        {(assignedEmps.length ? assignedEmps : (legacyDisplay ? [{ name: legacyDisplay, department: deptName, unit: unitName, legacy: true }] : [])).map((employee, employeeIndex) => (
+                                          <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
+                                            <button type="button" disabled={!canEditEntireRow} onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, deptName, e)} className={`min-w-0 flex-1 truncate text-left text-[14px] font-semibold text-slate-800 ${canEditEntireRow ? 'cursor-pointer hover:text-blue-600' : 'cursor-default'}`} title={`${unitName} - ${deptName}: ${employee.name}`}>
+                                              {stripEmployeeId(employee.name || employee.label || '')}
+                                            </button>
+                                            {canEditEntireRow && <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(idx, unitName, deptName, null) : handleRemoveDepartmentEmployee(idx, unitName, deptName, employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>}
+                                          </div>
+                                        ))}
+                                        {canEditEntireRow && <button type="button" onClick={() => handleOpenAddStaffModal(idx, unitName, deptName)} className="flex items-center justify-center gap-1 rounded py-0.5 text-[13px] font-semibold text-blue-600 hover:bg-blue-50 cursor-pointer"><Plus className="h-3 w-3" /> Add Employee</button>}
                                       </div>
                                     );
                                   }
@@ -5293,7 +5441,7 @@ export default function PDCASheet({
                                     return (
                                       <div
                                         key={deptName}
-                                        className="flex-1 w-full min-h-[30px] flex items-center justify-center text-slate-300 text-[10px] select-none"
+                                        className="flex-1 w-full min-h-[30px] flex items-center justify-center text-slate-300 text-[14px] select-none"
                                       >
                                         -
                                       </div>
@@ -5305,18 +5453,10 @@ export default function PDCASheet({
                                       key={deptName}
                                       className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1"
                                     >
-                                      <button
-                                        type="button"
-                                        onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, deptName, e)}
-                                        className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 transition-colors cursor-pointer rounded group"
-                                        title={`Select staff for ${unitName} - ${deptName}`}
-                                      >
-                                        <div className="flex items-center gap-0.5 text-[9.5px] text-slate-400 group-hover:text-blue-600">
-                                          <Search className="w-2.5 h-2.5" />
-                                          <span className="truncate">Staff...</span>
-                                          <ChevronDown className="w-2.5 h-2.5" />
+                                        <div className="flex w-full flex-col items-center">
+                                          <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, deptName, e)} className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer" title={`Select staff for ${unitName} - ${deptName}`}><div className="flex items-center gap-1 text-[14px]"><Search className="h-3.5 w-3.5" /><span>Staff...</span><ChevronDown className="h-3 w-3" /></div></button>
+                                          {canEditEntireRow && <button type="button" onClick={() => handleOpenAddStaffModal(idx, unitName, deptName)} className="flex items-center gap-1 py-0.5 text-[13px] font-semibold text-blue-600 hover:bg-blue-50 rounded cursor-pointer"><Plus className="h-3 w-3" /> Add Employee</button>}
                                         </div>
-                                      </button>
                                     </div>
                                   );
                                 })}
@@ -5341,7 +5481,7 @@ export default function PDCASheet({
                             title={`CFT Topic: ${row.cftTopic} (Click to view members)`}
                           >
                             <span
-                              className="text-[10px] font-semibold truncate max-w-[85px] leading-tight text-blue-900 hover:text-blue-700 transition-colors"
+                              className="text-[14px] font-semibold truncate max-w-[85px] leading-tight text-blue-900 hover:text-blue-700 transition-colors"
                               title={row.cftTopic}
                             >
                               {row.cftTopic}
@@ -5349,7 +5489,7 @@ export default function PDCASheet({
                             {row.cftSelectedName && (
                               <div className="flex items-center gap-0.5 mt-0.5">
                                 <span
-                                  className={`text-[8.5px] font-medium truncate max-w-[80px] px-0.5 py-0.2 rounded leading-tight ${row.cftSelectedType === 'member'
+                                  className={`text-[13px] font-medium truncate max-w-[80px] px-0.5 py-0.2 rounded leading-tight ${row.cftSelectedType === 'member'
                                     ? 'text-blue-700 bg-blue-50 border border-blue-200'
                                     : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
                                     }`}
@@ -6158,7 +6298,7 @@ export default function PDCASheet({
         rowIndex={staffEmployeeModal.rowIndex}
         initialValue={staffEmployeeModal.initialValue}
         initialEmployees={staffEmployeeModal.initialEmployees}
-        onSave={handleSaveStaffEmployee}
+        onSave={staffEmployeeModal.department ? handleSaveDepartmentStaff : handleSaveStaffEmployee}
         onClose={() => setStaffEmployeeModal((prev) => ({ ...prev, isOpen: false }))}
       />
 

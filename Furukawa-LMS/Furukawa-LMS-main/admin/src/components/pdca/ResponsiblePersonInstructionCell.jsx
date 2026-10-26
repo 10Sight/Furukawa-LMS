@@ -66,11 +66,11 @@ export default function ResponsiblePersonInstructionCell({
       {/* 1. Upside: User name printed directly in cell */}
       <div className="w-full text-left pl-0.5 pb-1 min-h-[18px]">
         {confirmedBy ? (
-          <span className="text-[12.5px] font-semibold text-slate-800 leading-tight block truncate select-text" title={`Confirmed / Reviewed by: ${stripEmployeeId(confirmedBy)}`}>
+          <span className="text-[14px] font-semibold text-slate-800 leading-tight block truncate select-text" title={`Confirmed / Reviewed by: ${stripEmployeeId(confirmedBy)}`}>
             {stripEmployeeId(confirmedBy)}
           </span>
         ) : (
-          <span className="text-[11px] text-slate-300 block select-none">-</span>
+          <span className="text-[13px] text-slate-300 block select-none">-</span>
         )}
       </div>
 
@@ -83,7 +83,7 @@ export default function ResponsiblePersonInstructionCell({
           aria-label={`Responsible person confirmation for row ${sNo}`}
           value={isConfirmed ? 'Confirmed' : isNotConfirmed ? 'Not-Confirmed' : ''}
           onChange={handleSelectConfirmation}
-          className={`w-full rounded-lg border px-2.5 py-1.5 text-[12.5px] font-medium outline-none text-left appearance-none transition-all ${
+          className={`w-full rounded-lg border px-2.5 py-1.5 text-[14px] font-medium outline-none text-left appearance-none transition-all ${
             readOnly ? 'cursor-default' : 'cursor-pointer focus:ring-2 focus:ring-blue-300'
           } ${
             isNotConfirmed
@@ -108,7 +108,7 @@ export default function ResponsiblePersonInstructionCell({
       {/* 3. Downside: Mandatory Input when Not-Confirmed */}
       {isNotConfirmed && (
         <div className="w-full mt-1.5 flex flex-col items-start">
-          <span className="text-[11px] font-semibold text-red-500 text-left pl-0.5 mb-1 leading-none select-none">
+          <span className="text-[12px] font-semibold text-red-500 text-left pl-0.5 mb-1 leading-none select-none">
             * Required
           </span>
           <textarea
@@ -127,7 +127,7 @@ export default function ResponsiblePersonInstructionCell({
               e.stopPropagation();
             }}
             placeholder="Enter reason (required)"
-            className={`w-full text-[12.5px] p-2 rounded-lg border outline-none leading-relaxed transition-all resize-y select-text ${
+            className={`w-full text-[14px] p-2 rounded-lg border outline-none leading-relaxed transition-all resize-y select-text ${
               !instruction.trim()
                 ? 'border-red-400 bg-white text-slate-800 placeholder:text-slate-400 focus:ring-1 focus:ring-red-400'
                 : 'border-red-300 bg-white text-slate-800 focus:border-red-400 focus:ring-1 focus:ring-red-400'

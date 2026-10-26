@@ -8,7 +8,7 @@ export function createEmptyRow(customDefaults = {}) {
   return {
     date: customDefaults.date || '',
     shift: customDefaults.shift || '',
-    status: customDefaults.status || '',
+    status: customDefaults.status || (customDefaults.date ? 'Not-Started' : ''),
     department: customDefaults.department || '',
     unit: customDefaults.unit || '',
     section: customDefaults.section || '',

@@ -173,7 +173,7 @@ export default function SearchableSectionSelect({
         title={displayLabel ? `${displayLabel} ${currentSection?.uniCode ? `(${currentSection.uniCode})` : ''}` : 'Click to select Section'}
       >
         <span
-          className={`truncate text-[12.5px] leading-tight block w-full text-center whitespace-nowrap ${
+          className={`truncate text-[14px] leading-tight block w-full text-center whitespace-nowrap ${
             displayLabel ? 'font-medium text-slate-800' : 'text-slate-400 italic'
           }`}
         >

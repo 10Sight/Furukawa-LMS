@@ -3902,13 +3902,17 @@ export default function PDCASheet({
 
   const departmentsList = PDCA_DEPARTMENTS;
 
-  // Auto-adjusting widths for Section and Line/Area columns:
-  // Decreased base width when empty or short, expands automatically if a selected option is bigger.
-  const { sectionColWidth, lineAreaColWidth } = useMemo(() => {
+  // Auto-adjust columns to fit the longest visible values while keeping usable minimums.
+  const { dateColWidth, departmentColWidth, sectionColWidth, lineAreaColWidth } = useMemo(() => {
+    let maxDateLen = 0;
+    let maxDepartmentLen = 0;
     let maxSectionLen = 0;
     let maxLineAreaLen = 0;
 
     for (const r of rows) {
+      maxDateLen = Math.max(maxDateLen, formatDisplayDate(r.date).length);
+      const departmentText = (r.departments?.length ? r.departments : [r.department]).filter(Boolean).join(', ');
+      maxDepartmentLen = Math.max(maxDepartmentLen, departmentText.length);
       const secText = (r.section || r.sectionCode || '').trim();
       if (secText.length > maxSectionLen) {
         maxSectionLen = secText.length;
@@ -3919,12 +3923,14 @@ export default function PDCASheet({
       }
     }
 
+    const dateWidth = Math.min(220, Math.max(150, Math.round(maxDateLen * 10 + 50)));
+    const departmentWidth = Math.min(260, Math.max(150, Math.round(maxDepartmentLen * 9 + 42)));
     // Base widths:
-    // Section: when empty/placeholder ("Section..."), base width is ~80px (previously 130px).
+    // Keep the Section column wide enough for readable selections and placeholders.
     // If selected option is bigger, auto-adjusts smoothly to fit without wrapping.
     const secWidth = maxSectionLen === 0
-      ? 80
-      : Math.min(220, Math.max(80, Math.round(maxSectionLen * 7.2 + 34)));
+      ? 160
+      : Math.min(280, Math.max(160, Math.round(maxSectionLen * 8 + 42)));
 
     // Line/Area: when empty/placeholder ("Line/Area..."), base width is ~90px (previously 130px).
     // If selected option is bigger, auto-adjusts smoothly to fit without wrapping.
@@ -3932,7 +3938,7 @@ export default function PDCASheet({
       ? 90
       : Math.min(220, Math.max(90, Math.round(maxLineAreaLen * 7.2 + 38)));
 
-    return { sectionColWidth: secWidth, lineAreaColWidth: lineAreaWidth };
+    return { dateColWidth: dateWidth, departmentColWidth: departmentWidth, sectionColWidth: secWidth, lineAreaColWidth: lineAreaWidth };
   }, [rows]);
 
   // Live Cumulative Points calculation across this sheet
@@ -4298,7 +4304,7 @@ export default function PDCASheet({
             </tr>
 
             <tr className="bg-[#ECEFF1] text-slate-800 text-[15px] font-semibold select-none text-center">
-              <th rowSpan={2} className="py-1.5 px-0.5 w-[130px] min-w-[125px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1]">
+              <th rowSpan={2} className="py-1.5 px-0.5 w-[150px] min-w-[145px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1]">
                 <span>Date</span> <span className="text-red-500 font-bold">*</span>
               </th>
               <th rowSpan={2} className="py-1.5 px-0.5 w-[38px] min-w-[34px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[11px]">
@@ -4370,7 +4376,7 @@ export default function PDCASheet({
                   <span className="h-4 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 transition-opacity" />
                 </span>
               </th>
-              <th rowSpan={2} className="py-1.5 px-1 w-[150px] min-w-[140px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px]">
+              <th rowSpan={2} className="py-1.5 px-1 w-[200px] min-w-[190px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px]">
                 Image Before
               </th>
               <th
@@ -4477,7 +4483,7 @@ export default function PDCASheet({
                   <span className="h-4 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 transition-opacity" />
                 </span>
               </th>
-              <th rowSpan={2} className="py-1.5 px-1 w-[150px] min-w-[140px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px]">
+              <th rowSpan={2} className="py-1.5 px-1 w-[200px] min-w-[190px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px]">
                 Image After
               </th>
               <th rowSpan={2} className="py-1.5 px-1.5 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 leading-tight select-none">
@@ -4562,7 +4568,7 @@ export default function PDCASheet({
                   className="group/row transition-colors"
                 >
                   {/* 1. Date (Stacked: Format on top, Calendar icon below) */}
-                  <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[130px] min-w-[125px]">
+                  <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[150px] min-w-[145px]">
                     <div className="w-full flex items-center justify-center">
                       <CompactDateCell
                         value={row.date}
@@ -4765,7 +4771,7 @@ export default function PDCASheet({
                   </td>
 
                   {/* 7. Image (Before) - Compact when empty; expands only when evidence is uploaded */}
-                  <td className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[150px] min-w-[140px] text-center">
+                  <td className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[200px] min-w-[190px] text-center">
                     {(() => {
                       const isDoc = row.fileTypeBefore && ['pdf', 'excel', 'ppt', 'document'].includes(row.fileTypeBefore);
 
@@ -4820,14 +4826,14 @@ export default function PDCASheet({
                             <button
                               type="button"
                               onClick={() => handleOpenEvidenceViewer(idx, 'imageBefore')}
-                              className="group relative inline-flex flex-col items-center justify-center p-1.5 rounded-xl border border-slate-300 hover:border-blue-500 hover:ring-2 hover:ring-blue-100 transition-all cursor-pointer bg-slate-50/80 shadow-2xs overflow-hidden w-full"
+                              className="group relative inline-flex flex-col items-center justify-center p-1 rounded-lg border-0 transition-all cursor-pointer bg-transparent shadow-none overflow-hidden w-full"
                               title={`Click to view all ${beforeImages.length} evidence photo(s)`}
                             >
-                              <div className="relative flex items-center justify-center w-full min-h-[64px] max-h-[85px]">
+                              <div className="relative flex items-center justify-center w-full min-h-[120px] max-h-[130px]">
                                 <img
                                   src={getMediaUrl(beforeImages[0].url)}
                                   alt={beforeImages[0].name || `Row ${sNo} Before`}
-                                  className="h-16 max-h-[80px] w-auto max-w-[130px] object-contain rounded transition-transform duration-200 group-hover:scale-105"
+                                  className="max-h-[120px] max-w-[180px] w-auto h-auto object-contain rounded transition-transform duration-200 group-hover:scale-105"
                                 />
                                 <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded transition-opacity text-white">
                                   <span className="flex items-center gap-1 bg-black/70 backdrop-blur-xs px-2 py-0.5 rounded-md text-[10px] font-medium text-white shadow">
@@ -4878,9 +4884,9 @@ export default function PDCASheet({
                       minWidth: `${rootCauseWidth}px`,
                       maxWidth: `${rootCauseWidth}px`
                     }}
-                    className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-center overflow-hidden"
+                    className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-left overflow-hidden"
                   >
-                    <div className="w-full flex items-center justify-center">
+                    <div className="w-full flex items-center justify-start">
                       <AutoResizeTextarea
                         inputRef={(el) => registerRef(idx, 'rootCause', el)}
                         value={row.rootCause}
@@ -4888,7 +4894,7 @@ export default function PDCASheet({
                         onChange={(e) => handleCellChange(idx, 'rootCause', e.target.value)}
                         onKeyDown={(e) => handleKeyDown(e, idx, 'rootCause')}
                         placeholder="Root cause..."
-                        className="w-full bg-transparent border-0 outline-none p-1.5 text-[14px] text-slate-800 text-center leading-snug whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center"
+                        className="w-full bg-transparent border-0 outline-none p-1.5 text-[14px] text-slate-800 text-left leading-snug whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-left"
                       />
                     </div>
                   </td>
@@ -4900,9 +4906,9 @@ export default function PDCASheet({
                       minWidth: `${actionTakenWidth}px`,
                       maxWidth: `${actionTakenWidth}px`
                     }}
-                    className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-center overflow-hidden"
+                    className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-left overflow-hidden"
                   >
-                    <div className="w-full flex items-center justify-center">
+                    <div className="w-full flex items-center justify-start">
                       <AutoResizeTextarea
                         inputRef={(el) => registerRef(idx, 'actionTaken', el)}
                         value={row.actionTaken || ''}
@@ -4910,7 +4916,7 @@ export default function PDCASheet({
                         onChange={(e) => handleCellChange(idx, 'actionTaken', e.target.value)}
                         onKeyDown={(e) => handleKeyDown(e, idx, 'actionTaken')}
                         placeholder={canEditActionCols ? "Corrective action..." : ""}
-                        className="w-full bg-transparent border-0 outline-none p-1.5 text-[14px] text-slate-800 text-center leading-snug whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center"
+                        className="w-full bg-transparent border-0 outline-none p-1.5 text-[14px] text-slate-800 text-left leading-snug whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-left"
                       />
                     </div>
                   </td>
@@ -4922,9 +4928,9 @@ export default function PDCASheet({
                       minWidth: `${counterMeasureWidth}px`,
                       maxWidth: `${counterMeasureWidth}px`
                     }}
-                    className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-center overflow-hidden"
+                    className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-left overflow-hidden"
                   >
-                    <div className="w-full flex items-center justify-center">
+                    <div className="w-full flex items-center justify-start">
                       <AutoResizeTextarea
                         inputRef={(el) => registerRef(idx, 'counterMeasure', el)}
                         value={row.counterMeasure}
@@ -4932,13 +4938,13 @@ export default function PDCASheet({
                         onChange={(e) => handleCellChange(idx, 'counterMeasure', e.target.value)}
                         onKeyDown={(e) => handleKeyDown(e, idx, 'counterMeasure')}
                         placeholder="Counter measure..."
-                        className="w-full bg-transparent border-0 outline-none p-1.5 text-[14px] text-slate-800 text-center leading-snug whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center"
+                        className="w-full bg-transparent border-0 outline-none p-1.5 text-[14px] text-slate-800 text-left leading-snug whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-left"
                       />
                     </div>
                   </td>
 
                   {/* 10. Image After - Compact when empty; expands only when evidence is uploaded */}
-                  <td className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[150px] min-w-[140px] text-center">
+                  <td className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[200px] min-w-[190px] text-center">
                     {(() => {
                       const isDoc = row.fileTypeAfter && ['pdf', 'excel', 'ppt', 'document'].includes(row.fileTypeAfter);
 
@@ -4993,14 +4999,14 @@ export default function PDCASheet({
                             <button
                               type="button"
                               onClick={() => handleOpenEvidenceViewer(idx, 'imageAfter')}
-                              className="group relative inline-flex flex-col items-center justify-center p-1.5 rounded-xl border border-slate-300 hover:border-blue-500 hover:ring-2 hover:ring-blue-100 transition-all cursor-pointer bg-slate-50/80 shadow-2xs overflow-hidden w-full"
+                              className="group relative inline-flex flex-col items-center justify-center p-1 rounded-lg border-0 transition-all cursor-pointer bg-transparent shadow-none overflow-hidden w-full"
                               title={`Click to view all ${afterImages.length} evidence photo(s)`}
                             >
-                              <div className="relative flex items-center justify-center w-full min-h-[64px] max-h-[85px]">
+                              <div className="relative flex items-center justify-center w-full min-h-[120px] max-h-[130px]">
                                 <img
                                   src={getMediaUrl(afterImages[0].url)}
                                   alt={afterImages[0].name || `Row ${sNo} After`}
-                                  className="h-16 max-h-[80px] w-auto max-w-[130px] object-contain rounded transition-transform duration-200 group-hover:scale-105"
+                                  className="max-h-[120px] max-w-[180px] w-auto h-auto object-contain rounded transition-transform duration-200 group-hover:scale-105"
                                 />
                                 <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded transition-opacity text-white">
                                   <span className="flex items-center gap-1 bg-black/70 backdrop-blur-xs px-2 py-0.5 rounded-md text-[10px] font-medium text-white shadow">
@@ -5124,7 +5130,7 @@ export default function PDCASheet({
                                 dataRequiredActionAllowed={!revReason.trim()}
                                 onChange={(e) => handleRevisionReasonChange(idx, rIdx, e.target.value)}
                                 placeholder="Why revised..."
-                                className="w-full text-[14px] font-medium text-slate-800 bg-white border border-slate-300 focus:border-blue-500 rounded px-2 py-1 text-center shadow-2xs focus:outline-none"
+                                className="w-full text-[14px] font-medium text-slate-800 bg-white border border-slate-300 focus:border-blue-500 rounded px-2 py-1 text-left shadow-2xs focus:outline-none"
                               />
                             </div>
                           );

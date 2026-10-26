@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X,
@@ -19,12 +19,13 @@ export default function FileUploadSelectionModal({
   const [isImageDragOver, setIsImageDragOver] = useState(false);
   const [imagePreviews, setImagePreviews] = useState([]);
   const imageInputRef = useRef(null);
+  const selectTypeRef = useRef(onSelectType);
   const imageOnly = columnTitle === 'Image Upload';
   const showImageDropZone = imageOnly || columnTitle === 'Image (Before)' || columnTitle === 'Image (After)';
+  selectTypeRef.current = onSelectType;
   useEffect(() => () => imagePreviews.forEach((preview) => URL.revokeObjectURL(preview.url)), [imagePreviews]);
-  if (!isOpen) return null;
 
-  const acceptImageFiles = (files) => {
+  const acceptImageFiles = useCallback((files) => {
     const imageFiles = Array.from(files || []);
     if (!imageFiles.length) return;
     const invalid = imageFiles.find((f) => !f.type.startsWith('image/') && !/\.(jpe?g|png|webp|svg)$/i.test(f.name));
@@ -37,13 +38,40 @@ export default function FileUploadSelectionModal({
       window.alert(`File "${oversized.name}" exceeds the maximum allowed limit of 15 MB.`);
       return;
     }
+    setImagePreviews((prev) => [...prev, ...imageFiles.map((file) => ({ name: file.name, url: URL.createObjectURL(file) }))]);
     onSelectType?.('image', imageFiles);
     if (!onSelectType && onUploadSuccess && imageFiles[0]) {
       const reader = new FileReader();
       reader.onload = (evt) => onUploadSuccess({ url: evt.target.result, name: imageFiles[0].name, type: 'image' });
       reader.readAsDataURL(imageFiles[0]);
     }
-  };
+  }, [onSelectType, onUploadSuccess]);
+
+  useEffect(() => {
+    if (!isOpen || !showImageDropZone) return undefined;
+    const handlePaste = (event) => {
+      const items = Array.from(event.clipboardData?.items || []);
+      const pastedImages = items
+        .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+        .map((item, index) => ({ item, index }))
+        .map(({ item, index }) => {
+          const file = item.getAsFile();
+          if (!file) return null;
+          if (file.name) return file;
+          const extension = file.type.split('/')[1]?.replace('jpeg', 'jpg') || 'png';
+          return new File([file], `pasted-image-${Date.now()}-${index + 1}.${extension}`, { type: file.type });
+        })
+        .filter(Boolean);
+      if (pastedImages.length) {
+        event.preventDefault();
+        acceptImageFiles(pastedImages);
+      }
+    };
+    document.addEventListener('paste', handlePaste);
+    return () => document.removeEventListener('paste', handlePaste);
+  }, [isOpen, showImageDropZone, acceptImageFiles]);
+
+  if (!isOpen) return null;
 
   const uploadOptions = [
     {
@@ -250,14 +278,13 @@ export default function FileUploadSelectionModal({
                 setIsImageDragOver(false);
                 const files = Array.from(e.dataTransfer.files || []);
                 if (files.length) {
-                  setImagePreviews((prev) => [...prev, ...files.filter((file) => file.type.startsWith('image/') || /\.(jpe?g|png|webp|svg)$/i.test(file.name)).map((file) => ({ name: file.name, url: URL.createObjectURL(file) }))]);
                   acceptImageFiles(files);
                 }
               }}
             >
               <UploadCloud className="mx-auto mb-2 h-6 w-6 text-blue-600" />
               <p className="text-sm font-semibold text-slate-700">Drag and drop images here</p>
-              <p className="mt-1 text-xs text-slate-500">Drop image files here, or choose Upload Image below to browse from your computer. JPG, PNG, WEBP, SVG, up to 15 MB each.</p>
+              <p className="mt-1 text-xs text-slate-500">Drop images here, choose Upload Image below, or paste a copied image with Ctrl+V. JPG, PNG, WEBP, SVG, up to 15 MB each.</p>
               {imagePreviews.length > 0 && (
                 <div className="mt-3 flex flex-wrap justify-center gap-2">
                   {imagePreviews.map((preview, index) => <img key={`${preview.name}-${index}`} src={preview.url} alt={preview.name} title={preview.name} className="h-14 w-14 rounded border border-slate-200 bg-white object-cover" />)}

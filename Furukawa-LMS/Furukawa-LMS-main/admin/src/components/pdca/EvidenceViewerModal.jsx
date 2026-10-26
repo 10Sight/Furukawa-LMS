@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X,
@@ -38,24 +38,14 @@ export default function EvidenceViewerModal({
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const fileInputRef = useRef(null);
   const replaceInputRef = useRef(null);
-
-  if (!isOpen) return null;
+  const addFilesRef = useRef(null);
 
   const isBefore = field === 'imageBefore';
   const columnLabel = isBefore ? 'Image Before' : 'Image After';
 
-  // File selection for adding new images
-  const handleFileSelect = async (e) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
-    await handleAddFiles(files);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
+  const handleAddFiles = useCallback(async (files) => {
+    if (!files.length || isUploading || readOnly) return;
 
-  const handleAddFiles = async (files) => {
-    if (!files.length || isUploading) return;
-
-    // Filter valid image types
     const validImages = files.filter((f) => f.type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(f.name));
     if (validImages.length === 0) {
       setErrorMessage('Please select valid image files (JPG, PNG, WEBP).');
@@ -70,15 +60,46 @@ export default function EvidenceViewerModal({
     setErrorMessage('');
     setIsUploading(true);
     try {
-      if (onAddImages) {
-        await onAddImages(validImages);
-      }
+      await onAddImages?.(validImages);
     } catch (err) {
       console.error('Failed adding images:', err);
       setErrorMessage('Failed to upload one or more images. Please try again.');
     } finally {
       setIsUploading(false);
     }
+  }, [isUploading, onAddImages, readOnly]);
+  addFilesRef.current = handleAddFiles;
+
+  useEffect(() => {
+    if (!isOpen || readOnly) return undefined;
+    const handlePaste = (event) => {
+      const items = Array.from(event.clipboardData?.items || []);
+      const imageFiles = items
+        .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+        .map((item, index) => item.getAsFile())
+        .filter(Boolean)
+        .map((file, index) => {
+          if (file.name) return file;
+          const extension = file.type.split('/')[1]?.replace('jpeg', 'jpg') || 'png';
+          return new File([file], `pasted-image-${Date.now()}-${index + 1}.${extension}`, { type: file.type });
+        });
+      if (imageFiles.length) {
+        event.preventDefault();
+        addFilesRef.current?.(imageFiles);
+      }
+    };
+    document.addEventListener('paste', handlePaste);
+    return () => document.removeEventListener('paste', handlePaste);
+  }, [isOpen, readOnly]);
+
+  if (!isOpen) return null;
+
+  // File selection for adding new images
+  const handleFileSelect = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    await handleAddFiles(files);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleImageDrop = async (event) => {
@@ -293,7 +314,7 @@ export default function EvidenceViewerModal({
                 >
                   {isUploading ? <Loader2 className="w-4 h-4 animate-spin text-blue-500" /> : <Upload className="w-4 h-4 text-blue-500" />}
                   <span className="text-xs font-semibold">{isUploading ? 'Uploading images...' : 'Drag and drop images here, or click to add more'}</span>
-                  <span className="text-[10px] text-slate-400">(JPG, PNG, WEBP, up to 15 MB each)</span>
+                  <span className="text-[10px] text-slate-400">(JPG, PNG, WEBP, up to 15 MB each · paste with Ctrl+V)</span>
                 </div>
               )}
 

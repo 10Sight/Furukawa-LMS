@@ -146,8 +146,29 @@ function AutoResizeTextarea({ value, onChange, onKeyDown, placeholder, className
 }
 
 // Compact Date Picker Cell
-function CompactDateCell({ value, onChange, smallText = false }) {
-  const hiddenInputRef = useRef(null);
+function CompactDateCell({ value, onChange, smallText = false, readOnly = false }) {
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [viewDate, setViewDate] = useState(() => {
+    const selected = value ? new Date(`${value}T12:00:00`) : null;
+    return selected && !Number.isNaN(selected.getTime())
+      ? new Date(selected.getFullYear(), selected.getMonth(), 1)
+      : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  });
+  const calendarRef = useRef(null);
+
+  useEffect(() => {
+    if (!calendarOpen) return undefined;
+    const closeOnOutsideClick = (event) => {
+      if (!calendarRef.current?.contains(event.target)) setCalendarOpen(false);
+    };
+    const closeOnEscape = (event) => { if (event.key === 'Escape') setCalendarOpen(false); };
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [calendarOpen]);
 
   const formatDisplay = (val) => {
     if (!val) return null;
@@ -167,33 +188,41 @@ function CompactDateCell({ value, onChange, smallText = false }) {
 
   const display = formatDisplay(value);
 
-  const handleClick = () => {
-    if (hiddenInputRef.current) {
-      if (typeof hiddenInputRef.current.showPicker === 'function') {
-        hiddenInputRef.current.showPicker();
-      } else {
-        hiddenInputRef.current.click();
-      }
-    }
+  const openCalendar = () => {
+    if (readOnly) return;
+    const selected = value ? new Date(`${value}T12:00:00`) : null;
+    if (selected && !Number.isNaN(selected.getTime())) setViewDate(selected);
+    setCalendarOpen(true);
+  };
+
+  const monthStart = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
+  const daysInMonth = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0).getDate();
+  const leadingDays = (monthStart.getDay() + 6) % 7;
+  const calendarDays = [...Array(leadingDays).fill(null), ...Array.from({ length: daysInMonth }, (_, index) => index + 1)];
+  while (calendarDays.length % 7) calendarDays.push(null);
+  const selectedDate = value || '';
+  const viewedMonth = viewDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+
+  const shiftMonth = (offset) => setViewDate((current) => new Date(current.getFullYear(), current.getMonth() + offset, 1));
+  const selectDay = (day) => {
+    if (!day) return;
+    const month = String(viewDate.getMonth() + 1).padStart(2, '0');
+    const date = String(day).padStart(2, '0');
+    onChange(`${viewDate.getFullYear()}-${month}-${date}`);
+    setCalendarOpen(false);
   };
 
   return (
     <div
-      onClick={handleClick}
-      className="relative w-full h-full min-h-[38px] flex flex-col items-center justify-center cursor-pointer hover:bg-blue-50/50 transition-colors py-1 group select-none px-0.5"
+      className="relative w-full h-full min-h-[38px] flex flex-col items-center justify-center hover:bg-blue-50/50 transition-colors py-1 group select-none px-0.5"
       title={value ? `Date: ${value} (Click to change)` : 'Click to select date'}
     >
-      <input
-        ref={hiddenInputRef}
-        type="date"
-        value={value || ''}
-        onChange={(e) => onChange(e.target.value)}
-        className="sr-only"
-        tabIndex={-1}
-      />
-
       {display ? (
         <>
+          <button type="button" disabled={readOnly} onClick={openCalendar} className="flex min-w-0 flex-col items-center leading-none text-center disabled:cursor-default" aria-label={value ? `Change response date, ${display.line1}/${display.line2}` : 'Select response date'}>
+            <span className="text-[14px] font-bold text-slate-800 tracking-tight">{display.line1}</span>
+            {display.line2 && <span className="text-[13px] font-semibold text-slate-500 mt-0.5">/{display.line2}</span>}
+          </button>
           <button
             type="button"
             onClick={(e) => {
@@ -205,20 +234,37 @@ function CompactDateCell({ value, onChange, smallText = false }) {
           >
             <X className="w-2.5 h-2.5 stroke-[2.5]" />
           </button>
-          <div className="flex flex-col items-center leading-none text-center pointer-events-none">
-            <span className="text-[14px] font-bold text-slate-800 tracking-tight">
-              {display.line1}
-            </span>
-            {display.line2 && (
-              <span className="text-[13px] font-semibold text-slate-500 mt-0.5">
-                /{display.line2}
-              </span>
-            )}
-          </div>
         </>
       ) : (
-        <div className="w-full flex items-center justify-center text-center pointer-events-none">
+        <button type="button" disabled={readOnly} onClick={openCalendar} className="w-full flex items-center justify-center text-center disabled:cursor-default" aria-label="Select response date">
           <Calendar className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors mx-auto" />
+        </button>
+      )}
+
+      {calendarOpen && (
+        <div ref={calendarRef} className="absolute left-1/2 top-full z-[100] mt-1 w-64 -translate-x-1/2 rounded-xl border border-slate-200 bg-white p-3 text-left shadow-xl" onClick={(event) => event.stopPropagation()} onMouseDown={(event) => event.stopPropagation()}>
+          <div className="mb-2 flex items-center justify-between">
+            <div className="flex gap-1">
+              <button type="button" onClick={(event) => { event.stopPropagation(); setViewDate((current) => new Date(current.getFullYear() - 1, current.getMonth(), 1)); }} className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-blue-600" aria-label="Previous year"><ChevronUp className="h-3.5 w-3.5" /></button>
+              <button type="button" onClick={(event) => { event.stopPropagation(); shiftMonth(-1); }} className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-blue-600" aria-label="Previous month"><ChevronDown className="h-4 w-4 rotate-90" /></button>
+            </div>
+            <span className="text-xs font-semibold text-slate-800">{viewedMonth}</span>
+            <div className="flex gap-1">
+              <button type="button" onClick={(event) => { event.stopPropagation(); shiftMonth(1); }} className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-blue-600" aria-label="Next month"><ChevronDown className="h-4 w-4 -rotate-90" /></button>
+              <button type="button" onClick={(event) => { event.stopPropagation(); setViewDate((current) => new Date(current.getFullYear() + 1, current.getMonth(), 1)); }} className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-blue-600" aria-label="Next year"><ChevronUp className="h-3.5 w-3.5 rotate-180" /></button>
+            </div>
+          </div>
+          <div className="mb-1 grid grid-cols-7 text-center text-[10px] font-semibold text-slate-400">
+            {['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map((day) => <span key={day} className="py-1">{day}</span>)}
+          </div>
+          <div className="grid grid-cols-7 gap-0.5">
+            {calendarDays.map((day, index) => {
+              const dayValue = day ? `${viewDate.getFullYear()}-${String(viewDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}` : '';
+              return day ? (
+                <button key={dayValue} type="button" onClick={(event) => { event.stopPropagation(); selectDay(day); }} className={`rounded-md py-1.5 text-[11px] hover:bg-blue-50 hover:text-blue-700 ${selectedDate && dayValue === selectedDate ? 'bg-blue-600 font-semibold text-white hover:bg-blue-700 hover:text-white' : 'text-slate-700'}`}>{day}</button>
+              ) : <span key={`empty-${index}`} />;
+            })}
+          </div>
         </div>
       )}
     </div>

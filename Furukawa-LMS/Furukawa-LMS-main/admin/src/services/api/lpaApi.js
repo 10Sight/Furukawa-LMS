@@ -65,18 +65,18 @@ export const lpaApi = {
     return response.data?.data || response.data;
   },
 
-  getDefaultMailRecipients: async () => {
-    const response = await axiosInstance.get(`${BASE_PATH}/default-mails`);
+  getDefaultMailRecipients: async (department = 'assembly') => {
+    const response = await axiosInstance.get(`${BASE_PATH}/default-mails`, { params: { department } });
     return response.data?.data || response.data;
   },
 
-  attachDefaultMailRecipients: async () => {
-    const response = await axiosInstance.post(`${BASE_PATH}/default-mails/attach`);
+  attachDefaultMailRecipients: async (department = 'assembly') => {
+    const response = await axiosInstance.post(`${BASE_PATH}/default-mails/attach`, { department });
     return response.data?.data || response.data;
   },
 
-  saveDefaultMailRecipients: async (to, cc = []) => {
-    const response = await axiosInstance.put(`${BASE_PATH}/default-mails`, { to, cc });
+  saveDefaultMailRecipients: async (to, cc = [], department = 'assembly') => {
+    const response = await axiosInstance.put(`${BASE_PATH}/default-mails`, { to, cc, department });
     return response.data?.data || response.data;
   },
 

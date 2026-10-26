@@ -569,9 +569,11 @@ export default function PDCASheet({
   ].filter(Boolean).join(' ').toLowerCase();
   const lpaSheetTitle = String(topic?.topic || topic?.sheet?.headerInfo?.topicName || '').trim().toLowerCase();
   const isLpaObservationSheet = String(topic?.id || topic?.recordId || '').startsWith('PDCA-LPA') ||
+    topic?.source === 'lpa' ||
     Boolean(topic?.lpaSource) ||
     /lpa\s*observation/.test(lpaSheetIdentity) ||
-    ['assembly', 'c&c', 'c & c'].includes(lpaSheetTitle);
+    ['assembly', 'c&c', 'c & c', 'assembly pdca', 'c&c pdca', 'c & c pdca'].includes(lpaSheetTitle) ||
+    ['assembly', 'cc', 'c&c', 'c & c'].includes(String(topic?.section || '').trim().toLowerCase());
   const usesCheckboxMultiSelects = true;
   const effectiveUser = currentUser || userContext?.user;
   const lpaDefaultUnit = isLpaObservationSheet

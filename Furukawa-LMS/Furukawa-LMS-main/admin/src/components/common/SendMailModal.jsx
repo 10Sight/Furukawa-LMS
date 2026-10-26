@@ -88,6 +88,7 @@ export default function SendMailModal({
     .some((value) => /c\s*&\s*c|\bcc\b/i.test(String(value || '')))
     ? 'cc'
     : (formType === 'pdca' ? '' : 'assembly');
+  const defaultMailDepartment = selectedSection === 'cc' ? 'cc' : 'assembly';
 
   // When modal opens, all input fields are reset to blank, CC is optional/hidden by default
   useEffect(() => {
@@ -144,8 +145,10 @@ export default function SendMailModal({
   useEffect(() => {
     if (!isOpen) return undefined;
     let active = true;
+    setDefaultToEmails([]);
+    setDefaultCcEmails([]);
     setDefaultMailsLoading(true);
-    lpaApi.getDefaultMailRecipients()
+    lpaApi.getDefaultMailRecipients(defaultMailDepartment)
       .then((result) => {
         if (!active) return;
         const to = [...new Map(
@@ -168,7 +171,7 @@ export default function SendMailModal({
       })
       .finally(() => { if (active) setDefaultMailsLoading(false); });
     return () => { active = false; };
-  }, [isOpen]);
+  }, [isOpen, defaultMailDepartment]);
 
   useEffect(() => {
     // The LPA page supplies its current, already-filtered workbook list. Reuse
@@ -189,18 +192,20 @@ export default function SendMailModal({
   const pdcaSheetPrompt = /\bsheet$/i.test(pdcaLabel) ? pdcaLabel : `${pdcaLabel} sheet`;
   const assemblyOptions = isPdcaOnly ? [] : (Array.isArray(suppliedAssemblySheets) ? suppliedAssemblySheets : assemblyRecords)
     .filter((record) => {
-      if (!record || record.section !== selectedSection || record.sampleData) return false;
+      if (!record || record.isDeleted || record.section !== selectedSection || record.sampleData) return false;
       if (selectedSection !== 'assembly') return true;
       const createdAt = Date.parse(record.createdAt || '');
       return Number.isFinite(createdAt) && createdAt > assemblyMailSheetsCutoff;
     })
-    .flatMap((record) => (Array.isArray(record.sheets) ? record.sheets : []).map((sheet, sheetIndex) => ({
+    .flatMap((record) => (Array.isArray(record.sheets) ? record.sheets : [])
+      .filter((sheet) => sheet && !sheet.isDeleted)
+      .map((sheet, sheetIndex) => ({
       key: `${record.id}::${sheetIndex}`,
       record,
       sheet,
       sheetIndex,
       label: [sheet.name || `Sheet ${sheetIndex + 1}`, record.unit, record.auditDate || record.date].filter(Boolean).join(' · ')
-    })));
+      })));
   const DUMMY_IDS = new Set(['PDCA-GJ-101', 'PDCA-BW-102', 'PDCA-GJ-103', 'PDCA-BW-104', 'CFT-GJ-201', 'CFT-BW-202']);
   const DUMMY_TOPICS = new Set([
     'Reduction of Solder Bridge Defects in ECU Assembly',
@@ -340,7 +345,7 @@ export default function SendMailModal({
     }
     setDefaultMailsSaving(true);
     try {
-      const result = await lpaApi.saveDefaultMailRecipients(to, cc);
+      const result = await lpaApi.saveDefaultMailRecipients(to, cc, defaultMailDepartment);
       const savedTo = Array.isArray(result?.to) ? result.to : to;
       const savedCc = Array.isArray(result?.cc) ? result.cc : cc;
       setDefaultToEmails(savedTo);

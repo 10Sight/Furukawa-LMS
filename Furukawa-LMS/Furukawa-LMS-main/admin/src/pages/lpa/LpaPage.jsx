@@ -1710,7 +1710,7 @@ function LpaPageContent({ viewContext }) {
         title={`${activeSection === 'cc' ? 'C&C' : 'Assembly'} ${activeSubTab === 'pdca' ? 'PDCA' : 'LPA'} Sheet`}
         metadata={{ auditDate: pdcaDate, unit: selectedUnit, sectionName: activeSection === 'cc' ? 'C&C' : 'Assembly' }}
         pdcaLabel="LPA Observation PDCA"
-        assemblySheets={records}
+        assemblySheets={visibleRecords}
         pdcaSheets={emailPdcaSheets}
         onViewAssemblySheet={({ record, sheetIndex: selectedSheetIndex }) => {
           setIsSendMailOpen(false);

@@ -581,6 +581,7 @@ export default function PDCASheet({
     ? (String(topic?.section || '').toLowerCase() === 'cc' ? 'C&C' : (String(topic?.section || '').toLowerCase() === 'assembly' ? 'Assembly' : ''))
     : '';
   const createTopicDefaultRow = () => createEmptyRow({
+    status: isLpaObservationSheet ? 'Not-Started' : '',
     unit: lpaDefaultUnit,
     units: lpaDefaultUnit ? [lpaDefaultUnit] : [],
     department: lpaDefaultDepartment,
@@ -764,7 +765,7 @@ export default function PDCASheet({
     const confirmedBy = (row.confirmedBy || '').trim();
     const instruction = (row.instruction || '').trim();
 
-    let status = row.status ? computePDCAStatus({
+    let status = isLpaObservationSheet && !row.date?.trim() ? 'Not-Started' : row.status ? computePDCAStatus({
       ...row,
       responseDate,
       confirmation,
@@ -868,6 +869,7 @@ export default function PDCASheet({
   const hasEditAccess = Boolean(!readOnly && (isCreatorOrAdmin || hasAnyRowResponsible));
   const effectiveReadOnly = Boolean(readOnly || !hasEditAccess);
   const missingRequiredInputs = rows.flatMap((row, rowIndex) => {
+    if (isLpaObservationSheet && !row.date?.trim()) return [];
     const missing = [];
     if (['Not - Confirmed', 'Not-Confirmed'].includes((row.confirmation || '').trim()) && !row.instruction?.trim()) {
       missing.push({ type: 'confirmation', rowIndex, key: `confirmation:${rowIndex}` });
@@ -1411,6 +1413,9 @@ export default function PDCASheet({
     // Validate mandatory fields (Date, Shift, Status, Line/Area, Observation) for active rows
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
+      if (isLpaObservationSheet && !r.date?.trim()) {
+        continue;
+      }
       const notConfirmed = ['Not - Confirmed', 'Not-Confirmed'].includes((r.confirmation || '').trim());
       if (notConfirmed && !r.instruction?.trim()) {
         const reasonInput = responsibleConfirmationReasonRefs.current[i];
@@ -2434,7 +2439,9 @@ export default function PDCASheet({
       if (field === 'stdDurationMin') {
         updated[rowIndex] = { ...current, stdDurationMin: value, stdDuration: value };
       } else if (field === 'date') {
-        const nextStatus = value ? (current.responseDate ? computePDCAStatus({ ...current, date: value }) : 'Not-Started') : '';
+        const nextStatus = value
+          ? (current.responseDate ? computePDCAStatus({ ...current, date: value }) : 'Not-Started')
+          : (isLpaObservationSheet ? 'Not-Started' : '');
         updated[rowIndex] = { ...current, date: value, status: nextStatus };
       } else if (field === 'unit' && current.unit !== value) {
         updated[rowIndex] = {

@@ -1,11 +1,14 @@
+import path from "path";
 import { executeQuery } from "../mssqlHelper.js";
 import migrationHelper from "../migrationHelper.js";
 import { poolPromise } from "../connectDB.js";
 import logger from "../../logger/winston.logger.js";
-import fs from "fs";
-import path from "path";
+import { fileURLToPath } from "url";
 
-export const PDCA_STORE_PATH = path.join(process.cwd(), "db", "pdca", "pdca_persistence_store.json");
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+export const PDCA_STORE_PATH = path.join(__dirname, "pdca_persistence_store.json");
 
 /**
  * Checks if the central MSSQL pool is connected and active

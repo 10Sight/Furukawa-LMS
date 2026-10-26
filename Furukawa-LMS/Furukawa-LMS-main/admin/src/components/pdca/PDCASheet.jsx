@@ -4304,7 +4304,7 @@ export default function PDCASheet({
             </tr>
 
             <tr className="bg-[#ECEFF1] text-slate-800 text-[15px] font-semibold select-none text-center">
-              <th rowSpan={2} className="py-1.5 px-0.5 w-[150px] min-w-[145px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1]">
+              <th rowSpan={2} style={{ width: `${dateColWidth}px`, minWidth: `${dateColWidth}px` }} className="py-1.5 px-0.5 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] transition-[width] duration-150">
                 <span>Date</span> <span className="text-red-500 font-bold">*</span>
               </th>
               <th rowSpan={2} className="py-1.5 px-0.5 w-[38px] min-w-[34px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[11px]">
@@ -4319,7 +4319,7 @@ export default function PDCASheet({
               <th rowSpan={2} className="py-1.5 px-1 w-[115px] min-w-[100px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px]">
                 <span>Unit</span> <span className="text-red-500 font-bold">*</span>
               </th>
-              <th rowSpan={2} className="py-1.5 px-1 w-[95px] min-w-[90px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px]">
+              <th rowSpan={2} style={{ width: `${departmentColWidth}px`, minWidth: `${departmentColWidth}px` }} className="py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] transition-[width] duration-150">
                 <span>Department</span> <span className="text-red-500 font-bold">*</span>
               </th>
               <th
@@ -4568,7 +4568,7 @@ export default function PDCASheet({
                   className="group/row transition-colors"
                 >
                   {/* 1. Date (Stacked: Format on top, Calendar icon below) */}
-                  <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[150px] min-w-[145px]">
+                  <td style={{ width: `${dateColWidth}px`, minWidth: `${dateColWidth}px` }} className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150">
                     <div className="w-full flex items-center justify-center">
                       <CompactDateCell
                         value={row.date}
@@ -4644,7 +4644,7 @@ export default function PDCASheet({
                   </td>
 
                   {/* 6. Department */}
-                  <td className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[95px] min-w-[90px]">
+                  <td style={{ width: `${departmentColWidth}px`, minWidth: `${departmentColWidth}px` }} className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150">
                     {usesCheckboxMultiSelects ? <CheckboxMultiSelect
                       disabled={!canEditEntireRow || !unitSelected}
                       value={row.departments || (row.department ? [row.department] : [])}

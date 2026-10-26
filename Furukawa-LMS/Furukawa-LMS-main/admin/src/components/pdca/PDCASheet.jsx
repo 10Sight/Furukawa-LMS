@@ -574,6 +574,18 @@ export default function PDCASheet({
     ['assembly', 'c&c', 'c & c'].includes(lpaSheetTitle);
   const usesCheckboxMultiSelects = true;
   const effectiveUser = currentUser || userContext?.user;
+  const lpaDefaultUnit = isLpaObservationSheet
+    ? (topic?.plant || topic?.unit || '')
+    : '';
+  const lpaDefaultDepartment = isLpaObservationSheet
+    ? (String(topic?.section || '').toLowerCase() === 'cc' ? 'C&C' : (String(topic?.section || '').toLowerCase() === 'assembly' ? 'Assembly' : ''))
+    : '';
+  const createTopicDefaultRow = () => createEmptyRow({
+    unit: lpaDefaultUnit,
+    units: lpaDefaultUnit ? [lpaDefaultUnit] : [],
+    department: lpaDefaultDepartment,
+    departments: lpaDefaultDepartment ? [lpaDefaultDepartment] : []
+  });
 
   // Determine if the current user has Administrator privileges
   const isAdmin = useMemo(() => {
@@ -707,7 +719,7 @@ export default function PDCASheet({
 
     const departments = Array.isArray(row.departments) && row.departments.length > 0
       ? row.departments
-      : (row.department ? [row.department] : []);
+      : (row.department ? [row.department] : (lpaDefaultDepartment ? [lpaDefaultDepartment] : []));
     const department = departments[0] || row.department || '';
 
     const section = row.section || '';
@@ -761,8 +773,8 @@ export default function PDCASheet({
 
     // Section P Unit
     const units = usesCheckboxMultiSelects
-      ? (Array.isArray(row.units) && row.units.length ? [...new Set(row.units.map(String).filter(Boolean))] : (row.unit ? [row.unit] : []))
-      : (row.unit ? [row.unit] : []);
+      ? (Array.isArray(row.units) && row.units.length ? [...new Set(row.units.map(String).filter(Boolean))] : (row.unit ? [row.unit] : (lpaDefaultUnit ? [lpaDefaultUnit] : [])))
+      : (row.unit ? [row.unit] : (lpaDefaultUnit ? [lpaDefaultUnit] : []));
     const unit = units[0] || '';
     const stdDurationMin = (row.stdDurationMin !== undefined && row.stdDurationMin !== null)
       ? row.stdDurationMin
@@ -835,7 +847,7 @@ export default function PDCASheet({
     if (Array.isArray(topic?.sheet?.rows) && topic.sheet.rows.length > 0) {
       return topic.sheet.rows.map(normalizeRow);
     }
-    return Array.from({ length: 10 }, () => createEmptyRow());
+    return Array.from({ length: 10 }, createTopicDefaultRow);
   }, []);
 
   const initialHeaderInfo = useMemo(() => {
@@ -1359,7 +1371,7 @@ export default function PDCASheet({
         finalRows = savedSheet.rows.map(normalizeRow);
         setRows(finalRows);
       } else {
-        finalRows = Array.isArray(rows) && rows.length > 0 ? rows.map(normalizeRow) : Array.from({ length: 10 }, () => createEmptyRow());
+        finalRows = Array.isArray(rows) && rows.length > 0 ? rows.map(normalizeRow) : Array.from({ length: 10 }, createTopicDefaultRow);
         setRows(finalRows);
       }
       // Update baseline after successful backend load
@@ -3833,14 +3845,14 @@ export default function PDCASheet({
 
   const handleAddRow = () => {
     if (!canEditEntireSheet) return;
-    setRows((prev) => [...prev, createEmptyRow()]);
+    setRows((prev) => [...prev, createTopicDefaultRow()]);
   };
 
   const handleInsertRowAbove = (rowIndex) => {
     if (!canEditEntireSheet) return;
     setRows((prev) => {
       const updated = [...prev];
-      updated.splice(rowIndex, 0, createEmptyRow());
+      updated.splice(rowIndex, 0, createTopicDefaultRow());
       return updated;
     });
   };
@@ -3848,7 +3860,7 @@ export default function PDCASheet({
   const handleDeleteRow = (rowIndex) => {
     if (!isAdmin) return;
     if (rows.length <= 1) {
-      setRows([createEmptyRow()]);
+      setRows([createTopicDefaultRow()]);
       return;
     }
     setRows((prev) => prev.filter((_, idx) => idx !== rowIndex));
@@ -3867,7 +3879,7 @@ export default function PDCASheet({
           if (typeof nextEl.select === 'function') nextEl.select();
         }
       } else {
-        setRows((prev) => [...prev, createEmptyRow()]);
+        setRows((prev) => [...prev, createTopicDefaultRow()]);
         setTimeout(() => {
           const nextEl = cellRefs.current[`${nextRowIndex}_${colName}`];
           if (nextEl) {
@@ -4277,7 +4289,7 @@ export default function PDCASheet({
             </tr>
 
             <tr className="bg-[#ECEFF1] text-slate-800 text-[15px] font-semibold select-none text-center">
-              <th rowSpan={2} className="py-1.5 px-0.5 w-[110px] min-w-[105px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1]">
+              <th rowSpan={2} className="py-1.5 px-0.5 w-[130px] min-w-[125px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1]">
                 <span>Date</span> <span className="text-red-500 font-bold">*</span>
               </th>
               <th rowSpan={2} className="py-1.5 px-0.5 w-[38px] min-w-[34px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[11px]">
@@ -4541,7 +4553,7 @@ export default function PDCASheet({
                   className="group/row transition-colors"
                 >
                   {/* 1. Date (Stacked: Format on top, Calendar icon below) */}
-                  <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[110px] min-w-[105px]">
+                  <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[130px] min-w-[125px]">
                     <div className="w-full flex items-center justify-center">
                       <CompactDateCell
                         value={row.date}

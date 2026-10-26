@@ -169,7 +169,7 @@ router.get("/:id/history", getPDCAHistory);
 
 // A. PDCA Record Management
 router.post("/", createPDCARecord);
-router.get("/", getPDCARecords);
+router.get("/", getPDCARecords); 
 router.get("/:id", getPDCARecordById);
 router.put("/:id", updatePDCARecord);
 router.delete("/:id", deletePDCARecord);

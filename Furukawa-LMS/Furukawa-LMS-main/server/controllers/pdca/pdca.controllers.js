@@ -57,6 +57,11 @@ export const getAuthenticatedUser = (req) => {
 export const isUserCreatorOfRecord = (user, record) => {
     if (!user || !record) return false;
 
+    // Administrators are always authorized to manage any PDCA record
+    if (user.isAdmin === true || user.isAdmin === 1 || String(user.role || '').toUpperCase() === 'ADMIN' || String(user.role || '').toUpperCase() === 'SUPERADMIN') {
+        return true;
+    }
+
     const createdBy = record.createdBy;
     const createdById = record.createdById;
 

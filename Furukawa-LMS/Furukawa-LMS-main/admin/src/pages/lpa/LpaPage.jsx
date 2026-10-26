@@ -83,6 +83,44 @@ const isLpaRecordForSection = (rec, section, unit) => {
   }
 };
 
+class PdcaErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error('PDCA Sheet render error:', error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full p-8 text-center bg-slate-50">
+          <div className="max-w-md p-6 bg-white border border-rose-200 rounded-2xl shadow-sm space-y-4">
+            <h3 className="text-base font-bold text-slate-900">Unable to display PDCA Sheet</h3>
+            <p className="text-xs text-rose-600 font-mono bg-rose-50 p-2.5 rounded-lg text-left overflow-auto max-h-32">
+              {String(this.state.error?.message || this.state.error)}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                this.setState({ hasError: false, error: null });
+                this.props.onBack?.();
+              }}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold cursor-pointer shadow-sm transition-colors"
+            >
+              Return to LPA Page
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function LpaPageContent({ viewContext }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -715,6 +753,7 @@ function LpaPageContent({ viewContext }) {
   });
 
   const allPdcaSheets = useMemo(() => {
+    const isCc = activeSection === 'cc';
     const baseSheetId = `PDCA-LPA-${activeSection.toUpperCase()}-${selectedUnit || 'Bawal'}`;
     const baseSheet = {
       id: baseSheetId,
@@ -731,6 +770,14 @@ function LpaPageContent({ viewContext }) {
 
     const matchingBackend = (backendPdcaSheets || [])
       .filter(rec => isLpaRecordForSection(rec, activeSection, selectedUnit))
+      .filter(rec => {
+        if (isCc) {
+          const recId = String(rec.id || rec.recordId || '');
+          if (recId === 'PDCA-LPA-CC-Bawal' || recId === baseSheetId) return false;
+          if (rec.topic === 'C&C - LPA Observation (PDCA)' && !rec.createdAt && !rec.createdBy) return false;
+        }
+        return true;
+      })
       .map(rec => ({
         id: rec.id || rec.recordId,
         title: rec.topic || `${activeSection === 'assembly' ? 'Assembly' : 'C&C'} - LPA Observation (PDCA)`,
@@ -751,11 +798,12 @@ function LpaPageContent({ viewContext }) {
       }
     }
 
-    if (!map.has(baseSheetId) && !deletedDefaultIds.includes(baseSheetId)) {
+    if (!isCc && !map.has(baseSheetId) && !deletedDefaultIds.includes(baseSheetId)) {
       map.set(baseSheetId, baseSheet);
     }
 
     for (const c of (customPdcaSheets || [])) {
+      if (isCc && (c.id === baseSheetId || c.id === 'PDCA-LPA-CC-Bawal')) continue;
       if (!map.has(c.id) && !deletedDefaultIds.includes(c.id)) {
         map.set(c.id, c);
       }
@@ -966,11 +1014,11 @@ function LpaPageContent({ viewContext }) {
         const updated = customPdcaSheets.filter(item => item.id !== sheet.id);
         setCustomPdcaSheets(updated);
         localStorage.setItem(`lpa_custom_pdca_sheets_${activeSection}_${selectedUnit || 'Bawal'}`, JSON.stringify(updated));
-        try {
-          await pdcaApi.deleteRecord(sheet.id);
-        } catch (apiErr) {
-          console.warn('Backend delete error:', apiErr);
-        }
+      }
+      try {
+        await pdcaApi.deleteRecord(sheet.id);
+      } catch (apiErr) {
+        console.warn('Backend delete error:', apiErr);
       }
       localStorage.removeItem(`lpa_pdca_saved_${sheet.id}`);
       await loadBackendPdcaSheets();
@@ -1072,26 +1120,31 @@ function LpaPageContent({ viewContext }) {
     setActiveSubTab('pdca');
   };
 
-  if (isPdcaFormOpen && pdcaTopic) return <div className="fixed inset-0 z-40 h-dvh w-full bg-white text-slate-800 flex flex-col overflow-hidden p-1.5 sm:p-2 pb-0.5 sm:pb-1">
-    <PDCASheet
-      key={`${pdcaTopic.id}-${pdcaDate}`}
-      topic={pdcaTopic}
-      onBack={handleBackFromPDCA}
-      onSave={handleSavePDCA}
-      currentDate={pdcaDate}
-      onDateChange={setPdcaDate}
-      currentUser={effectiveAuthUser}
-      isCreator={isAdmin || isRecordCreator(pdcaTopic, effectiveAuthUser) || Boolean(pdcaTopic?.isBaseSheet)}
-      emailPdcaSheets={[{
-        id: pdcaTopic.id,
-        title: pdcaTopic.topic,
-        topic: pdcaTopic.topic,
-        section: activeSection,
-        unit: pdcaTopic.plant || selectedUnit,
-        date: pdcaDate
-      }]}
-    />
-  </div>;
+  if (isPdcaFormOpen && pdcaTopic) return (
+    <div className="fixed inset-0 z-40 h-dvh w-full bg-white text-slate-800 flex flex-col overflow-hidden p-1.5 sm:p-2 pb-0.5 sm:pb-1">
+      <PdcaErrorBoundary onBack={handleBackFromPDCA}>
+        <PDCASheet
+          key={`${pdcaTopic.id}-${pdcaDate}`}
+          topic={pdcaTopic}
+          onBack={handleBackFromPDCA}
+          onSave={handleSavePDCA}
+          currentDate={pdcaDate}
+          onDateChange={setPdcaDate}
+          currentUser={effectiveAuthUser}
+          isAdmin={isAdmin}
+          isCreator={isAdmin || isRecordCreator(pdcaTopic, effectiveAuthUser) || Boolean(pdcaTopic?.isBaseSheet)}
+          emailPdcaSheets={[{
+            id: pdcaTopic.id,
+            title: pdcaTopic.topic,
+            topic: pdcaTopic.topic,
+            section: activeSection,
+            unit: pdcaTopic.plant || selectedUnit,
+            date: pdcaDate
+          }]}
+        />
+      </PdcaErrorBoundary>
+    </div>
+  );
 
   if (editor && sheet) return <div className="fixed inset-0 z-40 h-dvh w-full bg-white text-slate-800 flex flex-col overflow-hidden">
     <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-3 py-2 bg-white shrink-0">

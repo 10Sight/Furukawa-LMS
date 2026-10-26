@@ -92,7 +92,7 @@ export default function CcSheet({
           setSectionsMaster(data);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
 
     pdcaApi.getEmployees?.()
       .then(res => {
@@ -101,7 +101,7 @@ export default function CcSheet({
           setEmployeeMaster(emps);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
 
     return () => { active = false; };
   }, []);

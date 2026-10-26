@@ -11,6 +11,8 @@ import {
   Calendar,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   Search,
   Filter,
   Eye,
@@ -68,9 +70,8 @@ function CheckboxMultiSelect({ value = [], options = [], onChange, disabled = fa
   const buttonRef = useRef(null);
   const menuRef = useRef(null);
   const selected = Array.isArray(value) ? value.map(String) : (value ? [String(value)] : []);
-  const label = selected.length
-    ? selected.map(item => options.find(option => String(option.value) === item)?.label || item).join(', ')
-    : placeholder;
+  const selectedLabels = selected.map(item => options.find(option => String(option.value) === item)?.label || item);
+  const label = selectedLabels.length ? selectedLabels.join(', ') : placeholder;
   const updateMenuPosition = () => {
     const rect = buttonRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -120,6 +121,29 @@ function CheckboxMultiSelect({ value = [], options = [], onChange, disabled = fa
     <div className="w-full min-w-0" data-required-action-allowed="true" data-duration-picker="true">
       {renderTrigger ? (
         renderTrigger({ open, setOpen, label, selected, buttonRef })
+      ) : selectedLabels.length > 1 ? (
+        <button
+          ref={buttonRef}
+          type="button"
+          disabled={disabled}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          onClick={() => setOpen(current => !current)}
+          title={selectedLabels.join('\n')}
+          className={`flex flex-col w-full rounded-md border text-left leading-tight transition-colors border-blue-200 bg-blue-50/40 text-slate-800 divide-y divide-blue-200/70 overflow-hidden cursor-pointer ${open ? 'border-blue-400 ring-1 ring-blue-100' : 'hover:border-blue-300 hover:bg-blue-50/70'} disabled:cursor-default disabled:opacity-60`}
+        >
+          {selectedLabels.map((lbl, idx) => (
+            <div key={idx} className="flex items-center justify-between gap-1 px-1.5 py-1 text-[13px] font-medium text-slate-800 text-left min-h-[26px]">
+              <span className="min-w-0 flex-1 truncate">{lbl}</span>
+              {idx === 0 && (
+                <span className="flex items-center gap-0.5 shrink-0 ml-1">
+                  <span className="rounded-full bg-blue-100 px-1 py-0.2 text-[9px] font-semibold text-blue-700">({selectedLabels.length})</span>
+                  <ChevronDown className={`h-3 w-3 text-slate-400 transition-transform ${open ? 'rotate-180 text-blue-600' : ''}`} />
+                </span>
+              )}
+            </div>
+          ))}
+        </button>
       ) : (
         <button
           ref={buttonRef}
@@ -129,10 +153,9 @@ function CheckboxMultiSelect({ value = [], options = [], onChange, disabled = fa
           aria-expanded={open}
           onClick={() => setOpen(current => !current)}
           title={label}
-          className={`flex w-full min-h-[30px] items-center justify-between gap-1 rounded-md border px-1.5 py-1 text-left text-[14px] leading-tight transition-colors ${selected.length ? 'border-blue-200 bg-blue-50/60 text-slate-800' : 'border-slate-200 bg-white text-slate-500'} ${open ? 'border-blue-400 ring-1 ring-blue-100' : 'hover:border-blue-300 hover:bg-blue-50/40'} disabled:cursor-default disabled:opacity-60`}
+          className={`flex w-full min-h-[30px] items-center justify-between gap-1 rounded-md border px-1.5 py-1 text-left text-[14px] leading-tight transition-colors cursor-pointer ${selected.length ? 'border-blue-200 bg-blue-50/60 text-slate-800' : 'border-slate-200 bg-white text-slate-500'} ${open ? 'border-blue-400 ring-1 ring-blue-100' : 'hover:border-blue-300 hover:bg-blue-50/40'} disabled:cursor-default disabled:opacity-60`}
         >
           <span className="min-w-0 flex-1 truncate font-medium">{label || placeholder}</span>
-          {selected.length > 1 && <span className="shrink-0 rounded-full bg-blue-100 px-1 py-0.2 text-[9px] font-semibold text-blue-700">({selected.length})</span>}
           <ChevronDown className={`h-3 w-3 shrink-0 text-slate-400 transition-transform ${open ? 'rotate-180 text-blue-600' : ''}`} />
         </button>
       )}
@@ -176,10 +199,26 @@ export const DEFAULT_COUNTER_MEASURE_WIDTH = 145;
 export const MIN_COUNTER_MEASURE_WIDTH = 95;
 export const MAX_COUNTER_MEASURE_WIDTH = 550;
 
+export const DEFAULT_DATE_WIDTH = 105;
+export const MIN_DATE_WIDTH = 80;
+export const MAX_DATE_WIDTH = 260;
+
+export const DEFAULT_DEPARTMENT_WIDTH = 150;
+export const MIN_DEPARTMENT_WIDTH = 110;
+export const MAX_DEPARTMENT_WIDTH = 380;
+
+export const DEFAULT_SECTION_WIDTH = 160;
+export const MIN_SECTION_WIDTH = 110;
+export const MAX_SECTION_WIDTH = 380;
+
+export const DEFAULT_LINE_AREA_WIDTH = 130;
+export const MIN_LINE_AREA_WIDTH = 85;
+export const MAX_LINE_AREA_WIDTH = 380;
+
 const createEmptyRow = (customDefaults = {}) => ({
   date: customDefaults.date || '',
   shift: customDefaults.shift || '',
-  status: customDefaults.status ? normalizePDCAStatus(customDefaults.status) : (customDefaults.date ? 'Not-Started' : ''),
+  status: customDefaults.status ? normalizePDCAStatus(customDefaults.status) : 'Not-Started',
   department: customDefaults.department || '',
   departments: Array.isArray(customDefaults.departments) ? customDefaults.departments : (customDefaults.department ? [customDefaults.department] : []),
   unit: customDefaults.unit || '',
@@ -383,24 +422,102 @@ const hasValidStdDuration = (value) => {
   return normalized !== '' && Number.isFinite(Number(normalized)) && Number(normalized) >= 0;
 };
 
-// Compact Date Cell (Shows only calendar icon when empty; once date is selected, icon is removed and date is fully displayed without truncation)
+// Compact Date Cell (Shows only calendar icon when empty; once date is selected, icon is removed and date is fully displayed. Navigation never auto-selects date)
 function CompactDateCell({ value, onChange, readOnly = false, smallText = false }) {
-  const inputRef = useRef(null);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const cellRef = useRef(null);
+  const popoverRef = useRef(null);
+  const [popoverPos, setPopoverPos] = useState({ top: 0, left: 0 });
 
-  const handleOpenPicker = () => {
-    if (readOnly) return;
-    if (inputRef.current) {
-      if (typeof inputRef.current.showPicker === 'function') {
-        try {
-          inputRef.current.showPicker();
-          return;
-        } catch (err) { }
-      }
-      inputRef.current.focus();
+  const parseDate = (val) => {
+    if (val && /^\d{4}-\d{2}-\d{2}$/.test(val)) {
+      const parts = val.split('-').map(Number);
+      return new Date(parts[0], parts[1] - 1, parts[2]);
     }
+    return new Date();
   };
 
+  const [viewDate, setViewDate] = useState(() => parseDate(value));
+
   const display = formatDisplayDate(value);
+
+  const handleOpenPicker = (e) => {
+    if (readOnly) return;
+    e.stopPropagation();
+    setViewDate(parseDate(value));
+    const rect = cellRef.current?.getBoundingClientRect();
+    if (rect) {
+      const popoverWidth = 250;
+      const popoverHeight = 280;
+      let left = rect.left + rect.width / 2 - popoverWidth / 2;
+      if (left + popoverWidth > window.innerWidth - 8) {
+        left = window.innerWidth - popoverWidth - 8;
+      }
+      if (left < 8) left = 8;
+
+      let top = rect.bottom + 4;
+      if (top + popoverHeight > window.innerHeight - 8 && rect.top - popoverHeight > 8) {
+        top = rect.top - popoverHeight - 4;
+      }
+      setPopoverPos({ top, left });
+    }
+    setCalendarOpen(true);
+  };
+
+  useEffect(() => {
+    if (!calendarOpen) return;
+    const handleOutside = (e) => {
+      if (
+        cellRef.current && !cellRef.current.contains(e.target) &&
+        popoverRef.current && !popoverRef.current.contains(e.target)
+      ) {
+        setCalendarOpen(false);
+      }
+    };
+    const handleKey = (e) => {
+      if (e.key === 'Escape') setCalendarOpen(false);
+    };
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [calendarOpen]);
+
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+
+  // Navigation ONLY changes viewDate; it NEVER triggers onChange or selects any date!
+  const shiftMonth = (offset, e) => {
+    e.stopPropagation();
+    setViewDate(new Date(year, month + offset, 1));
+  };
+
+  const shiftYear = (offset, e) => {
+    e.stopPropagation();
+    setViewDate(new Date(year + offset, month, 1));
+  };
+
+  // ONLY clicking a specific day selects the date!
+  const selectDay = (dayNum, e) => {
+    e.stopPropagation();
+    const mm = String(month + 1).padStart(2, '0');
+    const dd = String(dayNum).padStart(2, '0');
+    onChange(`${year}-${mm}-${dd}`);
+    setCalendarOpen(false);
+  };
+
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const leadingDays = (new Date(year, month, 1).getDay() + 6) % 7; // Monday = 0
+  const calendarCells = [...Array(leadingDays).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)];
+  while (calendarCells.length % 7) calendarCells.push(null);
+
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const viewedMonth = `${monthNames[month]} ${year}`;
+
+  const today = new Date();
+  const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
   if (readOnly) {
     return (
@@ -414,27 +531,13 @@ function CompactDateCell({ value, onChange, readOnly = false, smallText = false 
 
   return (
     <div
+      ref={cellRef}
       onClick={handleOpenPicker}
       className="relative w-full h-full min-h-[42px] flex items-center justify-center p-1 cursor-pointer hover:bg-blue-50/50 group transition-colors select-none"
       title={display ? `Date: ${display} (Click to change)` : 'Click to select date'}
+      data-duration-picker="true"
+      data-required-action-allowed="true"
     >
-      {/* Underlying HTML5 Date Input */}
-      <input
-        ref={inputRef}
-        type="date"
-        value={value || ''}
-        onChange={(e) => onChange(e.target.value)}
-        onClick={(e) => {
-          if (typeof e.target.showPicker === 'function') {
-            try {
-              e.target.showPicker();
-            } catch (err) { }
-          }
-        }}
-        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-        tabIndex={0}
-      />
-
       {display ? (
         <>
           <button
@@ -448,17 +551,131 @@ function CompactDateCell({ value, onChange, readOnly = false, smallText = false 
           >
             <X className="w-2.5 h-2.5 stroke-[2.5]" />
           </button>
-          <div className="w-full flex items-center justify-center text-center pointer-events-none px-0.5 whitespace-nowrap">
+          <div className="w-full flex items-center justify-center text-center px-0.5 whitespace-nowrap">
             <span className="text-[14px] font-semibold text-slate-800 text-center tracking-tight whitespace-nowrap">
               {display}
             </span>
           </div>
         </>
       ) : (
-        // When empty: Only calendar icon is shown, centered
-        <div className="w-full flex items-center justify-center text-center pointer-events-none">
+        <div className="w-full flex items-center justify-center text-center">
           <Calendar className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors mx-auto" />
         </div>
+      )}
+
+      {calendarOpen && createPortal(
+        <div
+          ref={popoverRef}
+          data-duration-picker="true"
+          data-required-action-allowed="true"
+          style={{ position: 'fixed', top: popoverPos.top, left: popoverPos.left, zIndex: 10000 }}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          className="w-64 rounded-xl border border-slate-200 bg-white p-2.5 text-left shadow-[0_12px_32px_rgba(15,23,42,0.2)] ring-1 ring-slate-900/5 select-none animate-in fade-in-50 zoom-in-95 duration-100"
+        >
+          {/* Header with Month/Year and navigation arrows */}
+          <div className="mb-2 flex items-center justify-between">
+            <div className="flex gap-0.5">
+              <button
+                type="button"
+                onClick={(e) => shiftYear(-1, e)}
+                className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors cursor-pointer"
+                title="Previous Year"
+              >
+                <ChevronUp className="h-3.5 w-3.5 -rotate-90" />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => shiftMonth(-1, e)}
+                className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-blue-600 transition-colors cursor-pointer"
+                title="Previous Month"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+            </div>
+            <span className="text-xs font-bold text-slate-800 tracking-tight">{viewedMonth}</span>
+            <div className="flex gap-0.5">
+              <button
+                type="button"
+                onClick={(e) => shiftMonth(1, e)}
+                className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-blue-600 transition-colors cursor-pointer"
+                title="Next Month"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => shiftYear(1, e)}
+                className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors cursor-pointer"
+                title="Next Year"
+              >
+                <ChevronUp className="h-3.5 w-3.5 rotate-90" />
+              </button>
+            </div>
+          </div>
+
+          {/* Weekday headers */}
+          <div className="mb-1 grid grid-cols-7 text-center text-[10px] font-bold text-slate-400">
+            {['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map((d) => (
+              <span key={d} className="py-0.5">{d}</span>
+            ))}
+          </div>
+
+          {/* Day buttons */}
+          <div className="grid grid-cols-7 gap-0.5">
+            {calendarCells.map((dayNum, idx) => {
+              if (!dayNum) return <span key={`empty-${idx}`} />;
+              const mm = String(month + 1).padStart(2, '0');
+              const dd = String(dayNum).padStart(2, '0');
+              const cellIso = `${year}-${mm}-${dd}`;
+              const isSelected = value === cellIso;
+              const isToday = todayIso === cellIso;
+              return (
+                <button
+                  key={cellIso}
+                  type="button"
+                  onClick={(e) => selectDay(dayNum, e)}
+                  className={`rounded-md py-1 text-center text-[11.5px] transition-colors cursor-pointer font-medium ${
+                    isSelected
+                      ? 'bg-blue-600 font-bold text-white shadow-xs'
+                      : isToday
+                        ? 'border border-blue-400 text-blue-700 font-semibold hover:bg-blue-50'
+                        : 'text-slate-700 hover:bg-blue-50 hover:text-blue-700'
+                  }`}
+                >
+                  {dayNum}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Bottom Actions: Clear and Today */}
+          <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[11px]">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onChange('');
+                setCalendarOpen(false);
+              }}
+              className="text-slate-400 hover:text-rose-600 px-1.5 py-0.5 rounded hover:bg-rose-50 transition-colors cursor-pointer"
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onChange(todayIso);
+                setCalendarOpen(false);
+              }}
+              className="font-semibold text-blue-600 hover:text-blue-800 px-1.5 py-0.5 rounded hover:bg-blue-50 transition-colors cursor-pointer"
+            >
+              Today
+            </button>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -516,16 +733,14 @@ function DurationMinCell({ value, readOnly, onChange, cellRef, requiredActionAll
         data-required-action-allowed={requiredActionAllowed ? 'true' : undefined}
         tabIndex={requiredActionAllowed ? 0 : undefined}
         onClick={handleOpenWatch}
-        className={`group/watch w-full py-1 px-1 flex items-center justify-center gap-1.5 text-[14px] font-semibold rounded transition-all cursor-pointer select-none whitespace-nowrap ${
-          requiredActionAllowed
+        className={`group/watch w-full py-1 px-1 flex items-center justify-center gap-1.5 text-[14px] font-semibold rounded transition-all cursor-pointer select-none whitespace-nowrap ${requiredActionAllowed
             ? 'border border-red-500 bg-red-50 text-red-700'
             : 'text-slate-800 hover:bg-blue-50/70'
-        }`}
+          }`}
         title="Click to select duration via watch (HH:MM)"
       >
-        <Clock className={`w-3.5 h-3.5 flex-shrink-0 transition-colors ${
-          displayVal ? 'text-blue-600' : 'text-slate-400 group-hover/watch:text-blue-600'
-        }`} />
+        <Clock className={`w-3.5 h-3.5 flex-shrink-0 transition-colors ${displayVal ? 'text-blue-600' : 'text-slate-400 group-hover/watch:text-blue-600'
+          }`} />
         <span className={displayVal ? 'font-bold text-slate-800' : (requiredActionAllowed ? 'text-red-500 font-bold' : 'text-slate-300')}>
           {displayVal || '--:--'}
         </span>
@@ -557,6 +772,7 @@ export default function PDCASheet({
   onDateChange,
   readOnly = false,
   isCreator: propIsCreator = undefined,
+  isAdmin: propIsAdmin = undefined,
   currentUser = null,
   emailPdcaSheets = undefined
 }) {
@@ -592,6 +808,7 @@ export default function PDCASheet({
 
   // Determine if the current user has Administrator privileges
   const isAdmin = useMemo(() => {
+    if (propIsAdmin !== undefined) return Boolean(propIsAdmin);
     const u = effectiveUser || userContext?.user;
     if (u) {
       if (
@@ -767,12 +984,12 @@ export default function PDCASheet({
     const confirmedBy = (row.confirmedBy || '').trim();
     const instruction = (row.instruction || '').trim();
 
-    let status = isLpaObservationSheet && !row.date?.trim() ? 'Not-Started' : row.status ? computePDCAStatus({
+    let status = !row.date?.trim() ? 'Not-Started' : row.status ? computePDCAStatus({
       ...row,
       responseDate,
       confirmation,
       status: row.status
-    }, currentDate) : '';
+    }, currentDate) : 'Not-Started';
 
     // Section P Unit
     const units = usesCheckboxMultiSelects
@@ -871,7 +1088,7 @@ export default function PDCASheet({
   const hasEditAccess = Boolean(!readOnly && (isCreatorOrAdmin || hasAnyRowResponsible));
   const effectiveReadOnly = Boolean(readOnly || !hasEditAccess);
   const missingRequiredInputs = rows.flatMap((row, rowIndex) => {
-    if (isLpaObservationSheet && !row.date?.trim()) return [];
+    if (!row.date?.trim()) return [];
     const missing = [];
     if (['Not - Confirmed', 'Not-Confirmed'].includes((row.confirmation || '').trim()) && !row.instruction?.trim()) {
       missing.push({ type: 'confirmation', rowIndex, key: `confirmation:${rowIndex}` });
@@ -1003,7 +1220,8 @@ export default function PDCASheet({
       if (
         event.target instanceof Element && (
           Boolean(event.target.closest('[data-duration-picker="true"]')) ||
-          (isReasonInput(event.target) && allowedInputs.has(event.target.closest('[data-required-action-allowed="true"]')))
+          Boolean(event.target.closest('[data-required-action-allowed="true"]')) ||
+          isReasonInput(event.target)
         )
       ) return;
       event.preventDefault();
@@ -1012,7 +1230,12 @@ export default function PDCASheet({
       notifyAndFocus();
     };
     const blockKeyboardOutsideReason = (event) => {
-      if (event.target instanceof Element && event.target.closest('[data-duration-picker="true"]')) return;
+      if (
+        event.target instanceof Element && (
+          Boolean(event.target.closest('[data-duration-picker="true"]')) ||
+          Boolean(event.target.closest('[data-required-action-allowed="true"]'))
+        )
+      ) return;
       const navigationKey = event.key === 'Tab' || event.key === 'Escape' || event.altKey ||
         ((event.ctrlKey || event.metaKey) && ['r', 'w', 'l'].includes(event.key.toLowerCase()));
       if (isReasonInput(event.target) && !navigationKey) return;
@@ -1355,6 +1578,214 @@ export default function PDCASheet({
     } catch { }
   }, [counterMeasureWidth]);
 
+  // Date Column Resizable Width (default 105px, min 80px, max 260px)
+  const [dateWidth, setDateWidth] = useState(() => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const saved = window.localStorage.getItem('pdca_date_col_width');
+        if (saved) {
+          const parsed = parseInt(saved, 10);
+          if (!isNaN(parsed) && parsed >= MIN_DATE_WIDTH && parsed <= MAX_DATE_WIDTH) return parsed;
+        }
+      }
+    } catch { }
+    return DEFAULT_DATE_WIDTH;
+  });
+  const activeDateResizeRef = useRef(null);
+  const startDateResize = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    activeDateResizeRef.current = { pointerId: e.pointerId, startX: e.clientX, startWidth: dateWidth };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { }
+  };
+  const continueDateResize = (e) => {
+    const active = activeDateResizeRef.current;
+    if (!active || active.pointerId !== e.pointerId) return;
+    e.preventDefault();
+    setDateWidth(Math.min(MAX_DATE_WIDTH, Math.max(MIN_DATE_WIDTH, active.startWidth + (e.clientX - active.startX))));
+  };
+  const finishDateResize = (e) => {
+    const active = activeDateResizeRef.current;
+    if (!active || active.pointerId !== e.pointerId) return;
+    e.preventDefault();
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { }
+    activeDateResizeRef.current = null;
+    try { window.localStorage.setItem('pdca_date_col_width', String(dateWidth)); } catch { }
+  };
+
+  // Department Column Resizable Width (default 150px, min 110px, max 380px)
+  const [departmentWidth, setDepartmentWidth] = useState(() => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const saved = window.localStorage.getItem('pdca_department_col_width');
+        if (saved) {
+          const parsed = parseInt(saved, 10);
+          if (!isNaN(parsed) && parsed >= MIN_DEPARTMENT_WIDTH && parsed <= MAX_DEPARTMENT_WIDTH) return parsed;
+        }
+      }
+    } catch { }
+    return DEFAULT_DEPARTMENT_WIDTH;
+  });
+  const activeDeptResizeRef = useRef(null);
+  const startDeptResize = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    activeDeptResizeRef.current = { pointerId: e.pointerId, startX: e.clientX, startWidth: departmentWidth };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { }
+  };
+  const continueDeptResize = (e) => {
+    const active = activeDeptResizeRef.current;
+    if (!active || active.pointerId !== e.pointerId) return;
+    e.preventDefault();
+    setDepartmentWidth(Math.min(MAX_DEPARTMENT_WIDTH, Math.max(MIN_DEPARTMENT_WIDTH, active.startWidth + (e.clientX - active.startX))));
+  };
+  const finishDeptResize = (e) => {
+    const active = activeDeptResizeRef.current;
+    if (!active || active.pointerId !== e.pointerId) return;
+    e.preventDefault();
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { }
+    activeDeptResizeRef.current = null;
+    try { window.localStorage.setItem('pdca_department_col_width', String(departmentWidth)); } catch { }
+  };
+
+  // Section Column Resizable Width (default 160px, min 110px, max 380px)
+  const [sectionWidth, setSectionWidth] = useState(() => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const saved = window.localStorage.getItem('pdca_section_col_width');
+        if (saved) {
+          const parsed = parseInt(saved, 10);
+          if (!isNaN(parsed) && parsed >= MIN_SECTION_WIDTH && parsed <= MAX_SECTION_WIDTH) return parsed;
+        }
+      }
+    } catch { }
+    return DEFAULT_SECTION_WIDTH;
+  });
+  const activeSectionResizeRef = useRef(null);
+  const startSectionResize = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    activeSectionResizeRef.current = { pointerId: e.pointerId, startX: e.clientX, startWidth: sectionWidth };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { }
+  };
+  const continueSectionResize = (e) => {
+    const active = activeSectionResizeRef.current;
+    if (!active || active.pointerId !== e.pointerId) return;
+    e.preventDefault();
+    setSectionWidth(Math.min(MAX_SECTION_WIDTH, Math.max(MIN_SECTION_WIDTH, active.startWidth + (e.clientX - active.startX))));
+  };
+  const finishSectionResize = (e) => {
+    const active = activeSectionResizeRef.current;
+    if (!active || active.pointerId !== e.pointerId) return;
+    e.preventDefault();
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { }
+    activeSectionResizeRef.current = null;
+    try { window.localStorage.setItem('pdca_section_col_width', String(sectionWidth)); } catch { }
+  };
+
+  // Line/Area Column Resizable Width (default 130px, min 85px, max 380px)
+  const [lineAreaWidth, setLineAreaWidth] = useState(() => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const saved = window.localStorage.getItem('pdca_line_area_col_width');
+        if (saved) {
+          const parsed = parseInt(saved, 10);
+          if (!isNaN(parsed) && parsed >= MIN_LINE_AREA_WIDTH && parsed <= MAX_LINE_AREA_WIDTH) return parsed;
+        }
+      }
+    } catch { }
+    return DEFAULT_LINE_AREA_WIDTH;
+  });
+  const activeLineAreaResizeRef = useRef(null);
+  const startLineAreaResize = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    activeLineAreaResizeRef.current = { pointerId: e.pointerId, startX: e.clientX, startWidth: lineAreaWidth };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { }
+  };
+  const continueLineAreaResize = (e) => {
+    const active = activeLineAreaResizeRef.current;
+    if (!active || active.pointerId !== e.pointerId) return;
+    e.preventDefault();
+    setLineAreaWidth(Math.min(MAX_LINE_AREA_WIDTH, Math.max(MIN_LINE_AREA_WIDTH, active.startWidth + (e.clientX - active.startX))));
+  };
+  const finishLineAreaResize = (e) => {
+    const active = activeLineAreaResizeRef.current;
+    if (!active || active.pointerId !== e.pointerId) return;
+    e.preventDefault();
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { }
+    activeLineAreaResizeRef.current = null;
+    try { window.localStorage.setItem('pdca_line_area_col_width', String(lineAreaWidth)); } catch { }
+  };
+
+  const handleDateResizeKeyDown = (event) => {
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      setDateWidth((prev) => Math.max(MIN_DATE_WIDTH, prev - 10));
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      setDateWidth((prev) => Math.min(MAX_DATE_WIDTH, prev + 10));
+    }
+  };
+
+  const handleDeptResizeKeyDown = (event) => {
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      setDepartmentWidth((prev) => Math.max(MIN_DEPARTMENT_WIDTH, prev - 10));
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      setDepartmentWidth((prev) => Math.min(MAX_DEPARTMENT_WIDTH, prev + 10));
+    }
+  };
+
+  const handleSectionResizeKeyDown = (event) => {
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      setSectionWidth((prev) => Math.max(MIN_SECTION_WIDTH, prev - 10));
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      setSectionWidth((prev) => Math.min(MAX_SECTION_WIDTH, prev + 10));
+    }
+  };
+
+  const handleLineAreaResizeKeyDown = (event) => {
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      setLineAreaWidth((prev) => Math.max(MIN_LINE_AREA_WIDTH, prev - 10));
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      setLineAreaWidth((prev) => Math.min(MAX_LINE_AREA_WIDTH, prev + 10));
+    }
+  };
+
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem('pdca_date_col_width', String(dateWidth));
+      }
+    } catch { }
+  }, [dateWidth]);
+
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem('pdca_department_col_width', String(departmentWidth));
+      }
+    } catch { }
+  }, [departmentWidth]);
+
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem('pdca_section_col_width', String(sectionWidth));
+      }
+    } catch { }
+  }, [sectionWidth]);
+
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem('pdca_line_area_col_width', String(lineAreaWidth));
+      }
+    } catch { }
+  }, [lineAreaWidth]);
+
   // Load saved sheet from backend on mount or when topic changes
   useEffect(() => {
     if (!topic?.id) return;
@@ -1390,7 +1821,10 @@ export default function PDCASheet({
     return () => { active = false; };
   }, [topic?.id]);
 
-  const sheetSnapshot = useMemo(() => ({ rows, headerInfo }), [rows, headerInfo]);
+  const sheetSnapshot = useMemo(() => {
+    const normalizedRows = rows.map(r => (!r.date?.trim() ? { ...r, status: 'Not-Started' } : r));
+    return { rows: normalizedRows, headerInfo };
+  }, [rows, headerInfo]);
   const persistSheet = (sheet) => {
     if (onSave) {
       try { onSave(sheet); } catch (e) { console.error(e); }
@@ -1415,7 +1849,7 @@ export default function PDCASheet({
     // Validate mandatory fields (Date, Shift, Status, Line/Area, Observation) for active rows
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
-      if (isLpaObservationSheet && !r.date?.trim()) {
+      if (!r.date?.trim()) {
         continue;
       }
       const notConfirmed = ['Not - Confirmed', 'Not-Confirmed'].includes((r.confirmation || '').trim());
@@ -1521,18 +1955,21 @@ export default function PDCASheet({
     try {
       setIsSaving(true);
       const targetId = topic?.id || topic?.recordId || (headerInfo.topicName?.trim() ? encodeURIComponent(headerInfo.topicName.trim().replace(/\//g, '-')) : 'current_topic');
+      const sanitizedRows = rows.map(r => (!r.date?.trim() ? { ...r, status: 'Not-Started' } : r));
+      const snapshotToSave = { rows: sanitizedRows, headerInfo };
       if (targetId) {
-        await pdcaApi.saveSheet(targetId, sheetSnapshot);
+        await pdcaApi.saveSheet(targetId, snapshotToSave);
       }
-      persistSheet(sheetSnapshot);
+      persistSheet(snapshotToSave);
+      setRows(sanitizedRows);
       // Update baseline after successful save so subsequent navigation knows all edits are saved
       initialStateRef.current = {
-        rows: rows.map((r) => ({ ...r })),
+        rows: sanitizedRows.map((r) => ({ ...r })),
         headerInfo: { ...headerInfo }
       };
-      initialSnapshotRef.current = serializeSheet(rows, headerInfo);
+      initialSnapshotRef.current = serializeSheet(sanitizedRows, headerInfo);
       showToast('PDCA is saved successfully');
-      onSave?.(sheetSnapshot);
+      onSave?.(snapshotToSave);
       return true;
     } catch (error) {
       persistSheet(sheetSnapshot);
@@ -1603,6 +2040,9 @@ export default function PDCASheet({
     }
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
+      if (!r.date?.trim()) {
+        continue;
+      }
       const hasContent = Boolean(
         r.date?.trim() ||
         r.shift?.trim() ||
@@ -2443,7 +2883,7 @@ export default function PDCASheet({
       } else if (field === 'date') {
         const nextStatus = value
           ? (current.responseDate ? computePDCAStatus({ ...current, date: value }) : 'Not-Started')
-          : (isLpaObservationSheet ? 'Not-Started' : '');
+          : 'Not-Started';
         updated[rowIndex] = { ...current, date: value, status: nextStatus };
       } else if (field === 'unit' && current.unit !== value) {
         updated[rowIndex] = {
@@ -3057,9 +3497,9 @@ export default function PDCASheet({
   // A revision that has not been saved yet can also be cancelled by the editor;
   // in that case the Response Date reverts to its previous value locally.
   const handleDeleteRevisedDate = async (rowIndex, dateIndex) => {
-    if (!isAdmin) {
+    if (!isAdmin && !isCreatorOrAdmin) {
       if (typeof showToast === 'function') {
-        showToast('Access Denied: Only administrators have access to delete revised dates.');
+        showToast('Access Denied: Only administrators or sheet creators can delete revised dates.');
       }
       return;
     }
@@ -3081,7 +3521,9 @@ export default function PDCASheet({
     if (remaining[dateIndex]) remaining[dateIndex] = { ...remaining[dateIndex], previousDate: priorDate };
     const removedLatestRevision = dateIndex === revisions.length - 1;
     const latestDate = removedLatestRevision
-      ? priorDate
+      ? (remaining.length > 0
+          ? (remaining[remaining.length - 1]?.responseDate || remaining[remaining.length - 1]?.date || priorDate)
+          : (priorDate || curr.initialResponseDate || curr.responseDate || ''))
       : (curr.responseDate || revisions[revisions.length - 1]?.date || curr.initialResponseDate || '');
     const tempRow = {
       ...curr,
@@ -3092,31 +3534,34 @@ export default function PDCASheet({
     const nextRows = rows.map((row, index) => index === rowIndex
       ? { ...tempRow, status: computePDCAStatus(tempRow, currentDate) }
       : row);
-    if (!isAdmin) {
-      // Cancel an unsaved revision: revert locally, the normal Save persists it.
-      setRows(nextRows);
-      return;
-    }
-    const nextSnapshot = { rows: nextRows, headerInfo };
-    const targetId = topic?.id || topic?.recordId || (headerInfo.topicName?.trim() ? encodeURIComponent(headerInfo.topicName.trim()) : 'current_topic');
 
-    try {
-      setIsSaving(true);
-      if (targetId) await pdcaApi.saveSheet(targetId, nextSnapshot);
-      setRows(nextRows);
-      persistSheet(nextSnapshot);
-      initialStateRef.current = {
-        rows: nextRows.map((row) => ({ ...row })),
-        headerInfo: { ...headerInfo }
-      };
-      initialSnapshotRef.current = serializeSheet(nextRows, headerInfo);
-      if (typeof showToast === 'function') showToast('Revised date deleted successfully.');
-    } catch (error) {
-      if (typeof showToast === 'function') {
-        showToast(error?.response?.data?.message || error.message || 'Could not delete the revised date. Please try again.');
+    // 1. Immediately apply the deletion to state so the date is removed from the UI instantly
+    setRows(nextRows);
+
+    // 2. Persist to local cache / parent snapshot
+    const nextSnapshot = { rows: nextRows, headerInfo };
+    persistSheet(nextSnapshot);
+    initialStateRef.current = {
+      rows: nextRows.map((row) => ({ ...row })),
+      headerInfo: { ...headerInfo }
+    };
+    initialSnapshotRef.current = serializeSheet(nextRows, headerInfo);
+
+    // 3. Persist to backend asynchronously without blocking the local deletion
+    const targetId = topic?.id || topic?.recordId || (headerInfo.topicName?.trim() ? encodeURIComponent(headerInfo.topicName.trim()) : 'current_topic');
+    if (targetId) {
+      try {
+        setIsSaving(true);
+        await pdcaApi.saveSheet(targetId, nextSnapshot);
+        if (typeof showToast === 'function') showToast('Revised date deleted successfully.');
+      } catch (error) {
+        console.warn('Backend saveSheet sync warning while deleting revision:', error);
+        if (typeof showToast === 'function') showToast('Revised date deleted.');
+      } finally {
+        setIsSaving(false);
       }
-    } finally {
-      setIsSaving(false);
+    } else {
+      if (typeof showToast === 'function') showToast('Revised date deleted.');
     }
   };
 
@@ -3902,7 +4347,7 @@ export default function PDCASheet({
 
   const departmentsList = PDCA_DEPARTMENTS;
 
-  // Auto-adjust columns to fit the longest visible values while keeping usable minimums.
+  // Auto-adjust columns to fit the longest visible values while keeping usable minimums and user-resized widths.
   const { dateColWidth, departmentColWidth, sectionColWidth, lineAreaColWidth } = useMemo(() => {
     let maxDateLen = 0;
     let maxDepartmentLen = 0;
@@ -3911,35 +4356,36 @@ export default function PDCASheet({
 
     for (const r of rows) {
       maxDateLen = Math.max(maxDateLen, formatDisplayDate(r.date).length);
-      const departmentText = (r.departments?.length ? r.departments : [r.department]).filter(Boolean).join(', ');
-      maxDepartmentLen = Math.max(maxDepartmentLen, departmentText.length);
-      const secText = (r.section || r.sectionCode || '').trim();
-      if (secText.length > maxSectionLen) {
-        maxSectionLen = secText.length;
-      }
-      const lineText = (r.lineArea || r.lineAreaCode || '').trim();
-      if (lineText.length > maxLineAreaLen) {
-        maxLineAreaLen = lineText.length;
-      }
+      const deptList = (r.departments?.length ? r.departments : [r.department]).filter(Boolean);
+      deptList.forEach(d => {
+        maxDepartmentLen = Math.max(maxDepartmentLen, String(d).trim().length);
+      });
+      const secList = (Array.isArray(r.sections) && r.sections.length
+        ? r.sections.map(s => s?.section || s?.sectionCode || '')
+        : [r.section || r.sectionCode || '']).filter(Boolean);
+      secList.forEach(s => {
+        maxSectionLen = Math.max(maxSectionLen, String(s).trim().length);
+      });
+      const lineList = (Array.isArray(r.lineAreas) && r.lineAreas.length
+        ? r.lineAreas.map(l => l?.lineArea || l?.lineAreaCode || '')
+        : [r.lineArea || r.lineAreaCode || '']).filter(Boolean);
+      lineList.forEach(l => {
+        maxLineAreaLen = Math.max(maxLineAreaLen, String(l).trim().length);
+      });
     }
 
-    const dateWidth = Math.min(220, Math.max(150, Math.round(maxDateLen * 10 + 50)));
-    const departmentWidth = Math.min(260, Math.max(150, Math.round(maxDepartmentLen * 9 + 42)));
-    // Base widths:
-    // Keep the Section column wide enough for readable selections and placeholders.
-    // If selected option is bigger, auto-adjusts smoothly to fit without wrapping.
-    const secWidth = maxSectionLen === 0
-      ? 160
-      : Math.min(280, Math.max(160, Math.round(maxSectionLen * 8 + 42)));
+    const calculatedDateWidth = Math.min(MAX_DATE_WIDTH, Math.max(dateWidth, Math.round(maxDateLen * 10 + 40)));
+    const calculatedDeptWidth = Math.min(MAX_DEPARTMENT_WIDTH, Math.max(departmentWidth, Math.round(maxDepartmentLen * 8 + 36)));
+    const calculatedSecWidth = Math.min(MAX_SECTION_WIDTH, Math.max(sectionWidth, Math.round(maxSectionLen * 8 + 36)));
+    const calculatedLineAreaWidth = Math.min(MAX_LINE_AREA_WIDTH, Math.max(lineAreaWidth, Math.round(maxLineAreaLen * 7.5 + 36)));
 
-    // Line/Area: when empty/placeholder ("Line/Area..."), base width is ~90px (previously 130px).
-    // If selected option is bigger, auto-adjusts smoothly to fit without wrapping.
-    const lineAreaWidth = maxLineAreaLen === 0
-      ? 90
-      : Math.min(220, Math.max(90, Math.round(maxLineAreaLen * 7.2 + 38)));
-
-    return { dateColWidth: dateWidth, departmentColWidth: departmentWidth, sectionColWidth: secWidth, lineAreaColWidth: lineAreaWidth };
-  }, [rows]);
+    return {
+      dateColWidth: calculatedDateWidth,
+      departmentColWidth: calculatedDeptWidth,
+      sectionColWidth: calculatedSecWidth,
+      lineAreaColWidth: calculatedLineAreaWidth
+    };
+  }, [rows, dateWidth, departmentWidth, sectionWidth, lineAreaWidth]);
 
   // Live Cumulative Points calculation across this sheet
   const liveCumulativeStats = useMemo(() => {
@@ -4139,12 +4585,12 @@ export default function PDCASheet({
       <div className="w-full min-w-0 flex-1 min-h-0 bg-white border border-[#B0BEC5] shadow-xs overflow-auto max-h-[calc(100vh-62px)]">
         <table className="w-full min-w-max text-left table-fixed border-separate border-spacing-0 border-t border-l border-[#B0BEC5] text-[11px]">
           <colgroup>
-            <col style={{ width: '56px', minWidth: '52px' }} />
+            <col style={{ width: `${dateColWidth}px`, minWidth: `${dateColWidth}px` }} />
             <col style={{ width: '38px', minWidth: '34px' }} />
             <col style={{ width: '34px', minWidth: '30px' }} />
             <col style={{ width: '124px', minWidth: '118px' }} />
             <col style={{ width: '115px', minWidth: '100px' }} />
-            <col style={{ width: '95px', minWidth: '90px' }} />
+            <col style={{ width: `${departmentColWidth}px`, minWidth: `${departmentColWidth}px` }} />
             <col style={{ width: `${sectionColWidth}px`, minWidth: `${sectionColWidth}px` }} />
             <col style={{ width: `${lineAreaColWidth}px`, minWidth: `${lineAreaColWidth}px` }} />
             <col style={{ width: `${observationWidth}px`, minWidth: `${observationWidth}px` }} />
@@ -4304,8 +4750,33 @@ export default function PDCASheet({
             </tr>
 
             <tr className="bg-[#ECEFF1] text-slate-800 text-[15px] font-semibold select-none text-center">
-              <th rowSpan={2} style={{ width: `${dateColWidth}px`, minWidth: `${dateColWidth}px` }} className="py-1.5 px-0.5 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] transition-[width] duration-150">
-                <span>Date</span> <span className="text-red-500 font-bold">*</span>
+              <th
+                rowSpan={2}
+                style={{ width: `${dateColWidth}px`, minWidth: `${dateColWidth}px` }}
+                className="relative py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] select-none transition-[width] duration-150"
+              >
+                <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-1">
+                  <span>Date</span> <span className="text-red-500 font-bold">*</span>
+                </div>
+                <span
+                  role="separator"
+                  aria-label="Resize Date column width"
+                  aria-orientation="vertical"
+                  aria-valuemin={MIN_DATE_WIDTH}
+                  aria-valuemax={MAX_DATE_WIDTH}
+                  aria-valuenow={dateColWidth}
+                  tabIndex={0}
+                  title={`Drag horizontally or use arrow keys to adjust Date column width (${dateColWidth}px)`}
+                  onPointerDown={startDateResize}
+                  onPointerMove={continueDateResize}
+                  onPointerUp={finishDateResize}
+                  onPointerCancel={finishDateResize}
+                  onLostPointerCapture={finishDateResize}
+                  onKeyDown={handleDateResizeKeyDown}
+                  className="group absolute inset-y-0 right-0 z-20 flex w-3 cursor-col-resize touch-none items-center justify-center hover:bg-blue-100/70 active:bg-blue-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500 transition-colors"
+                >
+                  <span className="h-4 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 transition-opacity" />
+                </span>
               </th>
               <th rowSpan={2} className="py-1.5 px-0.5 w-[38px] min-w-[34px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[11px]">
                 <span>Shift</span> <span className="text-red-500 font-bold">*</span>
@@ -4319,8 +4790,33 @@ export default function PDCASheet({
               <th rowSpan={2} className="py-1.5 px-1 w-[115px] min-w-[100px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px]">
                 <span>Unit</span> <span className="text-red-500 font-bold">*</span>
               </th>
-              <th rowSpan={2} style={{ width: `${departmentColWidth}px`, minWidth: `${departmentColWidth}px` }} className="py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] transition-[width] duration-150">
-                <span>Department</span> <span className="text-red-500 font-bold">*</span>
+              <th
+                rowSpan={2}
+                style={{ width: `${departmentColWidth}px`, minWidth: `${departmentColWidth}px` }}
+                className="relative py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] select-none transition-[width] duration-150"
+              >
+                <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-1">
+                  <span>Department</span> <span className="text-red-500 font-bold">*</span>
+                </div>
+                <span
+                  role="separator"
+                  aria-label="Resize Department column width"
+                  aria-orientation="vertical"
+                  aria-valuemin={MIN_DEPARTMENT_WIDTH}
+                  aria-valuemax={MAX_DEPARTMENT_WIDTH}
+                  aria-valuenow={departmentColWidth}
+                  tabIndex={0}
+                  title={`Drag horizontally or use arrow keys to adjust Department column width (${departmentColWidth}px)`}
+                  onPointerDown={startDeptResize}
+                  onPointerMove={continueDeptResize}
+                  onPointerUp={finishDeptResize}
+                  onPointerCancel={finishDeptResize}
+                  onLostPointerCapture={finishDeptResize}
+                  onKeyDown={handleDeptResizeKeyDown}
+                  className="group absolute inset-y-0 right-0 z-20 flex w-3 cursor-col-resize touch-none items-center justify-center hover:bg-blue-100/70 active:bg-blue-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500 transition-colors"
+                >
+                  <span className="h-4 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 transition-opacity" />
+                </span>
               </th>
               <th
                 rowSpan={2}
@@ -4328,9 +4824,30 @@ export default function PDCASheet({
                   width: `${sectionColWidth}px`,
                   minWidth: `${sectionColWidth}px`
                 }}
-                className="py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] whitespace-nowrap transition-[width] duration-150"
+                className="relative py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] select-none whitespace-nowrap transition-[width] duration-150"
               >
-                <span>Section</span>
+                <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-1">
+                  <span>Section</span>
+                </div>
+                <span
+                  role="separator"
+                  aria-label="Resize Section column width"
+                  aria-orientation="vertical"
+                  aria-valuemin={MIN_SECTION_WIDTH}
+                  aria-valuemax={MAX_SECTION_WIDTH}
+                  aria-valuenow={sectionColWidth}
+                  tabIndex={0}
+                  title={`Drag horizontally or use arrow keys to adjust Section column width (${sectionColWidth}px)`}
+                  onPointerDown={startSectionResize}
+                  onPointerMove={continueSectionResize}
+                  onPointerUp={finishSectionResize}
+                  onPointerCancel={finishSectionResize}
+                  onLostPointerCapture={finishSectionResize}
+                  onKeyDown={handleSectionResizeKeyDown}
+                  className="group absolute inset-y-0 right-0 z-20 flex w-3 cursor-col-resize touch-none items-center justify-center hover:bg-blue-100/70 active:bg-blue-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500 transition-colors"
+                >
+                  <span className="h-4 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 transition-opacity" />
+                </span>
               </th>
               <th
                 rowSpan={2}
@@ -4338,9 +4855,30 @@ export default function PDCASheet({
                   width: `${lineAreaColWidth}px`,
                   minWidth: `${lineAreaColWidth}px`
                 }}
-                className="py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] whitespace-nowrap transition-[width] duration-150"
+                className="relative py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] select-none whitespace-nowrap transition-[width] duration-150"
               >
-                <span>Line/Area</span>
+                <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-1">
+                  <span>Line/Area</span>
+                </div>
+                <span
+                  role="separator"
+                  aria-label="Resize Line/Area column width"
+                  aria-orientation="vertical"
+                  aria-valuemin={MIN_LINE_AREA_WIDTH}
+                  aria-valuemax={MAX_LINE_AREA_WIDTH}
+                  aria-valuenow={lineAreaColWidth}
+                  tabIndex={0}
+                  title={`Drag horizontally or use arrow keys to adjust Line/Area column width (${lineAreaColWidth}px)`}
+                  onPointerDown={startLineAreaResize}
+                  onPointerMove={continueLineAreaResize}
+                  onPointerUp={finishLineAreaResize}
+                  onPointerCancel={finishLineAreaResize}
+                  onLostPointerCapture={finishLineAreaResize}
+                  onKeyDown={handleLineAreaResizeKeyDown}
+                  className="group absolute inset-y-0 right-0 z-20 flex w-3 cursor-col-resize touch-none items-center justify-center hover:bg-blue-100/70 active:bg-blue-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500 transition-colors"
+                >
+                  <span className="h-4 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 transition-opacity" />
+                </span>
               </th>
               <th
                 rowSpan={2}
@@ -4552,724 +5090,664 @@ export default function PDCASheet({
                 if (!showDoneRows && isDone) return null;
                 visibleCounter += 1;
                 const sNo = visibleCounter;
-              const canEditEntireRow = canEditEntireSheet;
-              const unitSelected = usesCheckboxMultiSelects
-                ? (row.units || (row.unit ? [row.unit] : [])).some(unit => PDCA_UNITS.includes(unit))
-                : ['Bawal', 'Gujrat'].includes(row.unit);
-              const responsibleUnitSelected = usesCheckboxMultiSelects
-                ? (row.respUnits || (row.respUnit || row.responsiblePersonUnit ? [row.respUnit || row.responsiblePersonUnit] : [])).some(unit => PDCA_UNITS.includes(unit))
-                : ['Bawal', 'Gujrat'].includes(row.respUnit || row.responsiblePersonUnit);
-              const isDeptMember = isUserInResponsibleDepartment(row, effectiveUser);
-              const canEditActionCols = Boolean(!readOnly && (isCreatorOrAdmin || isDeptMember));
+                const canEditEntireRow = canEditEntireSheet;
+                const unitSelected = usesCheckboxMultiSelects
+                  ? (row.units || (row.unit ? [row.unit] : [])).some(unit => PDCA_UNITS.includes(unit))
+                  : ['Bawal', 'Gujrat'].includes(row.unit);
+                const responsibleUnitSelected = usesCheckboxMultiSelects
+                  ? (row.respUnits || (row.respUnit || row.responsiblePersonUnit ? [row.respUnit || row.responsiblePersonUnit] : [])).some(unit => PDCA_UNITS.includes(unit))
+                  : ['Bawal', 'Gujrat'].includes(row.respUnit || row.responsiblePersonUnit);
+                const isDeptMember = isUserInResponsibleDepartment(row, effectiveUser);
+                const canEditActionCols = Boolean(!readOnly && (isCreatorOrAdmin || isDeptMember));
 
-              return (
-                <tr
-                  key={idx}
-                  className="group/row transition-colors"
-                >
-                  {/* 1. Date (Stacked: Format on top, Calendar icon below) */}
-                  <td style={{ width: `${dateColWidth}px`, minWidth: `${dateColWidth}px` }} className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150">
-                    <div className="w-full flex items-center justify-center">
-                      <CompactDateCell
-                        value={row.date}
-                        readOnly={!canEditEntireRow}
-                        onChange={(val) => handleCellChange(idx, 'date', val)}
-                      />
-                    </div>
-                  </td>
-
-                  {/* 2. Shift (Single letter A/B/C/G, centered in cell) */}
-                  <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[38px] min-w-[34px] focus-within:bg-blue-50/30">
-                    <div className="relative w-full flex items-center justify-center">
-                      <select
-                        disabled={!canEditEntireRow}
-                        value={row.shift === 'General' ? 'G' : (row.shift || '')}
-                        onChange={(e) => handleCellChange(idx, 'shift', e.target.value)}
-                        className={`w-full bg-transparent border-0 outline-none px-1 py-1 text-[14px] text-slate-800 font-semibold text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${!canEditEntireRow ? 'cursor-default appearance-none' : 'cursor-pointer'} transition-colors appearance-none`}
-                      >
-                        <option value="">-</option>
-                        <option value="A">A</option>
-                        <option value="B">B</option>
-                        <option value="C">C</option>
-                        <option value="G">G</option>
-                      </select>
-                      {canEditEntireRow && (
-                        <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                      )}
-                    </div>
-                  </td>
-
-                  {/* 3. S.No (Clean uneditable number, centered) */}
-                  <td className="p-1 align-middle text-center border-r border-b border-[#64748B] font-semibold text-slate-600 bg-[#FAFAFA] group-hover/row:bg-[#F1F5F9] select-none w-[34px] min-w-[30px] text-[14px]">
-                    {sNo}
-                  </td>
-
-                  {/* 4. Status (Frozen - visible dropdown styling but user cannot select) */}
-                  <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[124px] min-w-[118px]">
-                    <div className="w-full flex items-center justify-center">
-                      <select
-                        disabled={true}
-                        tabIndex={-1}
-                        aria-label={`Status for row ${sNo}`}
-                        value={row.status ? normalizePDCAStatus(row.status) : ''}
-                        className={`w-full min-w-full rounded-md border px-1.5 py-1 text-[14px] font-medium outline-none whitespace-nowrap cursor-not-allowed pointer-events-none select-none text-center ${normalizePDCAStatus(row.status) === 'Done' ? 'bg-green-50 text-green-700 border-green-200' :
-                          normalizePDCAStatus(row.status) === 'In- Progress' ? 'bg-yellow-50 text-yellow-800 border-yellow-300' :
-                            normalizePDCAStatus(row.status) === 'Delay' ? 'bg-red-50 text-red-700 border-red-200' :
-                              'bg-blue-50 text-blue-700 border-blue-200'
-                          }`}
-                      >
-                        <option value="">Select...</option>
-                        <option value="Not-Started" style={{ color: '#1d4ed8', backgroundColor: '#eff6ff' }}>Not-Started</option>
-                        <option value="Done" style={{ color: '#15803d', backgroundColor: '#f0fdf4' }}>Done</option>
-                        <option value="In- Progress" style={{ color: '#854d0e', backgroundColor: '#fefce8' }}>In- Progress</option>
-                        <option value="Delay" style={{ color: '#b91c1c', backgroundColor: '#fef2f2' }}>Delay</option>
-                      </select>
-                    </div>
-                  </td>
-
-                  {/* 5. Unit (Section P) - Immediately before Department */}
-                  <td className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[115px] min-w-[100px] focus-within:bg-blue-50/30">
-                    {usesCheckboxMultiSelects ? <CheckboxMultiSelect
-                      disabled={!canEditEntireRow}
-                      value={row.units || (row.unit ? [row.unit] : [])}
-                      options={PDCA_UNITS.map(unit => ({ value: unit, label: unit }))}
-                      placeholder="Unit..."
-                      onChange={values => setRows(prev => prev.map((item, rowIndex) => rowIndex === idx ? { ...item, units: values, unit: values[0] || '' } : item))}
-                    /> : <div className="relative w-full flex items-center justify-center">
-                      <select disabled={!canEditEntireRow} value={row.unit || ''} onChange={event => handleCellChange(idx, 'unit', event.target.value)} className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1 text-[14px] text-slate-800 text-center font-medium focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate`} title={row.unit || 'Select Unit'}>
-                        <option value="">Unit...</option><option value="Bawal">Bawal</option><option value="Gujrat">Gujrat</option>
-                      </select>
-                      {canEditEntireRow && <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />}
-                    </div>}
-                  </td>
-
-                  {/* 6. Department */}
-                  <td style={{ width: `${departmentColWidth}px`, minWidth: `${departmentColWidth}px` }} className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150">
-                    {usesCheckboxMultiSelects ? <CheckboxMultiSelect
-                      disabled={!canEditEntireRow || !unitSelected}
-                      value={row.departments || (row.department ? [row.department] : [])}
-                      options={getDepartmentsForUnit(row.unit).map(department => ({ value: department, label: department }))}
-                      placeholder="Dept..."
-                      onChange={values => setRows(prev => prev.map((item, rowIndex) => {
-                        if (rowIndex !== idx) return item;
-                        const sections = (item.sections || []).filter(section => !values.length || values.some(department => {
-                          const master = VERIFIED_SECTION_MASTER.find(option => String(option.id) === String(section.sectionId)) || { id: section.sectionId, name: section.section };
-                          return isSectionRelatedToDepartment(master, department);
-                        }));
-                        const sectionIds = new Set(sections.map(section => String(section.sectionId)));
-                        const lineAreas = (item.lineAreas || []).filter(line => !sections.length ? false : (!line.sectionId || sectionIds.has(String(line.sectionId))));
-                        const firstSection = sections[0] || {};
-                        const firstLine = lineAreas[0] || {};
-                        return { ...item, departments: values, department: values[0] || '', sections, section: firstSection.section || '', sectionId: firstSection.sectionId ?? null, sectionCode: firstSection.sectionCode || '', lineAreas, lineArea: firstLine.lineArea || '', lineAreaId: firstLine.lineAreaId ?? null, lineAreaCode: firstLine.lineAreaCode || '', lineAreaSectionId: firstLine.sectionId ?? null };
-                      }))}
-                    /> : <div className="flex flex-col h-full justify-between">
-                      <div className="flex flex-col divide-y divide-[#CBD5E1]">
-                        {((row.departments?.length ? row.departments : (row.department ? [row.department] : ['']))).map((department, deptIndex, all) => <div key={deptIndex} className="relative min-h-[30px] p-0.5">
-                          <select disabled={!canEditEntireRow || !unitSelected} value={department || ''} onChange={event => handleUpdateDepartment(idx, deptIndex, event.target.value)} className="w-full bg-transparent px-1 py-1 text-center text-[14px]">
-                            <option value="">Dept...</option>{getDepartmentsForUnit(row.unit).map(value => <option key={value} value={value}>{value}</option>)}
-                          </select>
-                          {all.length > 1 && canEditEntireRow && <button type="button" onClick={() => handleRemoveDepartment(idx, deptIndex)} className="absolute right-0 top-1 text-slate-400 hover:text-rose-600" title="Remove Department"><X className="h-2.5 w-2.5" /></button>}
-                        </div>)}
+                return (
+                  <tr
+                    key={idx}
+                    className="group/row transition-colors"
+                  >
+                    {/* 1. Date (Stacked: Format on top, Calendar icon below) */}
+                    <td style={{ width: `${dateColWidth}px`, minWidth: `${dateColWidth}px` }} className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150">
+                      <div className="w-full flex items-center justify-center">
+                        <CompactDateCell
+                          value={row.date}
+                          readOnly={!canEditEntireRow}
+                          onChange={(val) => handleCellChange(idx, 'date', val)}
+                        />
                       </div>
-                      {canEditEntireRow && <button type="button" disabled={!unitSelected} onClick={() => handleAddDepartment(idx)} className="border-t border-slate-100 bg-slate-50/50 px-1 py-0.5 text-[9px] text-blue-600 disabled:opacity-40"><Plus className="inline h-2.5 w-2.5" /> Add</button>}
-                    </div>}
-                  </td>
+                    </td>
 
-                  {/* 7. Section */}
-                  <td style={{ width: `${sectionColWidth}px`, minWidth: `${sectionColWidth}px` }} className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150">
-                    {usesCheckboxMultiSelects ? <CheckboxMultiSelect
-                      disabled={!canEditEntireRow}
-                      value={row.sections?.length ? row.sections.map(section => section.sectionId ?? section.section) : (row.sectionId || row.section ? [row.sectionId || row.section] : [])}
-                      options={VERIFIED_SECTION_MASTER
-                        .filter(section => !row.departments?.length || row.departments.some(department => isSectionRelatedToDepartment(section, department)))
-                        .map(section => ({ value: section.id, label: section.name }))}
-                      placeholder="Section..."
-                      onChange={values => setRows(prev => prev.map((item, rowIndex) => {
-                        if (rowIndex !== idx) return item;
-                        const sections = values.map(value => {
-                          const master = VERIFIED_SECTION_MASTER.find(section => String(section.id) === String(value));
-                          const existing = item.sections?.find(section => String(section.sectionId) === String(value) || section.section === value);
-                          return master ? { section: master.name, sectionId: master.id, sectionCode: master.uniCode || '' } : existing;
-                        }).filter(Boolean);
-                        const first = sections[0] || {};
-                        const sectionIds = new Set(sections.map(section => String(section.sectionId)));
-                        const lineAreas = (item.lineAreas || []).filter(line => !line.sectionId || sectionIds.has(String(line.sectionId)));
-                        const firstLine = lineAreas[0] || {};
-                        return { ...item, sections, section: first.section || '', sectionId: first.sectionId ?? null, sectionCode: first.sectionCode || '', lineAreas, lineArea: firstLine.lineArea || '', lineAreaId: firstLine.lineAreaId ?? null, lineAreaCode: firstLine.lineAreaCode || '', lineAreaSectionId: firstLine.sectionId ?? null };
-                      }))}
-                    /> : <div className="flex flex-col h-full justify-between">
-                      {((row.sections?.length ? row.sections : (row.section ? [{ section: row.section, sectionId: row.sectionId, sectionCode: row.sectionCode }] : [{ section: '', sectionId: null, sectionCode: '' }]))).map((section, sectionIndex, all) => <div key={sectionIndex} className="relative min-h-[30px] p-0.5">
-                        <SearchableSectionSelect disabled={!canEditEntireRow} value={section.section} sectionId={section.sectionId} sectionCode={section.sectionCode} department={row.departments?.[sectionIndex] || row.departments?.[0] || row.department} onChange={(name, meta) => handleUpdateSection(idx, sectionIndex, name, meta)} placeholder="Section..." />
-                        {all.length > 1 && canEditEntireRow && <button type="button" onClick={() => handleRemoveSection(idx, sectionIndex)} className="absolute right-0 top-1 text-slate-400 hover:text-rose-600" title="Remove Section"><X className="h-2.5 w-2.5" /></button>}
-                      </div>)}
-                      {canEditEntireRow && <button type="button" onClick={() => handleAddSection(idx)} className="border-t border-slate-100 bg-slate-50/50 px-1 py-0.5 text-[9px] text-blue-600"><Plus className="inline h-2.5 w-2.5" /> Add</button>}
-                    </div>}
-                  </td>
+                    {/* 2. Shift (Single letter A/B/C/G, centered in cell) */}
+                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[38px] min-w-[34px] focus-within:bg-blue-50/30">
+                      <div className="relative w-full flex items-center justify-center">
+                        <select
+                          disabled={!canEditEntireRow}
+                          value={row.shift === 'General' ? 'G' : (row.shift || '')}
+                          onChange={(e) => handleCellChange(idx, 'shift', e.target.value)}
+                          className={`w-full bg-transparent border-0 outline-none px-1 py-1 text-[14px] text-slate-800 font-semibold text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${!canEditEntireRow ? 'cursor-default appearance-none' : 'cursor-pointer'} transition-colors appearance-none`}
+                        >
+                          <option value="">-</option>
+                          <option value="A">A</option>
+                          <option value="B">B</option>
+                          <option value="C">C</option>
+                          <option value="G">G</option>
+                        </select>
+                        {canEditEntireRow && (
+                          <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        )}
+                      </div>
+                    </td>
 
-                  {/* 8. Line/Area */}
-                  <td style={{ width: `${lineAreaColWidth}px`, minWidth: `${lineAreaColWidth}px` }} className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150">
-                    {usesCheckboxMultiSelects ? <CheckboxMultiSelect
-                      disabled={!canEditEntireRow || !(row.sections?.length || row.section)}
-                      value={row.lineAreas?.length ? row.lineAreas.map(line => line.lineArea) : (row.lineArea ? [row.lineArea] : [])}
-                      options={[...new Set([
-                        ...(() => {
-                          const cachedSections = getCachedDbSections() || [];
-                          const fallbackSections = getDefaultSectionsWithLines();
-                          const selectedSections = cachedSections.length ? cachedSections : fallbackSections;
-                          return selectedSections
-                            .filter(section => (row.sections || []).some(selected => String(selected.sectionId) === String(section.id) || selected.section === section.name) || String(row.sectionId) === String(section.id) || row.section === section.name)
-                            .flatMap(section => {
-                              const lines = section.lines?.length
-                                ? section.lines
-                                : (fallbackSections.find(fallback => String(fallback.id) === String(section.id))?.lines || []);
-                              return lines.map(line => line?.name || line);
-                            });
-                        })(),
-                        ...(row.lineAreas || []).map(line => line.lineArea)
-                      ].filter(Boolean))].map(line => ({ value: line, label: line }))}
-                      placeholder="Line/Area..."
-                      onChange={values => setRows(prev => prev.map((item, rowIndex) => {
-                        if (rowIndex !== idx) return item;
-                        const hierarchy = getCachedDbSections() || getDefaultSectionsWithLines();
-                        const selectedSections = (item.sections?.length ? item.sections : [{ section: item.section, sectionId: item.sectionId }]).filter(section => section.section || section.sectionId);
-                        const lineAreas = values.map(lineArea => {
-                          const existing = item.lineAreas?.find(line => line.lineArea === lineArea);
-                          const owner = hierarchy.find(section => selectedSections.some(selected => String(selected.sectionId) === String(section.id) || selected.section === section.name) && (section.lines || []).some(line => (line?.name || line) === lineArea));
-                          const lineRecord = owner?.lines?.find(line => (line?.name || line) === lineArea);
-                          return existing || { lineArea, lineAreaId: lineRecord?.id ?? null, lineAreaCode: lineRecord?.uniCode || '', sectionId: owner?.id ?? selectedSections[0]?.sectionId ?? item.sectionId ?? null };
-                        });
-                        const first = lineAreas[0] || {};
-                        return { ...item, lineAreas, lineArea: first.lineArea || '', lineAreaId: first.lineAreaId ?? null, lineAreaCode: first.lineAreaCode || '', lineAreaSectionId: first.sectionId ?? null };
-                      }))}
-                    /> : <div className="flex flex-col h-full justify-between">
-                      {((row.lineAreas?.length ? row.lineAreas : (row.lineArea ? [{ lineArea: row.lineArea, lineAreaId: row.lineAreaId, lineAreaCode: row.lineAreaCode, sectionId: row.lineAreaSectionId }] : [{ lineArea: '', lineAreaId: null, lineAreaCode: '', sectionId: null }]))).map((line, lineIndex, all) => <div key={lineIndex} className="relative min-h-[30px] p-0.5">
-                        <SearchableLineAreaSelect disabled={!canEditEntireRow} value={line.lineArea} sectionId={line.sectionId ?? row.sections?.[lineIndex]?.sectionId ?? row.sectionId} lineId={line.lineAreaId} onChange={(value, meta) => handleUpdateLineArea(idx, lineIndex, value, meta)} />
-                        {all.length > 1 && canEditEntireRow && <button type="button" onClick={() => handleRemoveLineArea(idx, lineIndex)} className="absolute right-0 top-1 text-slate-400 hover:text-rose-600" title="Remove Line/Area"><X className="h-2.5 w-2.5" /></button>}
-                      </div>)}
-                      {canEditEntireRow && <button type="button" onClick={() => handleAddLineArea(idx)} className="border-t border-slate-100 bg-slate-50/50 px-1 py-0.5 text-[9px] text-blue-600"><Plus className="inline h-2.5 w-2.5" /> Add</button>}
-                    </div>}
-                  </td>
+                    {/* 3. S.No (Clean uneditable number, centered) */}
+                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] font-semibold text-slate-600 bg-[#FAFAFA] group-hover/row:bg-[#F1F5F9] select-none w-[34px] min-w-[30px] text-[14px]">
+                      {sNo}
+                    </td>
 
-                  {/* 6. Observation (Auto-expanding, resizable width, wrapped multiline text) */}
-                  <td
-                    style={{
-                      width: `${observationWidth}px`,
-                      minWidth: `${observationWidth}px`,
-                      maxWidth: `${observationWidth}px`
-                    }}
-                    className="p-1 align-top border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-left overflow-hidden"
-                  >
-                    <AutoResizeTextarea
-                      inputRef={(el) => registerRef(idx, 'observation', el)}
-                      value={row.observation}
-                      readOnly={!canEditEntireRow}
-                      onChange={(e) => handleCellChange(idx, 'observation', e.target.value)}
-                      onKeyDown={(e) => handleKeyDown(e, idx, 'observation')}
-                      placeholder="Observation details..."
-                      className="w-full bg-transparent border-0 outline-none p-1.5 text-[14px] text-slate-800 text-left leading-relaxed focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 whitespace-pre-wrap break-words"
-                    />
-                  </td>
-
-                  {/* 7. Image (Before) - Compact when empty; expands only when evidence is uploaded */}
-                  <td className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[200px] min-w-[190px] text-center">
-                    {(() => {
-                      const isDoc = row.fileTypeBefore && ['pdf', 'excel', 'ppt', 'document'].includes(row.fileTypeBefore);
-
-                      if (isDoc && row.imageBefore) {
+                    {/* 4. Status (Frozen - visible dropdown styling but user cannot select) */}
+                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[124px] min-w-[118px]">
+                      {(() => {
+                        const rowStatus = !row.date?.trim() ? 'Not-Started' : (row.status ? normalizePDCAStatus(row.status) : 'Not-Started');
                         return (
-                          <div className="flex items-center justify-center w-full py-1">
-                            <button
-                              type="button"
-                              onClick={() => setSelectedImageAction({
-                                rowIndex: idx,
-                                field: 'imageBefore',
-                                nameField: 'imageBeforeName',
-                                typeField: 'fileTypeBefore',
-                                title: 'Image (Before)',
-                                imageSrc: row.imageBefore,
-                                imageName: row.imageBeforeName || 'Document',
-                                fileType: row.fileTypeBefore
-                              })}
-                              className="group relative inline-flex flex-col items-center justify-center p-2 rounded-xl border border-slate-300 hover:border-blue-500 hover:ring-2 hover:ring-blue-100 transition-all cursor-pointer bg-slate-50/80 shadow-2xs overflow-hidden w-full"
-                              title={`Click to view, download, edit, or replace ${row.imageBeforeName || 'file'}`}
+                          <div className="w-full flex items-center justify-center">
+                            <select
+                              disabled={true}
+                              tabIndex={-1}
+                              aria-label={`Status for row ${sNo}`}
+                              value={rowStatus}
+                              className={`w-full min-w-full rounded-md border px-1.5 py-1 text-[14px] font-medium outline-none whitespace-nowrap cursor-not-allowed pointer-events-none select-none text-center ${rowStatus === 'Done' ? 'bg-green-50 text-green-700 border-green-200' :
+                                rowStatus === 'In- Progress' ? 'bg-yellow-50 text-yellow-800 border-yellow-300' :
+                                  rowStatus === 'Delay' ? 'bg-red-50 text-red-700 border-red-200' :
+                                    'bg-blue-50 text-blue-700 border-blue-200'
+                                }`}
                             >
-                              <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-white shadow-2xs border border-slate-200 mb-1">
-                                {row.fileTypeBefore === 'pdf' ? (
-                                  <FileText className="w-5 h-5 text-rose-600" />
-                                ) : row.fileTypeBefore === 'excel' ? (
-                                  <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
-                                ) : (
-                                  <Presentation className="w-5 h-5 text-amber-600" />
-                                )}
-                              </div>
-                              <span className="text-[10px] font-semibold text-slate-700 truncate max-w-[120px] block">
-                                {row.imageBeforeName || row.fileTypeBefore?.toUpperCase()}
-                              </span>
-                              <span className="text-[9px] uppercase font-bold text-slate-400 mt-0.5">
-                                {row.fileTypeBefore}
-                              </span>
-                            </button>
+                              <option value="">Select...</option>
+                              <option value="Not-Started" style={{ color: '#1d4ed8', backgroundColor: '#eff6ff' }}>Not-Started</option>
+                              <option value="Done" style={{ color: '#15803d', backgroundColor: '#f0fdf4' }}>Done</option>
+                              <option value="In- Progress" style={{ color: '#854d0e', backgroundColor: '#fefce8' }}>In- Progress</option>
+                              <option value="Delay" style={{ color: '#b91c1c', backgroundColor: '#fef2f2' }}>Delay</option>
+                            </select>
                           </div>
                         );
-                      }
+                      })()}
+                    </td>
 
-                      const beforeImages = Array.isArray(row.imagesBefore)
-                        ? row.imagesBefore
-                        : (row.imageBefore && (!row.fileTypeBefore || row.fileTypeBefore === 'image')
-                          ? [{ id: 'legacy-before-0', url: row.imageBefore, name: row.imageBeforeName || 'Before Image', type: 'image' }]
-                          : []);
-                      const hasImages = beforeImages.length > 0;
+                    {/* 5. Unit (Section P) - Immediately before Department */}
+                    <td className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[115px] min-w-[100px] focus-within:bg-blue-50/30">
+                      {usesCheckboxMultiSelects ? <CheckboxMultiSelect
+                        disabled={!canEditEntireRow}
+                        value={row.units || (row.unit ? [row.unit] : [])}
+                        options={PDCA_UNITS.map(unit => ({ value: unit, label: unit }))}
+                        placeholder="Unit..."
+                        onChange={values => setRows(prev => prev.map((item, rowIndex) => rowIndex === idx ? { ...item, units: values, unit: values[0] || '' } : item))}
+                      /> : <div className="relative w-full flex items-center justify-center">
+                        <select disabled={!canEditEntireRow} value={row.unit || ''} onChange={event => handleCellChange(idx, 'unit', event.target.value)} className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1 text-[14px] text-slate-800 text-center font-medium focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate`} title={row.unit || 'Select Unit'}>
+                          <option value="">Unit...</option><option value="Bawal">Bawal</option><option value="Gujrat">Gujrat</option>
+                        </select>
+                        {canEditEntireRow && <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />}
+                      </div>}
+                    </td>
 
-                      if (hasImages) {
-                        return (
-                          <div className="flex items-center justify-center w-full py-1">
-                            <button
-                              type="button"
-                              onClick={() => handleOpenEvidenceViewer(idx, 'imageBefore')}
-                              className="group relative inline-flex flex-col items-center justify-center p-1 rounded-lg border-0 transition-all cursor-pointer bg-transparent shadow-none overflow-hidden w-full"
-                              title={`Click to view all ${beforeImages.length} evidence photo(s)`}
-                            >
-                              <div className="relative flex items-center justify-center w-full min-h-[120px] max-h-[130px]">
-                                <img
-                                  src={getMediaUrl(beforeImages[0].url)}
-                                  alt={beforeImages[0].name || `Row ${sNo} Before`}
-                                  className="max-h-[120px] max-w-[180px] w-auto h-auto object-contain rounded transition-transform duration-200 group-hover:scale-105"
-                                />
-                                <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded transition-opacity text-white">
-                                  <span className="flex items-center gap-1 bg-black/70 backdrop-blur-xs px-2 py-0.5 rounded-md text-[10px] font-medium text-white shadow">
-                                    <Eye className="w-3.5 h-3.5" />
-                                    <span>View ({beforeImages.length})</span>
-                                  </span>
-                                </div>
-                              </div>
-                              <div className="mt-1 flex items-center gap-1">
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold">
-                                  <Images className="w-3 h-3" />
-                                  <span>{beforeImages.length} {beforeImages.length === 1 ? 'Photo' : 'Photos'}</span>
-                                </span>
-                              </div>
-                            </button>
-                          </div>
-                        );
-                      }
-
-                      if (!canEditEntireRow) {
-                        return (
-                          <div className="flex items-center justify-center w-full py-1 text-slate-300 text-xs select-none">
-                            -
-                          </div>
-                        );
-                      }
-
-                      // Compact default icon button when empty - opens 4-box upload selection modal
-                      return (
-                        <div className="flex items-center justify-center w-full py-1">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenUploadModal(idx, 'imageBefore', 'imageBeforeName', 'fileTypeBefore', 'Image (Before)')}
-                            className="group flex items-center justify-center w-9 h-9 rounded-lg border border-dashed border-slate-300 hover:border-blue-500 bg-slate-50/80 hover:bg-blue-50/50 transition-all cursor-pointer shadow-2xs hover:scale-105"
-                            title="Click to choose upload type"
-                          >
-                            <ImageIcon className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors" />
-                          </button>
+                    {/* 6. Department */}
+                    <td style={{ width: `${departmentColWidth}px`, minWidth: `${departmentColWidth}px` }} className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150">
+                      {usesCheckboxMultiSelects ? <CheckboxMultiSelect
+                        disabled={!canEditEntireRow || !unitSelected}
+                        value={row.departments || (row.department ? [row.department] : [])}
+                        options={getDepartmentsForUnit(row.unit).map(department => ({ value: department, label: department }))}
+                        placeholder="Dept..."
+                        onChange={values => setRows(prev => prev.map((item, rowIndex) => {
+                          if (rowIndex !== idx) return item;
+                          const sections = (item.sections || []).filter(section => !values.length || values.some(department => {
+                            const master = VERIFIED_SECTION_MASTER.find(option => String(option.id) === String(section.sectionId)) || { id: section.sectionId, name: section.section };
+                            return isSectionRelatedToDepartment(master, department);
+                          }));
+                          const sectionIds = new Set(sections.map(section => String(section.sectionId)));
+                          const lineAreas = (item.lineAreas || []).filter(line => !sections.length ? false : (!line.sectionId || sectionIds.has(String(line.sectionId))));
+                          const firstSection = sections[0] || {};
+                          const firstLine = lineAreas[0] || {};
+                          return { ...item, departments: values, department: values[0] || '', sections, section: firstSection.section || '', sectionId: firstSection.sectionId ?? null, sectionCode: firstSection.sectionCode || '', lineAreas, lineArea: firstLine.lineArea || '', lineAreaId: firstLine.lineAreaId ?? null, lineAreaCode: firstLine.lineAreaCode || '', lineAreaSectionId: firstLine.sectionId ?? null };
+                        }))}
+                      /> : <div className="flex flex-col h-full justify-between">
+                        <div className="flex flex-col divide-y divide-[#CBD5E1]">
+                          {((row.departments?.length ? row.departments : (row.department ? [row.department] : ['']))).map((department, deptIndex, all) => <div key={deptIndex} className="relative min-h-[30px] p-0.5">
+                            <select disabled={!canEditEntireRow || !unitSelected} value={department || ''} onChange={event => handleUpdateDepartment(idx, deptIndex, event.target.value)} className="w-full bg-transparent px-1 py-1 text-center text-[14px]">
+                              <option value="">Dept...</option>{getDepartmentsForUnit(row.unit).map(value => <option key={value} value={value}>{value}</option>)}
+                            </select>
+                            {all.length > 1 && canEditEntireRow && <button type="button" onClick={() => handleRemoveDepartment(idx, deptIndex)} className="absolute right-0 top-1 text-slate-400 hover:text-rose-600" title="Remove Department"><X className="h-2.5 w-2.5" /></button>}
+                          </div>)}
                         </div>
-                      );
-                    })()}
-                  </td>
+                        {canEditEntireRow && <button type="button" disabled={!unitSelected} onClick={() => handleAddDepartment(idx)} className="border-t border-slate-100 bg-slate-50/50 px-1 py-0.5 text-[9px] text-blue-600 disabled:opacity-40"><Plus className="inline h-2.5 w-2.5" /> Add</button>}
+                      </div>}
+                    </td>
 
-                  {/* 8. Root Cause (Auto-expanding, resizable width, vertically and horizontally centered) */}
-                  <td
-                    style={{
-                      width: `${rootCauseWidth}px`,
-                      minWidth: `${rootCauseWidth}px`,
-                      maxWidth: `${rootCauseWidth}px`
-                    }}
-                    className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-left overflow-hidden"
-                  >
-                    <div className="w-full flex items-center justify-start">
+                    {/* 7. Section */}
+                    <td style={{ width: `${sectionColWidth}px`, minWidth: `${sectionColWidth}px` }} className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150">
+                      {usesCheckboxMultiSelects ? <CheckboxMultiSelect
+                        disabled={!canEditEntireRow}
+                        value={row.sections?.length ? row.sections.map(section => section.sectionId ?? section.section) : (row.sectionId || row.section ? [row.sectionId || row.section] : [])}
+                        options={VERIFIED_SECTION_MASTER
+                          .filter(section => !row.departments?.length || row.departments.some(department => isSectionRelatedToDepartment(section, department)))
+                          .map(section => ({ value: section.id, label: section.name }))}
+                        placeholder="Section..."
+                        onChange={values => setRows(prev => prev.map((item, rowIndex) => {
+                          if (rowIndex !== idx) return item;
+                          const sections = values.map(value => {
+                            const master = VERIFIED_SECTION_MASTER.find(section => String(section.id) === String(value));
+                            const existing = item.sections?.find(section => String(section.sectionId) === String(value) || section.section === value);
+                            return master ? { section: master.name, sectionId: master.id, sectionCode: master.uniCode || '' } : existing;
+                          }).filter(Boolean);
+                          const first = sections[0] || {};
+                          const sectionIds = new Set(sections.map(section => String(section.sectionId)));
+                          const lineAreas = (item.lineAreas || []).filter(line => !line.sectionId || sectionIds.has(String(line.sectionId)));
+                          const firstLine = lineAreas[0] || {};
+                          return { ...item, sections, section: first.section || '', sectionId: first.sectionId ?? null, sectionCode: first.sectionCode || '', lineAreas, lineArea: firstLine.lineArea || '', lineAreaId: firstLine.lineAreaId ?? null, lineAreaCode: firstLine.lineAreaCode || '', lineAreaSectionId: firstLine.sectionId ?? null };
+                        }))}
+                      /> : <div className="flex flex-col h-full justify-between">
+                        {((row.sections?.length ? row.sections : (row.section ? [{ section: row.section, sectionId: row.sectionId, sectionCode: row.sectionCode }] : [{ section: '', sectionId: null, sectionCode: '' }]))).map((section, sectionIndex, all) => <div key={sectionIndex} className="relative min-h-[30px] p-0.5">
+                          <SearchableSectionSelect disabled={!canEditEntireRow} value={section.section} sectionId={section.sectionId} sectionCode={section.sectionCode} department={row.departments?.[sectionIndex] || row.departments?.[0] || row.department} onChange={(name, meta) => handleUpdateSection(idx, sectionIndex, name, meta)} placeholder="Section..." />
+                          {all.length > 1 && canEditEntireRow && <button type="button" onClick={() => handleRemoveSection(idx, sectionIndex)} className="absolute right-0 top-1 text-slate-400 hover:text-rose-600" title="Remove Section"><X className="h-2.5 w-2.5" /></button>}
+                        </div>)}
+                        {canEditEntireRow && <button type="button" onClick={() => handleAddSection(idx)} className="border-t border-slate-100 bg-slate-50/50 px-1 py-0.5 text-[9px] text-blue-600"><Plus className="inline h-2.5 w-2.5" /> Add</button>}
+                      </div>}
+                    </td>
+
+                    {/* 8. Line/Area */}
+                    <td style={{ width: `${lineAreaColWidth}px`, minWidth: `${lineAreaColWidth}px` }} className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150">
+                      {usesCheckboxMultiSelects ? <CheckboxMultiSelect
+                        disabled={!canEditEntireRow || !(row.sections?.length || row.section)}
+                        value={row.lineAreas?.length ? row.lineAreas.map(line => line.lineArea) : (row.lineArea ? [row.lineArea] : [])}
+                        options={[...new Set([
+                          ...(() => {
+                            const cachedSections = getCachedDbSections() || [];
+                            const fallbackSections = getDefaultSectionsWithLines();
+                            const selectedSections = cachedSections.length ? cachedSections : fallbackSections;
+                            return selectedSections
+                              .filter(section => (row.sections || []).some(selected => String(selected.sectionId) === String(section.id) || selected.section === section.name) || String(row.sectionId) === String(section.id) || row.section === section.name)
+                              .flatMap(section => {
+                                const lines = section.lines?.length
+                                  ? section.lines
+                                  : (fallbackSections.find(fallback => String(fallback.id) === String(section.id))?.lines || []);
+                                return lines.map(line => line?.name || line);
+                              });
+                          })(),
+                          ...(row.lineAreas || []).map(line => line.lineArea)
+                        ].filter(Boolean))].map(line => ({ value: line, label: line }))}
+                        placeholder="Line/Area..."
+                        onChange={values => setRows(prev => prev.map((item, rowIndex) => {
+                          if (rowIndex !== idx) return item;
+                          const hierarchy = getCachedDbSections() || getDefaultSectionsWithLines();
+                          const selectedSections = (item.sections?.length ? item.sections : [{ section: item.section, sectionId: item.sectionId }]).filter(section => section.section || section.sectionId);
+                          const lineAreas = values.map(lineArea => {
+                            const existing = item.lineAreas?.find(line => line.lineArea === lineArea);
+                            const owner = hierarchy.find(section => selectedSections.some(selected => String(selected.sectionId) === String(section.id) || selected.section === section.name) && (section.lines || []).some(line => (line?.name || line) === lineArea));
+                            const lineRecord = owner?.lines?.find(line => (line?.name || line) === lineArea);
+                            return existing || { lineArea, lineAreaId: lineRecord?.id ?? null, lineAreaCode: lineRecord?.uniCode || '', sectionId: owner?.id ?? selectedSections[0]?.sectionId ?? item.sectionId ?? null };
+                          });
+                          const first = lineAreas[0] || {};
+                          return { ...item, lineAreas, lineArea: first.lineArea || '', lineAreaId: first.lineAreaId ?? null, lineAreaCode: first.lineAreaCode || '', lineAreaSectionId: first.sectionId ?? null };
+                        }))}
+                      /> : <div className="flex flex-col h-full justify-between">
+                        {((row.lineAreas?.length ? row.lineAreas : (row.lineArea ? [{ lineArea: row.lineArea, lineAreaId: row.lineAreaId, lineAreaCode: row.lineAreaCode, sectionId: row.lineAreaSectionId }] : [{ lineArea: '', lineAreaId: null, lineAreaCode: '', sectionId: null }]))).map((line, lineIndex, all) => <div key={lineIndex} className="relative min-h-[30px] p-0.5">
+                          <SearchableLineAreaSelect disabled={!canEditEntireRow} value={line.lineArea} sectionId={line.sectionId ?? row.sections?.[lineIndex]?.sectionId ?? row.sectionId} lineId={line.lineAreaId} onChange={(value, meta) => handleUpdateLineArea(idx, lineIndex, value, meta)} />
+                          {all.length > 1 && canEditEntireRow && <button type="button" onClick={() => handleRemoveLineArea(idx, lineIndex)} className="absolute right-0 top-1 text-slate-400 hover:text-rose-600" title="Remove Line/Area"><X className="h-2.5 w-2.5" /></button>}
+                        </div>)}
+                        {canEditEntireRow && <button type="button" onClick={() => handleAddLineArea(idx)} className="border-t border-slate-100 bg-slate-50/50 px-1 py-0.5 text-[9px] text-blue-600"><Plus className="inline h-2.5 w-2.5" /> Add</button>}
+                      </div>}
+                    </td>
+
+                    {/* 6. Observation (Auto-expanding, resizable width, wrapped multiline text) */}
+                    <td
+                      style={{
+                        width: `${observationWidth}px`,
+                        minWidth: `${observationWidth}px`,
+                        maxWidth: `${observationWidth}px`
+                      }}
+                      className="p-1 align-top border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-left overflow-hidden"
+                    >
                       <AutoResizeTextarea
-                        inputRef={(el) => registerRef(idx, 'rootCause', el)}
-                        value={row.rootCause}
-                        readOnly={!canEditActionCols}
-                        onChange={(e) => handleCellChange(idx, 'rootCause', e.target.value)}
-                        onKeyDown={(e) => handleKeyDown(e, idx, 'rootCause')}
-                        placeholder="Root cause..."
-                        className="w-full bg-transparent border-0 outline-none p-1.5 text-[14px] text-slate-800 text-left leading-snug whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-left"
+                        inputRef={(el) => registerRef(idx, 'observation', el)}
+                        value={row.observation}
+                        readOnly={!canEditEntireRow}
+                        onChange={(e) => handleCellChange(idx, 'observation', e.target.value)}
+                        onKeyDown={(e) => handleKeyDown(e, idx, 'observation')}
+                        placeholder="Observation details..."
+                        className="w-full bg-transparent border-0 outline-none p-1.5 text-[14px] text-slate-800 text-left leading-relaxed focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 whitespace-pre-wrap break-words"
                       />
-                    </div>
-                  </td>
+                    </td>
 
-                  {/* 8b. Action taken (Auto-expanding, resizable width, vertically and horizontally centered) */}
-                  <td
-                    style={{
-                      width: `${actionTakenWidth}px`,
-                      minWidth: `${actionTakenWidth}px`,
-                      maxWidth: `${actionTakenWidth}px`
-                    }}
-                    className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-left overflow-hidden"
-                  >
-                    <div className="w-full flex items-center justify-start">
-                      <AutoResizeTextarea
-                        inputRef={(el) => registerRef(idx, 'actionTaken', el)}
-                        value={row.actionTaken || ''}
-                        readOnly={!canEditActionCols}
-                        onChange={(e) => handleCellChange(idx, 'actionTaken', e.target.value)}
-                        onKeyDown={(e) => handleKeyDown(e, idx, 'actionTaken')}
-                        placeholder={canEditActionCols ? "Corrective action..." : ""}
-                        className="w-full bg-transparent border-0 outline-none p-1.5 text-[14px] text-slate-800 text-left leading-snug whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-left"
-                      />
-                    </div>
-                  </td>
+                    {/* 7. Image (Before) - Compact when empty; expands only when evidence is uploaded */}
+                    <td className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[200px] min-w-[190px] text-center">
+                      {(() => {
+                        const isDoc = row.fileTypeBefore && ['pdf', 'excel', 'ppt', 'document'].includes(row.fileTypeBefore);
 
-                  {/* 9. Counter Measure (Auto-expanding, resizable width, vertically and horizontally centered) */}
-                  <td
-                    style={{
-                      width: `${counterMeasureWidth}px`,
-                      minWidth: `${counterMeasureWidth}px`,
-                      maxWidth: `${counterMeasureWidth}px`
-                    }}
-                    className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-left overflow-hidden"
-                  >
-                    <div className="w-full flex items-center justify-start">
-                      <AutoResizeTextarea
-                        inputRef={(el) => registerRef(idx, 'counterMeasure', el)}
-                        value={row.counterMeasure}
-                        readOnly={!canEditActionCols}
-                        onChange={(e) => handleCellChange(idx, 'counterMeasure', e.target.value)}
-                        onKeyDown={(e) => handleKeyDown(e, idx, 'counterMeasure')}
-                        placeholder="Counter measure..."
-                        className="w-full bg-transparent border-0 outline-none p-1.5 text-[14px] text-slate-800 text-left leading-snug whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-left"
-                      />
-                    </div>
-                  </td>
-
-                  {/* 10. Image After - Compact when empty; expands only when evidence is uploaded */}
-                  <td className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[200px] min-w-[190px] text-center">
-                    {(() => {
-                      const isDoc = row.fileTypeAfter && ['pdf', 'excel', 'ppt', 'document'].includes(row.fileTypeAfter);
-
-                      if (isDoc && row.imageAfter) {
-                        return (
-                          <div className="flex items-center justify-center w-full py-1">
-                            <button
-                              type="button"
-                              onClick={() => setSelectedImageAction({
-                                rowIndex: idx,
-                                field: 'imageAfter',
-                                nameField: 'imageAfterName',
-                                typeField: 'fileTypeAfter',
-                                title: 'Image (After)',
-                                imageSrc: row.imageAfter,
-                                imageName: row.imageAfterName || 'Document',
-                                fileType: row.fileTypeAfter
-                              })}
-                              className="group relative inline-flex flex-col items-center justify-center p-2 rounded-xl border border-slate-300 hover:border-blue-500 hover:ring-2 hover:ring-blue-100 transition-all cursor-pointer bg-slate-50/80 shadow-2xs overflow-hidden w-full"
-                              title={`Click to view, download, edit, or replace ${row.imageAfterName || 'file'}`}
-                            >
-                              <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-white shadow-2xs border border-slate-200 mb-1">
-                                {row.fileTypeAfter === 'pdf' ? (
-                                  <FileText className="w-5 h-5 text-rose-600" />
-                                ) : row.fileTypeAfter === 'excel' ? (
-                                  <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
-                                ) : (
-                                  <Presentation className="w-5 h-5 text-amber-600" />
-                                )}
-                              </div>
-                              <span className="text-[10px] font-semibold text-slate-700 truncate max-w-[120px] block">
-                                {row.imageAfterName || row.fileTypeAfter?.toUpperCase()}
-                              </span>
-                              <span className="text-[9px] uppercase font-bold text-slate-400 mt-0.5">
-                                {row.fileTypeAfter}
-                              </span>
-                            </button>
-                          </div>
-                        );
-                      }
-
-                      const afterImages = Array.isArray(row.imagesAfter)
-                        ? row.imagesAfter
-                        : (row.imageAfter && (!row.fileTypeAfter || row.fileTypeAfter === 'image')
-                          ? [{ id: 'legacy-after-0', url: row.imageAfter, name: row.imageAfterName || 'After Image', type: 'image' }]
-                          : []);
-                      const hasImages = afterImages.length > 0;
-
-                      if (hasImages) {
-                        return (
-                          <div className="flex items-center justify-center w-full py-1">
-                            <button
-                              type="button"
-                              onClick={() => handleOpenEvidenceViewer(idx, 'imageAfter')}
-                              className="group relative inline-flex flex-col items-center justify-center p-1 rounded-lg border-0 transition-all cursor-pointer bg-transparent shadow-none overflow-hidden w-full"
-                              title={`Click to view all ${afterImages.length} evidence photo(s)`}
-                            >
-                              <div className="relative flex items-center justify-center w-full min-h-[120px] max-h-[130px]">
-                                <img
-                                  src={getMediaUrl(afterImages[0].url)}
-                                  alt={afterImages[0].name || `Row ${sNo} After`}
-                                  className="max-h-[120px] max-w-[180px] w-auto h-auto object-contain rounded transition-transform duration-200 group-hover:scale-105"
-                                />
-                                <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded transition-opacity text-white">
-                                  <span className="flex items-center gap-1 bg-black/70 backdrop-blur-xs px-2 py-0.5 rounded-md text-[10px] font-medium text-white shadow">
-                                    <Eye className="w-3.5 h-3.5" />
-                                    <span>View ({afterImages.length})</span>
-                                  </span>
-                                </div>
-                              </div>
-                              <div className="mt-1 flex items-center gap-1">
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold">
-                                  <Images className="w-3 h-3" />
-                                  <span>{afterImages.length} {afterImages.length === 1 ? 'Photo' : 'Photos'}</span>
-                                </span>
-                              </div>
-                            </button>
-                          </div>
-                        );
-                      }
-
-                      if (!canEditActionCols) {
-                        return (
-                          <div className="flex items-center justify-center w-full py-1 text-slate-300 text-xs select-none">
-                            -
-                          </div>
-                        );
-                      }
-
-                      // Compact default icon button when empty - opens 4-box upload selection modal
-                      return (
-                        <div className="flex items-center justify-center w-full py-1">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenUploadModal(idx, 'imageAfter', 'imageAfterName', 'fileTypeAfter', 'Image (After)')}
-                            className="group flex items-center justify-center w-9 h-9 rounded-lg border border-dashed border-slate-300 hover:border-blue-500 bg-slate-50/80 hover:bg-blue-50/50 transition-all cursor-pointer shadow-2xs hover:scale-105"
-                            title="Click to choose upload type"
-                          >
-                            <ImageIcon className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors" />
-                          </button>
-                        </div>
-                      );
-                    })()}
-                  </td>
-
-                  {/* Std. Duration in min - Automatically formats with 'min' suffix */}
-                  <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[80px] min-w-[75px] focus-within:bg-blue-50/30">
-                    <div className="w-full flex items-center justify-center">
-                      <DurationMinCell
-                        value={row.stdDurationMin}
-                        readOnly={!canEditActionCols}
-                        hasResponseDate={Boolean(row.responseDate?.trim())}
-                        onDisabledClick={() => {
-                          showToast(`Row ${idx + 1}: Select Response Date first before entering Std. Duration.`);
-                        }}
-                        cellRef={(element) => {
-                          if (element) durationCellRefs.current[idx] = element;
-                          else delete durationCellRefs.current[idx];
-                        }}
-                        requiredActionAllowed={Boolean(row.responseDate?.trim() && !hasValidStdDuration(row.stdDurationMin ?? row.stdDuration))}
-                        onChange={(val) => handleCellChange(idx, 'stdDurationMin', val)}
-                      />
-                    </div>
-                  </td>
-
-                  {/* Response Date (Stacked: Format on top, Calendar icon below, centered) */}
-                  <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[82px] min-w-[78px]">
-                    <div className="w-full flex items-center justify-center">
-                      <CompactDateCell
-                        value={row.responseDate}
-                        readOnly={!canEditActionCols}
-                        smallText
-                        onChange={(val) => handleResponseDateChange(idx, val)}
-                      />
-                    </div>
-                  </td>
-
-                  {/* No. of time Revised - Stacked past and current response dates */}
-                  <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] min-w-[130px] w-auto">
-                    {Array.isArray(row.revisedDates) && row.revisedDates.length > 0 ? (
-                      <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
-                        {row.revisedDates.map((rItem, rIdx) => {
-                          const revDate = typeof rItem === 'object' && rItem !== null ? rItem.date : rItem;
-                          const revReason = typeof rItem === 'object' && rItem !== null ? (rItem.reason || '') : '';
+                        if (isDoc && row.imageBefore) {
                           return (
-                            <div
-                              key={rIdx}
-                              className="group/rev w-full py-1.5 px-1.5 flex flex-col items-center justify-center text-center gap-1.5 hover:bg-slate-50 transition-colors"
-                            >
-                              <div className="w-full flex items-center justify-between gap-1">
-                                <span className="flex-1 text-[14px] font-semibold text-slate-800 whitespace-nowrap text-center">
-                                  {rIdx + 1}) {formatDisplayDate(revDate)}
+                            <div className="flex items-center justify-center w-full py-1">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedImageAction({
+                                  rowIndex: idx,
+                                  field: 'imageBefore',
+                                  nameField: 'imageBeforeName',
+                                  typeField: 'fileTypeBefore',
+                                  title: 'Image (Before)',
+                                  imageSrc: row.imageBefore,
+                                  imageName: row.imageBeforeName || 'Document',
+                                  fileType: row.fileTypeBefore
+                                })}
+                                className="group relative inline-flex flex-col items-center justify-center p-2 rounded-xl border border-slate-300 hover:border-blue-500 hover:ring-2 hover:ring-blue-100 transition-all cursor-pointer bg-slate-50/80 shadow-2xs overflow-hidden w-full"
+                                title={`Click to view, download, edit, or replace ${row.imageBeforeName || 'file'}`}
+                              >
+                                <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-white shadow-2xs border border-slate-200 mb-1">
+                                  {row.fileTypeBefore === 'pdf' ? (
+                                    <FileText className="w-5 h-5 text-rose-600" />
+                                  ) : row.fileTypeBefore === 'excel' ? (
+                                    <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
+                                  ) : (
+                                    <Presentation className="w-5 h-5 text-amber-600" />
+                                  )}
+                                </div>
+                                <span className="text-[10px] font-semibold text-slate-700 truncate max-w-[120px] block">
+                                  {row.imageBeforeName || row.fileTypeBefore?.toUpperCase()}
                                 </span>
-                                {isAdmin && (
-                                  <button
-                                    type="button"
-                                    ref={(element) => {
-                                      const key = `${idx}:${rIdx}`;
-                                      if (element) revisionDeleteRefs.current[key] = element;
-                                      else delete revisionDeleteRefs.current[key];
-                                    }}
-                                    data-required-action-allowed="true"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleDeleteRevisedDate(idx, rIdx);
-                                    }}
-                                    title={`Delete Revision ${rIdx + 1} (${formatDisplayDate(revDate)}) - Admin only`}
-                                    className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-0.5 rounded transition-colors cursor-pointer shrink-0 opacity-70 group-hover/rev:opacity-100"
-                                  >
-                                    <X className="w-3 h-3 stroke-[2.5]" />
-                                  </button>
-                                )}
-                              </div>
-                              <AutoWidthInput
-                                value={revReason}
-                                readOnly={!canEditActionCols}
-                                inputRef={(element) => {
-                                  const key = `${idx}:${rIdx}`;
-                                  if (element) revisionReasonRefs.current[key] = element;
-                                  else delete revisionReasonRefs.current[key];
-                                }}
-                                required
-                                dataRequiredActionAllowed={!revReason.trim()}
-                                onChange={(e) => handleRevisionReasonChange(idx, rIdx, e.target.value)}
-                                placeholder="Why revised..."
-                                className="w-full text-[14px] font-medium text-slate-800 bg-white border border-slate-300 focus:border-blue-500 rounded px-2 py-1 text-left shadow-2xs focus:outline-none"
-                              />
+                                <span className="text-[9px] uppercase font-bold text-slate-400 mt-0.5">
+                                  {row.fileTypeBefore}
+                                </span>
+                              </button>
                             </div>
                           );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="w-full py-1 flex items-center justify-center text-slate-300 text-xs select-none">
-                        -
-                      </div>
-                    )}
-                  </td>
+                        }
 
-                  {/* Unit in Responsible Person Confirmation */}
-                  <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[110px] min-w-[100px]">
-                    {(() => {
-                      const { units, deptsByUnit } = getResponsiblePersonStructure(row);
-                      if (units.length === 0) {
+                        const beforeImages = Array.isArray(row.imagesBefore)
+                          ? row.imagesBefore
+                          : (row.imageBefore && (!row.fileTypeBefore || row.fileTypeBefore === 'image')
+                            ? [{ id: 'legacy-before-0', url: row.imageBefore, name: row.imageBeforeName || 'Before Image', type: 'image' }]
+                            : []);
+                        const hasImages = beforeImages.length > 0;
+
+                        if (hasImages) {
+                          return (
+                            <div className="flex items-center justify-center w-full py-1">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEvidenceViewer(idx, 'imageBefore')}
+                                className="group relative inline-flex flex-col items-center justify-center p-1 rounded-lg border-0 transition-all cursor-pointer bg-transparent shadow-none overflow-hidden w-full"
+                                title={`Click to view all ${beforeImages.length} evidence photo(s)`}
+                              >
+                                <div className="relative flex items-center justify-center w-full min-h-[120px] max-h-[130px]">
+                                  <img
+                                    src={getMediaUrl(beforeImages[0].url)}
+                                    alt={beforeImages[0].name || `Row ${sNo} Before`}
+                                    className="max-h-[120px] max-w-[180px] w-auto h-auto object-contain rounded transition-transform duration-200 group-hover:scale-105"
+                                  />
+                                  <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded transition-opacity text-white">
+                                    <span className="flex items-center gap-1 bg-black/70 backdrop-blur-xs px-2 py-0.5 rounded-md text-[10px] font-medium text-white shadow">
+                                      <Eye className="w-3.5 h-3.5" />
+                                      <span>View ({beforeImages.length})</span>
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="mt-1 flex items-center gap-1">
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold">
+                                    <Images className="w-3 h-3" />
+                                    <span>{beforeImages.length} {beforeImages.length === 1 ? 'Photo' : 'Photos'}</span>
+                                  </span>
+                                </div>
+                              </button>
+                            </div>
+                          );
+                        }
+
+                        if (!canEditEntireRow) {
+                          return (
+                            <div className="flex items-center justify-center w-full py-1 text-slate-300 text-xs select-none">
+                              -
+                            </div>
+                          );
+                        }
+
+                        // Compact default icon button when empty - opens 4-box upload selection modal
                         return (
-                          <div className="p-1 w-full">
-                            <CheckboxMultiSelect
-                              disabled={!canEditEntireRow}
-                              value={[]}
-                              options={PDCA_UNITS.map((u) => ({ value: u, label: u }))}
-                              placeholder="Unit..."
-                              onChange={(newUnits) => handleResponsibleUnitsChange(idx, newUnits)}
-                            />
+                          <div className="flex items-center justify-center w-full py-1">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenUploadModal(idx, 'imageBefore', 'imageBeforeName', 'fileTypeBefore', 'Image (Before)')}
+                              className="group flex items-center justify-center w-9 h-9 rounded-lg border border-dashed border-slate-300 hover:border-blue-500 bg-slate-50/80 hover:bg-blue-50/50 transition-all cursor-pointer shadow-2xs hover:scale-105"
+                              title="Click to choose upload type"
+                            >
+                              <ImageIcon className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors" />
+                            </button>
                           </div>
                         );
-                      }
-                      if (units.length === 1) {
+                      })()}
+                    </td>
+
+                    {/* 8. Root Cause (Auto-expanding, resizable width, vertically and horizontally centered) */}
+                    <td
+                      style={{
+                        width: `${rootCauseWidth}px`,
+                        minWidth: `${rootCauseWidth}px`,
+                        maxWidth: `${rootCauseWidth}px`
+                      }}
+                      className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-left overflow-hidden"
+                    >
+                      <div className="w-full flex items-center justify-start">
+                        <AutoResizeTextarea
+                          inputRef={(el) => registerRef(idx, 'rootCause', el)}
+                          value={row.rootCause}
+                          readOnly={!canEditActionCols}
+                          onChange={(e) => handleCellChange(idx, 'rootCause', e.target.value)}
+                          onKeyDown={(e) => handleKeyDown(e, idx, 'rootCause')}
+                          placeholder="Root cause..."
+                          className="w-full bg-transparent border-0 outline-none p-1.5 text-[14px] text-slate-800 text-left leading-snug whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-left"
+                        />
+                      </div>
+                    </td>
+
+                    {/* 8b. Action taken (Auto-expanding, resizable width, vertically and horizontally centered) */}
+                    <td
+                      style={{
+                        width: `${actionTakenWidth}px`,
+                        minWidth: `${actionTakenWidth}px`,
+                        maxWidth: `${actionTakenWidth}px`
+                      }}
+                      className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-left overflow-hidden"
+                    >
+                      <div className="w-full flex items-center justify-start">
+                        <AutoResizeTextarea
+                          inputRef={(el) => registerRef(idx, 'actionTaken', el)}
+                          value={row.actionTaken || ''}
+                          readOnly={!canEditActionCols}
+                          onChange={(e) => handleCellChange(idx, 'actionTaken', e.target.value)}
+                          onKeyDown={(e) => handleKeyDown(e, idx, 'actionTaken')}
+                          placeholder={canEditActionCols ? "Corrective action..." : ""}
+                          className="w-full bg-transparent border-0 outline-none p-1.5 text-[14px] text-slate-800 text-left leading-snug whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-left"
+                        />
+                      </div>
+                    </td>
+
+                    {/* 9. Counter Measure (Auto-expanding, resizable width, vertically and horizontally centered) */}
+                    <td
+                      style={{
+                        width: `${counterMeasureWidth}px`,
+                        minWidth: `${counterMeasureWidth}px`,
+                        maxWidth: `${counterMeasureWidth}px`
+                      }}
+                      className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-left overflow-hidden"
+                    >
+                      <div className="w-full flex items-center justify-start">
+                        <AutoResizeTextarea
+                          inputRef={(el) => registerRef(idx, 'counterMeasure', el)}
+                          value={row.counterMeasure}
+                          readOnly={!canEditActionCols}
+                          onChange={(e) => handleCellChange(idx, 'counterMeasure', e.target.value)}
+                          onKeyDown={(e) => handleKeyDown(e, idx, 'counterMeasure')}
+                          placeholder="Counter measure..."
+                          className="w-full bg-transparent border-0 outline-none p-1.5 text-[14px] text-slate-800 text-left leading-snug whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-left"
+                        />
+                      </div>
+                    </td>
+
+                    {/* 10. Image After - Compact when empty; expands only when evidence is uploaded */}
+                    <td className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[200px] min-w-[190px] text-center">
+                      {(() => {
+                        const isDoc = row.fileTypeAfter && ['pdf', 'excel', 'ppt', 'document'].includes(row.fileTypeAfter);
+
+                        if (isDoc && row.imageAfter) {
+                          return (
+                            <div className="flex items-center justify-center w-full py-1">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedImageAction({
+                                  rowIndex: idx,
+                                  field: 'imageAfter',
+                                  nameField: 'imageAfterName',
+                                  typeField: 'fileTypeAfter',
+                                  title: 'Image (After)',
+                                  imageSrc: row.imageAfter,
+                                  imageName: row.imageAfterName || 'Document',
+                                  fileType: row.fileTypeAfter
+                                })}
+                                className="group relative inline-flex flex-col items-center justify-center p-2 rounded-xl border border-slate-300 hover:border-blue-500 hover:ring-2 hover:ring-blue-100 transition-all cursor-pointer bg-slate-50/80 shadow-2xs overflow-hidden w-full"
+                                title={`Click to view, download, edit, or replace ${row.imageAfterName || 'file'}`}
+                              >
+                                <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-white shadow-2xs border border-slate-200 mb-1">
+                                  {row.fileTypeAfter === 'pdf' ? (
+                                    <FileText className="w-5 h-5 text-rose-600" />
+                                  ) : row.fileTypeAfter === 'excel' ? (
+                                    <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
+                                  ) : (
+                                    <Presentation className="w-5 h-5 text-amber-600" />
+                                  )}
+                                </div>
+                                <span className="text-[10px] font-semibold text-slate-700 truncate max-w-[120px] block">
+                                  {row.imageAfterName || row.fileTypeAfter?.toUpperCase()}
+                                </span>
+                                <span className="text-[9px] uppercase font-bold text-slate-400 mt-0.5">
+                                  {row.fileTypeAfter}
+                                </span>
+                              </button>
+                            </div>
+                          );
+                        }
+
+                        const afterImages = Array.isArray(row.imagesAfter)
+                          ? row.imagesAfter
+                          : (row.imageAfter && (!row.fileTypeAfter || row.fileTypeAfter === 'image')
+                            ? [{ id: 'legacy-after-0', url: row.imageAfter, name: row.imageAfterName || 'After Image', type: 'image' }]
+                            : []);
+                        const hasImages = afterImages.length > 0;
+
+                        if (hasImages) {
+                          return (
+                            <div className="flex items-center justify-center w-full py-1">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEvidenceViewer(idx, 'imageAfter')}
+                                className="group relative inline-flex flex-col items-center justify-center p-1 rounded-lg border-0 transition-all cursor-pointer bg-transparent shadow-none overflow-hidden w-full"
+                                title={`Click to view all ${afterImages.length} evidence photo(s)`}
+                              >
+                                <div className="relative flex items-center justify-center w-full min-h-[120px] max-h-[130px]">
+                                  <img
+                                    src={getMediaUrl(afterImages[0].url)}
+                                    alt={afterImages[0].name || `Row ${sNo} After`}
+                                    className="max-h-[120px] max-w-[180px] w-auto h-auto object-contain rounded transition-transform duration-200 group-hover:scale-105"
+                                  />
+                                  <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded transition-opacity text-white">
+                                    <span className="flex items-center gap-1 bg-black/70 backdrop-blur-xs px-2 py-0.5 rounded-md text-[10px] font-medium text-white shadow">
+                                      <Eye className="w-3.5 h-3.5" />
+                                      <span>View ({afterImages.length})</span>
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="mt-1 flex items-center gap-1">
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold">
+                                    <Images className="w-3 h-3" />
+                                    <span>{afterImages.length} {afterImages.length === 1 ? 'Photo' : 'Photos'}</span>
+                                  </span>
+                                </div>
+                              </button>
+                            </div>
+                          );
+                        }
+
+                        if (!canEditActionCols) {
+                          return (
+                            <div className="flex items-center justify-center w-full py-1 text-slate-300 text-xs select-none">
+                              -
+                            </div>
+                          );
+                        }
+
+                        // Compact default icon button when empty - opens 4-box upload selection modal
                         return (
-                          <div className="p-1 w-full">
-                            <CheckboxMultiSelect
-                              disabled={!canEditEntireRow}
-                              value={units}
-                              options={PDCA_UNITS.map((u) => ({ value: u, label: u }))}
-                              placeholder="Unit..."
-                              onChange={(newUnits) => handleResponsibleUnitsChange(idx, newUnits)}
-                            />
+                          <div className="flex items-center justify-center w-full py-1">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenUploadModal(idx, 'imageAfter', 'imageAfterName', 'fileTypeAfter', 'Image (After)')}
+                              className="group flex items-center justify-center w-9 h-9 rounded-lg border border-dashed border-slate-300 hover:border-blue-500 bg-slate-50/80 hover:bg-blue-50/50 transition-all cursor-pointer shadow-2xs hover:scale-105"
+                              title="Click to choose upload type"
+                            >
+                              <ImageIcon className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors" />
+                            </button>
                           </div>
                         );
-                      }
-                      // Both units selected: Divide into two separate sections: Bawal and Gujrat
-                      return (
+                      })()}
+                    </td>
+
+                    {/* Std. Duration in min - Automatically formats with 'min' suffix */}
+                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[80px] min-w-[75px] focus-within:bg-blue-50/30">
+                      <div className="w-full flex items-center justify-center">
+                        <DurationMinCell
+                          value={row.stdDurationMin}
+                          readOnly={!canEditActionCols}
+                          hasResponseDate={Boolean(row.responseDate?.trim())}
+                          onDisabledClick={() => {
+                            showToast(`Row ${idx + 1}: Select Response Date first before entering Std. Duration.`);
+                          }}
+                          cellRef={(element) => {
+                            if (element) durationCellRefs.current[idx] = element;
+                            else delete durationCellRefs.current[idx];
+                          }}
+                          requiredActionAllowed={Boolean(row.responseDate?.trim() && !hasValidStdDuration(row.stdDurationMin ?? row.stdDuration))}
+                          onChange={(val) => handleCellChange(idx, 'stdDurationMin', val)}
+                        />
+                      </div>
+                    </td>
+
+                    {/* Response Date (Stacked: Format on top, Calendar icon below, centered) */}
+                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[82px] min-w-[78px]">
+                      <div className="w-full flex items-center justify-center">
+                        <CompactDateCell
+                          value={row.responseDate}
+                          readOnly={!canEditActionCols}
+                          smallText
+                          onChange={(val) => handleResponseDateChange(idx, val)}
+                        />
+                      </div>
+                    </td>
+
+                    {/* No. of time Revised - Stacked past and current response dates */}
+                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] min-w-[130px] w-auto">
+                      {Array.isArray(row.revisedDates) && row.revisedDates.length > 0 ? (
                         <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
-                          {units.map((unitName) => {
-                            const unitDepts = deptsByUnit[unitName] || [];
-                            const flexGrow = Math.max(1, unitDepts.length);
+                          {row.revisedDates.map((rItem, rIdx) => {
+                            const revDate = typeof rItem === 'object' && rItem !== null ? rItem.date : rItem;
+                            const revReason = typeof rItem === 'object' && rItem !== null ? (rItem.reason || '') : '';
                             return (
                               <div
-                                key={unitName}
-                                style={{ flex: flexGrow }}
-                                className="relative min-h-[30px] flex items-center justify-between px-2 py-1 bg-white hover:bg-slate-50 transition-colors"
+                                key={rIdx}
+                                className="group/rev w-full py-1.5 px-1.5 flex flex-col items-center justify-center text-center gap-1.5 hover:bg-slate-50 transition-colors"
                               >
-                                <span className="text-[14px] font-bold text-slate-800">{unitName}</span>
-                                {canEditEntireRow && (
-                                  <CheckboxMultiSelect
-                                    value={units}
-                                    options={PDCA_UNITS.map((u) => ({ value: u, label: u }))}
-                                    onChange={(newUnits) => handleResponsibleUnitsChange(idx, newUnits)}
-                                    renderTrigger={({ open, setOpen, buttonRef }) => (
-                                      <button
-                                        ref={buttonRef}
-                                        type="button"
-                                        onClick={() => setOpen(!open)}
-                                        className="text-slate-400 hover:text-blue-600 p-0.5 rounded cursor-pointer"
-                                        title={`Change units (currently: ${units.join(', ')})`}
-                                      >
-                                        <ChevronDown className="w-2.5 h-2.5" />
-                                      </button>
-                                    )}
-                                  />
-                                )}
+                                <div className="w-full flex items-center justify-between gap-1">
+                                  <span className="flex-1 text-[14px] font-semibold text-slate-800 whitespace-nowrap text-center">
+                                    {rIdx + 1}) {formatDisplayDate(revDate)}
+                                  </span>
+                                  {(isAdmin || isCreatorOrAdmin) && (
+                                    <button
+                                      type="button"
+                                      ref={(element) => {
+                                        const key = `${idx}:${rIdx}`;
+                                        if (element) revisionDeleteRefs.current[key] = element;
+                                        else delete revisionDeleteRefs.current[key];
+                                      }}
+                                      data-required-action-allowed="true"
+                                      onPointerDown={(e) => {
+                                        e.stopPropagation();
+                                      }}
+                                      onMouseDown={(e) => {
+                                        e.stopPropagation();
+                                      }}
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        handleDeleteRevisedDate(idx, rIdx);
+                                      }}
+                                      title={`Delete Revision ${rIdx + 1} (${formatDisplayDate(revDate)})`}
+                                      className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-0.5 rounded transition-colors cursor-pointer shrink-0 opacity-80 hover:opacity-100 group-hover/rev:opacity-100"
+                                    >
+                                      <X className="w-3.5 h-3.5 stroke-[2.5]" />
+                                    </button>
+                                  )}
+                                </div>
+                                <AutoWidthInput
+                                  value={revReason}
+                                  readOnly={!canEditActionCols}
+                                  inputRef={(element) => {
+                                    const key = `${idx}:${rIdx}`;
+                                    if (element) revisionReasonRefs.current[key] = element;
+                                    else delete revisionReasonRefs.current[key];
+                                  }}
+                                  required
+                                  dataRequiredActionAllowed={!revReason.trim()}
+                                  onChange={(e) => handleRevisionReasonChange(idx, rIdx, e.target.value)}
+                                  placeholder="Why revised..."
+                                  className="w-full text-[14px] font-medium text-slate-800 bg-white border border-slate-300 focus:border-blue-500 rounded px-2 py-1 text-left shadow-2xs focus:outline-none"
+                                />
                               </div>
                             );
                           })}
                         </div>
-                      );
-                    })()}
-                  </td>
+                      ) : (
+                        <div className="w-full py-1 flex items-center justify-center text-slate-300 text-xs select-none">
+                          -
+                        </div>
+                      )}
+                    </td>
 
-                  {/* Department Dropdown in Responsible Person Confirmation */}
-                  <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[145px] min-w-[135px]">
-                    {(() => {
-                      const { units, deptsByUnit } = getResponsiblePersonStructure(row);
-                      if (units.length === 0) {
+                    {/* Unit in Responsible Person Confirmation */}
+                    <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[110px] min-w-[100px]">
+                      {(() => {
+                        const { units, deptsByUnit } = getResponsiblePersonStructure(row);
+                        if (units.length === 0) {
+                          return (
+                            <div className="p-1 w-full">
+                              <CheckboxMultiSelect
+                                disabled={!canEditEntireRow}
+                                value={[]}
+                                options={PDCA_UNITS.map((u) => ({ value: u, label: u }))}
+                                placeholder="Unit..."
+                                onChange={(newUnits) => handleResponsibleUnitsChange(idx, newUnits)}
+                              />
+                            </div>
+                          );
+                        }
+                        if (units.length === 1) {
+                          return (
+                            <div className="p-1 w-full">
+                              <CheckboxMultiSelect
+                                disabled={!canEditEntireRow}
+                                value={units}
+                                options={PDCA_UNITS.map((u) => ({ value: u, label: u }))}
+                                placeholder="Unit..."
+                                onChange={(newUnits) => handleResponsibleUnitsChange(idx, newUnits)}
+                              />
+                            </div>
+                          );
+                        }
+                        // Both units selected: Divide into two separate sections: Bawal and Gujrat
                         return (
-                          <div className="w-full py-1 text-center text-slate-300 text-[14px] select-none" title="Select Staff Name to auto-fetch Department">
-                            -
-                          </div>
-                        );
-                      }
-                      return (
-                        <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
-                          {units.map((unitName) => {
-                            const unitDepts = deptsByUnit[unitName] || [];
-                            const unitOptions = getDepartmentsForUnit(unitName).map((d) => ({ value: d, label: d }));
-                            const flexGrow = Math.max(1, unitDepts.length);
-
-                            if (unitDepts.length === 0) {
+                          <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
+                            {units.map((unitName) => {
+                              const unitDepts = deptsByUnit[unitName] || [];
+                              const flexGrow = Math.max(1, unitDepts.length);
                               return (
                                 <div
                                   key={unitName}
                                   style={{ flex: flexGrow }}
-                                  className="p-1 min-h-[30px] flex items-center justify-center"
+                                  className="relative min-h-[30px] flex items-center justify-between px-2 py-1 bg-white hover:bg-slate-50 transition-colors"
                                 >
-                                  <CheckboxMultiSelect
-                                    disabled={!canEditEntireRow}
-                                    value={[]}
-                                    options={unitOptions}
-                                    placeholder="Dept..."
-                                    onChange={(newDepts) => handleUnitDepartmentsChange(idx, unitName, newDepts)}
-                                  />
-                                </div>
-                              );
-                            }
-
-                            if (unitDepts.length === 1) {
-                              return (
-                                <div
-                                  key={unitName}
-                                  style={{ flex: flexGrow }}
-                                  className="flex-1 min-h-[30px] flex items-center justify-between px-2 py-1 gap-1 hover:bg-blue-50/40 transition-colors"
-                                >
-                                  <span className="text-[14px] font-semibold text-slate-800 whitespace-nowrap text-left" title={unitDepts[0]}>
-                                    {unitDepts[0]}
-                                  </span>
+                                  <span className="text-[14px] font-bold text-slate-800">{unitName}</span>
                                   {canEditEntireRow && (
                                     <CheckboxMultiSelect
-                                      value={unitDepts}
-                                      options={unitOptions}
-                                      onChange={(newDepts) => handleUnitDepartmentsChange(idx, unitName, newDepts)}
+                                      value={units}
+                                      options={PDCA_UNITS.map((u) => ({ value: u, label: u }))}
+                                      onChange={(newUnits) => handleResponsibleUnitsChange(idx, newUnits)}
                                       renderTrigger={({ open, setOpen, buttonRef }) => (
                                         <button
                                           ref={buttonRef}
                                           type="button"
                                           onClick={() => setOpen(!open)}
-                                          className="text-slate-400 hover:text-blue-600 p-0.5 cursor-pointer ml-1 shrink-0"
-                                          title={`Edit ${unitName} departments`}
+                                          className="text-slate-400 hover:text-blue-600 p-0.5 rounded cursor-pointer"
+                                          title={`Change units (currently: ${units.join(', ')})`}
                                         >
                                           <ChevronDown className="w-2.5 h-2.5" />
                                         </button>
@@ -5278,22 +5756,57 @@ export default function PDCASheet({
                                   )}
                                 </div>
                               );
-                            }
+                            })}
+                          </div>
+                        );
+                      })()}
+                    </td>
 
-                            // Multiple departments selected: Dynamically divide into separate sections
-                            return (
-                              <div
-                                key={unitName}
-                                style={{ flex: flexGrow }}
-                                className="flex flex-col h-full w-full divide-y divide-[#CBD5E1] justify-center"
-                              >
-                                {unitDepts.map((deptName) => (
+                    {/* Department Dropdown in Responsible Person Confirmation */}
+                    <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[145px] min-w-[135px]">
+                      {(() => {
+                        const { units, deptsByUnit } = getResponsiblePersonStructure(row);
+                        if (units.length === 0) {
+                          return (
+                            <div className="w-full py-1 text-center text-slate-300 text-[14px] select-none" title="Select Staff Name to auto-fetch Department">
+                              -
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
+                            {units.map((unitName) => {
+                              const unitDepts = deptsByUnit[unitName] || [];
+                              const unitOptions = getDepartmentsForUnit(unitName).map((d) => ({ value: d, label: d }));
+                              const flexGrow = Math.max(1, unitDepts.length);
+
+                              if (unitDepts.length === 0) {
+                                return (
                                   <div
-                                    key={deptName}
+                                    key={unitName}
+                                    style={{ flex: flexGrow }}
+                                    className="p-1 min-h-[30px] flex items-center justify-center"
+                                  >
+                                    <CheckboxMultiSelect
+                                      disabled={!canEditEntireRow}
+                                      value={[]}
+                                      options={unitOptions}
+                                      placeholder="Dept..."
+                                      onChange={(newDepts) => handleUnitDepartmentsChange(idx, unitName, newDepts)}
+                                    />
+                                  </div>
+                                );
+                              }
+
+                              if (unitDepts.length === 1) {
+                                return (
+                                  <div
+                                    key={unitName}
+                                    style={{ flex: flexGrow }}
                                     className="flex-1 min-h-[30px] flex items-center justify-between px-2 py-1 gap-1 hover:bg-blue-50/40 transition-colors"
                                   >
-                                    <span className="text-[14px] font-semibold text-slate-800 whitespace-nowrap text-left" title={deptName}>
-                                      {deptName}
+                                    <span className="text-[14px] font-semibold text-slate-800 whitespace-nowrap text-left" title={unitDepts[0]}>
+                                      {unitDepts[0]}
                                     </span>
                                     {canEditEntireRow && (
                                       <CheckboxMultiSelect
@@ -5314,99 +5827,158 @@ export default function PDCASheet({
                                       />
                                     )}
                                   </div>
+                                );
+                              }
+
+                              // Multiple departments selected: Dynamically divide into separate sections
+                              return (
+                                <div
+                                  key={unitName}
+                                  style={{ flex: flexGrow }}
+                                  className="flex flex-col h-full w-full divide-y divide-[#CBD5E1] justify-center"
+                                >
+                                  {unitDepts.map((deptName) => (
+                                    <div
+                                      key={deptName}
+                                      className="flex-1 min-h-[30px] flex items-center justify-between px-2 py-1 gap-1 hover:bg-blue-50/40 transition-colors"
+                                    >
+                                      <span className="text-[14px] font-semibold text-slate-800 whitespace-nowrap text-left" title={deptName}>
+                                        {deptName}
+                                      </span>
+                                      {canEditEntireRow && (
+                                        <CheckboxMultiSelect
+                                          value={unitDepts}
+                                          options={unitOptions}
+                                          onChange={(newDepts) => handleUnitDepartmentsChange(idx, unitName, newDepts)}
+                                          renderTrigger={({ open, setOpen, buttonRef }) => (
+                                            <button
+                                              ref={buttonRef}
+                                              type="button"
+                                              onClick={() => setOpen(!open)}
+                                              className="text-slate-400 hover:text-blue-600 p-0.5 cursor-pointer ml-1 shrink-0"
+                                              title={`Edit ${unitName} departments`}
+                                            >
+                                              <ChevronDown className="w-2.5 h-2.5" />
+                                            </button>
+                                          )}
+                                        />
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+                    </td>
+
+                    {/* 13. Staff Name (Centered in cell, supports multiple departments/units aligned, or selecting staff directly without department) */}
+                    <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[160px] min-w-[150px]">
+                      {(() => {
+                        const { units, deptsByUnit } = getResponsiblePersonStructure(row);
+                        if (units.length === 0) {
+                          const assignedEmps = row.staffEmployees || [];
+                          const legacyDisplay = !assignedEmps.length ? (row.staffEmployee ? stripEmployeeId(row.staffEmployee) : '') : '';
+                          if (assignedEmps.length || legacyDisplay) {
+                            return (
+                              <div className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors">
+                                {(assignedEmps.length ? assignedEmps : [{ name: legacyDisplay, legacy: true }]).map((employee, employeeIndex) => (
+                                  <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
+                                    <button type="button" disabled={!canEditEntireRow} onClick={(e) => handleToggleStaffDropdown(idx, e)} className={`min-w-0 flex-1 truncate text-left text-[14px] font-semibold text-slate-800 ${canEditEntireRow ? 'cursor-pointer hover:text-blue-600' : 'cursor-default'}`} title={`Staff: ${employee.name}`}>
+                                      {stripEmployeeId(employee.name || employee.label || '')}
+                                    </button>
+                                    {canEditEntireRow && <button type="button" onClick={() => handleSelectStaffMember(idx, '')} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>}
+                                  </div>
                                 ))}
                               </div>
                             );
-                          })}
-                        </div>
-                      );
-                    })()}
-                  </td>
-
-                  {/* 13. Staff Name (Centered in cell, supports multiple departments/units aligned, or selecting staff directly without department) */}
-                  <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[160px] min-w-[150px]">
-                    {(() => {
-                      const { units, deptsByUnit } = getResponsiblePersonStructure(row);
-                      if (units.length === 0) {
-                        const assignedEmps = row.staffEmployees || [];
-                        const legacyDisplay = !assignedEmps.length ? (row.staffEmployee ? stripEmployeeId(row.staffEmployee) : '') : '';
-                        if (assignedEmps.length || legacyDisplay) {
+                          }
+                          if (!canEditEntireRow) {
+                            return (
+                              <div className="w-full py-1 text-center text-slate-300 text-[14px] select-none">
+                                -
+                              </div>
+                            );
+                          }
                           return (
-                            <div className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors">
-                              {(assignedEmps.length ? assignedEmps : [{ name: legacyDisplay, legacy: true }]).map((employee, employeeIndex) => (
-                                <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
-                                  <button type="button" disabled={!canEditEntireRow} onClick={(e) => handleToggleStaffDropdown(idx, e)} className={`min-w-0 flex-1 truncate text-left text-[14px] font-semibold text-slate-800 ${canEditEntireRow ? 'cursor-pointer hover:text-blue-600' : 'cursor-default'}`} title={`Staff: ${employee.name}`}>
-                                    {stripEmployeeId(employee.name || employee.label || '')}
-                                  </button>
-                                  {canEditEntireRow && <button type="button" onClick={() => handleSelectStaffMember(idx, '')} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>}
+                            <div className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1">
+                              <button
+                                type="button"
+                                onClick={(e) => handleToggleStaffDropdown(idx, e)}
+                                className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer"
+                                title="Select staff name (Department will auto-fetch)"
+                              >
+                                <div className="flex items-center gap-1 text-[14px]">
+                                  <Search className="h-3.5 w-3.5" />
+                                  <span>Staff...</span>
+                                  <ChevronDown className="h-3 w-3" />
                                 </div>
-                              ))}
-                            </div>
-                          );
-                        }
-                        if (!canEditEntireRow) {
-                          return (
-                            <div className="w-full py-1 text-center text-slate-300 text-[14px] select-none">
-                              -
+                              </button>
                             </div>
                           );
                         }
                         return (
-                          <div className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1">
-                            <button
-                              type="button"
-                              onClick={(e) => handleToggleStaffDropdown(idx, e)}
-                              className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer"
-                              title="Select staff name (Department will auto-fetch)"
-                            >
-                              <div className="flex items-center gap-1 text-[14px]">
-                                <Search className="h-3.5 w-3.5" />
-                                <span>Staff...</span>
-                                <ChevronDown className="h-3 w-3" />
-                              </div>
-                            </button>
-                          </div>
-                        );
-                      }
-                      return (
-                        <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
-                          {units.map((unitName) => {
-                            const unitDepts = deptsByUnit[unitName] || [];
-                            const flexGrow = Math.max(1, unitDepts.length);
+                          <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
+                            {units.map((unitName) => {
+                              const unitDepts = deptsByUnit[unitName] || [];
+                              const flexGrow = Math.max(1, unitDepts.length);
 
-                            if (unitDepts.length === 0) {
-                              const assignedEmps = (row.staffEmployees || []).filter(
-                                (e) => e.unit === unitName || (!e.unit && units.length === 1)
-                              );
-                              const legacyDisplay = units.length === 1 && !assignedEmps.length ? (row.staffEmployee ? stripEmployeeId(row.staffEmployee) : '') : '';
-
-                              if (assignedEmps.length || legacyDisplay) {
-                                return (
-                                  <div
-                                    key={unitName}
-                                    style={{ flex: flexGrow }}
-                                    className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors"
-                                  >
-                                    {(assignedEmps.length ? assignedEmps : [{ name: legacyDisplay, legacy: true }]).map((employee, employeeIndex) => (
-                                      <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
-                                        <button type="button" disabled={!canEditEntireRow} onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, '', e)} className={`min-w-0 flex-1 truncate text-left text-[14px] font-semibold text-slate-800 ${canEditEntireRow ? 'cursor-pointer hover:text-blue-600' : 'cursor-default'}`} title={`${unitName}: ${employee.name}`}>
-                                          {stripEmployeeId(employee.name || employee.label || '')}
-                                        </button>
-                                        {canEditEntireRow && <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(idx, unitName, '', null) : handleRemoveDepartmentEmployee(idx, unitName, '', employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>}
-                                      </div>
-                                    ))}
-                                  </div>
+                              if (unitDepts.length === 0) {
+                                const assignedEmps = (row.staffEmployees || []).filter(
+                                  (e) => e.unit === unitName || (!e.unit && units.length === 1)
                                 );
-                              }
+                                const legacyDisplay = units.length === 1 && !assignedEmps.length ? (row.staffEmployee ? stripEmployeeId(row.staffEmployee) : '') : '';
 
-                              if (!canEditEntireRow) {
+                                if (assignedEmps.length || legacyDisplay) {
+                                  return (
+                                    <div
+                                      key={unitName}
+                                      style={{ flex: flexGrow }}
+                                      className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors"
+                                    >
+                                      {(assignedEmps.length ? assignedEmps : [{ name: legacyDisplay, legacy: true }]).map((employee, employeeIndex) => (
+                                        <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
+                                          <button type="button" disabled={!canEditEntireRow} onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, '', e)} className={`min-w-0 flex-1 truncate text-left text-[14px] font-semibold text-slate-800 ${canEditEntireRow ? 'cursor-pointer hover:text-blue-600' : 'cursor-default'}`} title={`${unitName}: ${employee.name}`}>
+                                            {stripEmployeeId(employee.name || employee.label || '')}
+                                          </button>
+                                          {canEditEntireRow && <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(idx, unitName, '', null) : handleRemoveDepartmentEmployee(idx, unitName, '', employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  );
+                                }
+
+                                if (!canEditEntireRow) {
+                                  return (
+                                    <div
+                                      key={unitName}
+                                      style={{ flex: flexGrow }}
+                                      className="w-full py-1.5 flex items-center justify-center text-slate-300 text-[14px] select-none"
+                                    >
+                                      -
+                                    </div>
+                                  );
+                                }
+
                                 return (
                                   <div
                                     key={unitName}
                                     style={{ flex: flexGrow }}
-                                    className="w-full py-1.5 flex items-center justify-center text-slate-300 text-[14px] select-none"
+                                    className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1"
                                   >
-                                    -
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, '', e)}
+                                      className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer"
+                                      title={`Select staff for ${unitName} (Department will auto-fetch)`}
+                                    >
+                                      <div className="flex items-center gap-1 text-[14px]">
+                                        <Search className="h-3.5 w-3.5" />
+                                        <span>Staff...</span>
+                                        <ChevronDown className="h-3 w-3" />
+                                      </div>
+                                    </button>
                                   </div>
                                 );
                               }
@@ -5415,233 +5987,211 @@ export default function PDCASheet({
                                 <div
                                   key={unitName}
                                   style={{ flex: flexGrow }}
-                                  className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1"
+                                  className="flex flex-col h-full w-full divide-y divide-[#CBD5E1] justify-center"
                                 >
-                                  <button
-                                    type="button"
-                                    onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, '', e)}
-                                    className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer"
-                                    title={`Select staff for ${unitName} (Department will auto-fetch)`}
-                                  >
-                                    <div className="flex items-center gap-1 text-[14px]">
-                                      <Search className="h-3.5 w-3.5" />
-                                      <span>Staff...</span>
-                                      <ChevronDown className="h-3 w-3" />
-                                    </div>
-                                  </button>
-                                </div>
-                              );
-                            }
+                                  {unitDepts.map((deptName) => {
+                                    const assignedEmps = (row.staffEmployees || []).filter(
+                                      (e) => e.department === deptName && (e.unit === unitName || (!e.unit && units.length === 1))
+                                    );
+                                    const legacyDisplay = units.length === 1 && unitDepts.length === 1 && !(row.staffEmployees || []).length ? row.staffEmployee : '';
 
-                            return (
-                              <div
-                                key={unitName}
-                                style={{ flex: flexGrow }}
-                                className="flex flex-col h-full w-full divide-y divide-[#CBD5E1] justify-center"
-                              >
-                                {unitDepts.map((deptName) => {
-                                  const assignedEmps = (row.staffEmployees || []).filter(
-                                    (e) => e.department === deptName && (e.unit === unitName || (!e.unit && units.length === 1))
-                                  );
-                                  const legacyDisplay = units.length === 1 && unitDepts.length === 1 && !(row.staffEmployees || []).length ? row.staffEmployee : '';
+                                    if (assignedEmps.length || legacyDisplay) {
+                                      return (
+                                        <div
+                                          key={deptName}
+                                          className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors"
+                                        >
+                                          {(assignedEmps.length ? assignedEmps : (legacyDisplay ? [{ name: legacyDisplay, department: deptName, unit: unitName, legacy: true }] : [])).map((employee, employeeIndex) => (
+                                            <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
+                                              <button type="button" disabled={!canEditEntireRow} onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, deptName, e)} className={`min-w-0 flex-1 truncate text-left text-[14px] font-semibold text-slate-800 ${canEditEntireRow ? 'cursor-pointer hover:text-blue-600' : 'cursor-default'}`} title={`${unitName} - ${deptName}: ${employee.name}`}>
+                                                {stripEmployeeId(employee.name || employee.label || '')}
+                                              </button>
+                                              {canEditEntireRow && <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(idx, unitName, deptName, null) : handleRemoveDepartmentEmployee(idx, unitName, deptName, employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>}
+                                            </div>
+                                          ))}
+                                          {canEditEntireRow && <button type="button" onClick={() => handleOpenAddStaffModal(idx, unitName, deptName)} className="flex items-center justify-center gap-1 rounded py-0.5 text-[13px] font-semibold text-blue-600 hover:bg-blue-50 cursor-pointer"><Plus className="h-3 w-3" /> Add Employee</button>}
+                                        </div>
+                                      );
+                                    }
 
-                                  if (assignedEmps.length || legacyDisplay) {
+                                    if (!canEditEntireRow) {
+                                      return (
+                                        <div
+                                          key={deptName}
+                                          className="flex-1 w-full min-h-[30px] flex items-center justify-center text-slate-300 text-[14px] select-none"
+                                        >
+                                          -
+                                        </div>
+                                      );
+                                    }
+
                                     return (
                                       <div
                                         key={deptName}
-                                        className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors"
+                                        className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1"
                                       >
-                                        {(assignedEmps.length ? assignedEmps : (legacyDisplay ? [{ name: legacyDisplay, department: deptName, unit: unitName, legacy: true }] : [])).map((employee, employeeIndex) => (
-                                          <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
-                                            <button type="button" disabled={!canEditEntireRow} onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, deptName, e)} className={`min-w-0 flex-1 truncate text-left text-[14px] font-semibold text-slate-800 ${canEditEntireRow ? 'cursor-pointer hover:text-blue-600' : 'cursor-default'}`} title={`${unitName} - ${deptName}: ${employee.name}`}>
-                                              {stripEmployeeId(employee.name || employee.label || '')}
-                                            </button>
-                                            {canEditEntireRow && <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(idx, unitName, deptName, null) : handleRemoveDepartmentEmployee(idx, unitName, deptName, employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>}
-                                          </div>
-                                        ))}
-                                        {canEditEntireRow && <button type="button" onClick={() => handleOpenAddStaffModal(idx, unitName, deptName)} className="flex items-center justify-center gap-1 rounded py-0.5 text-[13px] font-semibold text-blue-600 hover:bg-blue-50 cursor-pointer"><Plus className="h-3 w-3" /> Add Employee</button>}
-                                      </div>
-                                    );
-                                  }
-
-                                  if (!canEditEntireRow) {
-                                    return (
-                                      <div
-                                        key={deptName}
-                                        className="flex-1 w-full min-h-[30px] flex items-center justify-center text-slate-300 text-[14px] select-none"
-                                      >
-                                        -
-                                      </div>
-                                    );
-                                  }
-
-                                  return (
-                                    <div
-                                      key={deptName}
-                                      className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1"
-                                    >
                                         <div className="flex w-full flex-col items-center">
                                           <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, deptName, e)} className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer" title={`Select staff for ${unitName} - ${deptName}`}><div className="flex items-center gap-1 text-[14px]"><Search className="h-3.5 w-3.5" /><span>Staff...</span><ChevronDown className="h-3 w-3" /></div></button>
                                           {canEditEntireRow && <button type="button" onClick={() => handleOpenAddStaffModal(idx, unitName, deptName)} className="flex items-center gap-1 py-0.5 text-[13px] font-semibold text-blue-600 hover:bg-blue-50 rounded cursor-pointer"><Plus className="h-3 w-3" /> Add Employee</button>}
                                         </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    })()}
-                  </td>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+                    </td>
 
-                  {/* 14. CFT (Centered in cell) */}
-                  <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[95px] min-w-[85px]">
-                    <div className="relative w-full h-full flex items-center justify-center">
-                      {row.cftTopic ? (
-                        <div className="w-full px-1 py-0.5 flex items-center justify-between gap-0.5 group/cft-cell">
-                          {/* Left: Topic Name & Optional Member Name (clickable to open Members dropdown) */}
-                          <button
-                            type="button"
-                            onClick={canEditEntireRow ? (e) => handleToggleCFTDropdown(idx, e, 'members') : undefined}
-                            className={`cft-trigger-btn flex-1 min-w-0 text-left ${canEditEntireRow ? 'cursor-pointer hover:opacity-85' : 'cursor-default'} flex flex-col justify-center py-0.5 transition-opacity`}
-                            title={`CFT Topic: ${row.cftTopic} (Click to view members)`}
-                          >
-                            <span
-                              className="text-[14px] font-semibold truncate max-w-[85px] leading-tight text-blue-900 hover:text-blue-700 transition-colors"
-                              title={row.cftTopic}
+                    {/* 14. CFT (Centered in cell) */}
+                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[95px] min-w-[85px]">
+                      <div className="relative w-full h-full flex items-center justify-center">
+                        {row.cftTopic ? (
+                          <div className="w-full px-1 py-0.5 flex items-center justify-between gap-0.5 group/cft-cell">
+                            {/* Left: Topic Name & Optional Member Name (clickable to open Members dropdown) */}
+                            <button
+                              type="button"
+                              onClick={canEditEntireRow ? (e) => handleToggleCFTDropdown(idx, e, 'members') : undefined}
+                              className={`cft-trigger-btn flex-1 min-w-0 text-left ${canEditEntireRow ? 'cursor-pointer hover:opacity-85' : 'cursor-default'} flex flex-col justify-center py-0.5 transition-opacity`}
+                              title={`CFT Topic: ${row.cftTopic} (Click to view members)`}
                             >
-                              {row.cftTopic}
-                            </span>
-                            {row.cftSelectedName && (
-                              <div className="flex items-center gap-0.5 mt-0.5">
-                                <span
-                                  className={`text-[13px] font-medium truncate max-w-[80px] px-0.5 py-0.2 rounded leading-tight ${row.cftSelectedType === 'member'
-                                    ? 'text-blue-700 bg-blue-50 border border-blue-200'
-                                    : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
-                                    }`}
-                                  title={row.cftSelectedName}
+                              <span
+                                className="text-[14px] font-semibold truncate max-w-[85px] leading-tight text-blue-900 hover:text-blue-700 transition-colors"
+                                title={row.cftTopic}
+                              >
+                                {row.cftTopic}
+                              </span>
+                              {row.cftSelectedName && (
+                                <div className="flex items-center gap-0.5 mt-0.5">
+                                  <span
+                                    className={`text-[13px] font-medium truncate max-w-[80px] px-0.5 py-0.2 rounded leading-tight ${row.cftSelectedType === 'member'
+                                      ? 'text-blue-700 bg-blue-50 border border-blue-200'
+                                      : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                                      }`}
+                                    title={row.cftSelectedName}
+                                  >
+                                    {row.cftSelectedName}
+                                  </span>
+                                </div>
+                              )}
+                            </button>
+
+                            {/* Right: Edit & Delete buttons (Only when creator/admin) */}
+                            {canEditEntireRow && (
+                              <div className="flex items-center gap-0.5 shrink-0 opacity-80 group-hover/cft-cell:opacity-100 transition-opacity">
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleEditCFTTopic(idx, e)}
+                                  className="p-0.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                                  title="Change CFT Topic"
                                 >
-                                  {row.cftSelectedName}
-                                </span>
+                                  <Edit3 className="w-2.5 h-2.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleDeleteCFT(idx, e)}
+                                  className="p-0.5 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                  title="Delete CFT Topic & Member"
+                                >
+                                  <Trash2 className="w-2.5 h-2.5" />
+                                </button>
                               </div>
                             )}
-                          </button>
-
-                          {/* Right: Edit & Delete buttons (Only when creator/admin) */}
-                          {canEditEntireRow && (
-                            <div className="flex items-center gap-0.5 shrink-0 opacity-80 group-hover/cft-cell:opacity-100 transition-opacity">
-                              <button
-                                type="button"
-                                onClick={(e) => handleEditCFTTopic(idx, e)}
-                                className="p-0.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
-                                title="Change CFT Topic"
-                              >
-                                <Edit3 className="w-2.5 h-2.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => handleDeleteCFT(idx, e)}
-                                className="p-0.5 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                                title="Delete CFT Topic & Member"
-                              >
-                                <Trash2 className="w-2.5 h-2.5" />
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      ) : !canEditEntireRow ? (
-                        <span className="text-slate-300 text-[10px] select-none">-</span>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={(e) => handleToggleCFTDropdown(idx, e, 'topics')}
-                          className="cft-trigger-btn w-full py-1.5 flex items-center justify-center text-slate-300 hover:text-blue-600 hover:bg-blue-50/40 transition-colors cursor-pointer group"
-                          title="Click to select CFT Topic"
-                        >
-                          <ChevronDown className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity stroke-[2]" />
-                        </button>
-                      )}
-                    </div>
-                  </td>
-
-                  {/* 15. Responsible Person Instruction, etc. Column: Upside Name, Middle Confirmed/Not-Confirmed dropdown, Downside Mandatory Input */}
-                  <td className="p-1.5 align-top border-r border-b border-[#64748B] w-[185px] min-w-[175px] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-left">
-                    <div className="w-full flex flex-col items-start justify-start">
-                      <ResponsiblePersonInstructionCell
-                        row={row}
-                        rowIndex={idx}
-                        reasonRef={(element) => {
-                          if (element) responsibleConfirmationReasonRefs.current[idx] = element;
-                          else delete responsibleConfirmationReasonRefs.current[idx];
-                        }}
-                        confirmationRef={(element) => {
-                          if (element) responsibleConfirmationSelectRefs.current[idx] = element;
-                          else delete responsibleConfirmationSelectRefs.current[idx];
-                        }}
-                        reasonRequired={missingRequiredInputs.some((item) => item.type === 'confirmation' && item.rowIndex === idx)}
-                        currentUser={effectiveUser}
-                        readOnly={!canEditEntireRow}
-                        onConfirmationChange={(val, uName) => handleConfirmationChange(idx, val, uName)}
-                        onInstructionChange={(text) => handleInstructionChange(idx, text)}
-                        sNo={sNo}
-                      />
-                    </div>
-                  </td>
-
-                  {/* 16. Actions Column (Insert Row Above / Delete Row) */}
-                  {canEditEntireSheet && (
-                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] w-[44px] min-w-[40px] bg-white group-hover/row:bg-[#F8FAFC]">
-                      <div className="flex flex-col items-center justify-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => handleInsertRowAbove(idx)}
-                          className="flex items-center justify-center w-5 h-5 shrink-0 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-all shadow-2xs cursor-pointer"
-                          title="Insert row above"
-                        >
-                          <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-                        </button>
-                        {isAdmin && (
+                          </div>
+                        ) : !canEditEntireRow ? (
+                          <span className="text-slate-300 text-[10px] select-none">-</span>
+                        ) : (
                           <button
                             type="button"
-                            onClick={() => handleDeleteRow(idx)}
-                            className="flex items-center justify-center w-5 h-5 shrink-0 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-400 hover:bg-rose-50 transition-all shadow-2xs cursor-pointer"
-                            title="Delete this row"
+                            onClick={(e) => handleToggleCFTDropdown(idx, e, 'topics')}
+                            className="cft-trigger-btn w-full py-1.5 flex items-center justify-center text-slate-300 hover:text-blue-600 hover:bg-blue-50/40 transition-colors cursor-pointer group"
+                            title="Click to select CFT Topic"
                           >
-                            <Trash2 className="w-3.5 h-3.5 stroke-[2]" />
+                            <ChevronDown className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity stroke-[2]" />
                           </button>
                         )}
                       </div>
                     </td>
-                  )}
 
-                </tr>
-              );
-            });
+                    {/* 15. Responsible Person Instruction, etc. Column: Upside Name, Middle Confirmed/Not-Confirmed dropdown, Downside Mandatory Input */}
+                    <td className="p-1.5 align-top border-r border-b border-[#64748B] w-[185px] min-w-[175px] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-left">
+                      <div className="w-full flex flex-col items-start justify-start">
+                        <ResponsiblePersonInstructionCell
+                          row={row}
+                          rowIndex={idx}
+                          reasonRef={(element) => {
+                            if (element) responsibleConfirmationReasonRefs.current[idx] = element;
+                            else delete responsibleConfirmationReasonRefs.current[idx];
+                          }}
+                          confirmationRef={(element) => {
+                            if (element) responsibleConfirmationSelectRefs.current[idx] = element;
+                            else delete responsibleConfirmationSelectRefs.current[idx];
+                          }}
+                          reasonRequired={missingRequiredInputs.some((item) => item.type === 'confirmation' && item.rowIndex === idx)}
+                          currentUser={effectiveUser}
+                          readOnly={!canEditEntireRow}
+                          onConfirmationChange={(val, uName) => handleConfirmationChange(idx, val, uName)}
+                          onInstructionChange={(text) => handleInstructionChange(idx, text)}
+                          sNo={sNo}
+                        />
+                      </div>
+                    </td>
 
-            if (renderedRows.filter(Boolean).length === 0) {
-              return (
-                <tr>
-                  <td colSpan={totalCols} className="py-8 text-center text-slate-500 bg-slate-50/50">
-                    <div className="flex flex-col items-center justify-center gap-2">
-                      <Check className="w-8 h-8 text-emerald-600" />
-                      <span className="font-semibold text-slate-700">All rows are marked as Done and currently hidden from sheet view.</span>
-                      <span className="text-xs text-slate-500">Done status records are fully preserved in graph calculations and Excel exports.</span>
-                      <button
-                        type="button"
-                        onClick={() => setShowDoneRows(true)}
-                        className="mt-1 px-3 py-1 text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 cursor-pointer"
-                      >
-                        Show Hidden Done Rows ({rows.filter(r => normalizePDCAStatus(r.status) === 'Done').length})
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            }
-            return renderedRows;
-          })()}
-        </tbody>
+                    {/* 16. Actions Column (Insert Row Above / Delete Row) */}
+                    {canEditEntireSheet && (
+                      <td className="p-1 align-middle text-center border-r border-b border-[#64748B] w-[44px] min-w-[40px] bg-white group-hover/row:bg-[#F8FAFC]">
+                        <div className="flex flex-col items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleInsertRowAbove(idx)}
+                            className="flex items-center justify-center w-5 h-5 shrink-0 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-all shadow-2xs cursor-pointer"
+                            title="Insert row above"
+                          >
+                            <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                          </button>
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteRow(idx)}
+                              className="flex items-center justify-center w-5 h-5 shrink-0 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-400 hover:bg-rose-50 transition-all shadow-2xs cursor-pointer"
+                              title="Delete this row"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 stroke-[2]" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    )}
+
+                  </tr>
+                );
+              });
+
+              if (renderedRows.filter(Boolean).length === 0) {
+                return (
+                  <tr>
+                    <td colSpan={totalCols} className="py-8 text-center text-slate-500 bg-slate-50/50">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <Check className="w-8 h-8 text-emerald-600" />
+                        <span className="font-semibold text-slate-700">All rows are marked as Done and currently hidden from sheet view.</span>
+                        <span className="text-xs text-slate-500">Done status records are fully preserved in graph calculations and Excel exports.</span>
+                        <button
+                          type="button"
+                          onClick={() => setShowDoneRows(true)}
+                          className="mt-1 px-3 py-1 text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 cursor-pointer"
+                        >
+                          Show Hidden Done Rows ({rows.filter(r => normalizePDCAStatus(r.status) === 'Done').length})
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              }
+              return renderedRows;
+            })()}
+          </tbody>
         </table>
 
         {/* Compact bottom strip */}
@@ -6237,8 +6787,8 @@ export default function PDCASheet({
                 const empDept = empItem.department;
                 const isSelected = openStaffDropdown.unit && openStaffDropdown.department
                   ? (rows[openStaffDropdown.rowIndex]?.staffEmployees || []).some(
-                      (e) => e.department === openStaffDropdown.department && (e.unit === openStaffDropdown.unit || (!e.unit && (!rows[openStaffDropdown.rowIndex]?.respUnits || rows[openStaffDropdown.rowIndex]?.respUnits?.length <= 1))) && (e.name === empItem.label || e.name === empItem.name)
-                    )
+                    (e) => e.department === openStaffDropdown.department && (e.unit === openStaffDropdown.unit || (!e.unit && (!rows[openStaffDropdown.rowIndex]?.respUnits || rows[openStaffDropdown.rowIndex]?.respUnits?.length <= 1))) && (e.name === empItem.label || e.name === empItem.name)
+                  )
                   : rows[openStaffDropdown.rowIndex]?.staffEmployee === empName;
                 const isDeptMatch = rows[openStaffDropdown.rowIndex]?.department &&
                   empDept &&

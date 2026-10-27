@@ -421,10 +421,14 @@ function LpaPageContent({ viewContext }) {
     } catch (error) { setMessage({ error: true, text: errorText(error) }); return false; }
     finally { requestInFlight.current = false; setBusy(false); }
   };
+  const canDeleteWorkbook = (record) => {
+    return Boolean(isAdmin || isRecordCreator(record, effectiveAuthUser));
+  };
+
   const deleteWorkbook = async record => {
     if (!record.id || requestInFlight.current) return;
-    if (!isAdmin) {
-      setMessage({ error: true, text: 'Only administrators have permission to delete LPA records.' });
+    if (!canDeleteWorkbook(record)) {
+      setMessage({ error: true, text: 'Only administrators and the sheet creator have permission to delete LPA records.' });
       return;
     }
     if (!confirmFormDeletion(`${record.name} and all its saved worksheets`)) return;
@@ -632,6 +636,9 @@ function LpaPageContent({ viewContext }) {
       line: formData.line || '',
       auditors: [],
       auditor: '',
+      createdBy: effectiveAuthUser?.fullName || effectiveAuthUser?.name || effectiveAuthUser?.userName || 'User',
+      createdById: effectiveAuthUser?.id || effectiveAuthUser?._id || userId,
+      ownerId: effectiveAuthUser?.id || effectiveAuthUser?._id || userId,
       sheets: newSheets
     };
 
@@ -996,9 +1003,13 @@ function LpaPageContent({ viewContext }) {
     setMessage({ text: `✓ PDCA Sheet "${newSheet.title}" created successfully.` });
   };
 
+  const canDeletePdcaSheet = (sheet) => {
+    return Boolean(isAdmin || isRecordCreator(sheet, effectiveAuthUser));
+  };
+
   const handleDeletePdcaSheet = async (sheet) => {
-    if (!isAdmin) {
-      alert('Only administrators are authorized to delete this PDCA sheet.');
+    if (!canDeletePdcaSheet(sheet)) {
+      alert('Only administrators and the sheet creator have permission to delete this PDCA sheet.');
       return;
     }
     if (!confirm(`Are you sure you want to delete "${sheet.title}"?`)) return;
@@ -1132,7 +1143,7 @@ function LpaPageContent({ viewContext }) {
           onDateChange={setPdcaDate}
           currentUser={effectiveAuthUser}
           isAdmin={isAdmin}
-          isCreator={isAdmin || isRecordCreator(pdcaTopic, effectiveAuthUser) || Boolean(pdcaTopic?.isBaseSheet)}
+          isCreator={isAdmin || isRecordCreator(pdcaTopic, effectiveAuthUser)}
           emailPdcaSheets={[{
             id: pdcaTopic.id,
             title: pdcaTopic.topic,
@@ -1482,7 +1493,7 @@ function LpaPageContent({ viewContext }) {
                                   >
                                     <Eye size={14} /> Open
                                   </button>
-                                  {isAdmin && (
+                                  {canDeletePdcaSheet(sh) && (
                                     <button
                                       type="button"
                                       onClick={() => handleDeletePdcaSheet(sh)}
@@ -1626,7 +1637,7 @@ function LpaPageContent({ viewContext }) {
                             <td className="px-4 py-4 text-slate-700">{secVal}</td>
                             <td className="px-4 py-4 text-slate-700">{lineVal}</td>
                             <td className="px-4 py-4 text-right">
-                              {record.id && isAdmin ? (
+                              {record.id && canDeleteWorkbook(record) ? (
                                 <button
                                   type="button"
                                   disabled={busy}

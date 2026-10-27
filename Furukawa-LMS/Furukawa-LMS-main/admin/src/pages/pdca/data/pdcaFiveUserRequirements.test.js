@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { normalizePDCAStatus } from './pdcaConstants.js';
 
 test('1. Date column default width is increased and resizable constants are defined in PDCASheet.jsx', () => {
   const pdcaSheetPath = path.resolve(process.cwd(), 'src/components/pdca/PDCASheet.jsx');
@@ -20,7 +21,7 @@ test('1. Date column default width is increased and resizable constants are defi
   assert.match(content, /Resize Line\/Area column width/, 'Line Area resize handle must be present');
 });
 
-test('2. Rows without a selected date default to Not-Started status and bypass mandatory validation', () => {
+test('2. Rows without a selected date have blank status and bypass mandatory validation', () => {
   const rowWithoutDate = {
     date: '',
     shift: '',
@@ -31,9 +32,10 @@ test('2. Rows without a selected date default to Not-Started status and bypass m
     status: ''
   };
 
-  // Rule: If user has not selected a date for a row, that row is Not-Started
-  const effectiveStatus = !rowWithoutDate.date?.trim() ? 'Not-Started' : (rowWithoutDate.status || 'Not-Started');
-  assert.equal(effectiveStatus, 'Not-Started', 'Unstarted row without date must have status Not-Started');
+  // Rule: If user has not selected a date for a row, the status remains blank (display Select placeholder)
+  const norm = normalizePDCAStatus(rowWithoutDate.status);
+  const effectiveStatus = !rowWithoutDate.date?.trim() ? (norm && norm !== 'Not-Started' ? norm : '') : (norm || 'Not-Started');
+  assert.equal(effectiveStatus, '', 'Unstarted row without date must have blank status');
 
   // Rule: User can save without filling mandatory columns if date is not selected
   const isRowEligibleForMandatoryValidation = Boolean(rowWithoutDate.date?.trim());

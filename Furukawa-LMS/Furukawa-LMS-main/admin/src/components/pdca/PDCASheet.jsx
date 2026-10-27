@@ -218,7 +218,7 @@ export const MAX_LINE_AREA_WIDTH = 380;
 const createEmptyRow = (customDefaults = {}) => ({
   date: customDefaults.date || '',
   shift: customDefaults.shift || '',
-  status: customDefaults.status ? normalizePDCAStatus(customDefaults.status) : 'Not-Started',
+  status: customDefaults.status ? normalizePDCAStatus(customDefaults.status) : (customDefaults.date?.trim() ? 'Not-Started' : ''),
   department: customDefaults.department || '',
   departments: Array.isArray(customDefaults.departments) ? customDefaults.departments : (customDefaults.department ? [customDefaults.department] : []),
   unit: customDefaults.unit || '',
@@ -799,7 +799,7 @@ export default function PDCASheet({
     ? (String(topic?.section || '').toLowerCase() === 'cc' ? 'C&C' : (String(topic?.section || '').toLowerCase() === 'assembly' ? 'Assembly' : ''))
     : '';
   const createTopicDefaultRow = () => createEmptyRow({
-    status: isLpaObservationSheet ? 'Not-Started' : '',
+    status: '',
     unit: lpaDefaultUnit,
     units: lpaDefaultUnit ? [lpaDefaultUnit] : [],
     department: lpaDefaultDepartment,
@@ -984,12 +984,28 @@ export default function PDCASheet({
     const confirmedBy = (row.confirmedBy || '').trim();
     const instruction = (row.instruction || '').trim();
 
-    let status = !row.date?.trim() ? 'Not-Started' : row.status ? computePDCAStatus({
-      ...row,
-      responseDate,
-      confirmation,
-      status: row.status
-    }, currentDate) : 'Not-Started';
+    const hasDate = Boolean(row.date?.trim());
+    let status = '';
+    const normStatus = normalizePDCAStatus(row.status);
+    if (!hasDate) {
+      status = (normStatus && normStatus !== 'Not-Started') ? normStatus : '';
+    } else {
+      if (!normStatus || normStatus === 'Not-Started') {
+        status = row.responseDate ? computePDCAStatus({
+          ...row,
+          responseDate,
+          confirmation,
+          status: 'Not-Started'
+        }, currentDate) : 'Not-Started';
+      } else {
+        status = computePDCAStatus({
+          ...row,
+          responseDate,
+          confirmation,
+          status: normStatus
+        }, currentDate);
+      }
+    }
 
     // Section P Unit
     const units = usesCheckboxMultiSelects
@@ -1822,7 +1838,17 @@ export default function PDCASheet({
   }, [topic?.id]);
 
   const sheetSnapshot = useMemo(() => {
-    const normalizedRows = rows.map(r => (!r.date?.trim() ? { ...r, status: 'Not-Started' } : r));
+    const normalizedRows = rows.map(r => {
+      const hasDate = Boolean(r.date?.trim());
+      const norm = normalizePDCAStatus(r.status);
+      if (!hasDate && (!norm || norm === 'Not-Started')) {
+        return { ...r, status: '' };
+      }
+      if (hasDate && !norm) {
+        return { ...r, status: 'Not-Started' };
+      }
+      return r;
+    });
     return { rows: normalizedRows, headerInfo };
   }, [rows, headerInfo]);
   const persistSheet = (sheet) => {
@@ -1955,7 +1981,17 @@ export default function PDCASheet({
     try {
       setIsSaving(true);
       const targetId = topic?.id || topic?.recordId || (headerInfo.topicName?.trim() ? encodeURIComponent(headerInfo.topicName.trim().replace(/\//g, '-')) : 'current_topic');
-      const sanitizedRows = rows.map(r => (!r.date?.trim() ? { ...r, status: 'Not-Started' } : r));
+      const sanitizedRows = rows.map(r => {
+        const hasDate = Boolean(r.date?.trim());
+        const norm = normalizePDCAStatus(r.status);
+        if (!hasDate && (!norm || norm === 'Not-Started')) {
+          return { ...r, status: '' };
+        }
+        if (hasDate && !norm) {
+          return { ...r, status: 'Not-Started' };
+        }
+        return r;
+      });
       const snapshotToSave = { rows: sanitizedRows, headerInfo };
       if (targetId) {
         await pdcaApi.saveSheet(targetId, snapshotToSave);
@@ -2881,9 +2917,18 @@ export default function PDCASheet({
       if (field === 'stdDurationMin') {
         updated[rowIndex] = { ...current, stdDurationMin: value, stdDuration: value };
       } else if (field === 'date') {
-        const nextStatus = value
-          ? (current.responseDate ? computePDCAStatus({ ...current, date: value }) : 'Not-Started')
-          : 'Not-Started';
+        const hasDate = Boolean(value?.trim());
+        let nextStatus = current.status || '';
+        const currentNorm = normalizePDCAStatus(current.status);
+        if (hasDate) {
+          if (!currentNorm || currentNorm === 'Not-Started') {
+            nextStatus = current.responseDate ? computePDCAStatus({ ...current, date: value }, currentDate) : 'Not-Started';
+          }
+        } else {
+          if (!currentNorm || currentNorm === 'Not-Started') {
+            nextStatus = '';
+          }
+        }
         updated[rowIndex] = { ...current, date: value, status: nextStatus };
       } else if (field === 'unit' && current.unit !== value) {
         updated[rowIndex] = {
@@ -4312,7 +4357,7 @@ export default function PDCASheet({
   };
 
   const handleDeleteRow = (rowIndex) => {
-    if (!isAdmin) return;
+    if (!isAdmin && !isCreator) return;
     if (rows.length <= 1) {
       setRows([createTopicDefaultRow()]);
       return;
@@ -4347,8 +4392,32 @@ export default function PDCASheet({
 
   const departmentsList = PDCA_DEPARTMENTS;
 
+  // Track natural dimensions of loaded images to auto-adjust column width and height proportionally
+  const [imageDimensions, setImageDimensions] = useState({});
+
+  const handleImageLoad = (url, e) => {
+    if (!url || !e?.target) return;
+    const { naturalWidth, naturalHeight } = e.target;
+    if (naturalWidth && naturalHeight) {
+      setImageDimensions((prev) => {
+        if (prev[url]?.width === naturalWidth && prev[url]?.height === naturalHeight) return prev;
+        return {
+          ...prev,
+          [url]: { width: naturalWidth, height: naturalHeight }
+        };
+      });
+    }
+  };
+
   // Auto-adjust columns to fit the longest visible values while keeping usable minimums and user-resized widths.
-  const { dateColWidth, departmentColWidth, sectionColWidth, lineAreaColWidth } = useMemo(() => {
+  const {
+    dateColWidth,
+    departmentColWidth,
+    sectionColWidth,
+    lineAreaColWidth,
+    imageBeforeColWidth,
+    imageAfterColWidth
+  } = useMemo(() => {
     let maxDateLen = 0;
     let maxDepartmentLen = 0;
     let maxSectionLen = 0;
@@ -4379,13 +4448,56 @@ export default function PDCASheet({
     const calculatedSecWidth = Math.min(MAX_SECTION_WIDTH, Math.max(sectionWidth, Math.round(maxSectionLen * 8 + 36)));
     const calculatedLineAreaWidth = Math.min(MAX_LINE_AREA_WIDTH, Math.max(lineAreaWidth, Math.round(maxLineAreaLen * 7.5 + 36)));
 
+    // Auto-adjust Image Before & After column widths according to uploaded images
+    let maxBeforeRatio = 0;
+    let hasBeforeImg = false;
+    for (const r of rows) {
+      const isDoc = r.fileTypeBefore && ['pdf', 'excel', 'ppt', 'document'].includes(r.fileTypeBefore);
+      const imgs = !isDoc && Array.isArray(r.imagesBefore) && r.imagesBefore.length > 0
+        ? r.imagesBefore
+        : (!isDoc && r.imageBefore ? [{ url: r.imageBefore }] : []);
+      if (imgs.length > 0) {
+        hasBeforeImg = true;
+        const dims = imgs[0]?.url ? imageDimensions[imgs[0].url] : null;
+        if (dims && dims.height > 0) {
+          maxBeforeRatio = Math.max(maxBeforeRatio, dims.width / dims.height);
+        }
+      }
+    }
+
+    let maxAfterRatio = 0;
+    let hasAfterImg = false;
+    for (const r of rows) {
+      const isDoc = r.fileTypeAfter && ['pdf', 'excel', 'ppt', 'document'].includes(r.fileTypeAfter);
+      const imgs = !isDoc && Array.isArray(r.imagesAfter) && r.imagesAfter.length > 0
+        ? r.imagesAfter
+        : (!isDoc && r.imageAfter ? [{ url: r.imageAfter }] : []);
+      if (imgs.length > 0) {
+        hasAfterImg = true;
+        const dims = imgs[0]?.url ? imageDimensions[imgs[0].url] : null;
+        if (dims && dims.height > 0) {
+          maxAfterRatio = Math.max(maxAfterRatio, dims.width / dims.height);
+        }
+      }
+    }
+
+    const calculatedImageBeforeWidth = hasBeforeImg
+      ? (maxBeforeRatio > 0 ? Math.min(280, Math.max(180, Math.round(135 * maxBeforeRatio))) : 200)
+      : 140;
+
+    const calculatedImageAfterWidth = hasAfterImg
+      ? (maxAfterRatio > 0 ? Math.min(280, Math.max(180, Math.round(135 * maxAfterRatio))) : 200)
+      : 140;
+
     return {
       dateColWidth: calculatedDateWidth,
       departmentColWidth: calculatedDeptWidth,
       sectionColWidth: calculatedSecWidth,
-      lineAreaColWidth: calculatedLineAreaWidth
+      lineAreaColWidth: calculatedLineAreaWidth,
+      imageBeforeColWidth: calculatedImageBeforeWidth,
+      imageAfterColWidth: calculatedImageAfterWidth
     };
-  }, [rows, dateWidth, departmentWidth, sectionWidth, lineAreaWidth]);
+  }, [rows, dateWidth, departmentWidth, sectionWidth, lineAreaWidth, imageDimensions]);
 
   // Live Cumulative Points calculation across this sheet
   const liveCumulativeStats = useMemo(() => {
@@ -4594,11 +4706,11 @@ export default function PDCASheet({
             <col style={{ width: `${sectionColWidth}px`, minWidth: `${sectionColWidth}px` }} />
             <col style={{ width: `${lineAreaColWidth}px`, minWidth: `${lineAreaColWidth}px` }} />
             <col style={{ width: `${observationWidth}px`, minWidth: `${observationWidth}px` }} />
-            <col style={{ width: '150px', minWidth: '140px' }} />
+            <col style={{ width: `${imageBeforeColWidth}px`, minWidth: `${imageBeforeColWidth}px` }} />
             <col style={{ width: `${rootCauseWidth}px`, minWidth: `${rootCauseWidth}px` }} />
             <col style={{ width: `${actionTakenWidth}px`, minWidth: `${actionTakenWidth}px` }} />
             <col style={{ width: `${counterMeasureWidth}px`, minWidth: `${counterMeasureWidth}px` }} />
-            <col style={{ width: '150px', minWidth: '140px' }} />
+            <col style={{ width: `${imageAfterColWidth}px`, minWidth: `${imageAfterColWidth}px` }} />
             <col style={{ width: '115px', minWidth: '105px' }} />
             <col style={{ width: '105px', minWidth: '95px' }} />
             <col style={{ width: '135px', minWidth: '120px' }} />
@@ -4914,7 +5026,14 @@ export default function PDCASheet({
                   <span className="h-4 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 transition-opacity" />
                 </span>
               </th>
-              <th rowSpan={2} className="py-1.5 px-1 w-[200px] min-w-[190px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px]">
+              <th
+                rowSpan={2}
+                style={{
+                  width: `${imageBeforeColWidth}px`,
+                  minWidth: `${imageBeforeColWidth}px`
+                }}
+                className="py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] select-none transition-[width] duration-150"
+              >
                 Image Before
               </th>
               <th
@@ -5021,7 +5140,14 @@ export default function PDCASheet({
                   <span className="h-4 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 transition-opacity" />
                 </span>
               </th>
-              <th rowSpan={2} className="py-1.5 px-1 w-[200px] min-w-[190px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px]">
+              <th
+                rowSpan={2}
+                style={{
+                  width: `${imageAfterColWidth}px`,
+                  minWidth: `${imageAfterColWidth}px`
+                }}
+                className="py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] select-none transition-[width] duration-150"
+              >
                 Image After
               </th>
               <th rowSpan={2} className="py-1.5 px-1.5 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 leading-tight select-none">
@@ -5145,7 +5271,11 @@ export default function PDCASheet({
                     {/* 4. Status (Frozen - visible dropdown styling but user cannot select) */}
                     <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[124px] min-w-[118px]">
                       {(() => {
-                        const rowStatus = !row.date?.trim() ? 'Not-Started' : (row.status ? normalizePDCAStatus(row.status) : 'Not-Started');
+                        const hasDate = Boolean(row.date?.trim());
+                        const norm = normalizePDCAStatus(row.status);
+                        const rowStatus = hasDate
+                          ? (norm || 'Not-Started')
+                          : (norm && norm !== 'Not-Started' ? norm : '');
                         return (
                           <div className="w-full flex items-center justify-center">
                             <select
@@ -5156,10 +5286,11 @@ export default function PDCASheet({
                               className={`w-full min-w-full rounded-md border px-1.5 py-1 text-[14px] font-medium outline-none whitespace-nowrap cursor-not-allowed pointer-events-none select-none text-center ${rowStatus === 'Done' ? 'bg-green-50 text-green-700 border-green-200' :
                                 rowStatus === 'In- Progress' ? 'bg-yellow-50 text-yellow-800 border-yellow-300' :
                                   rowStatus === 'Delay' ? 'bg-red-50 text-red-700 border-red-200' :
-                                    'bg-blue-50 text-blue-700 border-blue-200'
+                                    rowStatus === 'Not-Started' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                      'bg-slate-50 text-slate-400 border-slate-200'
                                 }`}
                             >
-                              <option value="">Select...</option>
+                              <option value="">Select</option>
                               <option value="Not-Started" style={{ color: '#1d4ed8', backgroundColor: '#eff6ff' }}>Not-Started</option>
                               <option value="Done" style={{ color: '#15803d', backgroundColor: '#f0fdf4' }}>Done</option>
                               <option value="In- Progress" style={{ color: '#854d0e', backgroundColor: '#fefce8' }}>In- Progress</option>
@@ -5313,112 +5444,128 @@ export default function PDCASheet({
                       />
                     </td>
 
-                    {/* 7. Image (Before) - Compact when empty; expands only when evidence is uploaded */}
-                    <td className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[200px] min-w-[190px] text-center">
-                      {(() => {
-                        const isDoc = row.fileTypeBefore && ['pdf', 'excel', 'ppt', 'document'].includes(row.fileTypeBefore);
+                    {/* 7. Image (Before) - Auto-adjusts width/height, shows image in whole cell, hover reveals View and count */}
+                    {(() => {
+                      const isDoc = row.fileTypeBefore && ['pdf', 'excel', 'ppt', 'document'].includes(row.fileTypeBefore);
+                      const beforeImages = Array.isArray(row.imagesBefore)
+                        ? row.imagesBefore
+                        : (row.imageBefore && (!row.fileTypeBefore || row.fileTypeBefore === 'image')
+                          ? [{ id: 'legacy-before-0', url: row.imageBefore, name: row.imageBeforeName || 'Before Image', type: 'image' }]
+                          : []);
+                      const hasImages = !isDoc && beforeImages.length > 0;
 
-                        if (isDoc && row.imageBefore) {
-                          return (
-                            <div className="flex items-center justify-center w-full py-1">
-                              <button
-                                type="button"
-                                onClick={() => setSelectedImageAction({
-                                  rowIndex: idx,
-                                  field: 'imageBefore',
-                                  nameField: 'imageBeforeName',
-                                  typeField: 'fileTypeBefore',
-                                  title: 'Image (Before)',
-                                  imageSrc: row.imageBefore,
-                                  imageName: row.imageBeforeName || 'Document',
-                                  fileType: row.fileTypeBefore
-                                })}
-                                className="group relative inline-flex flex-col items-center justify-center p-2 rounded-xl border border-slate-300 hover:border-blue-500 hover:ring-2 hover:ring-blue-100 transition-all cursor-pointer bg-slate-50/80 shadow-2xs overflow-hidden w-full"
-                                title={`Click to view, download, edit, or replace ${row.imageBeforeName || 'file'}`}
-                              >
-                                <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-white shadow-2xs border border-slate-200 mb-1">
-                                  {row.fileTypeBefore === 'pdf' ? (
-                                    <FileText className="w-5 h-5 text-rose-600" />
-                                  ) : row.fileTypeBefore === 'excel' ? (
-                                    <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
-                                  ) : (
-                                    <Presentation className="w-5 h-5 text-amber-600" />
-                                  )}
-                                </div>
-                                <span className="text-[10px] font-semibold text-slate-700 truncate max-w-[120px] block">
-                                  {row.imageBeforeName || row.fileTypeBefore?.toUpperCase()}
-                                </span>
-                                <span className="text-[9px] uppercase font-bold text-slate-400 mt-0.5">
-                                  {row.fileTypeBefore}
-                                </span>
-                              </button>
-                            </div>
-                          );
-                        }
-
-                        const beforeImages = Array.isArray(row.imagesBefore)
-                          ? row.imagesBefore
-                          : (row.imageBefore && (!row.fileTypeBefore || row.fileTypeBefore === 'image')
-                            ? [{ id: 'legacy-before-0', url: row.imageBefore, name: row.imageBeforeName || 'Before Image', type: 'image' }]
-                            : []);
-                        const hasImages = beforeImages.length > 0;
-
-                        if (hasImages) {
-                          return (
-                            <div className="flex items-center justify-center w-full py-1">
-                              <button
-                                type="button"
-                                onClick={() => handleOpenEvidenceViewer(idx, 'imageBefore')}
-                                className="group relative inline-flex flex-col items-center justify-center p-1 rounded-lg border-0 transition-all cursor-pointer bg-transparent shadow-none overflow-hidden w-full"
-                                title={`Click to view all ${beforeImages.length} evidence photo(s)`}
-                              >
-                                <div className="relative flex items-center justify-center w-full min-h-[120px] max-h-[130px]">
-                                  <img
-                                    src={getMediaUrl(beforeImages[0].url)}
-                                    alt={beforeImages[0].name || `Row ${sNo} Before`}
-                                    className="max-h-[120px] max-w-[180px] w-auto h-auto object-contain rounded transition-transform duration-200 group-hover:scale-105"
-                                  />
-                                  <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded transition-opacity text-white">
-                                    <span className="flex items-center gap-1 bg-black/70 backdrop-blur-xs px-2 py-0.5 rounded-md text-[10px] font-medium text-white shadow">
-                                      <Eye className="w-3.5 h-3.5" />
-                                      <span>View ({beforeImages.length})</span>
+                      return (
+                        <td
+                          style={{
+                            width: `${imageBeforeColWidth}px`,
+                            minWidth: `${imageBeforeColWidth}px`
+                          }}
+                          className={`align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] text-center transition-all ${
+                            hasImages ? 'p-0 overflow-hidden' : 'p-1'
+                          }`}
+                        >
+                          {(() => {
+                            if (isDoc && row.imageBefore) {
+                              return (
+                                <div className="flex items-center justify-center w-full py-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedImageAction({
+                                      rowIndex: idx,
+                                      field: 'imageBefore',
+                                      nameField: 'imageBeforeName',
+                                      typeField: 'fileTypeBefore',
+                                      title: 'Image (Before)',
+                                      imageSrc: row.imageBefore,
+                                      imageName: row.imageBeforeName || 'Document',
+                                      fileType: row.fileTypeBefore
+                                    })}
+                                    className="group relative inline-flex flex-col items-center justify-center p-2 rounded-xl border border-slate-300 hover:border-blue-500 hover:ring-2 hover:ring-blue-100 transition-all cursor-pointer bg-slate-50/80 shadow-2xs overflow-hidden w-full"
+                                    title={`Click to view, download, edit, or replace ${row.imageBeforeName || 'file'}`}
+                                  >
+                                    <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-white shadow-2xs border border-slate-200 mb-1">
+                                      {row.fileTypeBefore === 'pdf' ? (
+                                        <FileText className="w-5 h-5 text-rose-600" />
+                                      ) : row.fileTypeBefore === 'excel' ? (
+                                        <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
+                                      ) : (
+                                        <Presentation className="w-5 h-5 text-amber-600" />
+                                      )}
+                                    </div>
+                                    <span className="text-[10px] font-semibold text-slate-700 truncate max-w-[120px] block">
+                                      {row.imageBeforeName || row.fileTypeBefore?.toUpperCase()}
                                     </span>
-                                  </div>
+                                    <span className="text-[9px] uppercase font-bold text-slate-400 mt-0.5">
+                                      {row.fileTypeBefore}
+                                    </span>
+                                  </button>
                                 </div>
-                                <div className="mt-1 flex items-center gap-1">
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold">
-                                    <Images className="w-3 h-3" />
-                                    <span>{beforeImages.length} {beforeImages.length === 1 ? 'Photo' : 'Photos'}</span>
-                                  </span>
+                              );
+                            }
+
+                            if (hasImages) {
+                              const count = beforeImages.length;
+                              const countText = `${count} ${count === 1 ? 'Photo' : 'Photos'}`;
+
+                              return (
+                                <div className="relative w-full h-full min-h-[90px] flex items-center justify-center p-0 m-0 overflow-hidden group/imgcell">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEvidenceViewer(idx, 'imageBefore')}
+                                    className="relative w-full h-full min-h-[90px] flex items-center justify-center p-0 m-0 border-0 rounded-none bg-transparent cursor-pointer overflow-hidden block"
+                                    title={`View evidence: ${countText}`}
+                                  >
+                                    <img
+                                      src={getMediaUrl(beforeImages[0].url)}
+                                      alt={beforeImages[0].name || `Row ${sNo} Before`}
+                                      onLoad={(e) => handleImageLoad(beforeImages[0].url, e)}
+                                      className="w-full h-full object-cover block m-0 p-0 transition-transform duration-200 group-hover/imgcell:scale-105"
+                                      style={{
+                                        minHeight: '100px',
+                                        maxHeight: '260px',
+                                        aspectRatio: imageDimensions[beforeImages[0].url]
+                                          ? `${imageDimensions[beforeImages[0].url].width} / ${imageDimensions[beforeImages[0].url].height}`
+                                          : 'auto'
+                                      }}
+                                    />
+                                    <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover/imgcell:opacity-100 flex items-center justify-center transition-opacity duration-150 pointer-events-none">
+                                      <span className="flex items-center gap-1.5 bg-black/75 backdrop-blur-xs px-2.5 py-1 rounded-md text-[11px] font-semibold text-white shadow-md">
+                                        <Eye className="w-3.5 h-3.5" />
+                                        <span>View</span>
+                                        <span className="text-white/60">•</span>
+                                        <span>{countText}</span>
+                                      </span>
+                                    </div>
+                                  </button>
                                 </div>
-                              </button>
-                            </div>
-                          );
-                        }
+                              );
+                            }
 
-                        if (!canEditEntireRow) {
-                          return (
-                            <div className="flex items-center justify-center w-full py-1 text-slate-300 text-xs select-none">
-                              -
-                            </div>
-                          );
-                        }
+                            if (!canEditEntireRow) {
+                              return (
+                                <div className="flex items-center justify-center w-full py-1 text-slate-300 text-xs select-none">
+                                  -
+                                </div>
+                              );
+                            }
 
-                        // Compact default icon button when empty - opens 4-box upload selection modal
-                        return (
-                          <div className="flex items-center justify-center w-full py-1">
-                            <button
-                              type="button"
-                              onClick={() => handleOpenUploadModal(idx, 'imageBefore', 'imageBeforeName', 'fileTypeBefore', 'Image (Before)')}
-                              className="group flex items-center justify-center w-9 h-9 rounded-lg border border-dashed border-slate-300 hover:border-blue-500 bg-slate-50/80 hover:bg-blue-50/50 transition-all cursor-pointer shadow-2xs hover:scale-105"
-                              title="Click to choose upload type"
-                            >
-                              <ImageIcon className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors" />
-                            </button>
-                          </div>
-                        );
-                      })()}
-                    </td>
+                            // Compact default icon button when empty - opens 4-box upload selection modal
+                            return (
+                              <div className="flex items-center justify-center w-full py-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenUploadModal(idx, 'imageBefore', 'imageBeforeName', 'fileTypeBefore', 'Image (Before)')}
+                                  className="group flex items-center justify-center w-9 h-9 rounded-lg border border-dashed border-slate-300 hover:border-blue-500 bg-slate-50/80 hover:bg-blue-50/50 transition-all cursor-pointer shadow-2xs hover:scale-105"
+                                  title="Click to choose upload type"
+                                >
+                                  <ImageIcon className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors" />
+                                </button>
+                              </div>
+                            );
+                          })()}
+                        </td>
+                      );
+                    })()}
 
                     {/* 8. Root Cause (Auto-expanding, resizable width, vertically and horizontally centered) */}
                     <td
@@ -5486,112 +5633,128 @@ export default function PDCASheet({
                       </div>
                     </td>
 
-                    {/* 10. Image After - Compact when empty; expands only when evidence is uploaded */}
-                    <td className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[200px] min-w-[190px] text-center">
-                      {(() => {
-                        const isDoc = row.fileTypeAfter && ['pdf', 'excel', 'ppt', 'document'].includes(row.fileTypeAfter);
+                    {/* 10. Image After - Auto-adjusts width/height, shows image in whole cell, hover reveals View and count */}
+                    {(() => {
+                      const isDoc = row.fileTypeAfter && ['pdf', 'excel', 'ppt', 'document'].includes(row.fileTypeAfter);
+                      const afterImages = Array.isArray(row.imagesAfter)
+                        ? row.imagesAfter
+                        : (row.imageAfter && (!row.fileTypeAfter || row.fileTypeAfter === 'image')
+                          ? [{ id: 'legacy-after-0', url: row.imageAfter, name: row.imageAfterName || 'After Image', type: 'image' }]
+                          : []);
+                      const hasImages = !isDoc && afterImages.length > 0;
 
-                        if (isDoc && row.imageAfter) {
-                          return (
-                            <div className="flex items-center justify-center w-full py-1">
-                              <button
-                                type="button"
-                                onClick={() => setSelectedImageAction({
-                                  rowIndex: idx,
-                                  field: 'imageAfter',
-                                  nameField: 'imageAfterName',
-                                  typeField: 'fileTypeAfter',
-                                  title: 'Image (After)',
-                                  imageSrc: row.imageAfter,
-                                  imageName: row.imageAfterName || 'Document',
-                                  fileType: row.fileTypeAfter
-                                })}
-                                className="group relative inline-flex flex-col items-center justify-center p-2 rounded-xl border border-slate-300 hover:border-blue-500 hover:ring-2 hover:ring-blue-100 transition-all cursor-pointer bg-slate-50/80 shadow-2xs overflow-hidden w-full"
-                                title={`Click to view, download, edit, or replace ${row.imageAfterName || 'file'}`}
-                              >
-                                <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-white shadow-2xs border border-slate-200 mb-1">
-                                  {row.fileTypeAfter === 'pdf' ? (
-                                    <FileText className="w-5 h-5 text-rose-600" />
-                                  ) : row.fileTypeAfter === 'excel' ? (
-                                    <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
-                                  ) : (
-                                    <Presentation className="w-5 h-5 text-amber-600" />
-                                  )}
-                                </div>
-                                <span className="text-[10px] font-semibold text-slate-700 truncate max-w-[120px] block">
-                                  {row.imageAfterName || row.fileTypeAfter?.toUpperCase()}
-                                </span>
-                                <span className="text-[9px] uppercase font-bold text-slate-400 mt-0.5">
-                                  {row.fileTypeAfter}
-                                </span>
-                              </button>
-                            </div>
-                          );
-                        }
-
-                        const afterImages = Array.isArray(row.imagesAfter)
-                          ? row.imagesAfter
-                          : (row.imageAfter && (!row.fileTypeAfter || row.fileTypeAfter === 'image')
-                            ? [{ id: 'legacy-after-0', url: row.imageAfter, name: row.imageAfterName || 'After Image', type: 'image' }]
-                            : []);
-                        const hasImages = afterImages.length > 0;
-
-                        if (hasImages) {
-                          return (
-                            <div className="flex items-center justify-center w-full py-1">
-                              <button
-                                type="button"
-                                onClick={() => handleOpenEvidenceViewer(idx, 'imageAfter')}
-                                className="group relative inline-flex flex-col items-center justify-center p-1 rounded-lg border-0 transition-all cursor-pointer bg-transparent shadow-none overflow-hidden w-full"
-                                title={`Click to view all ${afterImages.length} evidence photo(s)`}
-                              >
-                                <div className="relative flex items-center justify-center w-full min-h-[120px] max-h-[130px]">
-                                  <img
-                                    src={getMediaUrl(afterImages[0].url)}
-                                    alt={afterImages[0].name || `Row ${sNo} After`}
-                                    className="max-h-[120px] max-w-[180px] w-auto h-auto object-contain rounded transition-transform duration-200 group-hover:scale-105"
-                                  />
-                                  <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded transition-opacity text-white">
-                                    <span className="flex items-center gap-1 bg-black/70 backdrop-blur-xs px-2 py-0.5 rounded-md text-[10px] font-medium text-white shadow">
-                                      <Eye className="w-3.5 h-3.5" />
-                                      <span>View ({afterImages.length})</span>
+                      return (
+                        <td
+                          style={{
+                            width: `${imageAfterColWidth}px`,
+                            minWidth: `${imageAfterColWidth}px`
+                          }}
+                          className={`align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] text-center transition-all ${
+                            hasImages ? 'p-0 overflow-hidden' : 'p-1'
+                          }`}
+                        >
+                          {(() => {
+                            if (isDoc && row.imageAfter) {
+                              return (
+                                <div className="flex items-center justify-center w-full py-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedImageAction({
+                                      rowIndex: idx,
+                                      field: 'imageAfter',
+                                      nameField: 'imageAfterName',
+                                      typeField: 'fileTypeAfter',
+                                      title: 'Image (After)',
+                                      imageSrc: row.imageAfter,
+                                      imageName: row.imageAfterName || 'Document',
+                                      fileType: row.fileTypeAfter
+                                    })}
+                                    className="group relative inline-flex flex-col items-center justify-center p-2 rounded-xl border border-slate-300 hover:border-blue-500 hover:ring-2 hover:ring-blue-100 transition-all cursor-pointer bg-slate-50/80 shadow-2xs overflow-hidden w-full"
+                                    title={`Click to view, download, edit, or replace ${row.imageAfterName || 'file'}`}
+                                  >
+                                    <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-white shadow-2xs border border-slate-200 mb-1">
+                                      {row.fileTypeAfter === 'pdf' ? (
+                                        <FileText className="w-5 h-5 text-rose-600" />
+                                      ) : row.fileTypeAfter === 'excel' ? (
+                                        <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
+                                      ) : (
+                                        <Presentation className="w-5 h-5 text-amber-600" />
+                                      )}
+                                    </div>
+                                    <span className="text-[10px] font-semibold text-slate-700 truncate max-w-[120px] block">
+                                      {row.imageAfterName || row.fileTypeAfter?.toUpperCase()}
                                     </span>
-                                  </div>
+                                    <span className="text-[9px] uppercase font-bold text-slate-400 mt-0.5">
+                                      {row.fileTypeAfter}
+                                    </span>
+                                  </button>
                                 </div>
-                                <div className="mt-1 flex items-center gap-1">
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold">
-                                    <Images className="w-3 h-3" />
-                                    <span>{afterImages.length} {afterImages.length === 1 ? 'Photo' : 'Photos'}</span>
-                                  </span>
+                              );
+                            }
+
+                            if (hasImages) {
+                              const count = afterImages.length;
+                              const countText = `${count} ${count === 1 ? 'Photo' : 'Photos'}`;
+
+                              return (
+                                <div className="relative w-full h-full min-h-[90px] flex items-center justify-center p-0 m-0 overflow-hidden group/imgcell">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEvidenceViewer(idx, 'imageAfter')}
+                                    className="relative w-full h-full min-h-[90px] flex items-center justify-center p-0 m-0 border-0 rounded-none bg-transparent cursor-pointer overflow-hidden block"
+                                    title={`View evidence: ${countText}`}
+                                  >
+                                    <img
+                                      src={getMediaUrl(afterImages[0].url)}
+                                      alt={afterImages[0].name || `Row ${sNo} After`}
+                                      onLoad={(e) => handleImageLoad(afterImages[0].url, e)}
+                                      className="w-full h-full object-cover block m-0 p-0 transition-transform duration-200 group-hover/imgcell:scale-105"
+                                      style={{
+                                        minHeight: '100px',
+                                        maxHeight: '260px',
+                                        aspectRatio: imageDimensions[afterImages[0].url]
+                                          ? `${imageDimensions[afterImages[0].url].width} / ${imageDimensions[afterImages[0].url].height}`
+                                          : 'auto'
+                                      }}
+                                    />
+                                    <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover/imgcell:opacity-100 flex items-center justify-center transition-opacity duration-150 pointer-events-none">
+                                      <span className="flex items-center gap-1.5 bg-black/75 backdrop-blur-xs px-2.5 py-1 rounded-md text-[11px] font-semibold text-white shadow-md">
+                                        <Eye className="w-3.5 h-3.5" />
+                                        <span>View</span>
+                                        <span className="text-white/60">•</span>
+                                        <span>{countText}</span>
+                                      </span>
+                                    </div>
+                                  </button>
                                 </div>
-                              </button>
-                            </div>
-                          );
-                        }
+                              );
+                            }
 
-                        if (!canEditActionCols) {
-                          return (
-                            <div className="flex items-center justify-center w-full py-1 text-slate-300 text-xs select-none">
-                              -
-                            </div>
-                          );
-                        }
+                            if (!canEditActionCols) {
+                              return (
+                                <div className="flex items-center justify-center w-full py-1 text-slate-300 text-xs select-none">
+                                  -
+                                </div>
+                              );
+                            }
 
-                        // Compact default icon button when empty - opens 4-box upload selection modal
-                        return (
-                          <div className="flex items-center justify-center w-full py-1">
-                            <button
-                              type="button"
-                              onClick={() => handleOpenUploadModal(idx, 'imageAfter', 'imageAfterName', 'fileTypeAfter', 'Image (After)')}
-                              className="group flex items-center justify-center w-9 h-9 rounded-lg border border-dashed border-slate-300 hover:border-blue-500 bg-slate-50/80 hover:bg-blue-50/50 transition-all cursor-pointer shadow-2xs hover:scale-105"
-                              title="Click to choose upload type"
-                            >
-                              <ImageIcon className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors" />
-                            </button>
-                          </div>
-                        );
-                      })()}
-                    </td>
+                            // Compact default icon button when empty - opens 4-box upload selection modal
+                            return (
+                              <div className="flex items-center justify-center w-full py-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenUploadModal(idx, 'imageAfter', 'imageAfterName', 'fileTypeAfter', 'Image (After)')}
+                                  className="group flex items-center justify-center w-9 h-9 rounded-lg border border-dashed border-slate-300 hover:border-blue-500 bg-slate-50/80 hover:bg-blue-50/50 transition-all cursor-pointer shadow-2xs hover:scale-105"
+                                  title="Click to choose upload type"
+                                >
+                                  <ImageIcon className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors" />
+                                </button>
+                              </div>
+                            );
+                          })()}
+                        </td>
+                      );
+                    })()}
 
                     {/* Std. Duration in min - Automatically formats with 'min' suffix */}
                     <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[80px] min-w-[75px] focus-within:bg-blue-50/30">
@@ -6151,7 +6314,7 @@ export default function PDCASheet({
                           >
                             <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
                           </button>
-                          {isAdmin && (
+                          {(isAdmin || isCreator) && (
                             <button
                               type="button"
                               onClick={() => handleDeleteRow(idx)}

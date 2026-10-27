@@ -79,7 +79,8 @@ test('2. Changing Department revalidates Unit selection', () => {
 
 test('3. Section A Confirmation dropdown & Conditional Status Logic (Rules A, B, C)', () => {
   const row = createEmptyRow();
-  assert.equal(normalizePDCAStatus(row.status), 'Not-Started');
+  assert.equal(normalizePDCAStatus(row.status), '');
+  assert.equal(createEmptyRow({ date: '2026-10-27' }).status, 'Not-Started');
   assert.equal(row.confirmation, '');
 
   // Rule A: When the user selects Confirmed -> Automatically set Status to 'Done' (legacy Closed)

@@ -258,7 +258,16 @@ export const deleteRecord = asyncHandler(async (req, res) => {
     String(user.role || '').toUpperCase() === 'ADMIN' ||
     String(user.role || '').toUpperCase() === 'SUPERADMIN'
   );
-  const isCreator = existing.ownerId === String(user.id) || existing.createdById === String(user.id);
+  const isCreator = Boolean(
+    (existing.ownerId && String(existing.ownerId) === String(user.id)) ||
+    (existing.createdById && String(existing.createdById) === String(user.id)) ||
+    (existing.ownerId && user.empId && String(existing.ownerId).toUpperCase() === String(user.empId).toUpperCase()) ||
+    (existing.createdById && user.empId && String(existing.createdById).toUpperCase() === String(user.empId).toUpperCase()) ||
+    (existing.createdBy && (
+      (typeof existing.createdBy === 'string' && (existing.createdBy === user.fullName || existing.createdBy === user.userName)) ||
+      (typeof existing.createdBy === 'object' && (String(existing.createdBy.id) === String(user.id) || existing.createdBy.userName === user.userName))
+    ))
+  );
 
   if (!isAdmin && !isCreator) {
     throw new ApiError("You do not have permission to delete this LPA record.", 403);

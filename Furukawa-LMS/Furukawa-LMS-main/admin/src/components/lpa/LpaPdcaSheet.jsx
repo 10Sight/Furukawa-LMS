@@ -51,7 +51,7 @@ import SearchableSectionSelect, { VERIFIED_SECTION_MASTER, isSectionRelatedToDep
 const createEmptyRow = (customDefaults = {}) => ({
   date: customDefaults.date || '',
   shift: customDefaults.shift || '',
-  status: customDefaults.status ? normalizePDCAStatus(customDefaults.status) : (customDefaults.date ? 'Not-Started' : ''),
+  status: customDefaults.status ? normalizePDCAStatus(customDefaults.status) : (customDefaults.date?.trim() ? 'Not-Started' : ''),
   department: customDefaults.department || '',
   section: customDefaults.section || '',
   sectionId: customDefaults.sectionId ?? customDefaults.lineAreaSectionId ?? null,
@@ -1574,8 +1574,16 @@ export default function LpaPdcaSheet({
       let updatedRow = { ...curr, [field]: value };
 
       if (field === 'date') {
-        if (value) {
-          updatedRow.status = updatedRow.responseDate ? computePDCAStatus(updatedRow, currentDate) : 'Not-Started';
+        const hasDate = Boolean(value?.trim());
+        const normStatus = normalizePDCAStatus(curr.status);
+        if (hasDate) {
+          if (!normStatus || normStatus === 'Not-Started') {
+            updatedRow.status = updatedRow.responseDate ? computePDCAStatus(updatedRow, currentDate) : 'Not-Started';
+          }
+        } else {
+          if (!normStatus || normStatus === 'Not-Started') {
+            updatedRow.status = '';
+          }
         }
       } else if (field === 'responseDate') {
         const nextStatus = computePDCAStatus(updatedRow, currentDate);
@@ -2318,24 +2326,35 @@ export default function LpaPdcaSheet({
 
                       {/* 4. Status */}
                       <td className="px-0.5 py-1 align-middle text-center border-r border-[#64748B] w-[124px] min-w-[118px]">
-                        <select
-                          disabled={true}
-                          tabIndex={-1}
-                          aria-label={`Status for row ${sNo}`}
-                          value={normalizePDCAStatus(row.status)}
-                          onChange={(event) => handleCellChange(idx, 'status', event.target.value)}
-                          className={`w-full min-w-full rounded-md border px-1.5 py-1.5 text-[14px] font-medium outline-none text-center whitespace-nowrap pointer-events-none cursor-not-allowed select-none ${
-                            normalizePDCAStatus(row.status) === 'Done' ? 'bg-green-50 text-green-700 border-green-200' :
-                            normalizePDCAStatus(row.status) === 'In- Progress' ? 'bg-yellow-50 text-yellow-800 border-yellow-300' :
-                            normalizePDCAStatus(row.status) === 'Delay' ? 'bg-red-50 text-red-700 border-red-200' :
-                            'bg-blue-50 text-blue-700 border-blue-200'
-                          }`}
-                        >
-                          <option value="Not-Started" style={{color:'#1d4ed8',backgroundColor:'#eff6ff'}}>Not-Started</option>
-                          <option value="Done" style={{color:'#15803d',backgroundColor:'#f0fdf4'}}>Done</option>
-                          <option value="In- Progress" style={{color:'#854d0e',backgroundColor:'#fefce8'}}>In- Progress</option>
-                          <option value="Delay" style={{color:'#b91c1c',backgroundColor:'#fef2f2'}}>Delay</option>
-                        </select>
+                        {(() => {
+                          const hasDate = Boolean(row.date?.trim());
+                          const norm = normalizePDCAStatus(row.status);
+                          const rowStatus = hasDate
+                            ? (norm || 'Not-Started')
+                            : (norm && norm !== 'Not-Started' ? norm : '');
+                          return (
+                            <select
+                              disabled={true}
+                              tabIndex={-1}
+                              aria-label={`Status for row ${sNo}`}
+                              value={rowStatus}
+                              onChange={(event) => handleCellChange(idx, 'status', event.target.value)}
+                              className={`w-full min-w-full rounded-md border px-1.5 py-1.5 text-[14px] font-medium outline-none text-center whitespace-nowrap pointer-events-none cursor-not-allowed select-none ${
+                                rowStatus === 'Done' ? 'bg-green-50 text-green-700 border-green-200' :
+                                rowStatus === 'In- Progress' ? 'bg-yellow-50 text-yellow-800 border-yellow-300' :
+                                rowStatus === 'Delay' ? 'bg-red-50 text-red-700 border-red-200' :
+                                rowStatus === 'Not-Started' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                'bg-slate-50 text-slate-400 border-slate-200'
+                              }`}
+                            >
+                              <option value="">Select</option>
+                              <option value="Not-Started" style={{color:'#1d4ed8',backgroundColor:'#eff6ff'}}>Not-Started</option>
+                              <option value="Done" style={{color:'#15803d',backgroundColor:'#f0fdf4'}}>Done</option>
+                              <option value="In- Progress" style={{color:'#854d0e',backgroundColor:'#fefce8'}}>In- Progress</option>
+                              <option value="Delay" style={{color:'#b91c1c',backgroundColor:'#fef2f2'}}>Delay</option>
+                            </select>
+                          );
+                        })()}
                       </td>
 
                       {/* 5. Department */}
@@ -2441,9 +2460,13 @@ export default function LpaPdcaSheet({
                       </td>
 
                       {/* 7. Image Before - High visibility preview with preserved aspect ratio */}
-                      <td className="p-1.5 align-middle text-center border-r border-[#64748B] w-[130px] min-w-[120px]">
+                      <td className={`align-middle text-center border-r border-[#64748B] w-[130px] min-w-[120px] ${
+                        row.imageBefore && (!row.fileTypeBefore || row.fileTypeBefore === 'image') ? 'p-0 overflow-hidden' : 'p-1.5'
+                      }`}>
                         {row.imageBefore ? (
-                          <div className="flex items-center justify-center w-full min-h-[90px] py-1">
+                          <div className={`flex items-center justify-center w-full ${
+                            row.fileTypeBefore && row.fileTypeBefore !== 'image' ? 'min-h-[90px] py-1' : 'h-full min-h-[90px] p-0 m-0 overflow-hidden'
+                          }`}>
                             <button
                               type="button"
                               onClick={() => setSelectedImageAction({
@@ -2453,7 +2476,11 @@ export default function LpaPdcaSheet({
                                 fileType: row.fileTypeBefore,
                                 fileName: row.imageBeforeName
                               })}
-                              className="group relative inline-flex items-center justify-center p-1 rounded-lg border-2 border-slate-400 hover:border-blue-500 hover:ring-2 hover:ring-blue-100 transition-all cursor-pointer bg-slate-50 shadow-sm overflow-hidden max-w-full"
+                              className={`group relative inline-flex items-center justify-center cursor-pointer overflow-hidden max-w-full ${
+                                row.fileTypeBefore && row.fileTypeBefore !== 'image'
+                                  ? 'p-1 rounded-lg border-2 border-slate-400 hover:border-blue-500 hover:ring-2 hover:ring-blue-100 transition-all bg-slate-50 shadow-sm'
+                                  : 'w-full h-full p-0 m-0 border-0 rounded-none bg-transparent block group/imgcell'
+                              }`}
                               title={`Click to view ${row.imageBeforeName || 'file'}, edit or delete`}
                             >
                               {row.fileTypeBefore === 'excel' ? (
@@ -2478,14 +2505,20 @@ export default function LpaPdcaSheet({
                                   </span>
                                 </div>
                               ) : (
-                                <div className="relative flex items-center justify-center">
+                                <div className="relative w-full h-full min-h-[90px] flex items-center justify-center p-0 m-0 overflow-hidden group/imgcell">
                                   <img
                                     src={row.imageBefore}
                                     alt="Before"
-                                    className="h-20 w-auto max-w-[110px] max-h-[85px] object-contain rounded transition-transform group-hover:scale-105"
+                                    className="w-full h-full object-cover block m-0 p-0 transition-transform duration-200 group-hover/imgcell:scale-105"
+                                    style={{ minHeight: '90px', maxHeight: '240px' }}
                                   />
-                                  <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded transition-opacity text-white">
-                                    <Eye className="w-4 h-4 drop-shadow" />
+                                  <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover/imgcell:opacity-100 flex items-center justify-center transition-opacity duration-150 pointer-events-none">
+                                    <span className="flex items-center gap-1.5 bg-black/75 backdrop-blur-xs px-2.5 py-1 rounded-md text-[11px] font-semibold text-white shadow-md">
+                                      <Eye className="w-3.5 h-3.5" />
+                                      <span>View</span>
+                                      <span className="text-white/60">•</span>
+                                      <span>1 Photo</span>
+                                    </span>
                                   </div>
                                 </div>
                               )}
@@ -2548,9 +2581,15 @@ export default function LpaPdcaSheet({
                       </td>
 
                       {/* 10. Image After */}
-                      <td className="p-1 align-middle text-center border-r border-[#64748B] w-[85px] min-w-[80px]">
+                      <td className={`align-middle text-center border-r border-[#64748B] w-[85px] min-w-[80px] ${
+                        row.imageAfter && (!row.fileTypeAfter || row.fileTypeAfter === 'image') ? 'p-0 overflow-hidden' : 'p-1'
+                      }`}>
                         {row.imageAfter ? (
-                          <div className="relative group mx-auto w-12 h-12 rounded-lg border border-slate-200 overflow-hidden shadow-2xs">
+                          <div className={`relative ${
+                            row.fileTypeAfter && row.fileTypeAfter !== 'image'
+                              ? 'group mx-auto w-12 h-12 rounded-lg border border-slate-200 overflow-hidden shadow-2xs'
+                              : 'w-full h-full min-h-[90px] flex items-center justify-center p-0 m-0 overflow-hidden group/imgcell'
+                          }`}>
                             {row.fileTypeAfter === 'excel' ? (
                               <div
                                 onClick={() => setSelectedImageAction({
@@ -2600,17 +2639,28 @@ export default function LpaPdcaSheet({
                                 </span>
                               </div>
                             ) : (
-                              <img
-                                src={row.imageAfter}
-                                alt="After"
-                                onClick={() => setSelectedImageAction({
-                                  type: 'after',
-                                  rowIndex: idx,
-                                  preview: row.imageAfter,
-                                  fileType: 'image'
-                                })}
-                                className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
-                              />
+                              <div className="relative w-full h-full min-h-[90px] flex items-center justify-center p-0 m-0 overflow-hidden group/imgcell">
+                                <img
+                                  src={row.imageAfter}
+                                  alt="After"
+                                  onClick={() => setSelectedImageAction({
+                                    type: 'after',
+                                    rowIndex: idx,
+                                    preview: row.imageAfter,
+                                    fileType: 'image'
+                                  })}
+                                  className="w-full h-full object-cover cursor-pointer block m-0 p-0 transition-transform duration-200 group-hover/imgcell:scale-105"
+                                  style={{ minHeight: '90px', maxHeight: '240px' }}
+                                />
+                                <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover/imgcell:opacity-100 flex items-center justify-center transition-opacity duration-150 pointer-events-none">
+                                  <span className="flex items-center gap-1.5 bg-black/75 backdrop-blur-xs px-2.5 py-1 rounded-md text-[11px] font-semibold text-white shadow-md">
+                                    <Eye className="w-3.5 h-3.5" />
+                                    <span>View</span>
+                                    <span className="text-white/60">•</span>
+                                    <span>1 Photo</span>
+                                  </span>
+                                </div>
+                              </div>
                             )}
                           </div>
                         ) : canEditActionCols ? (

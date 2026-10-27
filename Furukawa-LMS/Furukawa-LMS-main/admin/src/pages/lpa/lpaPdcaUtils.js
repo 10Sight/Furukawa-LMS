@@ -169,11 +169,12 @@ export function getWorksheetScore(sheet, record = null) {
 
 
 export function createEmptyPdcaRow(customDefaults = {}) {
+  const rowDate = (customDefaults.date || '').trim();
   return {
-    date: customDefaults.date || '',
+    date: rowDate,
     shift: customDefaults.shift || '',
     lineArea: customDefaults.lineArea || '',
-    status: customDefaults.status || '',
+    status: customDefaults.status ? customDefaults.status : (rowDate ? 'Not-Started' : ''),
     observation: customDefaults.observation || '',
     imageBefore: customDefaults.imageBefore || null,
     imageBeforeName: customDefaults.imageBeforeName || '',

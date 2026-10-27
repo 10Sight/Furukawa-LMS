@@ -15,7 +15,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
-import { matchesPlant } from '../../pages/pdca/data/recordFilters';
+import { matchesPlant, isRecordCreator } from '../../pages/pdca/data/recordFilters';
 import { isAssemblyRecord, isCcRecord } from '../../pages/lpa/lpaPdcaUtils.js';
 export { isAssemblyRecord, isCcRecord };
 
@@ -29,7 +29,13 @@ export default function LpaPdcaTableView({
   onEditRecord,
   onCreateNew
 }) {
-  const { data: allRecords, loading, refreshData, handleDeletePDCA, showToast } = usePDCA();
+  const { data: allRecords, loading, refreshData, handleDeletePDCA, showToast, userContext } = usePDCA();
+  const isAdmin = Boolean(
+    userContext?.user?.isAdmin === true ||
+    userContext?.user?.isAdmin === 1 ||
+    String(userContext?.user?.role || '').toUpperCase() === 'ADMIN' ||
+    String(userContext?.user?.role || '').toUpperCase() === 'SUPERADMIN'
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMonth, setSelectedMonth] = useState('all');
   const [dateFilter, setDateFilter] = useState(mode === 'observations' ? pdcaDate : '');
@@ -171,6 +177,10 @@ export default function LpaPdcaTableView({
   };
 
   const handleDelete = async (row) => {
+    if (!isAdmin && !isRecordCreator(row, userContext?.user)) {
+      showToast?.('You do not have permission to delete this PDCA record.');
+      return;
+    }
     if (window.confirm(`Are you sure you want to delete PDCA record "${row.topic}" (${row.id})?`)) {
       await handleDeletePDCA?.(row.id);
       showToast?.(`Deleted record ${row.id}`);
@@ -451,14 +461,16 @@ export default function LpaPdcaTableView({
                           </button>
 
                           {/* Delete */}
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(row)}
-                            title="Delete record"
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {(isAdmin || isRecordCreator(row, userContext?.user)) && (
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(row)}
+                              title="Delete record"
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

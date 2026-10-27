@@ -690,3 +690,22 @@ test('29. Editing and deletion rule: only creator and admin can edit/delete LPA 
   assert.ok(lpaPageSource.includes('View Only'));
   assert.ok(lpaPageSource.includes('You are in view-only mode'));
 });
+
+test('30. Create LPA Modal supports multi-select checkboxes for Section and Line dropdowns', () => {
+  const modalSource = fs.readFileSync(new URL('../../components/lpa/CreateLpaModal.jsx', import.meta.url), 'utf-8');
+  // Checkbox multi-select dropdown implementation
+  assert.ok(modalSource.includes('MultiSelectCheckboxDropdown'));
+  assert.ok(modalSource.includes('type="checkbox"'));
+  assert.ok(modalSource.includes('selectedSections'));
+  assert.ok(modalSource.includes('selectedLines'));
+  assert.ok(modalSource.includes('sectionOptions'));
+  assert.ok(modalSource.includes('lineOptions'));
+  // Ensure backward compatible properties passed to onCreate
+  assert.ok(modalSource.includes('sectionName'));
+  assert.ok(modalSource.includes('sections: selectedSections'));
+  assert.ok(modalSource.includes('line'));
+  assert.ok(modalSource.includes('lines: selectedLines'));
+  // Cascading support for multiple selected sections
+  assert.ok(modalSource.includes('selectedSections.includes(s.name)'));
+});
+

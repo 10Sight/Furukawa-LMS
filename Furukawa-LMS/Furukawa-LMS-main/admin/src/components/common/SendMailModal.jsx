@@ -547,22 +547,36 @@ export default function SendMailModal({
       } : null;
 
       const rawRows = targetPdca.sheet?.rows || [];
-      const extractedPoints = rawRows
-        .map(row => String(row?.observation || '').trim())
-        .filter(Boolean);
+      let inProgress = 0;
+      let done = 0;
+      let delay = 0;
+      let notStarted = 0;
 
-      const sectionGroupMap = new Map();
-      rawRows.forEach(row => {
-        const obs = String(row?.observation || '').trim();
-        if (!obs) return;
-        const sec = String(row?.section || row?.lineArea || '').trim();
-        if (!sectionGroupMap.has(sec)) sectionGroupMap.set(sec, []);
-        sectionGroupMap.get(sec).push(obs);
+      rawRows.forEach(r => {
+        if (!r) return;
+        const hasData = Boolean(r.observation || r.date || r.shift || r.counterMeasure || r.rootCause || r.status);
+        if (!hasData) return;
+        const rawStatus = String(r.status || '').trim().toLowerCase();
+        const conf = String(r.confirmation || r.responsiblePersonConfirmation || '').trim().toLowerCase();
+
+        if (rawStatus === 'done' || rawStatus === 'closed' || conf === 'confirmed' || conf === 'confirm') {
+          done += 1;
+        } else if (rawStatus === 'delay' || rawStatus === 'delayed') {
+          delay += 1;
+        } else if (
+          rawStatus === 'in-progress' ||
+          rawStatus === 'in progress' ||
+          rawStatus === 'in - progress' ||
+          rawStatus === 'in- progress' ||
+          conf === 'not-confirmed' ||
+          conf === 'not-confirm'
+        ) {
+          inProgress += 1;
+        } else {
+          notStarted += 1;
+        }
       });
-      const extractedSections = [];
-      sectionGroupMap.forEach((pts, sec) => {
-        extractedSections.push({ section: sec, points: pts });
-      });
+      const clientMetrics = { inProgress, done, delay, notStarted };
 
       const isLpaTarget = targetPdca.source === 'lpa';
       const selectedPdcaPayload = {
@@ -572,8 +586,7 @@ export default function SendMailModal({
         section: isLpaTarget ? (targetPdca.section || selectedSection) : '',
         unit: targetPdca.plant || targetPdca.unit || '',
         date: targetPdca.date || '',
-        points: extractedPoints,
-        sections: extractedSections,
+        metrics: clientMetrics,
         // LPA Observation PDCA sheets are saved as LPA snapshots, not as
         // standard PDCA records. Include the selected saved snapshot so the
         // email service can render that sheet when no PDCA record exists.

@@ -184,7 +184,8 @@ test("PDCA-only email sends the selected PDCA sheet without requiring an LPA wor
   assert.equal(lpaLookupCount, 0);
   assert.equal(sentSubject, "PDCA Sheet");
   assert.match(sentHtml, /sheet=pdca-9/);
-  assert.match(sentHtml, /Saved PDCA observation/);
+  assert.match(sentHtml, /METRICS:/);
+  assert.match(sentHtml, /Not-Started/);
   assert.doesNotMatch(sentHtml, /viewWorkbookId=/);
   assert.equal(res.responseBody.data.links.assembly, undefined);
   assert.equal(res.responseBody.data.links.pdca, "https://portal.example/cms/pdca?sheet=pdca-9");
@@ -255,7 +256,7 @@ test("email endpoint reports provider rejection without claiming success", async
   assert.deepEqual(res.responseBody.data.rejected, ["two@example.com"]);
 });
 
-test("received email follows exact layout structure: Header -> LPA Sheet Link -> Details Table -> PDCA Link -> Sections and Points", () => {
+test("received email follows exact layout structure: Header -> LPA Sheet Link -> Details Table -> PDCA Link -> Metrics (In-Progress, Done, Delay, Not-Started)", () => {
   const { html, assemblyUrl, pdcaUrl } = __emailTestUtils.buildSheetEmail(
     {
       workbookId: "book-assembly-101",
@@ -277,10 +278,12 @@ test("received email follows exact layout structure: Header -> LPA Sheet Link ->
     "https://portal.example",
     "",
     {
-      pdcaPoints: [
-        "Enlarge terminal check machine not working at J.A.M machine due to software issue",
-        "Nose plier not available on each auto machines."
-      ]
+      pdcaMetrics: {
+        inProgress: 1,
+        done: 0,
+        delay: 0,
+        notStarted: 9
+      }
     }
   );
 
@@ -316,14 +319,21 @@ test("received email follows exact layout structure: Header -> LPA Sheet Link ->
   const pdcaLinkIdx = html.indexOf("LPA Observation Assembly PDCA");
   assert.ok(pdcaLinkIdx > detailsTableIdx, "PDCA link should be below Details table");
 
-  // 5. Sections and Points below PDCA link
-  assert.match(html, /Enlarge terminal check machine not working at J\.A\.M machine/);
-  assert.match(html, /Nose plier not available on each auto machines\./);
-  const pointsIdx = html.indexOf("Enlarge terminal check machine");
-  assert.ok(pointsIdx > pdcaLinkIdx, "Points should be below PDCA link");
+  // 5. Metrics row below PDCA link (In-Progress, Done, Delay, Not-Started)
+  assert.match(html, /METRICS:/);
+  assert.match(html, /In-Progress/);
+  assert.match(html, /Done/);
+  assert.match(html, /Delay/);
+  assert.match(html, /Not-Started/);
+  const metricsIdx = html.indexOf("METRICS:");
+  assert.ok(metricsIdx > pdcaLinkIdx, "Metrics should be below PDCA link");
+
+  // Points list/summary must be removed
+  assert.doesNotMatch(html, /<ol>/);
+  assert.doesNotMatch(html, /Enlarge terminal/);
 });
 
-test("received email dynamically supports C&C Sheet and PDCA links", () => {
+test("received email dynamically supports C&C Sheet, PDCA links and metrics badges", () => {
   const { html } = __emailTestUtils.buildSheetEmail(
     {
       workbookId: "book-cc-202",
@@ -345,20 +355,22 @@ test("received email dynamically supports C&C Sheet and PDCA links", () => {
     "https://portal.example",
     "",
     {
-      pdcaSections: [
-        {
-          section: "C&C Area",
-          points: [
-            "Wire spool decoller PVC damaged."
-          ]
-        }
-      ]
+      pdcaMetrics: {
+        inProgress: 3,
+        done: 5,
+        delay: 1,
+        notStarted: 12
+      }
     }
   );
 
   assert.match(html, /<strong>LPA C(&amp;|&)C Sheet: C(&amp;|&)C<\/strong> &mdash; <a [^>]*>Click here to open<\/a>/);
   assert.match(html, /<strong>LPA Observation C(&amp;|&)C PDCA<\/strong> &mdash; <a [^>]*>Click here to open<\/a>/);
-  assert.match(html, /C(&amp;|&)C Area:/);
-  assert.match(html, /Wire spool decoller PVC damaged\./);
+  assert.match(html, /METRICS:/);
+  assert.match(html, /In-Progress/);
+  assert.match(html, />3<\/span>/);
+  assert.match(html, />5<\/span>/);
+  assert.match(html, />1<\/span>/);
+  assert.match(html, />12<\/span>/);
 });
 

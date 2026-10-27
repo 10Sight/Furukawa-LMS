@@ -54,28 +54,48 @@ const extractPdcaPoints = sheet => {
   return points;
 };
 
-const extractPdcaSectionsAndPoints = (sheet, fallbackPoints = []) => {
-  if (!sheet || !Array.isArray(sheet.rows)) {
-    if (Array.isArray(fallbackPoints) && fallbackPoints.length > 0) {
-      return [{ section: "", points: fallbackPoints.map(p => typeof p === "string" ? p : p.observation || p.text || String(p)) }];
-    }
-    return [];
+const calculatePdcaMetrics = (sheet, clientMetrics = null) => {
+  if (clientMetrics && typeof clientMetrics === "object") {
+    return {
+      inProgress: Number(clientMetrics.inProgress) || 0,
+      done: Number(clientMetrics.done) || 0,
+      delay: Number(clientMetrics.delay) || 0,
+      notStarted: Number(clientMetrics.notStarted) || 0
+    };
   }
-  const sectionMap = new Map();
+
+  const counts = { inProgress: 0, done: 0, delay: 0, notStarted: 0 };
+  if (!sheet || !Array.isArray(sheet.rows)) return counts;
+
   for (const row of sheet.rows) {
     if (!row) continue;
-    const observation = String(row.observation || "").trim() || String(row.counterMeasure || row.rootCause || row.lineArea || "").trim();
-    if (!observation) continue;
-    const sectionName = String(row.section || row.lineArea || "").trim();
-    if (!sectionMap.has(sectionName)) {
-      sectionMap.set(sectionName, []);
+    const hasData = [
+      row.observation, row.date, row.shift, row.counterMeasure, row.rootCause, row.status
+    ].some(v => v !== undefined && v !== null && String(v).trim() !== "");
+    if (!hasData) continue;
+
+    const rawStatus = String(row.status || "").trim().toLowerCase();
+    const conf = String(row.confirmation || row.responsiblePersonConfirmation || "").trim().toLowerCase();
+
+    if (rawStatus === "done" || rawStatus === "closed" || conf === "confirmed" || conf === "confirm") {
+      counts.done += 1;
+    } else if (rawStatus === "delay" || rawStatus === "delayed") {
+      counts.delay += 1;
+    } else if (
+      rawStatus === "in-progress" ||
+      rawStatus === "in progress" ||
+      rawStatus === "in - progress" ||
+      rawStatus === "in- progress" ||
+      conf === "not-confirmed" ||
+      conf === "not-confirm"
+    ) {
+      counts.inProgress += 1;
+    } else {
+      counts.notStarted += 1;
     }
-    sectionMap.get(sectionName).push(observation);
   }
-  if (sectionMap.size === 0 && Array.isArray(fallbackPoints) && fallbackPoints.length > 0) {
-    return [{ section: "", points: fallbackPoints.map(p => typeof p === "string" ? p : p.observation || p.text || String(p)) }];
-  }
-  return [...sectionMap.entries()].map(([section, points]) => ({ section, points }));
+
+  return counts;
 };
 
 const calculateWorksheetScores = (sheet, record = null) => {
@@ -143,7 +163,7 @@ const buildSheetEmail = (
   pdca,
   portalBaseUrl = ENV.ADMIN_URL || ENV.FRONTEND_URL,
   remarks = "",
-  { pdcaOnly = false, pdcaPoints = [], pdcaSections = [], sheetDetails = null } = {}
+  { pdcaOnly = false, pdcaMetrics = null, sheetDetails = null } = {}
 ) => {
   const baseUrl = portalBaseUrl;
   let base;
@@ -236,38 +256,60 @@ const buildSheetEmail = (
   </tbody>
 </table>` : "";
 
-  // Sections and Points HTML below the PDCA link
-  let pointsHtml = "";
-  const sectionsList = (Array.isArray(pdcaSections) && pdcaSections.length > 0)
-    ? pdcaSections
-    : ((Array.isArray(pdcaPoints) && pdcaPoints.length > 0) ? [{ section: "", points: pdcaPoints }] : []);
-
-  if (sectionsList.length > 0) {
-    const hasMultipleOrNamed = sectionsList.length > 1 || (sectionsList.length === 1 && sectionsList[0].section && sectionsList[0].section.toLowerCase() !== moduleName.toLowerCase());
-    if (hasMultipleOrNamed) {
-      pointsHtml = `
-<div style="margin:0 0 16px 0;font-family:Arial,sans-serif;font-size:13px;line-height:22px;color:#334155;">
-  ${sectionsList.map(sec => `
-    <div style="margin:0 0 12px 0;">
-      ${sec.section ? `<p style="margin:0 0 6px 0;font-family:Arial,sans-serif;font-size:13px;font-weight:bold;color:#1e293b;">${escapeHtml(sec.section)}:</p>` : ""}
-      <ol style="margin:0;padding-left:20px;font-family:Arial,sans-serif;font-size:13px;line-height:22px;color:#334155;">
-        ${(sec.points || []).map(p => `<li style="margin-bottom:3px;color:#334155;">${escapeHtml(p)}</li>`).join("")}
-      </ol>
-    </div>
-  `).join("")}
-</div>`;
-    } else {
-      const allPts = sectionsList[0].points || [];
-      if (allPts.length > 0) {
-        pointsHtml = `
-<div style="margin:0 0 16px 0;font-family:Arial,sans-serif;font-size:13px;line-height:22px;color:#334155;">
-  <ol style="margin:0;padding-left:20px;color:#334155;">
-    ${allPts.map(p => `<li style="margin-bottom:3px;color:#334155;">${escapeHtml(p)}</li>`).join("")}
-  </ol>
-</div>`;
-      }
-    }
-  }
+  // Metrics HTML below the PDCA link (In-Progress, Done, Delay, Not-Started)
+  const metrics = pdcaMetrics || { inProgress: 0, done: 0, delay: 0, notStarted: 0 };
+  const metricsHtml = `
+<table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin:6px 0 18px 0;font-family:Arial,sans-serif;">
+  <tr>
+    <td style="padding:4px 14px 4px 0;vertical-align:middle;font-size:11px;font-weight:700;color:#475569;letter-spacing:0.05em;text-transform:uppercase;">
+      METRICS:
+    </td>
+    <td style="padding:2px 8px 2px 0;vertical-align:middle;">
+      <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="background-color:#fef3c7;border:1px solid #fde047;border-radius:9999px;">
+        <tr>
+          <td style="padding:4px 12px;font-size:12px;font-weight:600;color:#78350f;white-space:nowrap;">
+            <span style="display:inline-block;width:8px;height:8px;background-color:#f59e0b;border-radius:2px;margin-right:6px;vertical-align:middle;"></span>
+            <span style="vertical-align:middle;">In-Progress</span>
+            <span style="display:inline-block;background-color:#fde68a;border-radius:9999px;padding:1px 7px;font-size:11px;font-weight:700;color:#78350f;margin-left:6px;vertical-align:middle;">${metrics.inProgress}</span>
+          </td>
+        </tr>
+      </table>
+    </td>
+    <td style="padding:2px 8px 2px 0;vertical-align:middle;">
+      <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="background-color:#d1fae5;border:1px solid #6ee7b7;border-radius:9999px;">
+        <tr>
+          <td style="padding:4px 12px;font-size:12px;font-weight:600;color:#065f46;white-space:nowrap;">
+            <span style="display:inline-block;width:8px;height:8px;background-color:#059669;border-radius:2px;margin-right:6px;vertical-align:middle;"></span>
+            <span style="vertical-align:middle;">Done</span>
+            <span style="display:inline-block;background-color:#a7f3d0;border-radius:9999px;padding:1px 7px;font-size:11px;font-weight:700;color:#065f46;margin-left:6px;vertical-align:middle;">${metrics.done}</span>
+          </td>
+        </tr>
+      </table>
+    </td>
+    <td style="padding:2px 8px 2px 0;vertical-align:middle;">
+      <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="background-color:#ffe4e6;border:1px solid #fda4af;border-radius:9999px;">
+        <tr>
+          <td style="padding:4px 12px;font-size:12px;font-weight:600;color:#9f1239;white-space:nowrap;">
+            <span style="display:inline-block;width:8px;height:8px;background-color:#e11d48;border-radius:2px;margin-right:6px;vertical-align:middle;"></span>
+            <span style="vertical-align:middle;">Delay</span>
+            <span style="display:inline-block;background-color:#fecdd3;border-radius:9999px;padding:1px 7px;font-size:11px;font-weight:700;color:#9f1239;margin-left:6px;vertical-align:middle;">${metrics.delay}</span>
+          </td>
+        </tr>
+      </table>
+    </td>
+    <td style="padding:2px 0;vertical-align:middle;">
+      <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="background-color:#dbeafe;border:1px solid #93c5fd;border-radius:9999px;">
+        <tr>
+          <td style="padding:4px 12px;font-size:12px;font-weight:600;color:#1e40af;white-space:nowrap;">
+            <span style="display:inline-block;width:8px;height:8px;background-color:#2563eb;border-radius:2px;margin-right:6px;vertical-align:middle;"></span>
+            <span style="vertical-align:middle;">Not-Started</span>
+            <span style="display:inline-block;background-color:#bfdbfe;border-radius:9999px;padding:1px 7px;font-size:11px;font-weight:700;color:#1e40af;margin-left:6px;vertical-align:middle;">${metrics.notStarted}</span>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>`;
 
   const remarksHtml = remarks
     ? `<p style="margin:16px 0;font:14px Arial,sans-serif;color:#334155;"><strong>Remarks:</strong> ${escapeHtml(remarks).replace(/\r?\n/g, "<br>")}</p>`
@@ -282,7 +324,7 @@ const buildSheetEmail = (
       detailsTableHtml
     ] : []),
     `<p style="margin:0 0 14px 0;font-family:Arial,sans-serif;font-size:14px;line-height:22px;color:#1e293b;"><strong>${escapeHtml(pdcaLabel)}</strong> &mdash; <a href="${escapeHtml(pdcaUrl)}" target="_blank" style="color:#2563eb;text-decoration:underline;font-weight:bold;">Click here to open</a></p>`,
-    pointsHtml,
+    metricsHtml,
     remarksHtml,
     `</div>`
   ].join("");
@@ -408,22 +450,10 @@ export const createSendLpaEmailHandler = ({ sendMailFn = sendMail, log = logger,
       ? (isLpaPdca ? `LPA Observation ${section === "cc" ? "C&C" : "Assembly"} PDCA` : "PDCA Sheet")
       : `${section === "cc" ? "LPA C&C Sheet" : "LPA Assembly Sheet"} and ${isLpaPdca ? "LPA Observation PDCA" : "PDCA Sheet"}`;
 
-    const clientPoints = Array.isArray(pdca.points)
-      ? pdca.points.map(point => String(point || "").trim()).filter(Boolean)
-      : [];
-    const clientSections = Array.isArray(pdca.sections)
-      ? pdca.sections.map(s => ({
-          section: String(s?.section || "").trim(),
-          points: Array.isArray(s?.points) ? s.points.map(p => String(p || "").trim()).filter(Boolean) : []
-        })).filter(s => s.points.length > 0)
-      : [];
-    const pdcaSections = clientSections.length > 0
-      ? clientSections
-      : extractPdcaSectionsAndPoints(pdcaSheetData, clientPoints);
-    const pdcaPoints = clientPoints.length ? clientPoints : extractPdcaPoints(pdcaSheetData);
+    const pdcaMetrics = calculatePdcaMetrics(pdcaSheetData, pdca.metrics);
 
     const effectiveBaseUrl = portalBaseUrl || req.body?.portalBaseUrl || req.headers?.origin || ENV.ADMIN_URL || ENV.FRONTEND_URL || "http://localhost:5173";
-    const { html, assemblyUrl, pdcaUrl } = buildSheetEmail(assembly || null, pdca, effectiveBaseUrl, remarks, { pdcaOnly, pdcaPoints, pdcaSections, sheetDetails });
+    const { html, assemblyUrl, pdcaUrl } = buildSheetEmail(assembly || null, pdca, effectiveBaseUrl, remarks, { pdcaOnly, pdcaMetrics, sheetDetails });
     const info = await sendMailFn(to, subject, html, [], cc);
     const accepted = Array.isArray(info?.accepted) ? info.accepted.map(String) : [];
     const rejected = Array.isArray(info?.rejected) ? info.rejected.map(String) : [];

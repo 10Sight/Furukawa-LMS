@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import { listLPAWorkbooks } from '../../pages/lpa/lpaStore.js';
+import { getWorksheetScoresList } from '../../pages/lpa/lpaPdcaUtils.js';
 import lpaApi from '../../services/api/lpaApi.js';
 import pdcaApi from '../../services/api/pdcaApi.js';
 
@@ -520,18 +521,49 @@ export default function SendMailModal({
     requestInFlightRef.current = true;
     setSending(true);
     try {
+      const selectedScores = selectedAssembly ? getWorksheetScoresList(selectedAssembly.sheet, selectedAssembly.record) : [];
+      const scoreDisplay = selectedScores.length > 0
+        ? selectedScores.map(s => `${s.label} - ${s.percentage}`).join(', ')
+        : (selectedAssembly?.sheet?.scorePercentage || selectedAssembly?.record?.scorePercentage || selectedAssembly?.record?.percentage || '');
+
+      const auditorDisplay = (selectedAssembly?.sheet?.auditors && selectedAssembly.sheet.auditors.length > 0 && selectedAssembly.sheet.auditors.some(Boolean))
+        ? selectedAssembly.sheet.auditors.filter(Boolean).join(', ')
+        : (selectedAssembly?.sheet?.auditor || (selectedAssembly?.record?.auditors && selectedAssembly.record.auditors.length > 0 && selectedAssembly.record.auditors.some(Boolean))
+          ? selectedAssembly.record.auditors.filter(Boolean).join(', ')
+          : selectedAssembly?.record?.auditor || selectedAssembly?.record?.createdBy || '-');
+
       const selectedAssemblyPayload = selectedAssembly ? {
         workbookId: selectedAssembly.record.id || selectedAssembly.record._id,
         sheetIndex: selectedAssembly.sheetIndex,
         section: selectedSection,
         name: selectedAssembly.sheet.name || `Sheet ${selectedAssembly.sheetIndex + 1}`,
-        unit: selectedAssembly.record.unit || '',
-        date: selectedAssembly.record.auditDate || selectedAssembly.record.date || ''
+        unit: selectedAssembly.record.unit || 'Bawal',
+        date: selectedAssembly.record.auditDate || selectedAssembly.record.date || '',
+        auditor: auditorDisplay,
+        score: scoreDisplay,
+        department: selectedAssembly.sheet.department || selectedAssembly.record.department || (selectedSection === 'cc' ? 'C&C' : 'Assembly'),
+        sectionName: selectedAssembly.sheet.sectionName || selectedAssembly.sheet.section || selectedAssembly.record.sectionName || selectedAssembly.record.section || (selectedSection === 'cc' ? 'cc' : 'assembly'),
+        line: selectedAssembly.sheet.line || selectedAssembly.record.line || '-'
       } : null;
+
       const rawRows = targetPdca.sheet?.rows || [];
       const extractedPoints = rawRows
         .map(row => String(row?.observation || '').trim())
         .filter(Boolean);
+
+      const sectionGroupMap = new Map();
+      rawRows.forEach(row => {
+        const obs = String(row?.observation || '').trim();
+        if (!obs) return;
+        const sec = String(row?.section || row?.lineArea || '').trim();
+        if (!sectionGroupMap.has(sec)) sectionGroupMap.set(sec, []);
+        sectionGroupMap.get(sec).push(obs);
+      });
+      const extractedSections = [];
+      sectionGroupMap.forEach((pts, sec) => {
+        extractedSections.push({ section: sec, points: pts });
+      });
+
       const isLpaTarget = targetPdca.source === 'lpa';
       const selectedPdcaPayload = {
         id: targetPdca.id || targetPdca._id,
@@ -541,6 +573,7 @@ export default function SendMailModal({
         unit: targetPdca.plant || targetPdca.unit || '',
         date: targetPdca.date || '',
         points: extractedPoints,
+        sections: extractedSections,
         // LPA Observation PDCA sheets are saved as LPA snapshots, not as
         // standard PDCA records. Include the selected saved snapshot so the
         // email service can render that sheet when no PDCA record exists.

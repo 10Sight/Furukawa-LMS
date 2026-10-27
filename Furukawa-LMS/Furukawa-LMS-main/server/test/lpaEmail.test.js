@@ -254,3 +254,111 @@ test("email endpoint reports provider rejection without claiming success", async
   assert.equal(res.responseBody.success, false);
   assert.deepEqual(res.responseBody.data.rejected, ["two@example.com"]);
 });
+
+test("received email follows exact layout structure: Header -> LPA Sheet Link -> Details Table -> PDCA Link -> Sections and Points", () => {
+  const { html, assemblyUrl, pdcaUrl } = __emailTestUtils.buildSheetEmail(
+    {
+      workbookId: "book-assembly-101",
+      sheetIndex: 0,
+      section: "assembly",
+      name: "Assembly",
+      unit: "Bawal",
+      auditor: "Joy Dastidar (ST080014)",
+      score: "Level 3 - 1%",
+      department: "Assembly",
+      sectionName: "assembly",
+      line: "-"
+    },
+    {
+      id: "PDCA-LPA-ASY-Bawal",
+      source: "lpa",
+      section: "assembly"
+    },
+    "https://portal.example",
+    "",
+    {
+      pdcaPoints: [
+        "Enlarge terminal check machine not working at J.A.M machine due to software issue",
+        "Nose plier not available on each auto machines."
+      ]
+    }
+  );
+
+  // 1. Header
+  const headerDearSirIdx = html.indexOf("Dear Sir,");
+  const headerSafetyFirstIdx = html.indexOf("Safety First");
+  assert.ok(headerDearSirIdx !== -1, "Should have 'Dear Sir,'");
+  assert.ok(headerSafetyFirstIdx > headerDearSirIdx, "'Safety First' should follow 'Dear Sir,'");
+
+  // 2. LPA Assembly Sheet link on same line as 'Click here to open'
+  assert.match(html, /<strong>LPA Assembly Sheet: Assembly<\/strong> &mdash; <a [^>]*>Click here to open<\/a>/);
+  const assemblyLinkIdx = html.indexOf("LPA Assembly Sheet: Assembly");
+  assert.ok(assemblyLinkIdx > headerSafetyFirstIdx, "LPA Sheet Link should follow Safety First");
+
+  // 3. Sheet Details Table with exact columns and values
+  assert.match(html, /<th[^>]*>UNIT<\/th>/);
+  assert.match(html, /<th[^>]*>AUDITOR NAME<\/th>/);
+  assert.match(html, /<th[^>]*>SCORE<\/th>/);
+  assert.match(html, /<th[^>]*>DEPARTMENT<\/th>/);
+  assert.match(html, /<th[^>]*>SECTION<\/th>/);
+  assert.match(html, /<th[^>]*>LINE<\/th>/);
+  assert.match(html, /Bawal/);
+  assert.match(html, /Joy Dastidar \(ST080014\)/);
+  assert.match(html, /Level 3 - /);
+  assert.match(html, /1%/);
+  assert.match(html, />Assembly</);
+  assert.match(html, />assembly</);
+  const detailsTableIdx = html.indexOf("<table");
+  assert.ok(detailsTableIdx > assemblyLinkIdx, "Details table should be directly below LPA Sheet Link");
+
+  // 4. LPA Observation PDCA Link on same line as 'Click here to open'
+  assert.match(html, /<strong>LPA Observation Assembly PDCA<\/strong> &mdash; <a [^>]*>Click here to open<\/a>/);
+  const pdcaLinkIdx = html.indexOf("LPA Observation Assembly PDCA");
+  assert.ok(pdcaLinkIdx > detailsTableIdx, "PDCA link should be below Details table");
+
+  // 5. Sections and Points below PDCA link
+  assert.match(html, /Enlarge terminal check machine not working at J\.A\.M machine/);
+  assert.match(html, /Nose plier not available on each auto machines\./);
+  const pointsIdx = html.indexOf("Enlarge terminal check machine");
+  assert.ok(pointsIdx > pdcaLinkIdx, "Points should be below PDCA link");
+});
+
+test("received email dynamically supports C&C Sheet and PDCA links", () => {
+  const { html } = __emailTestUtils.buildSheetEmail(
+    {
+      workbookId: "book-cc-202",
+      sheetIndex: 0,
+      section: "cc",
+      name: "C&C",
+      unit: "Bawal",
+      auditor: "Joy Dastidar (ST080014)",
+      score: "Level 3 - 5%",
+      department: "C&C",
+      sectionName: "cc",
+      line: "Line-1"
+    },
+    {
+      id: "PDCA-LPA-CC-Bawal",
+      source: "lpa",
+      section: "cc"
+    },
+    "https://portal.example",
+    "",
+    {
+      pdcaSections: [
+        {
+          section: "C&C Area",
+          points: [
+            "Wire spool decoller PVC damaged."
+          ]
+        }
+      ]
+    }
+  );
+
+  assert.match(html, /<strong>LPA C(&amp;|&)C Sheet: C(&amp;|&)C<\/strong> &mdash; <a [^>]*>Click here to open<\/a>/);
+  assert.match(html, /<strong>LPA Observation C(&amp;|&)C PDCA<\/strong> &mdash; <a [^>]*>Click here to open<\/a>/);
+  assert.match(html, /C(&amp;|&)C Area:/);
+  assert.match(html, /Wire spool decoller PVC damaged\./);
+});
+

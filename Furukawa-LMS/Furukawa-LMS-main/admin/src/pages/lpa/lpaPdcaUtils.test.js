@@ -129,3 +129,28 @@ test('Adding data by adding rows into the single PDCA sheet and saving snapshot'
   assert.equal(loadedTopic.sheet.rows.length, rowCountBefore + 1);
   assert.equal(loadedTopic.sheet.rows[loadedTopic.sheet.rows.length - 1].observation, 'Torque wrench calibration tag expired');
 });
+
+test('Both Japanese text rows (Row 1: 会議名 & 作成者 :, Row 2: 出席者 & 議事録No) are unconditionally rendered', async () => {
+  const fs = await import('node:fs');
+  const pdcaSheetCode = fs.readFileSync(new URL('../../components/pdca/PDCASheet.jsx', import.meta.url), 'utf8');
+
+  // Verify Row 1 has 会議名 and 作成者 : and is NOT guarded by !isLpaObservationSheet
+  assert.ok(pdcaSheetCode.includes('会議名'), 'PDCASheet should contain 会議名');
+  assert.ok(pdcaSheetCode.includes('作成者 :'), 'PDCASheet should contain 作成者 :');
+  assert.ok(pdcaSheetCode.includes('出席者'), 'PDCASheet should contain 出席者');
+  assert.ok(pdcaSheetCode.includes('議事録No'), 'PDCASheet should contain 議事録No');
+  assert.equal(pdcaSheetCode.includes('!isLpaObservationSheet && <tr'), false, 'Row 1 should not be hidden for LPA observation sheets');
+});
+
+test('LPA PDCA Sheet creation is accessible to all users without isAdmin restriction', async () => {
+  const fs = await import('node:fs');
+  const lpaPageCode = fs.readFileSync(new URL('./LpaPage.jsx', import.meta.url), 'utf8');
+
+  // Verify handleCreateCustomPdcaSheet does not block non-admin users
+  assert.equal(lpaPageCode.includes("alert('Only administrators are authorized to add new PDCA sheets.')"), false);
+  // Verify Create PDCA button is not guarded by isAdmin
+  assert.equal(lpaPageCode.includes('{/* Create PDCA Option - Admin Only */}'), false);
+  // Verify Create New PDCA Sheet Modal is not guarded by isAdmin
+  assert.equal(lpaPageCode.includes('isCreatePdcaModalOpen && isAdmin &&'), false);
+});
+

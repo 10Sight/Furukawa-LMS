@@ -15,7 +15,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
-import { matchesPlant } from '../../pages/pdca/data/recordFilters';
+import { matchesPlant, isRecordCreator } from '../../pages/pdca/data/recordFilters';
 import { isAssemblyRecord, isCcRecord } from '../../pages/lpa/lpaPdcaUtils.js';
 export { isAssemblyRecord, isCcRecord };
 
@@ -29,7 +29,13 @@ export default function LpaPdcaTableView({
   onEditRecord,
   onCreateNew
 }) {
-  const { data: allRecords, loading, refreshData, handleDeletePDCA, showToast } = usePDCA();
+  const { data: allRecords, loading, refreshData, handleDeletePDCA, showToast, userContext } = usePDCA();
+  const isAdmin = Boolean(
+    userContext?.user?.isAdmin === true ||
+    userContext?.user?.isAdmin === 1 ||
+    String(userContext?.user?.role || '').toUpperCase() === 'ADMIN' ||
+    String(userContext?.user?.role || '').toUpperCase() === 'SUPERADMIN'
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMonth, setSelectedMonth] = useState('all');
   const [dateFilter, setDateFilter] = useState(mode === 'observations' ? pdcaDate : '');
@@ -42,11 +48,19 @@ export default function LpaPdcaTableView({
     }
   }, [pdcaDate, mode]);
 
-  // Filter records by unit and section
+
+  // Filter records by unit and section.
+  // Only include records whose ID starts with 'PDCA-LPA-' — those are the sheets created
+  // from the LPA PDCA Page. Regular PDCA records (created from the PDCA Dashboard) must
+  // never appear here, even if their section/department/topic happens to contain 'assembly'
+  // or 'c&c'.
   const sectionScopedRecords = useMemo(() => {
     if (!Array.isArray(allRecords)) return [];
     return allRecords.filter((item) => {
       if (item.isDeleted) return false;
+      // Strict: only LPA-originated records belong in this view
+      const id = String(item.id || item.recordId || '');
+      if (!id.startsWith('PDCA-LPA-')) return false;
       if (!matchesPlant(item, selectedUnit)) return false;
       return section === 'assembly' ? isAssemblyRecord(item) : isCcRecord(item);
     });
@@ -163,6 +177,10 @@ export default function LpaPdcaTableView({
   };
 
   const handleDelete = async (row) => {
+    if (!isAdmin && !isRecordCreator(row, userContext?.user)) {
+      showToast?.('You do not have permission to delete this PDCA record.');
+      return;
+    }
     if (window.confirm(`Are you sure you want to delete PDCA record "${row.topic}" (${row.id})?`)) {
       await handleDeletePDCA?.(row.id);
       showToast?.(`Deleted record ${row.id}`);
@@ -443,14 +461,16 @@ export default function LpaPdcaTableView({
                           </button>
 
                           {/* Delete */}
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(row)}
-                            title="Delete record"
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {(isAdmin || isRecordCreator(row, userContext?.user)) && (
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(row)}
+                              title="Delete record"
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

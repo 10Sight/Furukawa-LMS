@@ -168,4 +168,64 @@ test('filterPDCARecords filters correctly with calendar date filter', () => {
   assert.equal(allRecords.length, 4);
 });
 
+test('PDCA Sheet access rules: Sheet Creator and Admin have full access, responsible department has action columns access', async () => {
+  const { isRecordCreator, canEditRecord, isUserInResponsibleDepartment, EDITABLE_RESPONSIBLE_COLUMNS } = await import('./recordFilters.js');
+
+  const creatorUser = { id: 'user-creator', name: 'John Doe', code: 'EMP100', department: 'Quality' };
+  const adminUser = { id: 'user-admin', name: 'Admin User', role: 'ADMIN' };
+  const prodDeptUser = { id: 'user-prod', name: 'Production User', code: 'EMP200', department: 'Production' };
+  const randomUser = { id: 'user-random', name: 'Random User', code: 'EMP300', department: 'Maintenance' };
+
+  const pdcaSheet = {
+    id: 'PDCA-1',
+    topic: 'Quality Review',
+    createdBy: { id: 'user-creator', name: 'John Doe', code: 'EMP100' },
+    createdById: 'user-creator'
+  };
+
+  // 1. Full edit access to entire sheet must be true ONLY for sheet creator and admin
+  assert.equal(isRecordCreator(pdcaSheet, creatorUser), true, 'Creator should be recognized as record creator');
+  assert.equal(canEditRecord(pdcaSheet, creatorUser), true, 'Creator can edit entire record');
+  assert.equal(canEditRecord(pdcaSheet, adminUser), true, 'Admin can edit entire record');
+  assert.equal(isRecordCreator(pdcaSheet, prodDeptUser), false, 'Non-creator is not record creator');
+  assert.equal(canEditRecord(pdcaSheet, prodDeptUser), false, 'Non-admin/non-creator cannot edit entire record');
+  assert.equal(canEditRecord(pdcaSheet, randomUser), false, 'Random user cannot edit entire record');
+
+  // 2. Creator selects a department in responsible person confirmation
+  const rowWithRespDept = {
+    department: 'Quality', // Finding was in Quality
+    responsiblePersonDept: 'Production', // Creator selected Production as responsible department
+    observation: 'Loose cable',
+    rootCause: '',
+    counterMeasure: '',
+    stdDurationMin: '',
+    responseDate: ''
+  };
+
+  // Production department user should have access to action columns
+  assert.equal(isUserInResponsibleDepartment(rowWithRespDept, prodDeptUser), true, 'Production user matches responsible person department');
+  // Quality department user (finding dept) should NOT have access because they are not the responsible department
+  const qualityNonCreator = { id: 'user-qual-2', name: 'Qual Staff', department: 'Quality' };
+  assert.equal(isUserInResponsibleDepartment(rowWithRespDept, qualityNonCreator), false, 'Finding department does NOT grant responsible edit access');
+  assert.equal(isUserInResponsibleDepartment(rowWithRespDept, randomUser), false, 'Maintenance user does not have responsible edit access');
+
+  // 3. EDITABLE_RESPONSIBLE_COLUMNS must strictly cover Root Cause to Response Date
+  assert.ok(EDITABLE_RESPONSIBLE_COLUMNS.includes('rootCause'));
+  assert.ok(EDITABLE_RESPONSIBLE_COLUMNS.includes('counterMeasure'));
+  assert.ok(EDITABLE_RESPONSIBLE_COLUMNS.includes('imageAfter'));
+  assert.ok(EDITABLE_RESPONSIBLE_COLUMNS.includes('stdDurationMin'));
+  assert.ok(EDITABLE_RESPONSIBLE_COLUMNS.includes('responseDate'));
+  assert.ok(EDITABLE_RESPONSIBLE_COLUMNS.includes('revisedDates'));
+
+  // Non-action columns must NOT be in editable responsible columns
+  assert.equal(EDITABLE_RESPONSIBLE_COLUMNS.includes('unit'), false);
+  assert.equal(EDITABLE_RESPONSIBLE_COLUMNS.includes('department'), false);
+  assert.equal(EDITABLE_RESPONSIBLE_COLUMNS.includes('section'), false);
+  assert.equal(EDITABLE_RESPONSIBLE_COLUMNS.includes('lineArea'), false);
+  assert.equal(EDITABLE_RESPONSIBLE_COLUMNS.includes('observation'), false);
+  assert.equal(EDITABLE_RESPONSIBLE_COLUMNS.includes('imageBefore'), false);
+  assert.equal(EDITABLE_RESPONSIBLE_COLUMNS.includes('responsiblePersonDept'), false);
+});
+
+
 

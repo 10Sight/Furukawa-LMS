@@ -5,19 +5,40 @@
  */
 
 export const VERIFIED_EMPLOYEE_MASTER = [
-  { id: 'emp-as081213', name: 'Yogesh Kumar', code: 'AS081213', department: 'PE', email: 'aso81213@fme-minda.co.in' },
-  { id: 'emp-gj034112', name: 'Vikram Singh', code: 'GJ034112', department: 'PE', email: 'v.singh@fme-minda.co.in' },
-  { id: 'emp-gj045819', name: 'Deepak Mehta', code: 'GJ045819', department: 'Quality', email: 'd.mehta@fme-minda.co.in' },
-  { id: 'emp-bw041920', name: 'Rahul Sharma', code: 'BW041920', department: 'Assembly', email: 'r.sharma@fme-minda.co.in' },
-  { id: 'emp-bw081290', name: 'Rajesh Kumar', code: 'BW081290', department: 'Maintenance', email: 'r.kumar@fme-minda.co.in' },
-  { id: 'emp-bw039182', name: 'Pooja Nair', code: 'BW039182', department: 'Maintenance', email: 'p.nair@fme-minda.co.in' },
-  { id: 'emp-gj092311', name: 'Amit Patel', code: 'GJ092311', department: 'Safety', email: 'amit.patel@fme-minda.co.in' },
-  { id: 'emp-gj018442', name: 'Priya Nair', code: 'GJ018442', department: 'HR', email: 'priya.nair@fme-minda.co.in' },
-  { id: 'emp-bw092301', name: 'Manish Joshi', code: 'BW092301', department: 'Maintenance', email: 'm.joshi@fme-minda.co.in' },
-  { id: 'emp-st080014', name: 'Joy Dastidar', code: 'ST080014', department: 'D&D', email: 'st080014@furukawaminda.com' },
-  { id: 'emp-bw019283', name: 'Sanjeev Verma', code: 'BW019283', department: 'Store', email: 's.verma@fme-minda.co.in' },
-  { id: 'emp-gj058291', name: 'Anita Deshmukh', code: 'GJ058291', department: 'IT', email: 'a.deshmukh@fme-minda.co.in' }
+  { id: 'emp-as081213', name: 'Yogesh Kumar', code: 'AS081213', department: 'PE', unit: 'Bawal', email: 'aso81213@fme-minda.co.in' },
+  { id: 'emp-gj034112', name: 'Vikram Singh', code: 'GJ034112', department: 'PE', unit: 'Gujrat', email: 'v.singh@fme-minda.co.in' },
+  { id: 'emp-gj045819', name: 'Deepak Mehta', code: 'GJ045819', department: 'Quality', unit: 'Gujrat', email: 'd.mehta@fme-minda.co.in' },
+  { id: 'emp-bw051211', name: 'Ramesh Sharma', code: 'BW051211', department: 'Quality', unit: 'Bawal', email: 'r.sharma.qa@fme-minda.co.in' },
+  { id: 'emp-bw051212', name: 'Suresh Patel', code: 'BW051212', department: 'Quality', unit: 'Bawal', email: 's.patel.qa@fme-minda.co.in' },
+  { id: 'emp-bw061211', name: 'Anil Verma', code: 'BW061211', department: 'C&C', unit: 'Bawal', email: 'a.verma.cc@fme-minda.co.in' },
+  { id: 'emp-bw061212', name: 'Sunil Kumar', code: 'BW061212', department: 'C&C', unit: 'Bawal', email: 's.kumar.cc@fme-minda.co.in' },
+  { id: 'emp-gj071211', name: 'Karan Patel', code: 'GJ071211', department: 'IT', unit: 'Gujrat', email: 'k.patel.it@fme-minda.co.in' },
+  { id: 'emp-gj071212', name: 'Neha Shah', code: 'GJ071212', department: 'IT', unit: 'Gujrat', email: 'n.shah.it@fme-minda.co.in' },
+  { id: 'emp-gj018442', name: 'Priya Nair', code: 'GJ018442', department: 'HR', unit: 'Gujrat', email: 'priya.nair@fme-minda.co.in' },
+  { id: 'emp-gj081211', name: 'Rohit Mehta', code: 'GJ081211', department: 'HR', unit: 'Gujrat', email: 'r.mehta.hr@fme-minda.co.in' },
+  { id: 'emp-bw041920', name: 'Rahul Sharma', code: 'BW041920', department: 'Assembly', unit: 'Bawal', email: 'r.sharma@fme-minda.co.in' },
+  { id: 'emp-bw081290', name: 'Rajesh Kumar', code: 'BW081290', department: 'Maintenance', unit: 'Bawal', email: 'r.kumar@fme-minda.co.in' },
+  { id: 'emp-bw039182', name: 'Pooja Nair', code: 'BW039182', department: 'Maintenance', unit: 'Bawal', email: 'p.nair@fme-minda.co.in' },
+  { id: 'emp-gj092311', name: 'Amit Patel', code: 'GJ092311', department: 'Safety', unit: 'Gujrat', email: 'amit.patel@fme-minda.co.in' },
+  { id: 'emp-bw092301', name: 'Manish Joshi', code: 'BW092301', department: 'Maintenance', unit: 'Bawal', email: 'm.joshi@fme-minda.co.in' },
+  { id: 'emp-st080014', name: 'Joy Dastidar', code: 'ST080014', department: 'D&D', unit: 'Bawal', email: 'st080014@furukawaminda.com' },
+  { id: 'emp-bw019283', name: 'Sanjeev Verma', code: 'BW019283', department: 'Store', unit: 'Bawal', email: 's.verma@fme-minda.co.in' },
+  { id: 'emp-gj058291', name: 'Anita Deshmukh', code: 'GJ058291', department: 'IT', unit: 'Gujrat', email: 'a.deshmukh@fme-minda.co.in' },
 ];
+
+/**
+ * Strips any employee code / ID in parentheses from an employee name string.
+ * e.g. "VIKRAM SINGH (GJ034112)" -> "VIKRAM SINGH"
+ * e.g. "JOY DASTIDAR (ST080014)" -> "JOY DASTIDAR"
+ */
+export const stripEmployeeId = (input) => {
+  if (!input) return '';
+  if (typeof input === 'object') {
+    return stripEmployeeId(input.name || input.fullName || '');
+  }
+  return String(input).replace(/\s*\([^)]*\)/g, '').trim();
+};
+
 
 /**
  * Parses employee input (e.g. "Deepak Mehta (GJ045819)") into separate name and code.

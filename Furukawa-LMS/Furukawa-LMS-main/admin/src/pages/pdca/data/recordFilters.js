@@ -169,6 +169,7 @@ export function canEditRecord(record, currentUser) {
 
 export const EDITABLE_RESPONSIBLE_COLUMNS = [
   'rootCause',
+  'actionTaken',
   'counterMeasure',
   'imageAfter',
   'imagesAfter',
@@ -233,16 +234,40 @@ export function isUserInResponsibleDepartment(row, user) {
   // 1. Direct assignment as responsible staff
   if (isUserResponsibleForRow(row, user)) return true;
 
-  // 2. Department matching: check selected Responsible Person Confirmation department
-  const targetDepts = [
-    row.responsiblePersonDept,
-    row.department,
-    ...(Array.isArray(row.departments) ? row.departments : [])
-  ]
-    .filter(Boolean)
-    .map(d => String(d).trim().toLowerCase());
+  // 2. Department matching: check selected Responsible Person Confirmation department(s)
+  // When admin/creator selects a department, employees in that department get edit access to action columns
+  const candidateDepts = new Set();
 
-  if (targetDepts.length === 0) return false;
+  // Check respDeptsByUnit object (e.g. { Bawal: ['Quality', 'Maintenance'], Gujrat: ['IT'] })
+  if (row.respDeptsByUnit && typeof row.respDeptsByUnit === 'object') {
+    Object.values(row.respDeptsByUnit).forEach(depts => {
+      if (Array.isArray(depts)) {
+        depts.forEach(d => {
+          if (d && typeof d === 'string') candidateDepts.add(d.trim().toLowerCase());
+        });
+      }
+    });
+  }
+
+  // Check responsiblePersonDept / respDept (can be comma-separated or single string)
+  const respDept = row.responsiblePersonDept || row.respDept;
+  if (respDept && typeof respDept === 'string' && respDept !== 'CFT') {
+    respDept.split(/[,;]/).forEach(d => {
+      const trimmed = d.trim().toLowerCase();
+      if (trimmed) candidateDepts.add(trimmed);
+    });
+  }
+
+  // Check staffEmployees
+  if (Array.isArray(row.staffEmployees)) {
+    row.staffEmployees.forEach(emp => {
+      if (emp?.department) {
+        candidateDepts.add(String(emp.department).trim().toLowerCase());
+      }
+    });
+  }
+
+  if (candidateDepts.size === 0) return false;
 
   const userDepts = [];
   if (user.deptName) userDepts.push(user.deptName);
@@ -255,8 +280,16 @@ export function isUserInResponsibleDepartment(row, user) {
     });
   }
 
-  const normalizedUserDepts = userDepts.map(d => String(d).trim().toLowerCase());
-  return normalizedUserDepts.some(ud => targetDepts.some(td => ud === td || ud.includes(td) || td.includes(ud)));
+  const normalizedUserDepts = userDepts.map(d => String(d).trim().toLowerCase()).filter(Boolean);
+  if (normalizedUserDepts.length === 0) return false;
+
+  for (const ud of normalizedUserDepts) {
+    for (const cd of candidateDepts) {
+      if (ud === cd) return true;
+    }
+  }
+
+  return false;
 }
 
 export function isUserResponsibleForAnyRow(rows, user) {

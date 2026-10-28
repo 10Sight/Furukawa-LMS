@@ -12,6 +12,7 @@ import CcSheet from '../../components/lpa/CcSheet';
 import assemblyTemplate from './assemblyTemplate.json' with { type: 'json' };
 import { ccTemplate, isCcCheckSheet, upgradeCcTemplateRecord, createBlankCcSheet } from './ccTemplate';
 import lpaApi from '@/services/api/lpaApi.js';
+import pdcaApi from '@/services/api/pdcaApi.js';
 import PDCASheet from '../../components/pdca/PDCASheet';
 import AddPDCAModal from '../../components/pdca/AddPDCAModal';
 import SendMailModal from '../../components/common/SendMailModal';
@@ -21,7 +22,7 @@ import { PDCAProvider } from '../pdca/context/PDCAContext';
 import { getLpaPdcaTopic, saveLpaPdcaSnapshot, extractObservationsFromSheet, createEmptyPdcaRow, getWorksheetScore, getWorksheetScoresList } from './lpaPdcaUtils';
 import { isRecordCreator, canEditRecord } from '@pages/pdca/data/recordFilters.js';
 import LpaTable from '../../components/lpa/LpaTable';
-import { matchesLpaDateRange } from './lpaDateFilters.js';
+import { matchesLpaDateRange, normalizeLpaDate } from './lpaDateFilters.js';
 
 const SECTIONS = [{ id: 'assembly', label: 'Assembly' }, { id: 'cc', label: 'C&C' }];
 const UNITS = ['Bawal', 'Gujrat'];
@@ -47,6 +48,78 @@ const formatLpaDate = value => {
   }
   return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${String(year).slice(-2)}`;
 };
+
+const isLpaRecordForSection = (rec, section, unit) => {
+  if (!rec || rec.isDeleted) return false;
+  const recId = String(rec.id || rec.recordId || '');
+  const recPlant = String(rec.plant || rec.unit || '').toLowerCase();
+  const currentUnit = String(unit || 'Bawal').toLowerCase();
+
+  // Unit match (if specified on record)
+  if (recPlant && recPlant !== 'all' && recPlant !== 'unit' && recPlant !== 'all plants' && recPlant !== currentUnit) {
+    return false;
+  }
+
+  // Section / LPA match
+  const sec = String(section || '').toLowerCase();
+  const idLower = recId.toLowerCase();
+  const topicLower = String(rec.topic || '').toLowerCase();
+  const catLower = String(rec.category || rec.lpaCategory || '').toLowerCase();
+  const deptLower = String(rec.department || '').toLowerCase();
+
+  const isLpa = idLower.includes('lpa') || topicLower.includes('lpa') || catLower.includes('lpa') || rec.lpaSource != null;
+  if (!isLpa && !idLower.startsWith('pdca-lpa-')) return false;
+
+  if (sec === 'assembly') {
+    if (idLower.includes('-cc-') || catLower === 'cc' || (topicLower.includes('c&c') && !topicLower.includes('assembly'))) {
+      return false;
+    }
+    return idLower.includes('assembly') || topicLower.includes('assembly') || catLower.includes('assembly') || deptLower.includes('assembly');
+  } else {
+    if (idLower.includes('-assembly-') || catLower === 'assembly' || (topicLower.includes('assembly') && !topicLower.includes('c&c'))) {
+      return false;
+    }
+    return idLower.includes('-cc-') || topicLower.includes('c&c') || topicLower.includes('cc') || catLower.includes('cc') || deptLower.includes('c&c') || deptLower.includes('cc');
+  }
+};
+
+class PdcaErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error('PDCA Sheet render error:', error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full p-8 text-center bg-slate-50">
+          <div className="max-w-md p-6 bg-white border border-rose-200 rounded-2xl shadow-sm space-y-4">
+            <h3 className="text-base font-bold text-slate-900">Unable to display PDCA Sheet</h3>
+            <p className="text-xs text-rose-600 font-mono bg-rose-50 p-2.5 rounded-lg text-left overflow-auto max-h-32">
+              {String(this.state.error?.message || this.state.error)}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                this.setState({ hasError: false, error: null });
+                this.props.onBack?.();
+              }}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold cursor-pointer shadow-sm transition-colors"
+            >
+              Return to LPA Page
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 function LpaPageContent({ viewContext }) {
   const navigate = useNavigate();
@@ -75,6 +148,25 @@ function LpaPageContent({ viewContext }) {
   const [customPdcaTopic, setCustomPdcaTopic] = useState(null);
   const [isPdcaSheetOpen, setIsPdcaSheetOpen] = useState(false);
   const [pdcaSaveVersion, setPdcaSaveVersion] = useState(0);
+  const [backendPdcaSheets, setBackendPdcaSheets] = useState([]);
+  const [isPdcaLoading, setIsPdcaLoading] = useState(false);
+
+  const loadBackendPdcaSheets = useCallback(async () => {
+    try {
+      setIsPdcaLoading(true);
+      const res = await pdcaApi.getRecords({ limit: 100 });
+      const recordsList = Array.isArray(res) ? res : (res?.records || []);
+      setBackendPdcaSheets(recordsList);
+    } catch (err) {
+      console.warn('Could not fetch backend PDCA records:', err);
+    } finally {
+      setIsPdcaLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadBackendPdcaSheets();
+  }, [loadBackendPdcaSheets, activeSection, selectedUnit, pdcaSaveVersion]);
   const [searchQuery, setSearchQuery] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
@@ -227,18 +319,27 @@ function LpaPageContent({ viewContext }) {
     openSheet(record, sheetIndex).then(() => navigate('/cms/lpa', { replace: true }));
   }, [location.search, loading, records, navigate]);
   const authUser = useSelector(state => state.auth?.user);
+  const effectiveAuthUser = useMemo(() => {
+    if (authUser) return authUser;
+    try {
+      const stored = (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('user') : null) ||
+        (typeof localStorage !== 'undefined' ? localStorage.getItem('user') : null);
+      if (stored) return JSON.parse(stored);
+    } catch { }
+    return null;
+  }, [authUser]);
+
   const isAdmin = Boolean(
-    authUser?.isAdmin ||
-    authUser?.role === 'ADMIN' ||
-    authUser?.role === 'SUPERADMIN' ||
-    authUser?.role === 'superadmin' ||
-    authUser?.role === 'admin'
+    effectiveAuthUser?.isAdmin === true ||
+    effectiveAuthUser?.isAdmin === 1 ||
+    String(effectiveAuthUser?.role || '').toUpperCase() === 'ADMIN' ||
+    String(effectiveAuthUser?.role || '').toUpperCase() === 'SUPERADMIN'
   );
 
   const canEditCurrentRecord = useMemo(() => {
     if (!editor) return true;
-    return canEditRecord(editor, authUser);
-  }, [editor, authUser]);
+    return canEditRecord(editor, effectiveAuthUser);
+  }, [editor, effectiveAuthUser]);
 
   const updateSheetMetadata = useCallback((metadata) => {
     if (!canEditCurrentRecord) return;
@@ -320,18 +421,26 @@ function LpaPageContent({ viewContext }) {
     } catch (error) { setMessage({ error: true, text: errorText(error) }); return false; }
     finally { requestInFlight.current = false; setBusy(false); }
   };
+  const canDeleteWorkbook = (record) => {
+    return Boolean(isAdmin || isRecordCreator(record, effectiveAuthUser));
+  };
+
   const deleteWorkbook = async record => {
     if (!record.id || requestInFlight.current) return;
-    if (!canEditRecord(record, authUser)) {
-      setMessage({ error: true, text: 'You do not have permission to delete this LPA record. Only the creator or an admin can delete it.' });
+    if (!canDeleteWorkbook(record)) {
+      setMessage({ error: true, text: 'Only administrators and the sheet creator have permission to delete LPA records.' });
       return;
     }
     if (!confirmFormDeletion(`${record.name} and all its saved worksheets`)) return;
     requestInFlight.current = true;
     setBusy(true);
     try {
-      await deleteLPAWorkbook(userId, record.id);
-      setRecords(previous => previous.filter(item => item.id !== record.id));
+      await deleteLPAWorkbook(effectiveAuthUser?.id || effectiveAuthUser?._id || userId, record.id);
+      setRecords(previous => previous.filter(item =>
+        String(item.id) !== String(record.id) &&
+        String(item.recordId || '') !== String(record.id) &&
+        String(item._id || '') !== String(record.id)
+      ));
       try { localStorage.removeItem(draftKey(record.id)); } catch { /* The saved workbook has already been removed. */ }
       if (editor?.id === record.id) { setEditor(null); setDirty(false); }
       setMessage({ text: `${record.name} was deleted.` });
@@ -531,6 +640,9 @@ function LpaPageContent({ viewContext }) {
       line: formData.line || '',
       auditors: [],
       auditor: '',
+      createdBy: effectiveAuthUser?.fullName || effectiveAuthUser?.name || effectiveAuthUser?.userName || 'User',
+      createdById: effectiveAuthUser?.id || effectiveAuthUser?._id || userId,
+      ownerId: effectiveAuthUser?.id || effectiveAuthUser?._id || userId,
       sheets: newSheets
     };
 
@@ -554,9 +666,7 @@ function LpaPageContent({ viewContext }) {
   const visibleRecords = displayRecords.filter(record =>
     record.unit === selectedUnit &&
     record.section === activeSection &&
-    ((fromDate || toDate)
-      ? matchesLpaDateRange(record.auditDate || record.date, fromDate, toDate)
-      : (!record.auditDate || record.auditDate === pdcaDate)) &&
+    matchesLpaDateRange(record.auditDate || record.date, fromDate, toDate) &&
     `${record.name} ${record.sheets?.map(item => item.name).join(' ') || ''}`.toLowerCase().includes(searchQuery.toLowerCase())
   );
   const exportAllRecords = () => {
@@ -652,8 +762,10 @@ function LpaPageContent({ viewContext }) {
   });
 
   const allPdcaSheets = useMemo(() => {
+    const isCc = activeSection === 'cc';
+    const baseSheetId = `PDCA-LPA-${activeSection.toUpperCase()}-${selectedUnit || 'Bawal'}`;
     const baseSheet = {
-      id: `PDCA-LPA-${activeSection.toUpperCase()}-${selectedUnit || 'Bawal'}`,
+      id: baseSheetId,
       title: `${activeSection === 'assembly' ? 'Assembly' : 'C&C'} - LPA Observation (PDCA)`,
       date: pdcaDate || todayIso,
       unit: selectedUnit || 'Bawal',
@@ -664,8 +776,57 @@ function LpaPageContent({ viewContext }) {
     try {
       deletedDefaultIds = JSON.parse(localStorage.getItem(`lpa_deleted_default_pdca_sheets_${activeSection}_${selectedUnit || 'Bawal'}`) || '[]');
     } catch { /* An invalid removal cache never changes saved LPA records. */ }
-    return [...(deletedDefaultIds.includes(baseSheet.id) ? [] : [baseSheet]), ...customPdcaSheets];
-  }, [activeSection, selectedUnit, pdcaDate, customPdcaSheets, pdcaDeleteRevision]);
+
+    const matchingBackend = (backendPdcaSheets || [])
+      .filter(rec => isLpaRecordForSection(rec, activeSection, selectedUnit))
+      .filter(rec => {
+        if (isCc) {
+          const recId = String(rec.id || rec.recordId || '');
+          if (recId === 'PDCA-LPA-CC-Bawal' || recId === baseSheetId) return false;
+          if (rec.topic === 'C&C - LPA Observation (PDCA)' && !rec.createdAt && !rec.createdBy) return false;
+        }
+        return true;
+      })
+      .map(rec => ({
+        id: rec.id || rec.recordId,
+        title: rec.topic || `${activeSection === 'assembly' ? 'Assembly' : 'C&C'} - LPA Observation (PDCA)`,
+        date: normalizeLpaDate(rec.date) || rec.date || todayIso,
+        unit: rec.plant || selectedUnit || 'Bawal',
+        department: rec.department || (activeSection === 'assembly' ? 'Assembly' : 'C&C'),
+        createdBy: rec.createdBy,
+        createdById: rec.createdById,
+        createdAt: rec.createdAt,
+        isDefault: (rec.id || rec.recordId) === baseSheetId,
+        sheet: rec.sheet
+      }));
+
+    const map = new Map();
+    for (const b of matchingBackend) {
+      if (!deletedDefaultIds.includes(b.id)) {
+        map.set(b.id, b);
+      }
+    }
+
+    if (!isCc && !map.has(baseSheetId) && !deletedDefaultIds.includes(baseSheetId)) {
+      map.set(baseSheetId, baseSheet);
+    }
+
+    for (const c of (customPdcaSheets || [])) {
+      if (isCc && (c.id === baseSheetId || c.id === 'PDCA-LPA-CC-Bawal')) continue;
+      if (!map.has(c.id) && !deletedDefaultIds.includes(c.id)) {
+        map.set(c.id, c);
+      }
+    }
+
+    const result = Array.from(map.values());
+    return result.sort((a, b) => {
+      if (a.id === baseSheetId) return -1;
+      if (b.id === baseSheetId) return 1;
+      const dateA = a.createdAt || a.date || '';
+      const dateB = b.createdAt || b.date || '';
+      return String(dateB).localeCompare(String(dateA));
+    });
+  }, [activeSection, selectedUnit, pdcaDate, backendPdcaSheets, customPdcaSheets, pdcaDeleteRevision]);
   const visiblePdcaSheets = allPdcaSheets.filter(item => matchesLpaDateRange(item.date, fromDate, toDate));
 
   const emailPdcaSheets = useMemo(() => allPdcaSheets.map(item => {
@@ -674,6 +835,9 @@ function LpaPageContent({ viewContext }) {
       const saved = localStorage.getItem(`lpa_pdca_saved_${item.id}`);
       if (saved) sheetData = JSON.parse(saved);
     } catch { /* A corrupt saved snapshot is reported by the send flow. */ }
+    if (!sheetData && item.sheet) {
+      sheetData = item.sheet;
+    }
     if (!sheetData) {
       sheetData = getLpaPdcaTopic({
         section: activeSection,
@@ -687,7 +851,7 @@ function LpaPageContent({ viewContext }) {
     return { ...item, source: 'lpa', section: activeSection, sheet: sheetData };
   }), [allPdcaSheets, activeSection, selectedUnit, pdcaDate, records, assemblyTemplate, ccTemplate]);
 
-  const handleOpenSpecificPdcaSheet = (sheetItem) => {
+  const handleOpenSpecificPdcaSheet = async (sheetItem) => {
     let sheetData = null;
     try {
       const saved = localStorage.getItem(`lpa_pdca_saved_${sheetItem.id}`);
@@ -697,6 +861,22 @@ function LpaPageContent({ viewContext }) {
     } catch (err) {
       console.error(err);
     }
+
+    if (!sheetData && sheetItem.sheet && Array.isArray(sheetItem.sheet.rows) && sheetItem.sheet.rows.length > 0) {
+      sheetData = sheetItem.sheet;
+    }
+
+    if (!sheetData || !Array.isArray(sheetData.rows) || sheetData.rows.length === 0) {
+      try {
+        const fetched = await pdcaApi.getSheet(sheetItem.id);
+        if (fetched && Array.isArray(fetched.rows) && fetched.rows.length > 0) {
+          sheetData = fetched;
+        }
+      } catch (err) {
+        console.warn('Could not fetch sheet from backend API:', err);
+      }
+    }
+
     if (!sheetData) {
       const fallbackTopic = getLpaPdcaTopic({
         section: activeSection,
@@ -717,6 +897,8 @@ function LpaPageContent({ viewContext }) {
       section: activeSection,
       scope: 'Company',
       plant: sheetItem.unit || selectedUnit || 'Bawal',
+      createdBy: sheetItem.createdBy || sheetData?.createdBy,
+      createdById: sheetItem.createdById || sheetData?.createdById,
       sheet: sheetData
     });
     setIsPdcaSheetOpen(true);
@@ -747,21 +929,34 @@ function LpaPageContent({ viewContext }) {
     navigate('/cms/lpa', { replace: true });
   }, [location.search, activeSection, selectedUnit, allPdcaSheets, navigate]);
 
-  const handleCreateCustomPdcaSheet = (e) => {
+  const handleCreateCustomPdcaSheet = async (e) => {
     e.preventDefault();
-    if (!isAdmin) {
-      alert('Only administrators are authorized to add new PDCA sheets.');
-      return;
-    }
     const targetUnit = newPdcaForm.unit || selectedUnit || 'Bawal';
     const newId = `PDCA-LPA-${activeSection.toUpperCase()}-${targetUnit}-${Date.now()}`;
     const newSheet = {
       id: newId,
+      recordId: newId,
+      topic: newPdcaForm.title.trim() || `${activeSection === 'assembly' ? 'Assembly' : 'C&C'} - LPA Observation (PDCA)`,
       title: newPdcaForm.title.trim() || `${activeSection === 'assembly' ? 'Assembly' : 'C&C'} - LPA Observation (PDCA)`,
       date: newPdcaForm.date || pdcaDate || todayIso,
+      plant: targetUnit,
       unit: targetUnit,
       department: newPdcaForm.department || (activeSection === 'assembly' ? 'Assembly' : 'C&C'),
-      createdAt: new Date().toISOString()
+      category: activeSection,
+      lpaCategory: activeSection,
+      scope: 'Company',
+      createdAt: new Date().toISOString(),
+      createdBy: effectiveAuthUser ? {
+        id: effectiveAuthUser.id || effectiveAuthUser._id,
+        name: effectiveAuthUser.name || effectiveAuthUser.userName,
+        code: effectiveAuthUser.code || effectiveAuthUser.empCode,
+        userName: effectiveAuthUser.userName
+      } : {
+        id: 'user_anonymous',
+        name: 'User',
+        userName: 'user'
+      },
+      createdById: effectiveAuthUser?.id || effectiveAuthUser?._id || 'user_anonymous'
     };
 
     const initialTopic = getLpaPdcaTopic({
@@ -774,11 +969,15 @@ function LpaPageContent({ viewContext }) {
     });
     const customSnapshot = {
       ...initialTopic.sheet,
-      rows: (initialTopic.sheet?.rows || []).map(row => ({ ...row, date: '', status: '' })),
+      // A newly created sheet always starts completely blank (no copied dates, status, shifts or observations).
+      rows: Array.from({ length: 10 }, () => createEmptyPdcaRow()),
       headerInfo: {
         ...(initialTopic.sheet?.headerInfo || {}),
-        topicName: newSheet.title
-      }
+        topicName: newSheet.title,
+        preparedBy: effectiveAuthUser?.name || effectiveAuthUser?.userName || ''
+      },
+      createdBy: newSheet.createdBy,
+      createdById: newSheet.createdById
     };
     saveLpaPdcaSnapshot(newId, customSnapshot);
 
@@ -789,12 +988,32 @@ function LpaPageContent({ viewContext }) {
     } catch (err) {
       console.error(err);
     }
+
+    // Persist to backend database via API
+    try {
+      await pdcaApi.createRecord({
+        ...newSheet,
+        sheet: customSnapshot
+      });
+      await pdcaApi.saveSheet(newId, customSnapshot);
+      await loadBackendPdcaSheets();
+    } catch (apiErr) {
+      console.warn('Backend record creation failed (saved locally):', apiErr);
+    }
+
     setIsCreatePdcaModalOpen(false);
     setMessage({ text: `✓ PDCA Sheet "${newSheet.title}" created successfully.` });
   };
 
-  const handleDeletePdcaSheet = (sheet) => {
-    if (!isAdmin) return;
+  const canDeletePdcaSheet = (sheet) => {
+    return Boolean(isAdmin || isRecordCreator(sheet, effectiveAuthUser));
+  };
+
+  const handleDeletePdcaSheet = async (sheet) => {
+    if (!canDeletePdcaSheet(sheet)) {
+      alert('Only administrators and the sheet creator have permission to delete this PDCA sheet.');
+      return;
+    }
     if (!confirm(`Are you sure you want to delete "${sheet.title}"?`)) return;
     try {
       if (sheet.isDefault) {
@@ -809,7 +1028,13 @@ function LpaPageContent({ viewContext }) {
         setCustomPdcaSheets(updated);
         localStorage.setItem(`lpa_custom_pdca_sheets_${activeSection}_${selectedUnit || 'Bawal'}`, JSON.stringify(updated));
       }
+      try {
+        await pdcaApi.deleteRecord(sheet.id);
+      } catch (apiErr) {
+        console.warn('Backend delete error:', apiErr);
+      }
       localStorage.removeItem(`lpa_pdca_saved_${sheet.id}`);
+      await loadBackendPdcaSheets();
     } catch (err) {
       console.error(err);
       setMessage({ error: true, text: 'The PDCA sheet could not be deleted from this browser.' });
@@ -861,13 +1086,19 @@ function LpaPageContent({ viewContext }) {
     refreshData?.();
   };
 
-  const handleSavePDCA = (sheetSnapshot) => {
+  const handleSavePDCA = async (sheetSnapshot) => {
     if (!pdcaTopic?.id) return;
     saveLpaPdcaSnapshot(pdcaTopic.id, sheetSnapshot);
+    try {
+      await pdcaApi.saveSheet(pdcaTopic.id, sheetSnapshot);
+    } catch (err) {
+      console.warn('Backend saveSheet error:', err);
+    }
     if (customPdcaTopic) {
       setCustomPdcaTopic(prev => prev ? { ...prev, sheet: sheetSnapshot } : null);
     }
     setPdcaSaveVersion(v => v + 1);
+    await loadBackendPdcaSheets();
     setMessage({ text: 'PDCA form saved successfully.' });
   };
 
@@ -895,31 +1126,38 @@ function LpaPageContent({ viewContext }) {
       topic: `${secName} - LPA Observation (PDCA)`,
       scope: 'Company',
       plant: record.unit || selectedUnit || 'Bawal',
+      createdBy: record.createdBy,
+      createdById: record.createdById,
       sheet: loadedSheet
     });
     setActiveSubTab('pdca');
   };
 
-  if (isPdcaFormOpen && pdcaTopic) return <div className="fixed inset-0 z-40 h-dvh w-full bg-white text-slate-800 flex flex-col overflow-auto p-2 sm:p-4">
-    <PDCASheet
-      key={`${pdcaTopic.id}-${pdcaDate}`}
-      topic={pdcaTopic}
-      onBack={handleBackFromPDCA}
-      onSave={handleSavePDCA}
-      currentDate={pdcaDate}
-      onDateChange={setPdcaDate}
-      currentUser={authUser}
-      isCreator={true}
-      emailPdcaSheets={[{
-        id: pdcaTopic.id,
-        title: pdcaTopic.topic,
-        topic: pdcaTopic.topic,
-        section: activeSection,
-        unit: pdcaTopic.plant || selectedUnit,
-        date: pdcaDate
-      }]}
-    />
-  </div>;
+  if (isPdcaFormOpen && pdcaTopic) return (
+    <div className="fixed inset-0 z-40 h-dvh w-full bg-white text-slate-800 flex flex-col overflow-hidden p-1.5 sm:p-2 pb-0.5 sm:pb-1">
+      <PdcaErrorBoundary onBack={handleBackFromPDCA}>
+        <PDCASheet
+          key={`${pdcaTopic.id}-${pdcaDate}`}
+          topic={pdcaTopic}
+          onBack={handleBackFromPDCA}
+          onSave={handleSavePDCA}
+          currentDate={pdcaDate}
+          onDateChange={setPdcaDate}
+          currentUser={effectiveAuthUser}
+          isAdmin={isAdmin}
+          isCreator={isAdmin || isRecordCreator(pdcaTopic, effectiveAuthUser)}
+          emailPdcaSheets={[{
+            id: pdcaTopic.id,
+            title: pdcaTopic.topic,
+            topic: pdcaTopic.topic,
+            section: activeSection,
+            unit: pdcaTopic.plant || selectedUnit,
+            date: pdcaDate
+          }]}
+        />
+      </PdcaErrorBoundary>
+    </div>
+  );
 
   if (editor && sheet) return <div className="fixed inset-0 z-40 h-dvh w-full bg-white text-slate-800 flex flex-col overflow-hidden">
     <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-3 py-2 bg-white shrink-0">
@@ -1137,26 +1375,24 @@ function LpaPageContent({ viewContext }) {
                   </div>
 
                   <div className="flex items-center gap-2.5">
-                    {/* Create PDCA Option - Admin Only */}
-                    {isAdmin && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setNewPdcaForm({
-                            title: `${activeSection === 'assembly' ? 'Assembly' : 'C&C'} - PDCA Sheet #${allPdcaSheets.length + 1}`,
-                            date: pdcaDate || todayIso,
-                            unit: selectedUnit || 'Bawal',
-                            department: activeSection === 'assembly' ? 'Assembly' : 'C&C'
-                          });
-                          setIsCreatePdcaModalOpen(true);
-                        }}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 text-white font-semibold text-xs hover:bg-blue-700 transition-all cursor-pointer shadow-xs active:scale-98"
-                        title="Create new PDCA Sheet (Admin Only)"
-                      >
-                        <Plus size={15} />
-                        <span>Create PDCA</span>
-                      </button>
-                    )}
+                    {/* Create PDCA Option - Available to all users */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewPdcaForm({
+                          title: '',
+                          date: pdcaDate || todayIso,
+                          unit: selectedUnit || 'Bawal',
+                          department: activeSection === 'assembly' ? 'Assembly' : 'C&C'
+                        });
+                        setIsCreatePdcaModalOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 text-white font-semibold text-xs hover:bg-blue-700 transition-all cursor-pointer shadow-xs active:scale-98"
+                      title="Create new PDCA Sheet"
+                    >
+                      <Plus size={15} />
+                      <span>Create PDCA</span>
+                    </button>
                   </div>
                 </div>
 
@@ -1201,6 +1437,8 @@ function LpaPageContent({ viewContext }) {
                             const saved = localStorage.getItem(`lpa_pdca_saved_${sh.id}`);
                             if (saved) {
                               rows = JSON.parse(saved)?.rows || [];
+                            } else if (sh.sheet?.rows) {
+                              rows = sh.sheet.rows;
                             } else if (sh.isDefault) {
                               rows = pdcaTopic?.sheet?.rows || [];
                             }
@@ -1257,7 +1495,7 @@ function LpaPageContent({ viewContext }) {
                                   >
                                     <Eye size={14} /> Open
                                   </button>
-                                  {isAdmin && (
+                                  {canDeletePdcaSheet(sh) && (
                                     <button
                                       type="button"
                                       onClick={() => handleDeletePdcaSheet(sh)}
@@ -1279,19 +1517,9 @@ function LpaPageContent({ viewContext }) {
               </div>
             ) : (
               <div>
-                <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 p-3">
-                  {dateRangeControls}
-                  <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
-                    <CalendarDays size={17} />
-                    <span>Audit date</span>
-                    <input
-                      type="date"
-                      value={pdcaDate}
-                      onChange={event => setPdcaDate(event.target.value)}
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                    />
-                  </label>
-                  <label className="relative min-w-[240px] flex-1">
+                <div className="flex flex-nowrap items-center gap-2 rounded-xl border border-slate-100 p-3 overflow-x-auto">
+                  <div className="shrink-0">{dateRangeControls}</div>
+                  <label className="relative min-w-[180px] flex-1">
                     <Search size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input
                       value={searchQuery}
@@ -1300,17 +1528,17 @@ function LpaPageContent({ viewContext }) {
                       className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-blue-400"
                     />
                   </label>
-                  <button type="button" onClick={() => setIsSendMailOpen(true)} className="inline-flex items-center gap-1.5 rounded-lg border border-blue-600 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"><Mail size={15} />Send Mail</button>
+                  <button type="button" onClick={() => setIsSendMailOpen(true)} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-blue-600 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"><Mail size={15} />Send Mail</button>
                   <button
                     type="button"
                     disabled={busy || !selectedUnit}
                     onClick={handleOpenCreateModal}
-                    className={primary}
+                    className={`${primary} shrink-0`}
                     title="Create a new blank LPA check sheet"
                   >
                     <Plus size={16} />Create LPA
                   </button>
-                  <button type="button" onClick={exportAllRecords} className={button}>
+                  <button type="button" onClick={exportAllRecords} className={`${button} shrink-0`}>
                     <Download size={16} />Export Excel
                   </button>
                   {isAdmin && (
@@ -1318,7 +1546,7 @@ function LpaPageContent({ viewContext }) {
                       type="button"
                       disabled={busy || !selectedUnit}
                       onClick={() => { uploadSection.current = activeSection; fileInput.current?.click(); }}
-                      className={button}
+                      className={`${button} shrink-0`}
                       title="Upload Excel workbook (Admin only)"
                     >
                       <Upload size={16} />Upload Excel
@@ -1411,7 +1639,7 @@ function LpaPageContent({ viewContext }) {
                             <td className="px-4 py-4 text-slate-700">{secVal}</td>
                             <td className="px-4 py-4 text-slate-700">{lineVal}</td>
                             <td className="px-4 py-4 text-right">
-                              {record.id && canEditRecord(record, authUser) ? (
+                              {record.id && canDeleteWorkbook(record) ? (
                                 <button
                                   type="button"
                                   disabled={busy}
@@ -1432,7 +1660,7 @@ function LpaPageContent({ viewContext }) {
                   </table>
                   {visibleRecords.length === 0 && (
                     <p className="p-8 text-center text-sm text-slate-500">
-                      No {activeSection === 'assembly' ? 'Assembly' : 'C&C'} forms for {selectedUnit} on {pdcaDate}. Click "+ Create LPA" to create a check sheet.
+                      No {activeSection === 'assembly' ? 'Assembly' : 'C&C'} forms for {selectedUnit}. Click "+ Create LPA" to create a check sheet.
                     </p>
                   )}
                 </div>
@@ -1465,8 +1693,8 @@ function LpaPageContent({ viewContext }) {
         initialDate={pdcaDate}
       />
 
-      {/* Create New PDCA Sheet Modal (Admin Only) */}
-      {isCreatePdcaModalOpen && isAdmin && (
+      {/* Create New PDCA Sheet Modal - Available to all users */}
+      {isCreatePdcaModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
@@ -1474,9 +1702,6 @@ function LpaPageContent({ viewContext }) {
                 <ClipboardList className="text-blue-600" size={18} />
                 <span>Create New PDCA Sheet</span>
               </h3>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-                Admin Only
-              </span>
             </div>
             <form onSubmit={handleCreateCustomPdcaSheet} className="space-y-4">
               <div>
@@ -1518,9 +1743,11 @@ function LpaPageContent({ viewContext }) {
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Department</label>
                 <input
                   type="text"
+                  readOnly
+                  disabled
                   value={newPdcaForm.department}
-                  onChange={e => setNewPdcaForm(prev => ({ ...prev, department: e.target.value }))}
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none bg-slate-50"
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-slate-100 text-slate-500 cursor-not-allowed select-none focus:outline-none"
+                  title="Department is locked based on the active section"
                 />
               </div>
               <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
@@ -1549,7 +1776,7 @@ function LpaPageContent({ viewContext }) {
         title={`${activeSection === 'cc' ? 'C&C' : 'Assembly'} ${activeSubTab === 'pdca' ? 'PDCA' : 'LPA'} Sheet`}
         metadata={{ auditDate: pdcaDate, unit: selectedUnit, sectionName: activeSection === 'cc' ? 'C&C' : 'Assembly' }}
         pdcaLabel="LPA Observation PDCA"
-        assemblySheets={records}
+        assemblySheets={visibleRecords}
         pdcaSheets={emailPdcaSheets}
         onViewAssemblySheet={({ record, sheetIndex: selectedSheetIndex }) => {
           setIsSendMailOpen(false);

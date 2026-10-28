@@ -55,6 +55,13 @@ export function writeLpaStore(store) {
         const dir = path.dirname(LPA_STORE_PATH);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(LPA_STORE_PATH, JSON.stringify(store, null, 2), "utf-8");
+        if (fs.existsSync(LEGACY_STORE_PATH)) {
+            try {
+                fs.writeFileSync(LEGACY_STORE_PATH, JSON.stringify(store, null, 2), "utf-8");
+            } catch (err) {
+                logger.warn("Syncing legacy LPA persistence store failed:", err.message);
+            }
+        }
     } catch (e) {
         logger.error("Failed writing LPA persistence store:", e.message);
     }

@@ -629,8 +629,8 @@
             }
           },
           {
-            "value": "Is the attendance board and hourly production board updated.",
-            "formatted": "Is the attendance board and hourly production board updated.",
+            "value": "Is the hourly production board updated",
+            "formatted": "Is the hourly production board updated",
             "type": "s",
             "style": {
               "patternType": "none"
@@ -718,8 +718,8 @@
             }
           },
           {
-            "value": "Is the attendance board and hourly production board updated.",
-            "formatted": "Is the attendance board and hourly production board updated.",
+            "value": "Is the attendance board updated",
+            "formatted": "Is the attendance board updated",
             "type": "s",
             "style": {
               "patternType": "none"

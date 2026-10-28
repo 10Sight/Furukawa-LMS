@@ -211,9 +211,9 @@ export function PDCAProvider({ children }) {
   };
 
   const handleDeletePDCA = async (id) => {
-    const target = (data || []).find(record => String(record.id) === String(id));
-    if (target && !isRecordCreator(target, userContext?.user)) {
-      showToast('Forbidden: Only the employee who created this record can delete it.');
+    const isUserAdmin = Boolean(userContext?.user?.role === 'admin' || userContext?.user?.isAdmin);
+    if (!isUserAdmin) {
+      showToast('Forbidden: Only administrators have access to delete records.');
       return;
     }
     try {

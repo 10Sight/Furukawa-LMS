@@ -56,7 +56,7 @@ export function getWorksheetScoresList(sheet, record = null) {
 
   const isCc = String(record?.section || sheet.section || '').toLowerCase() === 'cc';
   const startRow = isCc ? 4 : 3;
-  const marksCol = isCc ? 5 : 4;
+  const marksCol = isCc ? 6 : 4;
   const startAuditCol = isCc ? 7 : 5;
 
   // Find legendStart
@@ -117,8 +117,13 @@ export function getWorksheetScoresList(sheet, record = null) {
       const isTotal = row.some(cell => /total/i.test(String(cell?.value ?? cell?.formatted ?? '')));
       if (isTotal) break;
 
-      const marksNum = Number(row[marksCol]?.value ?? row[marksCol]?.formatted ?? 1);
-      const safeMarks = Number.isFinite(marksNum) && marksNum > 0 ? marksNum : 1;
+      const marksValue = row[marksCol]?.value ?? row[marksCol]?.formatted;
+      const marksNum = Number(marksValue);
+      // C&C excludes rows without valid marks from its denominator; Assembly
+      // retains its existing one-mark fallback for legacy worksheets.
+      const safeMarks = isCc
+        ? (Number.isFinite(marksNum) && marksNum > 0 ? marksNum : 0)
+        : (Number.isFinite(marksNum) && marksNum > 0 ? marksNum : 1);
       const obs = normalizeObservationSymbol(row[pair.obsCol]?.value ?? row[pair.obsCol]?.formatted);
       const scoreVal = row[pair.scoreCol]?.value ?? row[pair.scoreCol]?.formatted;
 
@@ -164,16 +169,18 @@ export function getWorksheetScore(sheet, record = null) {
 
 
 export function createEmptyPdcaRow(customDefaults = {}) {
+  const rowDate = (customDefaults.date || '').trim();
   return {
-    date: customDefaults.date || '',
+    date: rowDate,
     shift: customDefaults.shift || '',
     lineArea: customDefaults.lineArea || '',
-    status: customDefaults.status || '',
+    status: customDefaults.status ? customDefaults.status : (rowDate ? 'Not-Started' : ''),
     observation: customDefaults.observation || '',
     imageBefore: customDefaults.imageBefore || null,
     imageBeforeName: customDefaults.imageBeforeName || '',
     fileTypeBefore: customDefaults.fileTypeBefore || 'image',
     rootCause: customDefaults.rootCause || '',
+    actionTaken: customDefaults.actionTaken || '',
     counterMeasure: customDefaults.counterMeasure || '',
     imageAfter: customDefaults.imageAfter || null,
     imageAfterName: customDefaults.imageAfterName || '',

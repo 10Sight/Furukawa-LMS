@@ -211,8 +211,8 @@ export default function CFTCardGrid({
                     <Copy className="w-3.5 h-3.5" />
                   </button>
 
-                  {/* Delete - Only visible to record creator */}
-                  {isRecordCreator(row, currentUser) && (
+                  {/* Delete - Only visible to administrators */}
+                  {Boolean(currentUser?.role === 'admin' || currentUser?.isAdmin) && (
                     <button
                       type="button"
                       onClick={() => handleDeleteClick(row.id)}

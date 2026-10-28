@@ -336,12 +336,11 @@ export class LpaRecord {
             updatedAt: r.updatedAt
           };
         }
-        // Email selection validates against the DB when connected. A disk
-        // fallback there could resurrect a workbook deleted from the DB.
-        if (authoritative) return null;
       } catch (err) {
-        if (authoritative) throw err;
-        logger.warn("Querying lpa_record by ID failed:", err.message);
+        logger.warn("Querying lpa_record by ID failed, falling back to disk store:", err.message);
+        if (err.message && err.message.includes("lpa_records")) {
+          initLpaTables().catch(() => {});
+        }
       }
     }
 
@@ -926,18 +925,38 @@ export class LpaRecord {
 
     if (dbActive) {
       try {
+        const [rows] = await executeQuery(
+          "SELECT id FROM lpa_records WHERE recordId = ? OR id = ?",
+          [idStr, isNaN(Number(idStr)) ? -1 : Number(idStr)]
+        );
+        const dbId = rows?.[0]?.id;
+        if (dbId) {
+          try { await executeQuery("DELETE FROM lpa_record_auditors WHERE recordId = ?", [dbId]); } catch (e) {
+            logger.warn("Deleting lpa_record_auditors failed:", e.message);
+          }
+          try { await executeQuery("DELETE FROM lpa_record_observations WHERE recordId = ?", [dbId]); } catch (e) {
+            logger.warn("Deleting lpa_record_observations failed:", e.message);
+          }
+          try { await executeQuery("DELETE FROM lpa_record_revisions WHERE recordId = ?", [dbId]); } catch (e) {
+            logger.warn("Deleting lpa_record_revisions failed:", e.message);
+          }
+        }
         await executeQuery("DELETE FROM lpa_records WHERE recordId = ? OR id = ?", [
           idStr,
           isNaN(Number(idStr)) ? -1 : Number(idStr)
         ]);
       } catch (err) {
-        logger.error("Failed deleting lpa_record from DB:", err.message);
-        throw err;
+        logger.error("Failed deleting lpa_record from DB, proceeding with disk store removal:", err.message);
       }
     }
 
     const store = readLpaStore();
-    store.records = (store.records || []).filter(r => String(r.id) !== idStr && String(r.recordId) !== idStr);
+    store.records = (store.records || []).filter(r =>
+      String(r.id) !== idStr &&
+      String(r.recordId || '') !== idStr &&
+      String(r._id || '') !== idStr &&
+      String(r.dbId || '') !== idStr
+    );
     writeLpaStore(store);
 
     return true;

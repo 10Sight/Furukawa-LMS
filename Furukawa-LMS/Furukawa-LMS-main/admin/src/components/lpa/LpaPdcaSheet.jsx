@@ -44,14 +44,14 @@ import {
   isUserResponsibleForRow,
   isUserInResponsibleDepartment
 } from '../../pages/pdca/data/recordFilters.js';
-import { parseStaffEmployee, findEmployeeDepartment, VERIFIED_EMPLOYEE_MASTER } from '../../pages/pdca/data/pdcaEmployees.js';
+import { parseStaffEmployee, findEmployeeDepartment, stripEmployeeId, VERIFIED_EMPLOYEE_MASTER } from '../../pages/pdca/data/pdcaEmployees.js';
 import SearchableLineAreaSelect, { getCachedDbSections } from '../pdca/SearchableLineAreaSelect';
 import SearchableSectionSelect, { VERIFIED_SECTION_MASTER, isSectionRelatedToDepartment } from '../pdca/SearchableSectionSelect';
 
 const createEmptyRow = (customDefaults = {}) => ({
   date: customDefaults.date || '',
   shift: customDefaults.shift || '',
-  status: customDefaults.status ? normalizePDCAStatus(customDefaults.status) : 'Not-Started',
+  status: customDefaults.status ? normalizePDCAStatus(customDefaults.status) : (customDefaults.date?.trim() ? 'Not-Started' : ''),
   department: customDefaults.department || '',
   section: customDefaults.section || '',
   sectionId: customDefaults.sectionId ?? customDefaults.lineAreaSectionId ?? null,
@@ -146,8 +146,29 @@ function AutoResizeTextarea({ value, onChange, onKeyDown, placeholder, className
 }
 
 // Compact Date Picker Cell
-function CompactDateCell({ value, onChange, smallText = false }) {
-  const hiddenInputRef = useRef(null);
+function CompactDateCell({ value, onChange, smallText = false, readOnly = false }) {
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [viewDate, setViewDate] = useState(() => {
+    const selected = value ? new Date(`${value}T12:00:00`) : null;
+    return selected && !Number.isNaN(selected.getTime())
+      ? new Date(selected.getFullYear(), selected.getMonth(), 1)
+      : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  });
+  const calendarRef = useRef(null);
+
+  useEffect(() => {
+    if (!calendarOpen) return undefined;
+    const closeOnOutsideClick = (event) => {
+      if (!calendarRef.current?.contains(event.target)) setCalendarOpen(false);
+    };
+    const closeOnEscape = (event) => { if (event.key === 'Escape') setCalendarOpen(false); };
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [calendarOpen]);
 
   const formatDisplay = (val) => {
     if (!val) return null;
@@ -167,45 +188,83 @@ function CompactDateCell({ value, onChange, smallText = false }) {
 
   const display = formatDisplay(value);
 
-  const handleClick = () => {
-    if (hiddenInputRef.current) {
-      if (typeof hiddenInputRef.current.showPicker === 'function') {
-        hiddenInputRef.current.showPicker();
-      } else {
-        hiddenInputRef.current.click();
-      }
-    }
+  const openCalendar = () => {
+    if (readOnly) return;
+    const selected = value ? new Date(`${value}T12:00:00`) : null;
+    if (selected && !Number.isNaN(selected.getTime())) setViewDate(selected);
+    setCalendarOpen(true);
+  };
+
+  const monthStart = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
+  const daysInMonth = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0).getDate();
+  const leadingDays = (monthStart.getDay() + 6) % 7;
+  const calendarDays = [...Array(leadingDays).fill(null), ...Array.from({ length: daysInMonth }, (_, index) => index + 1)];
+  while (calendarDays.length % 7) calendarDays.push(null);
+  const selectedDate = value || '';
+  const viewedMonth = viewDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+
+  const shiftMonth = (offset) => setViewDate((current) => new Date(current.getFullYear(), current.getMonth() + offset, 1));
+  const selectDay = (day) => {
+    if (!day) return;
+    const month = String(viewDate.getMonth() + 1).padStart(2, '0');
+    const date = String(day).padStart(2, '0');
+    onChange(`${viewDate.getFullYear()}-${month}-${date}`);
+    setCalendarOpen(false);
   };
 
   return (
     <div
-      onClick={handleClick}
-      className="relative w-full h-full min-h-[38px] flex flex-col items-center justify-center cursor-pointer hover:bg-blue-50/50 transition-colors py-1 group select-none px-0.5"
+      className="relative w-full h-full min-h-[38px] flex flex-col items-center justify-center hover:bg-blue-50/50 transition-colors py-1 group select-none px-0.5"
       title={value ? `Date: ${value} (Click to change)` : 'Click to select date'}
     >
-      <input
-        ref={hiddenInputRef}
-        type="date"
-        value={value || ''}
-        onChange={(e) => onChange(e.target.value)}
-        className="sr-only"
-        tabIndex={-1}
-      />
-
       {display ? (
-        <div className="flex flex-col items-center leading-none text-center pointer-events-none">
-          <span className={`${smallText ? 'text-[12px]' : 'text-[15px]'} font-bold text-slate-800 tracking-tight`}>
-            {display.line1}
-          </span>
-          {display.line2 && (
-            <span className={`${smallText ? 'text-[10px]' : 'text-[13px]'} font-semibold text-slate-500 mt-0.5`}>
-              /{display.line2}
-            </span>
-          )}
-        </div>
+        <>
+          <button type="button" disabled={readOnly} onClick={openCalendar} className="flex min-w-0 flex-col items-center leading-none text-center disabled:cursor-default" aria-label={value ? `Change response date, ${display.line1}/${display.line2}` : 'Select response date'}>
+            <span className="text-[14px] font-bold text-slate-800 tracking-tight">{display.line1}</span>
+            {display.line2 && <span className="text-[13px] font-semibold text-slate-500 mt-0.5">/{display.line2}</span>}
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onChange('');
+            }}
+            className="absolute right-0.5 top-0.5 z-20 opacity-0 group-hover:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-0.5 transition-all rounded cursor-pointer shadow-2xs"
+            title="Clear date"
+          >
+            <X className="w-2.5 h-2.5 stroke-[2.5]" />
+          </button>
+        </>
       ) : (
-        <div className="w-full flex items-center justify-center text-center pointer-events-none">
+        <button type="button" disabled={readOnly} onClick={openCalendar} className="w-full flex items-center justify-center text-center disabled:cursor-default" aria-label="Select response date">
           <Calendar className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors mx-auto" />
+        </button>
+      )}
+
+      {calendarOpen && (
+        <div ref={calendarRef} className="absolute left-1/2 top-full z-[100] mt-1 w-64 -translate-x-1/2 rounded-xl border border-slate-200 bg-white p-3 text-left shadow-xl" onClick={(event) => event.stopPropagation()} onMouseDown={(event) => event.stopPropagation()}>
+          <div className="mb-2 flex items-center justify-between">
+            <div className="flex gap-1">
+              <button type="button" onClick={(event) => { event.stopPropagation(); setViewDate((current) => new Date(current.getFullYear() - 1, current.getMonth(), 1)); }} className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-blue-600" aria-label="Previous year"><ChevronUp className="h-3.5 w-3.5" /></button>
+              <button type="button" onClick={(event) => { event.stopPropagation(); shiftMonth(-1); }} className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-blue-600" aria-label="Previous month"><ChevronDown className="h-4 w-4 rotate-90" /></button>
+            </div>
+            <span className="text-xs font-semibold text-slate-800">{viewedMonth}</span>
+            <div className="flex gap-1">
+              <button type="button" onClick={(event) => { event.stopPropagation(); shiftMonth(1); }} className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-blue-600" aria-label="Next month"><ChevronDown className="h-4 w-4 -rotate-90" /></button>
+              <button type="button" onClick={(event) => { event.stopPropagation(); setViewDate((current) => new Date(current.getFullYear() + 1, current.getMonth(), 1)); }} className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-blue-600" aria-label="Next year"><ChevronUp className="h-3.5 w-3.5 rotate-180" /></button>
+            </div>
+          </div>
+          <div className="mb-1 grid grid-cols-7 text-center text-[10px] font-semibold text-slate-400">
+            {['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map((day) => <span key={day} className="py-1">{day}</span>)}
+          </div>
+          <div className="grid grid-cols-7 gap-0.5">
+            {calendarDays.map((day, index) => {
+              const dayValue = day ? `${viewDate.getFullYear()}-${String(viewDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}` : '';
+              return day ? (
+                <button key={dayValue} type="button" onClick={(event) => { event.stopPropagation(); selectDay(day); }} className={`rounded-md py-1.5 text-[11px] hover:bg-blue-50 hover:text-blue-700 ${selectedDate && dayValue === selectedDate ? 'bg-blue-600 font-semibold text-white hover:bg-blue-700 hover:text-white' : 'text-slate-700'}`}>{day}</button>
+              ) : <span key={`empty-${index}`} />;
+            })}
+          </div>
         </div>
       )}
     </div>
@@ -315,13 +374,20 @@ export default function LpaPdcaSheet({
 
       if (!staffEmployee) {
         staffEmployee = staffEmployees
-          .map((e) => ((e.code || e.empId) ? `${e.name || e.fullName} (${e.code || e.empId})` : (e.name || e.fullName)))
+          .map((e) => (e.name || e.fullName || ''))
+          .join(', ');
+      } else {
+        // Strip any (CODE) suffixes from stored staffEmployee display string
+        staffEmployee = staffEmployees
+          .map((e) => stripEmployeeId(e.name || e.fullName || ''))
           .join(', ');
       }
       if (!staffName) staffName = staffEmployees[0].name || staffEmployees[0].fullName || '';
       if (!staffId) staffId = staffEmployees[0].code || staffEmployees[0].empId || '';
     } else if (staffEmployee) {
-      const parts = staffEmployee.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+      // Strip IDs from stored string before re-parsing
+      const cleanedEmployee = stripEmployeeId(staffEmployee);
+      const parts = cleanedEmployee.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
       staffEmployees = parts.map((part) => {
         const { name, code } = parseStaffEmployee(part);
         const dbDept = findEmployeeDepartment(part, dbEmployees) ||
@@ -329,6 +395,7 @@ export default function LpaPdcaSheet({
         const dept = dbDept || (row.department && row.department !== 'CFT' ? row.department : '');
         return { name, code, department: dept };
       });
+      staffEmployee = cleanedEmployee;
       if (!staffName || !staffId) {
         const primary = parseStaffEmployee(staffEmployee);
         if (!staffName) staffName = primary.name || '';
@@ -338,8 +405,8 @@ export default function LpaPdcaSheet({
       const dbDept = findEmployeeDepartment(`${staffName} (${staffId})`, dbEmployees) ||
         findEmployeeDepartment(`${staffName} (${staffId})`, VERIFIED_EMPLOYEE_MASTER);
       const dept = dbDept || (row.department && row.department !== 'CFT' ? row.department : '');
-      staffEmployee = staffId ? `${staffName} (${staffId})` : staffName;
-      staffEmployees = [{ name: staffName, code: staffId, department: dept }];
+      staffEmployee = stripEmployeeId(staffName);
+      staffEmployees = [{ name: stripEmployeeId(staffName), code: staffId, department: dept }];
     }
 
     let confirmation = (row.confirmation || '').trim();
@@ -654,7 +721,7 @@ export default function LpaPdcaSheet({
     const raw = topic?.sheet?.headerInfo || {};
     return {
       topicName: raw.topicName && raw.topicName !== 'PDCA - M Tanaka San Audit' ? raw.topicName : defaultLpaTopic,
-      preparedBy: raw.preparedBy || '',
+      preparedBy: stripEmployeeId(raw.preparedBy || ''),
       auditNo: raw.auditNo || '',
       attendees: raw.attendees || ''
     };
@@ -752,7 +819,8 @@ export default function LpaPdcaSheet({
       onSave?.(sheetSnapshot);
       return true;
     } catch (error) {
-      notify(error.message || 'Could not save PDCA form. Please try again.', 'error');
+      const errorMsg = error?.response?.data?.message || error?.response?.data?.error || error?.message || 'Could not save PDCA form. Please try again.';
+      notify(errorMsg, 'error');
       return false;
     } finally {
       setIsSaving(false);
@@ -945,18 +1013,32 @@ export default function LpaPdcaSheet({
   const employeeOptionList = useMemo(() => {
     const map = new Map();
     dbEmployees.forEach((emp) => {
-      const label = emp.code ? `${emp.name} (${emp.code})` : emp.name;
-      map.set(label, {
-        label,
-        name: emp.name,
-        code: emp.code || '',
-        department: emp.department || ''
-      });
+      const label = emp.name;
+      if (!map.has(label)) {
+        map.set(label, {
+          label,
+          name: emp.name,
+          code: emp.code || '',
+          department: emp.department || ''
+        });
+      }
+    });
+
+    VERIFIED_EMPLOYEE_MASTER.forEach((emp) => {
+      const label = emp.name;
+      if (!map.has(label)) {
+        map.set(label, {
+          label,
+          name: emp.name,
+          code: emp.code || '',
+          department: emp.department || ''
+        });
+      }
     });
 
     (topic?.assignedMembers || []).forEach((m) => {
       if (m?.name) {
-        const label = m.code ? `${m.name} (${m.code})` : m.name;
+        const label = m.name;
         if (!map.has(label)) {
           map.set(label, {
             label,
@@ -1073,22 +1155,22 @@ export default function LpaPdcaSheet({
         if (personObj) {
           const personDept = personObj.department || findEmployeeDepartment(personObj.code ? `${personObj.name} (${personObj.code})` : personObj.name, dbEmployees) || '';
           newStaffEmployees = [{
-            name: personObj.name,
+            name: stripEmployeeId(personObj.name),
             code: personObj.code || '',
             department: personDept
           }];
-          newStaffEmployee = personObj.code ? `${personObj.name} (${personObj.code})` : personObj.name;
+          newStaffEmployee = stripEmployeeId(personObj.name);
           if (personDept && !newDept) newDept = personDept;
         } else if (Array.isArray(topicObj.assignedEmployees) && topicObj.assignedEmployees.length > 0) {
           newStaffEmployees = topicObj.assignedEmployees.map((ae) => {
             const aeDept = ae.department || findEmployeeDepartment(ae.code ? `${ae.name} (${ae.code})` : ae.name, dbEmployees) || '';
             return {
-              name: ae.name,
+              name: stripEmployeeId(ae.name),
               code: ae.code || '',
               department: aeDept
             };
           });
-          newStaffEmployee = newStaffEmployees.map(e => e.code ? `${e.name} (${e.code})` : e.name).join(', ');
+          newStaffEmployee = newStaffEmployees.map(e => e.name).join(', ');
           if (newStaffEmployees[0]?.department && !newDept) {
             newDept = newStaffEmployees[0].department;
           }
@@ -1138,11 +1220,12 @@ export default function LpaPdcaSheet({
   const [staffEmployeeModal, setStaffEmployeeModal] = useState({
     isOpen: false,
     rowIndex: null,
+    department: null,
     initialValue: '',
     initialEmployees: null
   });
 
-  const handleOpenAddStaffModal = (rowIndex) => {
+  const handleOpenAddStaffModal = (rowIndex, department = null) => {
     const row = rows[rowIndex];
     const existing = Array.isArray(row?.staffEmployees) && row.staffEmployees.length > 0
       ? row.staffEmployees
@@ -1158,13 +1241,15 @@ export default function LpaPdcaSheet({
           : []);
 
     // When clicking (+) on an existing group, append an empty row for immediate entry
-    const initialEmployees = existing.length > 0
-      ? [...existing, { name: '', code: '', department: '' }]
+    const scopedExisting = department ? existing.filter((employee) => employee.department === department) : existing;
+    const initialEmployees = scopedExisting.length > 0
+      ? [...scopedExisting, { name: '', code: '', department: department || '' }]
       : [{ name: '', code: '', department: '' }];
 
     setStaffEmployeeModal({
       isOpen: true,
       rowIndex,
+      department,
       initialValue: row?.staffEmployee || '',
       initialEmployees
     });
@@ -1192,7 +1277,7 @@ export default function LpaPdcaSheet({
         };
       } else {
         const formatted = currentList
-          .map((e) => (e.code ? `${e.name} (${e.code})` : e.name))
+          .map((e) => stripEmployeeId(e.name || ''))
           .join(', ');
         const primary = currentList[0];
         updated[rowIndex] = {
@@ -1247,24 +1332,26 @@ export default function LpaPdcaSheet({
           };
         });
 
-    const matchedDept = findEmployeeDepartment(trimmedStaff, dbEmployees);
+    const matchedDept = findEmployeeDepartment(trimmedStaff, dbEmployees) || findEmployeeDepartment(trimmedStaff, VERIFIED_EMPLOYEE_MASTER);
 
     setRows((prev) => {
       const updated = [...prev];
       const currentRow = updated[rowIndex] || {};
 
+      const cleanStaff = stripEmployeeId(trimmedStaff);
       const newRow = {
         ...currentRow,
-        staffEmployee: trimmedStaff,
-        staffEmployees: employeesArray,
-        staffName: staffName || currentRow.staffName || '',
+        staffEmployee: cleanStaff,
+        staffEmployees: employeesArray.map((e) => ({ ...e, name: stripEmployeeId(e.name || ''), department: e.department || matchedDept || '' })),
+        staffName: stripEmployeeId(staffName || currentRow.staffName || ''),
         staffId: staffCode || currentRow.staffId || '',
         employeeId: staffCode || currentRow.employeeId || '',
-        responsiblePersonConfirmation: trimmedStaff
+        responsiblePersonConfirmation: cleanStaff
       };
 
       if (matchedDept) {
         newRow.department = matchedDept;
+        newRow.responsiblePersonDept = matchedDept;
       }
 
       updated[rowIndex] = newRow;
@@ -1277,6 +1364,21 @@ export default function LpaPdcaSheet({
   };
 
   const handleSaveStaffEmployee = (rowIndex, fullStaffString, employeeList = []) => {
+    if (staffEmployeeModal.department) {
+      const department = staffEmployeeModal.department;
+      setRows((prev) => prev.map((row, index) => {
+        if (index !== rowIndex) return row;
+        const current = Array.isArray(row.staffEmployees) ? row.staffEmployees : [];
+        const staffEmployees = [
+          ...current.filter((employee) => employee.department !== department),
+          ...employeeList.filter((employee) => employee.name).map((employee) => ({ ...employee, department }))
+        ];
+        const primary = staffEmployees[0] || {};
+        const staffEmployee = staffEmployees.map((employee) => stripEmployeeId(employee.name || '')).join(', ');
+        return { ...row, staffEmployees, staffEmployee, staffName: primary.name || '', staffId: primary.code || '', employeeId: primary.code || '', responsiblePersonConfirmation: staffEmployee };
+      }));
+      return;
+    }
     handleSelectStaffMember(rowIndex, fullStaffString, employeeList);
   };
 
@@ -1471,7 +1573,19 @@ export default function LpaPdcaSheet({
 
       let updatedRow = { ...curr, [field]: value };
 
-      if (field === 'responseDate') {
+      if (field === 'date') {
+        const hasDate = Boolean(value?.trim());
+        const normStatus = normalizePDCAStatus(curr.status);
+        if (hasDate) {
+          if (!normStatus || normStatus === 'Not-Started') {
+            updatedRow.status = updatedRow.responseDate ? computePDCAStatus(updatedRow, currentDate) : 'Not-Started';
+          }
+        } else {
+          if (!normStatus || normStatus === 'Not-Started') {
+            updatedRow.status = '';
+          }
+        }
+      } else if (field === 'responseDate') {
         const nextStatus = computePDCAStatus(updatedRow, currentDate);
         updatedRow.status = nextStatus;
       } else if (field === 'status') {
@@ -1500,9 +1614,12 @@ export default function LpaPdcaSheet({
       const resolvedUser = userName || effectiveUser?.fullName || effectiveUser?.name || 'Administrator';
       let nextConfirmedBy = curr.confirmedBy || '';
 
-      if (value === 'Confirmed') {
+      const isConf = value === 'Confirmed' || value === 'Confirm';
+      const isNotConf = value === 'Not - Confirmed' || value === 'Not-Confirmed' || value === 'Not-Confirm';
+
+      if (isConf) {
         nextConfirmedBy = resolvedUser;
-      } else if (value === 'Not - Confirmed' || value === 'Not-Confirmed') {
+      } else if (isNotConf) {
         nextConfirmedBy = resolvedUser;
       } else {
         nextConfirmedBy = '';
@@ -1514,7 +1631,14 @@ export default function LpaPdcaSheet({
         confirmedBy: nextConfirmedBy
       };
 
-      const nextStatus = computePDCAStatus(tempRow, currentDate);
+      let nextStatus = '';
+      if (isConf) {
+        nextStatus = 'Done';
+      } else if (isNotConf) {
+        nextStatus = 'In- Progress';
+      } else {
+        nextStatus = computePDCAStatus(tempRow, currentDate);
+      }
 
       updated[rowIndex] = {
         ...tempRow,
@@ -1748,22 +1872,6 @@ export default function LpaPdcaSheet({
               <BarChart3 className="w-3.5 h-3.5 text-indigo-600" />
               <span>PDCA Graph</span>
             </button>
-            {/* Live Cumulative Points Badge */}
-            <button
-              type="button"
-              onClick={() => setShowMonthlyGraph(true)}
-              title="Live cumulative points of all PDCA Month analysis across this sheet. Click to open detailed monthly graph & table."
-              className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100/80 border border-indigo-200 text-indigo-900 text-xs font-semibold shadow-2xs transition-all cursor-pointer flex-shrink-0"
-            >
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-slate-600 font-medium">Cumulative Points:</span>
-                <span className="font-mono font-black text-indigo-700 text-xs sm:text-[13px]">{liveCumulativeStats.total}</span>
-              </span>
-              <span className="text-[10px] text-slate-500 hidden lg:inline">
-                (Done: <span className="text-emerald-700 font-bold">{liveCumulativeStats.done}</span>, In-Prog: <span className="text-amber-700 font-bold">{liveCumulativeStats.inProgress}</span>, Delay: <span className="text-rose-700 font-bold">{liveCumulativeStats.delay}</span>)
-              </span>
-            </button>
           </div>
 
           {/* Right: Search & Add Row */}
@@ -1859,8 +1967,8 @@ export default function LpaPdcaSheet({
                   >
                     <input
                       type="text"
-                      value={headerInfo.preparedBy}
-                      onChange={(e) => setHeaderInfo({ ...headerInfo, preparedBy: e.target.value })}
+                      value={stripEmployeeId(headerInfo.preparedBy)}
+                      onChange={(e) => setHeaderInfo({ ...headerInfo, preparedBy: stripEmployeeId(e.target.value) })}
                       className="w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-900 font-medium text-xs focus:bg-blue-50/20"
                     />
                   </th>
@@ -1956,7 +2064,7 @@ export default function LpaPdcaSheet({
                 {/* Row 4: Column Headers - Main Group */}
                 <tr className="bg-white border-b border-[#B0BEC5] text-slate-700 font-bold text-[10px] select-none">
                   {/* 1. Date */}
-                  <th rowSpan={2} className="py-1 px-0.5 w-[56px] min-w-[52px] text-center border-r border-[#B0BEC5]">
+                  <th rowSpan={2} className="py-1 px-1 w-[110px] min-w-[105px] text-center border-r border-[#B0BEC5]">
                     <span>Date</span> <span className="text-red-500 font-bold">*</span>
                   </th>
 
@@ -2182,7 +2290,7 @@ export default function LpaPdcaSheet({
                       className="border-b border-[#64748B] hover:bg-[#F8FAFC] transition-colors"
                     >
                       {/* 1. Date */}
-                      <td className="p-0 align-middle text-center border-r border-[#64748B] w-[56px] min-w-[52px]">
+                      <td className="p-0 align-middle text-center border-r border-[#64748B] w-[110px] min-w-[105px]">
                         <CompactDateCell
                           value={row.date}
                           readOnly={!canEditEntireRow}
@@ -2197,7 +2305,7 @@ export default function LpaPdcaSheet({
                             disabled={!canEditEntireRow}
                             value={row.shift === 'General' ? 'G' : (row.shift || '')}
                             onChange={(e) => handleCellChange(idx, 'shift', e.target.value)}
-                            className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-base text-slate-800 font-semibold text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors appearance-none ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer'}`}
+                            className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[14px] text-slate-800 font-semibold text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors appearance-none ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer'}`}
                           >
                             <option value="">-</option>
                             <option value="A">A</option>
@@ -2212,29 +2320,41 @@ export default function LpaPdcaSheet({
                       </td>
 
                       {/* 3. S.No */}
-                      <td className="p-0.5 align-middle text-center border-r border-[#64748B] font-semibold text-slate-600 bg-[#FAFAFA] select-none w-[34px] min-w-[30px] text-base">
+                      <td className="p-0.5 align-middle text-center border-r border-[#64748B] font-semibold text-slate-600 bg-[#FAFAFA] select-none w-[34px] min-w-[30px] text-[14px]">
                         {sNo}
                       </td>
 
                       {/* 4. Status */}
                       <td className="px-0.5 py-1 align-middle text-center border-r border-[#64748B] w-[124px] min-w-[118px]">
-                        <select
-                          disabled={!canEditEntireRow}
-                          aria-label={`Status for row ${sNo}`}
-                          value={normalizePDCAStatus(row.status)}
-                          onChange={(event) => handleCellChange(idx, 'status', event.target.value)}
-                          className={`w-full min-w-full rounded-md border px-1.5 py-1.5 text-[15px] font-medium outline-none text-center whitespace-nowrap ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer focus:ring-2 focus:ring-blue-300'} ${
-                            normalizePDCAStatus(row.status) === 'Done' ? 'bg-green-50 text-green-700 border-green-200' :
-                            normalizePDCAStatus(row.status) === 'In- Progress' ? 'bg-yellow-50 text-yellow-800 border-yellow-300' :
-                            normalizePDCAStatus(row.status) === 'Delay' ? 'bg-red-50 text-red-700 border-red-200' :
-                            'bg-blue-50 text-blue-700 border-blue-200'
-                          }`}
-                        >
-                          <option value="Not-Started" style={{color:'#1d4ed8',backgroundColor:'#eff6ff'}}>Not-Started</option>
-                          <option value="Done" style={{color:'#15803d',backgroundColor:'#f0fdf4'}}>Done</option>
-                          <option value="In- Progress" style={{color:'#854d0e',backgroundColor:'#fefce8'}}>In- Progress</option>
-                          <option value="Delay" style={{color:'#b91c1c',backgroundColor:'#fef2f2'}}>Delay</option>
-                        </select>
+                        {(() => {
+                          const hasDate = Boolean(row.date?.trim());
+                          const norm = normalizePDCAStatus(row.status);
+                          const rowStatus = hasDate
+                            ? (norm || 'Not-Started')
+                            : (norm && norm !== 'Not-Started' ? norm : '');
+                          return (
+                            <select
+                              disabled={true}
+                              tabIndex={-1}
+                              aria-label={`Status for row ${sNo}`}
+                              value={rowStatus}
+                              onChange={(event) => handleCellChange(idx, 'status', event.target.value)}
+                              className={`w-full min-w-full rounded-md border px-1.5 py-1.5 text-[14px] font-medium outline-none text-center whitespace-nowrap pointer-events-none cursor-not-allowed select-none ${
+                                rowStatus === 'Done' ? 'bg-green-50 text-green-700 border-green-200' :
+                                rowStatus === 'In- Progress' ? 'bg-yellow-50 text-yellow-800 border-yellow-300' :
+                                rowStatus === 'Delay' ? 'bg-red-50 text-red-700 border-red-200' :
+                                rowStatus === 'Not-Started' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                'bg-slate-50 text-slate-400 border-slate-200'
+                              }`}
+                            >
+                              <option value="">Select</option>
+                              <option value="Not-Started" style={{color:'#1d4ed8',backgroundColor:'#eff6ff'}}>Not-Started</option>
+                              <option value="Done" style={{color:'#15803d',backgroundColor:'#f0fdf4'}}>Done</option>
+                              <option value="In- Progress" style={{color:'#854d0e',backgroundColor:'#fefce8'}}>In- Progress</option>
+                              <option value="Delay" style={{color:'#b91c1c',backgroundColor:'#fef2f2'}}>Delay</option>
+                            </select>
+                          );
+                        })()}
                       </td>
 
                       {/* 5. Department */}
@@ -2335,14 +2455,18 @@ export default function LpaPdcaSheet({
                           onChange={(e) => handleCellChange(idx, 'observation', e.target.value)}
                           onKeyDown={(e) => handleKeyDown(e, idx, 'observation')}
                           placeholder=""
-                          className="w-full bg-transparent border-0 outline-none p-1 text-base text-slate-800 text-center leading-normal focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block whitespace-pre-wrap break-words"
+                          className="w-full bg-transparent border-0 outline-none p-1 text-[14px] text-slate-800 text-center leading-normal focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block whitespace-pre-wrap break-words"
                         />
                       </td>
 
                       {/* 7. Image Before - High visibility preview with preserved aspect ratio */}
-                      <td className="p-1.5 align-middle text-center border-r border-[#64748B] w-[130px] min-w-[120px]">
+                      <td className={`align-middle text-center border-r border-[#64748B] w-[130px] min-w-[120px] ${
+                        row.imageBefore && (!row.fileTypeBefore || row.fileTypeBefore === 'image') ? 'p-0 overflow-hidden' : 'p-1.5'
+                      }`}>
                         {row.imageBefore ? (
-                          <div className="flex items-center justify-center w-full min-h-[90px] py-1">
+                          <div className={`flex items-center justify-center w-full ${
+                            row.fileTypeBefore && row.fileTypeBefore !== 'image' ? 'min-h-[90px] py-1' : 'h-full min-h-[90px] p-0 m-0 overflow-hidden'
+                          }`}>
                             <button
                               type="button"
                               onClick={() => setSelectedImageAction({
@@ -2352,7 +2476,11 @@ export default function LpaPdcaSheet({
                                 fileType: row.fileTypeBefore,
                                 fileName: row.imageBeforeName
                               })}
-                              className="group relative inline-flex items-center justify-center p-1 rounded-lg border-2 border-slate-400 hover:border-blue-500 hover:ring-2 hover:ring-blue-100 transition-all cursor-pointer bg-slate-50 shadow-sm overflow-hidden max-w-full"
+                              className={`group relative inline-flex items-center justify-center cursor-pointer overflow-hidden max-w-full ${
+                                row.fileTypeBefore && row.fileTypeBefore !== 'image'
+                                  ? 'p-1 rounded-lg border-2 border-slate-400 hover:border-blue-500 hover:ring-2 hover:ring-blue-100 transition-all bg-slate-50 shadow-sm'
+                                  : 'w-full h-full p-0 m-0 border-0 rounded-none bg-transparent block group/imgcell'
+                              }`}
                               title={`Click to view ${row.imageBeforeName || 'file'}, edit or delete`}
                             >
                               {row.fileTypeBefore === 'excel' ? (
@@ -2377,14 +2505,20 @@ export default function LpaPdcaSheet({
                                   </span>
                                 </div>
                               ) : (
-                                <div className="relative flex items-center justify-center">
+                                <div className="relative w-full h-full min-h-[90px] flex items-center justify-center p-0 m-0 overflow-hidden group/imgcell">
                                   <img
                                     src={row.imageBefore}
                                     alt="Before"
-                                    className="h-20 w-auto max-w-[110px] max-h-[85px] object-contain rounded transition-transform group-hover:scale-105"
+                                    className="w-full h-full object-cover block m-0 p-0 transition-transform duration-200 group-hover/imgcell:scale-105"
+                                    style={{ minHeight: '90px', maxHeight: '240px' }}
                                   />
-                                  <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded transition-opacity text-white">
-                                    <Eye className="w-4 h-4 drop-shadow" />
+                                  <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover/imgcell:opacity-100 flex items-center justify-center transition-opacity duration-150 pointer-events-none">
+                                    <span className="flex items-center gap-1.5 bg-black/75 backdrop-blur-xs px-2.5 py-1 rounded-md text-[11px] font-semibold text-white shadow-md">
+                                      <Eye className="w-3.5 h-3.5" />
+                                      <span>View</span>
+                                      <span className="text-white/60">•</span>
+                                      <span>1 Photo</span>
+                                    </span>
                                   </div>
                                 </div>
                               )}
@@ -2422,7 +2556,7 @@ export default function LpaPdcaSheet({
                           onChange={(e) => handleCellChange(idx, 'rootCause', e.target.value)}
                           onKeyDown={(e) => handleKeyDown(e, idx, 'rootCause')}
                           placeholder={canEditActionCols ? "Root cause..." : ""}
-                          className="w-full bg-transparent border-0 outline-none p-1 text-base text-slate-800 text-center leading-normal focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center whitespace-pre-wrap break-words"
+                          className="w-full bg-transparent border-0 outline-none p-1 text-[14px] text-slate-800 text-center leading-normal focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center whitespace-pre-wrap break-words"
                         />
                       </td>
 
@@ -2442,14 +2576,20 @@ export default function LpaPdcaSheet({
                           onChange={(e) => handleCellChange(idx, 'counterMeasure', e.target.value)}
                           onKeyDown={(e) => handleKeyDown(e, idx, 'counterMeasure')}
                           placeholder={canEditActionCols ? "Counter measure..." : ""}
-                          className="w-full bg-transparent border-0 outline-none p-1 text-base text-slate-800 text-center leading-normal focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center whitespace-pre-wrap break-words"
+                          className="w-full bg-transparent border-0 outline-none p-1 text-[14px] text-slate-800 text-center leading-normal focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-center whitespace-pre-wrap break-words"
                         />
                       </td>
 
                       {/* 10. Image After */}
-                      <td className="p-1 align-middle text-center border-r border-[#64748B] w-[85px] min-w-[80px]">
+                      <td className={`align-middle text-center border-r border-[#64748B] w-[85px] min-w-[80px] ${
+                        row.imageAfter && (!row.fileTypeAfter || row.fileTypeAfter === 'image') ? 'p-0 overflow-hidden' : 'p-1'
+                      }`}>
                         {row.imageAfter ? (
-                          <div className="relative group mx-auto w-12 h-12 rounded-lg border border-slate-200 overflow-hidden shadow-2xs">
+                          <div className={`relative ${
+                            row.fileTypeAfter && row.fileTypeAfter !== 'image'
+                              ? 'group mx-auto w-12 h-12 rounded-lg border border-slate-200 overflow-hidden shadow-2xs'
+                              : 'w-full h-full min-h-[90px] flex items-center justify-center p-0 m-0 overflow-hidden group/imgcell'
+                          }`}>
                             {row.fileTypeAfter === 'excel' ? (
                               <div
                                 onClick={() => setSelectedImageAction({
@@ -2499,17 +2639,28 @@ export default function LpaPdcaSheet({
                                 </span>
                               </div>
                             ) : (
-                              <img
-                                src={row.imageAfter}
-                                alt="After"
-                                onClick={() => setSelectedImageAction({
-                                  type: 'after',
-                                  rowIndex: idx,
-                                  preview: row.imageAfter,
-                                  fileType: 'image'
-                                })}
-                                className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
-                              />
+                              <div className="relative w-full h-full min-h-[90px] flex items-center justify-center p-0 m-0 overflow-hidden group/imgcell">
+                                <img
+                                  src={row.imageAfter}
+                                  alt="After"
+                                  onClick={() => setSelectedImageAction({
+                                    type: 'after',
+                                    rowIndex: idx,
+                                    preview: row.imageAfter,
+                                    fileType: 'image'
+                                  })}
+                                  className="w-full h-full object-cover cursor-pointer block m-0 p-0 transition-transform duration-200 group-hover/imgcell:scale-105"
+                                  style={{ minHeight: '90px', maxHeight: '240px' }}
+                                />
+                                <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover/imgcell:opacity-100 flex items-center justify-center transition-opacity duration-150 pointer-events-none">
+                                  <span className="flex items-center gap-1.5 bg-black/75 backdrop-blur-xs px-2.5 py-1 rounded-md text-[11px] font-semibold text-white shadow-md">
+                                    <Eye className="w-3.5 h-3.5" />
+                                    <span>View</span>
+                                    <span className="text-white/60">•</span>
+                                    <span>1 Photo</span>
+                                  </span>
+                                </div>
+                              </div>
                             )}
                           </div>
                         ) : canEditActionCols ? (
@@ -2538,14 +2689,14 @@ export default function LpaPdcaSheet({
                           min="0"
                           step="any"
                           value={String(row.stdDurationMin ?? '').replace(/\s*min$/i, '')}
-                          disabled={!canEditActionCols}
+                          disabled={!canEditActionCols || !row.responseDate?.trim()}
                           required={Boolean(row.responseDate?.trim())}
                           aria-required={row.responseDate?.trim() ? 'true' : undefined}
                           aria-invalid={row.responseDate?.trim() && !hasValidStdDuration(row.stdDurationMin ?? row.stdDuration) ? 'true' : undefined}
                           data-required-action-allowed={row.responseDate?.trim() && !hasValidStdDuration(row.stdDurationMin ?? row.stdDuration) ? 'true' : undefined}
                           onChange={(event) => handleCellChange(idx, 'stdDurationMin', event.target.value)}
                           placeholder="-"
-                          className={`w-full outline-none px-0.5 py-1 text-[11px] text-center ${row.responseDate?.trim() && !hasValidStdDuration(row.stdDurationMin ?? row.stdDuration) ? 'border border-red-500 bg-red-50 text-red-800 rounded' : 'border-0 bg-transparent'} ${!canEditActionCols ? 'cursor-default' : 'focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600'}`}
+                          className={`w-full outline-none px-0.5 py-1 text-[14px] text-center ${row.responseDate?.trim() && !hasValidStdDuration(row.stdDurationMin ?? row.stdDuration) ? 'border border-red-500 bg-red-50 text-red-800 rounded' : 'border-0 bg-transparent'} ${!canEditActionCols ? 'cursor-default' : 'focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600'}`}
                           title="Std. Duration in minutes"
                         />
                       </td>
@@ -2618,7 +2769,7 @@ export default function LpaPdcaSheet({
                                          ''))
                               }
                               onChange={(e) => handleResponsiblePersonDeptChange(idx, e.target.value)}
-                              className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[10.5px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 appearance-none truncate ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer'}`}
+                              className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1.5 text-[14px] text-slate-800 text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 appearance-none truncate ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer'}`}
                               title={row.responsiblePersonDept || 'Select Department'}
                             >
                               <option value="">Dept...</option>
@@ -2641,10 +2792,10 @@ export default function LpaPdcaSheet({
                       {/* 13. Staff Name (Native Table Cell - Fully responsive height, supports multiple employees) */}
                       <td className="p-0 align-middle text-center border-r border-[#64748B] w-[155px] min-w-[140px]">
                         <div className="relative w-full h-full min-h-[42px] flex flex-col justify-center">
-                          {row.staffEmployees && row.staffEmployees.length > 1 ? (
+                          {row.staffEmployees && row.staffEmployees.length > 0 ? (
                             <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
                               {row.staffEmployees.map((emp, empIdx) => {
-                                const empDisplay = emp.code ? `${emp.name} (${emp.code})` : emp.name;
+                                const empDisplay = stripEmployeeId(emp.name || '');
                                 return (
                                   <div
                                     key={empIdx}
@@ -2653,8 +2804,8 @@ export default function LpaPdcaSheet({
                                     <button
                                       type="button"
                                       disabled={!canEditEntireRow}
-                                      onClick={() => handleOpenAddStaffModal(idx)}
-                                      className={`text-[10px] font-semibold text-slate-800 truncate text-left w-full hover:text-blue-600 transition-colors ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer'}`}
+                                      onClick={() => handleOpenAddStaffModal(idx, emp.department || null)}
+                                      className={`text-[14px] font-semibold text-slate-800 truncate text-left w-full hover:text-blue-600 transition-colors ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer'}`}
                                       title={canEditEntireRow ? `Click to view/manage group: ${empDisplay}` : empDisplay}
                                     >
                                       {empDisplay}
@@ -2675,6 +2826,10 @@ export default function LpaPdcaSheet({
                                   </div>
                                 );
                               })}
+                              {canEditEntireRow && [...new Set(row.staffEmployees.map((employee) => employee.department).filter(Boolean))].map((department) => (
+                                <button key={`add-${department}`} type="button" onClick={() => handleOpenAddStaffModal(idx, department)} className="flex items-center justify-center gap-1 py-1 text-[13px] font-semibold text-blue-600 hover:bg-blue-50"><Plus className="h-3 w-3" /> {department}: Add Employee</button>
+                              ))}
+                              {canEditEntireRow && <button type="button" onClick={() => handleOpenAddStaffModal(idx)} className="flex items-center justify-center gap-1 py-1 text-[13px] font-semibold text-blue-600 hover:bg-blue-50"><Plus className="h-3 w-3" /> Add Employee</button>}
                             </div>
                           ) : row.staffEmployee ? (
                             <div className="relative w-full h-full min-h-[42px] pl-1.5 pr-6 py-1 flex items-center justify-between gap-0.5 group">
@@ -2683,10 +2838,10 @@ export default function LpaPdcaSheet({
                                 disabled={!canEditEntireRow}
                                 onClick={(e) => canEditEntireRow && handleToggleStaffDropdown(idx, e)}
                                 className={`staff-trigger-btn flex-1 min-w-0 flex flex-col items-center justify-center text-center ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer hover:opacity-85'} transition-opacity`}
-                                title={canEditEntireRow ? `Click to search/change staff: ${row.staffEmployee}` : row.staffEmployee}
+                                title={canEditEntireRow ? `Click to search/change staff: ${stripEmployeeId(row.staffEmployee)}` : stripEmployeeId(row.staffEmployee)}
                               >
-                                <span className={`text-[10px] font-semibold text-slate-800 truncate w-full text-center ${canEditEntireRow ? 'hover:text-blue-600' : ''} transition-colors`}>
-                                  {row.staffEmployee}
+                                <span className={`text-[14px] font-semibold text-slate-800 truncate w-full text-center ${canEditEntireRow ? 'hover:text-blue-600' : ''} transition-colors`}>
+                                  {stripEmployeeId(row.staffEmployee)}
                                 </span>
                               </button>
                               {canEditEntireRow && (
@@ -2710,10 +2865,10 @@ export default function LpaPdcaSheet({
                               className="staff-trigger-btn w-full h-full min-h-[42px] flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 transition-colors cursor-pointer pl-1 pr-6 group"
                               title="Click to search and select staff employee"
                             >
-                              <div className="flex items-center gap-0.5 text-[9.5px] text-slate-400 group-hover:text-blue-600">
-                                <Search className="w-2.5 h-2.5" />
+                              <div className="flex items-center gap-0.5 text-[14px] text-slate-400 group-hover:text-blue-600">
+                                <Search className="w-3 h-3" />
                                 <span className="truncate">Staff...</span>
-                                <ChevronDown className="w-2.5 h-2.5" />
+                                <ChevronDown className="w-3 h-3" />
                               </div>
                             </button>
                           ) : (
@@ -2726,10 +2881,10 @@ export default function LpaPdcaSheet({
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleOpenAddStaffModal(idx);
+                                handleOpenAddStaffModal(idx, row.responsiblePersonDept || row.department || null);
                               }}
                               className="absolute bottom-1 right-1 z-10 w-4 h-4 rounded-full bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-600 border border-blue-200/80 flex items-center justify-center cursor-pointer transition-all shadow-2xs hover:shadow-xs"
-                              title="Add employee to this CFT group (+)"
+                              title="Add employee to this department (+)"
                             >
                               <Plus className="w-2.5 h-2.5 stroke-[2.5]" />
                             </button>
@@ -2750,7 +2905,7 @@ export default function LpaPdcaSheet({
                                 title={`CFT Topic: ${row.cftTopic} (Click to view members)`}
                               >
                                 <span
-                                  className="text-[10px] font-semibold truncate max-w-[85px] leading-tight text-blue-900 hover:text-blue-700 transition-colors"
+                                  className="text-[14px] font-semibold truncate max-w-[85px] leading-tight text-blue-900 hover:text-blue-700 transition-colors"
                                   title={row.cftTopic}
                                 >
                                   {row.cftTopic}
@@ -2758,7 +2913,7 @@ export default function LpaPdcaSheet({
                                 {row.cftSelectedName && (
                                   <div className="flex items-center gap-0.5 mt-0.5">
                                     <span
-                                      className={`text-[8.5px] font-medium truncate max-w-[80px] px-0.5 py-0.2 rounded leading-tight ${
+                                      className={`text-[13px] font-medium truncate max-w-[80px] px-0.5 py-0.2 rounded leading-tight ${
                                         row.cftSelectedType === 'member'
                                           ? 'text-blue-700 bg-blue-50 border border-blue-200'
                                           : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
@@ -2882,6 +3037,7 @@ export default function LpaPdcaSheet({
       {selectedImageAction?.isNew && (
         <FileUploadSelectionModal
           isOpen={true}
+          columnTitle="Image Upload"
           onClose={() => setSelectedImageAction(null)}
           onUploadSuccess={(fileData) => {
             const fieldImg = selectedImageAction.type === 'before' ? 'imageBefore' : 'imageAfter';
@@ -3255,21 +3411,39 @@ export default function LpaPdcaSheet({
       )}
 
       {/* Send Mail Modal */}
-      <SendMailModal
-        isOpen={isSendMailOpen}
-        onClose={() => setIsSendMailOpen(false)}
-        formType="pdca"
-        title={topic?.topic || headerInfo?.topicName || 'Assembly - LPA Observation (PDCA)'}
-        metadata={{
-          date: currentDate,
-          auditDate: currentDate,
-          unit: topic?.plant || 'Bawal',
+      {(() => {
+        const currentPdcaSheet = {
+          id: topic?.id || topic?.recordId || `PDCA-${Date.now()}`,
+          source: 'lpa',
+          topic: topic?.topic || headerInfo?.topicName || 'Assembly - LPA Observation (PDCA)',
+          title: topic?.topic || headerInfo?.topicName || 'Assembly - LPA Observation (PDCA)',
           section: topic?.section || 'Assembly',
-          sectionName: topic?.section || 'Assembly',
-          topicName: topic?.topic || headerInfo?.topicName || 'Assembly - LPA Observation (PDCA)',
-          auditNo: headerInfo?.auditNo
-        }}
-      />
+          plant: topic?.plant || 'Bawal',
+          unit: topic?.plant || 'Bawal',
+          date: currentDate,
+          sheet: sheetSnapshot
+        };
+        return (
+          <SendMailModal
+            isOpen={isSendMailOpen}
+            onClose={() => setIsSendMailOpen(false)}
+            formType="pdca"
+            pdcaOnly={true}
+            currentPdcaSheet={currentPdcaSheet}
+            title={currentPdcaSheet.title}
+            metadata={{
+              date: currentDate,
+              auditDate: currentDate,
+              unit: currentPdcaSheet.unit,
+              section: currentPdcaSheet.section,
+              sectionName: currentPdcaSheet.section === 'cc' ? 'C&C' : 'Assembly',
+              topicName: currentPdcaSheet.title,
+              auditNo: headerInfo?.auditNo
+            }}
+            pdcaSheets={[currentPdcaSheet]}
+          />
+        );
+      })()}
     </div>
   );
 }

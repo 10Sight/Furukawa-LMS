@@ -27,14 +27,12 @@ export default function PDCASheetPage() {
   const selectedTopic = (id ? data.find((d) => d.id === id) : (data.length > 0 ? data[0] : null)) || directTopic;
 
   const isCreator = selectedTopic ? isRecordCreator(selectedTopic, userContext?.user) : false;
-  const isReadOnly = Boolean(selectedTopic?.id && !isCreator);
 
   return (
     <div className="w-full min-w-0">
       <PDCASheet
         key={selectedTopic?.id || id}
         topic={selectedTopic || (id ? { id, topic: 'PDCA Audit Sheet' } : null)}
-        readOnly={isReadOnly}
         isCreator={isCreator}
         currentUser={userContext?.user}
         onBack={() => {

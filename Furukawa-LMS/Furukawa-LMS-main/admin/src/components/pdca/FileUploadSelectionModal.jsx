@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X,
@@ -16,6 +16,61 @@ export default function FileUploadSelectionModal({
   onUploadSuccess,
   columnTitle = "Image (Before)"
 }) {
+  const [isImageDragOver, setIsImageDragOver] = useState(false);
+  const [imagePreviews, setImagePreviews] = useState([]);
+  const imageInputRef = useRef(null);
+  const selectTypeRef = useRef(onSelectType);
+  const imageOnly = columnTitle === 'Image Upload';
+  const showImageDropZone = imageOnly || columnTitle === 'Image (Before)' || columnTitle === 'Image (After)';
+  selectTypeRef.current = onSelectType;
+  useEffect(() => () => imagePreviews.forEach((preview) => URL.revokeObjectURL(preview.url)), [imagePreviews]);
+
+  const acceptImageFiles = useCallback((files) => {
+    const imageFiles = Array.from(files || []);
+    if (!imageFiles.length) return;
+    const invalid = imageFiles.find((f) => !f.type.startsWith('image/') && !/\.(jpe?g|png|webp|svg)$/i.test(f.name));
+    if (invalid) {
+      window.alert(`Invalid file type: "${invalid.name}". Please select image files only (JPG, JPEG, PNG, WEBP, SVG).`);
+      return;
+    }
+    const oversized = imageFiles.find((f) => f.size > 15 * 1024 * 1024);
+    if (oversized) {
+      window.alert(`File "${oversized.name}" exceeds the maximum allowed limit of 15 MB.`);
+      return;
+    }
+    setImagePreviews((prev) => [...prev, ...imageFiles.map((file) => ({ name: file.name, url: URL.createObjectURL(file) }))]);
+    onSelectType?.('image', imageFiles);
+    if (!onSelectType && onUploadSuccess && imageFiles[0]) {
+      const reader = new FileReader();
+      reader.onload = (evt) => onUploadSuccess({ url: evt.target.result, name: imageFiles[0].name, type: 'image' });
+      reader.readAsDataURL(imageFiles[0]);
+    }
+  }, [onSelectType, onUploadSuccess]);
+
+  useEffect(() => {
+    if (!isOpen || !showImageDropZone) return undefined;
+    const handlePaste = (event) => {
+      const items = Array.from(event.clipboardData?.items || []);
+      const pastedImages = items
+        .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+        .map((item, index) => ({ item, index }))
+        .map(({ item, index }) => {
+          const file = item.getAsFile();
+          if (!file) return null;
+          if (file.name) return file;
+          const extension = file.type.split('/')[1]?.replace('jpeg', 'jpg') || 'png';
+          return new File([file], `pasted-image-${Date.now()}-${index + 1}.${extension}`, { type: file.type });
+        })
+        .filter(Boolean);
+      if (pastedImages.length) {
+        event.preventDefault();
+        acceptImageFiles(pastedImages);
+      }
+    };
+    document.addEventListener('paste', handlePaste);
+    return () => document.removeEventListener('paste', handlePaste);
+  }, [isOpen, showImageDropZone, acceptImageFiles]);
+
   if (!isOpen) return null;
 
   const uploadOptions = [
@@ -103,17 +158,11 @@ export default function FileUploadSelectionModal({
         return;
       }
 
-      if (onSelectType) {
-        onSelectType('image', files);
-      } else if (onUploadSuccess && files[0]) {
+      if (imageOnly) acceptImageFiles(files);
+      else if (onSelectType) onSelectType('image', files);
+      else if (onUploadSuccess && files[0]) {
         const reader = new FileReader();
-        reader.onload = (evt) => {
-          onUploadSuccess({
-            url: evt.target.result,
-            name: files[0].name,
-            type: 'image'
-          });
-        };
+        reader.onload = (evt) => onUploadSuccess({ url: evt.target.result, name: files[0].name, type: 'image' });
         reader.readAsDataURL(files[0]);
       }
       e.target.value = '';
@@ -219,8 +268,32 @@ export default function FileUploadSelectionModal({
 
         {/* 4 Interactive Cards */}
         <div className="p-4 sm:p-5">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {uploadOptions.map((opt) => {
+          {showImageDropZone ? (
+            <div
+              className={`mb-4 rounded-xl border-2 border-dashed p-5 text-center transition-colors ${isImageDragOver ? 'border-blue-500 bg-blue-50' : 'border-slate-300 bg-slate-50'}`}
+              onDragOver={(e) => { e.preventDefault(); setIsImageDragOver(true); }}
+              onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setIsImageDragOver(false); }}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsImageDragOver(false);
+                const files = Array.from(e.dataTransfer.files || []);
+                if (files.length) {
+                  acceptImageFiles(files);
+                }
+              }}
+            >
+              <UploadCloud className="mx-auto mb-2 h-6 w-6 text-blue-600" />
+              <p className="text-sm font-semibold text-slate-700">Drag and drop images here</p>
+              <p className="mt-1 text-xs text-slate-500">Drop images here, choose Upload Image below, or paste a copied image with Ctrl+V. JPG, PNG, WEBP, SVG, up to 15 MB each.</p>
+              {imagePreviews.length > 0 && (
+                <div className="mt-3 flex flex-wrap justify-center gap-2">
+                  {imagePreviews.map((preview, index) => <img key={`${preview.name}-${index}`} src={preview.url} alt={preview.name} title={preview.name} className="h-14 w-14 rounded border border-slate-200 bg-white object-cover" />)}
+                </div>
+              )}
+            </div>
+          ) : null}
+          <div className={`grid gap-3 ${imageOnly ? 'grid-cols-1 max-w-sm mx-auto' : 'grid-cols-2 md:grid-cols-4'}`}>
+            {(imageOnly ? uploadOptions.filter((opt) => opt.id === 'image') : uploadOptions).map((opt) => {
               const IconComp = opt.icon;
               return (
                 <label
@@ -228,12 +301,17 @@ export default function FileUploadSelectionModal({
                   className={`group relative flex flex-col p-3.5 rounded-xl border-2 cursor-pointer transition-all duration-200 ${opt.bgColor} ${opt.borderColor} hover:shadow-md hover:-translate-y-0.5 justify-between min-h-[145px]`}
                 >
                   <input
+                    ref={imageOnly && opt.id === 'image' ? imageInputRef : undefined}
                     type="file"
                     accept={opt.accept}
                     multiple={opt.multiple}
                     className="hidden"
                     onChange={(e) => handleFileChange(opt, e)}
                   />
+
+                  {imageOnly && opt.id === 'image' && (
+                    <button type="button" onClick={() => imageInputRef.current?.click()} className="absolute inset-0 z-10 cursor-pointer" aria-label="Upload image from computer" />
+                  )}
 
                   {/* Top: Icon + Badge Tag */}
                   <div>

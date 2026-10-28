@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X,
@@ -24,6 +24,7 @@ export default function EvidenceViewerModal({
   rowIndex = 0,
   images = [],
   readOnly = false,
+  canDelete = false,
   onAddImages,
   onRemoveImage,
   onReplaceImage,
@@ -31,42 +32,81 @@ export default function EvidenceViewerModal({
   onViewEnlarged
 }) {
   const [isUploading, setIsUploading] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [replacingImageId, setReplacingImageId] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const fileInputRef = useRef(null);
   const replaceInputRef = useRef(null);
-
-  if (!isOpen) return null;
+  const addFilesRef = useRef(null);
 
   const isBefore = field === 'imageBefore';
   const columnLabel = isBefore ? 'Image Before' : 'Image After';
 
-  // File selection for adding new images
-  const handleFileSelect = async (e) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
+  const handleAddFiles = useCallback(async (files) => {
+    if (!files.length || isUploading || readOnly) return;
 
-    // Filter valid image types
     const validImages = files.filter((f) => f.type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(f.name));
     if (validImages.length === 0) {
       setErrorMessage('Please select valid image files (JPG, PNG, WEBP).');
+      return;
+    }
+    const oversized = validImages.find((file) => file.size > 15 * 1024 * 1024);
+    if (oversized) {
+      setErrorMessage(`"${oversized.name}" exceeds the 15 MB per-image limit.`);
       return;
     }
 
     setErrorMessage('');
     setIsUploading(true);
     try {
-      if (onAddImages) {
-        await onAddImages(validImages);
-      }
+      await onAddImages?.(validImages);
     } catch (err) {
       console.error('Failed adding images:', err);
       setErrorMessage('Failed to upload one or more images. Please try again.');
     } finally {
       setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
     }
+  }, [isUploading, onAddImages, readOnly]);
+  addFilesRef.current = handleAddFiles;
+
+  useEffect(() => {
+    if (!isOpen || readOnly) return undefined;
+    const handlePaste = (event) => {
+      const items = Array.from(event.clipboardData?.items || []);
+      const imageFiles = items
+        .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+        .map((item, index) => item.getAsFile())
+        .filter(Boolean)
+        .map((file, index) => {
+          if (file.name) return file;
+          const extension = file.type.split('/')[1]?.replace('jpeg', 'jpg') || 'png';
+          return new File([file], `pasted-image-${Date.now()}-${index + 1}.${extension}`, { type: file.type });
+        });
+      if (imageFiles.length) {
+        event.preventDefault();
+        addFilesRef.current?.(imageFiles);
+      }
+    };
+    document.addEventListener('paste', handlePaste);
+    return () => document.removeEventListener('paste', handlePaste);
+  }, [isOpen, readOnly]);
+
+  if (!isOpen) return null;
+
+  // File selection for adding new images
+  const handleFileSelect = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    await handleAddFiles(files);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleImageDrop = async (event) => {
+    event.preventDefault();
+    setIsDragOver(false);
+    if (readOnly || isUploading) return;
+    await handleAddFiles(Array.from(event.dataTransfer?.files || []));
   };
 
   // Trigger file replacement
@@ -267,11 +307,14 @@ export default function EvidenceViewerModal({
               {!readOnly && (
                 <div
                   onClick={() => !isUploading && fileInputRef.current?.click()}
-                  className="border-2 border-dashed border-slate-200 hover:border-blue-400 bg-slate-50/60 hover:bg-blue-50/30 rounded-xl p-3 flex items-center justify-center gap-2 cursor-pointer transition-colors text-slate-600 hover:text-blue-600"
+                  onDragOver={(event) => { event.preventDefault(); if (!readOnly && !isUploading) setIsDragOver(true); }}
+                  onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setIsDragOver(false); }}
+                  onDrop={handleImageDrop}
+                  className={`border-2 border-dashed rounded-xl p-3 flex items-center justify-center gap-2 transition-colors ${isDragOver ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 bg-slate-50/60 text-slate-600 hover:border-blue-400 hover:bg-blue-50/30 hover:text-blue-600'} ${isUploading ? 'cursor-wait opacity-70' : 'cursor-pointer'}`}
                 >
-                  <Upload className="w-4 h-4 text-blue-500" />
-                  <span className="text-xs font-semibold">Click to add more images</span>
-                  <span className="text-[10px] text-slate-400">(JPG, PNG, WEBP)</span>
+                  {isUploading ? <Loader2 className="w-4 h-4 animate-spin text-blue-500" /> : <Upload className="w-4 h-4 text-blue-500" />}
+                  <span className="text-xs font-semibold">{isUploading ? 'Uploading images...' : 'Drag and drop images here, or click to add more'}</span>
+                  <span className="text-[10px] text-slate-400">(JPG, PNG, WEBP, up to 15 MB each · paste with Ctrl+V)</span>
                 </div>
               )}
 
@@ -389,8 +432,8 @@ export default function EvidenceViewerModal({
                               </button>
                             </div>
 
-                            {/* Delete Button - Only if not read-only */}
-                            {!readOnly && (
+                            {/* Delete Button - Only if not read-only and user has delete permission (admin only) */}
+                            {!readOnly && canDelete && (
                               <button
                                 type="button"
                                 onClick={() => setConfirmDeleteId(img.id)}

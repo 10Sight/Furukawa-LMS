@@ -19,6 +19,16 @@ export const PDCA_UNITS = [
   'Gujrat'
 ];
 
+export const UNIT_DEPARTMENT_MAPPING = {
+  Bawal: [...PDCA_DEPARTMENTS],
+  Gujrat: [...PDCA_DEPARTMENTS],
+  Gujarat: [...PDCA_DEPARTMENTS]
+};
+
+export const getDepartmentsForUnit = (unit) => {
+  return [...PDCA_DEPARTMENTS];
+};
+
 export const DEFAULT_LINE_AREAS = [
   'Assembly Area',
   'Assembly Line 1',
@@ -54,7 +64,8 @@ export const PDCA_STATUS_OPTIONS = [
 
 export const normalizePDCAStatus = (status) => {
   const s = String(status || '').trim();
-  if (!s || s === 'Open' || s === 'Not-Started') return 'Not-Started';
+  if (!s) return '';
+  if (s === 'Open' || s === 'Not-Started') return 'Not-Started';
   if (s === 'Closed' || s === 'Done') return 'Done';
   if (s === 'In Progress' || s === 'In - Progress' || s === 'In- Progress') return 'In- Progress';
   if (s === 'Delay' || s === 'Delayed') return 'Delay';
@@ -63,25 +74,31 @@ export const normalizePDCAStatus = (status) => {
 
 /**
  * Computes the PDCA Status based on Response Date and completion status:
- * 1. If response date is not selected by user -> Not-Started
- * 2. If response date is passed and work is not done -> Delay
- * 3. If work is done (Done / Confirmed) -> Done
- * 4. If response date is selected (today or future) and work in progress -> In- Progress
+ * 1. If date is not selected -> Status remains blank
+ * 2. If response date is not selected by user -> Not-Started (or existing valid status)
+ * 3. If response date is passed and work is not done -> Delay
+ * 4. If work is done (Done / Confirmed) -> Done
+ * 5. If response date is selected (today or future) and work in progress -> In- Progress
  */
 export const computePDCAStatus = (row = {}, currentDateStr = '') => {
+  const normStatus = normalizePDCAStatus(row.status);
   const respDate = row.responseDate ? String(row.responseDate).trim() : '';
 
-  // Rule 1: If response date is not selected by user, status is Not-Started
+  // Rule: If response date is not selected by user, status is Not-Started
   if (!respDate) {
     return 'Not-Started';
   }
 
-  const normStatus = normalizePDCAStatus(row.status);
   const conf = String(row.confirmation || row.responsiblePersonConfirmation || '').trim();
 
-  // If work is done
-  if (normStatus === 'Done' || conf === 'Confirmed') {
+  // If confirmation is Confirm / Confirmed -> Status is Done
+  if (normStatus === 'Done' || conf === 'Confirmed' || conf === 'Confirm') {
     return 'Done';
+  }
+
+  // If confirmation is Not-Confirm / Not-Confirmed -> Status is In-Progress
+  if (conf === 'Not-Confirmed' || conf === 'Not - Confirmed' || conf === 'Not-Confirm') {
+    return 'In- Progress';
   }
 
   // Today's date in YYYY-MM-DD

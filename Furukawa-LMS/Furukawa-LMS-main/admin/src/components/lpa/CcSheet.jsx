@@ -92,7 +92,7 @@ export default function CcSheet({
           setSectionsMaster(data);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
 
     pdcaApi.getEmployees?.()
       .then(res => {
@@ -101,7 +101,7 @@ export default function CcSheet({
           setEmployeeMaster(emps);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
 
     return () => { active = false; };
   }, []);
@@ -489,7 +489,7 @@ export default function CcSheet({
           </div>
         </div>
 
-        {/* Bottom Horizontal Bar: Date | Shift | Department | Section | Line */}
+        {/* Bottom Horizontal Bar: Date | Shift | Department | Section | Line (Frozen: selected during sheet creation) */}
         <div className="assembly-header-bottom-row">
           {/* 1. Date */}
           <div className="assembly-header-field-col">
@@ -501,8 +501,10 @@ export default function CcSheet({
               type="date"
               value={formDate}
               onChange={handleDateChange}
-              disabled={disabled}
-              className="assembly-header-input assembly-header-input-date"
+              disabled
+              readOnly
+              className="assembly-header-input assembly-header-input-date !bg-slate-100 !text-slate-600 !cursor-not-allowed select-none"
+              title="Date is frozen (selected during sheet creation)"
               required
             />
           </div>
@@ -516,11 +518,15 @@ export default function CcSheet({
               id="lpa-cc-shift"
               value={formShift}
               onChange={handleShiftChange}
-              disabled={disabled}
-              className="assembly-header-select assembly-header-select-shift"
+              disabled
+              className="assembly-header-select assembly-header-select-shift !bg-slate-100 !text-slate-600 !cursor-not-allowed select-none"
+              title="Shift is frozen (selected during sheet creation)"
               required
             >
               <option value="">Shift</option>
+              {formShift && !SHIFT_OPTIONS.includes(formShift) && (
+                <option value={formShift}>{formShift}</option>
+              )}
               {SHIFT_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
@@ -534,12 +540,15 @@ export default function CcSheet({
               id="lpa-cc-department"
               value={formDepartment}
               onChange={handleDepartmentChange}
-              disabled={disabled}
-              className="assembly-header-select assembly-header-select-dept truncate"
-              title={formDepartment || 'Select Department'}
+              disabled
+              className="assembly-header-select assembly-header-select-dept truncate !bg-slate-100 !text-slate-600 !cursor-not-allowed select-none"
+              title={formDepartment ? `${formDepartment} (Frozen: selected during sheet creation)` : 'Department is frozen'}
               required
             >
               <option value="">Department</option>
+              {formDepartment && !PDCA_DEPARTMENTS.includes(formDepartment) && (
+                <option value={formDepartment}>{formDepartment}</option>
+              )}
               {PDCA_DEPARTMENTS.map(dept => (
                 <option key={dept} value={dept}>{dept}</option>
               ))}
@@ -555,11 +564,14 @@ export default function CcSheet({
               id="lpa-cc-section"
               value={formSection}
               onChange={handleSectionChange}
-              disabled={disabled}
-              className="assembly-header-select assembly-header-select-section truncate"
-              title={formSection || 'Select Section'}
+              disabled
+              className="assembly-header-select assembly-header-select-section truncate !bg-slate-100 !text-slate-600 !cursor-not-allowed select-none"
+              title={formSection ? `${formSection} (Frozen: selected during sheet creation)` : 'Section is frozen'}
             >
               <option value="">Section</option>
+              {formSection && !availableSections.some(sec => (sec.name === formSection || String(sec.id) === String(formSection))) && (
+                <option value={formSection}>{formSection}</option>
+              )}
               {availableSections.map(sec => (
                 <option key={sec.id || sec.name} value={sec.name}>
                   {sec.name} {sec.uniCode ? `(${sec.uniCode})` : ''}
@@ -577,11 +589,14 @@ export default function CcSheet({
               id="lpa-cc-line"
               value={formLine}
               onChange={handleLineChange}
-              disabled={disabled}
-              className="assembly-header-select assembly-header-select-line truncate"
-              title={formLine || 'Select Line'}
+              disabled
+              className="assembly-header-select assembly-header-select-line truncate !bg-slate-100 !text-slate-600 !cursor-not-allowed select-none"
+              title={formLine ? `${formLine} (Frozen: selected during sheet creation)` : 'Line is frozen'}
             >
               <option value="">Line</option>
+              {formLine && !availableLines.includes(formLine) && (
+                <option value={formLine}>{formLine}</option>
+              )}
               {availableLines.map(line => (
                 <option key={line} value={line}>{line}</option>
               ))}
@@ -645,6 +660,13 @@ export default function CcSheet({
                   ].filter(Boolean).join(' ');
                   const isVertical = classes.split(' ').includes('cc-vertical');
                   let cellDisplay = rowIndex === 2 && columnIndex === 0 ? 'S.No' : value;
+                  if (columnIndex === 2) {
+                    if (rowIndex === 7 || (String(row[0]?.value ?? '').trim() === '4' && String(value).includes('attendance board and hourly production board'))) {
+                      cellDisplay = 'Is the hourly production board updated';
+                    } else if (rowIndex === 8 || (String(row[0]?.value ?? '').trim() === '5' && String(value).includes('attendance board and hourly production board'))) {
+                      cellDisplay = 'Is the attendance board updated';
+                    }
+                  }
                   if (rowIndex === 35 && columnIndex === 0) cellDisplay = 'Total Marks:';
                   if (rowIndex === 36 && columnIndex === 0) cellDisplay = 'Percentage (%):';
 

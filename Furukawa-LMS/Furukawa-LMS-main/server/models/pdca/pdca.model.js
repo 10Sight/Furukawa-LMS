@@ -12,7 +12,7 @@ export function createEmptyRow(customDefaults = {}) {
         date: customDefaults.date || '',
         shift: customDefaults.shift || '',
         lineArea: customDefaults.lineArea || '',
-        status: customDefaults.status || 'Open',
+        status: customDefaults.status || '',
         observation: customDefaults.observation || '',
         imagesBefore: Array.isArray(customDefaults.imagesBefore)
             ? customDefaults.imagesBefore
@@ -187,7 +187,7 @@ export class PDCAModel {
     // --- Record CRUD ---
     static async create(data, actor = 'System') {
         const recordId = data.id || data.recordId || `PDCA-${Date.now()}`;
-        const topic = data.topic;
+        const topic = (data.topic && String(data.topic).trim()) || (data.sheet?.headerInfo?.topicName && String(data.sheet.headerInfo.topicName).trim()) || "PDCA Audit Sheet";
         const description = data.description || '';
         const plant = data.plant || 'Bawal';
         const scope = data.scope || 'Company';

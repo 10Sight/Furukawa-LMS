@@ -74,14 +74,27 @@ export default function DashboardPage() {
     if (lpaSource?.unit) setSelectedPlant(lpaSource.unit);
   }, [lpaSource?.unit]);
 
-  const sourceData = useMemo(() => data.filter(item => !lpaSource || (
-    (!lpaSource.category || item.lpaSource?.category === lpaSource.category) &&
-    (!lpaSource.workbookId || item.lpaSource?.workbookId === lpaSource.workbookId) &&
-    (!lpaSource.worksheet || item.lpaSource?.worksheet === lpaSource.worksheet) &&
-    (!lpaSource.unit || item.lpaSource?.unit === lpaSource.unit) &&
-    (!lpaSource.level || item.lpaSource?.level === lpaSource.level) &&
-    (!lpaSource.date || item.lpaSource?.date === lpaSource.date)
-  )), [data, lpaSource]);
+  const sourceData = useMemo(() => {
+    // When accessed from LPA context (lpaSource set), only show records linked to that LPA source.
+    // When on the standalone PDCA page (no lpaSource), exclude records that were created by the
+    // LPA PDCA Page — their IDs always start with 'PDCA-LPA-'. Those sheets belong exclusively
+    // to the LPA PDCA Page and must NOT appear in the regular PDCA list.
+    return data.filter(item => {
+      if (!lpaSource) {
+        const id = String(item.id || item.recordId || '');
+        if (id.startsWith('PDCA-LPA-')) return false;
+        return true;
+      }
+      return (
+        (!lpaSource.category || item.lpaSource?.category === lpaSource.category) &&
+        (!lpaSource.workbookId || item.lpaSource?.workbookId === lpaSource.workbookId) &&
+        (!lpaSource.worksheet || item.lpaSource?.worksheet === lpaSource.worksheet) &&
+        (!lpaSource.unit || item.lpaSource?.unit === lpaSource.unit) &&
+        (!lpaSource.level || item.lpaSource?.level === lpaSource.level) &&
+        (!lpaSource.date || item.lpaSource?.date === lpaSource.date)
+      );
+    });
+  }, [data, lpaSource]);
   const openLpaPdca = () => {
     const linked = sourceData[0];
     if (linked) {
@@ -155,11 +168,12 @@ export default function DashboardPage() {
     handleUpdatePDCA(item);
     revealSavedForm(item);
   };
+  const isUserAdmin = Boolean(userContext?.user?.role === 'admin' || userContext?.user?.isAdmin);
   const requestDeletePDCA = id => {
     const item = data.find(record => String(record.id) === String(id));
     if (!item) return;
-    if (!isRecordCreator(item, userContext?.user)) {
-      showToast('Only the record creator can delete this PDCA record.');
+    if (!isUserAdmin) {
+      showToast('Only administrators have access to delete PDCA records.');
       return;
     }
     setDeleteError('');
@@ -167,8 +181,8 @@ export default function DashboardPage() {
   };
   const confirmDeletePDCA = () => {
     if (!deleteTarget) return;
-    if (!isRecordCreator(deleteTarget, userContext?.user)) {
-      setDeleteError('Only the record creator can delete this PDCA record.');
+    if (!isUserAdmin) {
+      setDeleteError('Only administrators have access to delete PDCA records.');
       return;
     }
     try {
@@ -408,7 +422,16 @@ export default function DashboardPage() {
         onCancel={() => { setDeleteTarget(null); setDeleteError(''); }}
         onDelete={confirmDeletePDCA}
       />
-      <SendMailModal isOpen={isSendMailOpen} onClose={() => setIsSendMailOpen(false)} formType="pdca" pdcaOnly pdcaLabel="PDCA Sheet" title="PDCA Report" metadata={{ auditDate: selectedDate, unit: selectedPlant }} />
+      <SendMailModal
+        isOpen={isSendMailOpen}
+        onClose={() => setIsSendMailOpen(false)}
+        formType="pdca"
+        pdcaOnly
+        pdcaSheets={filteredData}
+        pdcaLabel="PDCA Sheet"
+        title="PDCA Report"
+        metadata={{ auditDate: selectedDate, unit: selectedPlant }}
+      />
     </div>
   );
 }

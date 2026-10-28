@@ -3,6 +3,8 @@ import {
   BarChart3,
   ChevronUp,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Calendar,
   Filter,
   Info,
@@ -39,6 +41,7 @@ export default function PDCAMonthlyGraph({
   const [dataScope, setDataScope] = useState('sheet'); // 'sheet' | 'all'
   const [hoveredIndex, setHoveredIndex] = useState(null);
   const [showCumulativeSection, setShowCumulativeSection] = useState(true);
+  const [isCumulativeCollapsed, setIsCumulativeCollapsed] = useState(false);
 
   // Active series visibility toggles
   const [visibleSeries, setVisibleSeries] = useState({
@@ -560,6 +563,23 @@ export default function PDCAMonthlyGraph({
             <div className="flex flex-col md:flex-row items-stretch gap-3">
               {/* Cumulative Section (Month and its Cumulative) */}
               {showCumulativeSection && (
+                isCumulativeCollapsed ? (
+                <button
+                  type="button"
+                  onClick={() => setIsCumulativeCollapsed(false)}
+                  className="w-8 shrink-0 bg-white hover:bg-indigo-50/70 rounded-lg border border-slate-200 shadow-2xs flex flex-col items-center py-2.5 gap-2 text-slate-500 hover:text-indigo-600 transition-all cursor-pointer group select-none"
+                  title="Expand Cumulative table"
+                  aria-label="Expand Cumulative table"
+                >
+                  <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 transition-colors" />
+                  <span className="[writing-mode:vertical-rl] rotate-180 text-[10px] font-bold tracking-widest uppercase text-slate-500 group-hover:text-indigo-700">
+                    Cumulative
+                  </span>
+                  <span className="mt-auto text-[9px] font-mono font-bold px-1 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
+                    {allMonthsCumulative.total}
+                  </span>
+                </button>
+              ) : (
                 <div className="w-full md:w-36 lg:w-40 shrink-0 bg-white rounded-lg border border-slate-200 shadow-2xs flex flex-col overflow-hidden animate-in fade-in duration-150">
                   <div className="px-2.5 py-1.5 bg-slate-100/90 border-b border-slate-200 flex items-center justify-between">
                     <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
@@ -576,6 +596,15 @@ export default function PDCAMonthlyGraph({
                         title="Hide Cumulative panel"
                       >
                         <X className="w-3 h-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsCumulativeCollapsed(true)}
+                        className="p-0.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
+                        title="Collapse Cumulative section"
+                        aria-label="Collapse Cumulative section"
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>
@@ -618,13 +647,26 @@ export default function PDCAMonthlyGraph({
                     <span className="text-right font-mono text-indigo-700">{allMonthsCumulative.total}</span>
                   </div>
                 </div>
-              )}
+              ))}
 
               {/* Right Column: Metrics Row & SVG Graph */}
               <div className="flex-1 min-w-0 flex flex-col">
                 {/* Chart Series Legend & Filter Toggles */}
                 <div className="flex items-center justify-between flex-wrap gap-2 mb-2 pb-2 border-b border-slate-200/60 text-xs">
                   <div className="flex items-center flex-wrap gap-2 sm:gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setIsCumulativeCollapsed(prev => !prev)}
+                      className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                        !isCumulativeCollapsed
+                          ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200/80 border border-slate-200'
+                      }`}
+                      title={isCumulativeCollapsed ? 'Expand Cumulative table' : 'Collapse Cumulative table'}
+                    >
+                      {isCumulativeCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
+                      <span>Cumulative</span>
+                    </button>
                     <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Metrics:</span>
 
                 {/* In-Progress Legend Toggle */}

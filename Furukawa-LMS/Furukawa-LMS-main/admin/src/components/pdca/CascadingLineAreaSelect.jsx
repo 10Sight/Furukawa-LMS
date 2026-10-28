@@ -351,7 +351,7 @@ export default function CascadingLineAreaSelect({
         </span>
       );
     }
-    return <span className="font-semibold text-slate-800 text-xs truncate">{value}</span>;
+    return <span className="font-semibold text-slate-800 text-[14px] truncate">{value}</span>;
   }, [value, selection]);
 
   const hasValue = !!value || selection.sectionId != null;
@@ -373,7 +373,7 @@ export default function CascadingLineAreaSelect({
         aria-expanded={isOpen}
         className={
           compact
-            ? `w-full min-h-[28px] flex items-center justify-between gap-1 px-1.5 py-0.5 text-xs text-slate-800 bg-white border border-slate-300 rounded-md shadow-2xs hover:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors ${
+            ? `w-full min-h-[28px] flex items-center justify-between gap-1 px-1.5 py-0.5 text-[14px] text-slate-800 bg-white border border-slate-300 rounded-md shadow-2xs hover:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors ${
                 disabled ? 'opacity-60 cursor-not-allowed bg-slate-50' : 'cursor-pointer'
               }`
             : `w-full min-h-[42px] flex items-center justify-between gap-2 px-3.5 py-2 text-sm font-medium text-slate-800 bg-white border border-slate-300 rounded-xl shadow-2xs hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all ${
@@ -387,7 +387,7 @@ export default function CascadingLineAreaSelect({
           {hasValue && displayLabel ? (
             displayLabel
           ) : (
-            <span className="text-slate-400 font-normal text-[12px] italic truncate whitespace-nowrap">{placeholder}</span>
+            <span className="text-slate-400 font-normal text-[14px] italic truncate whitespace-nowrap">{placeholder}</span>
           )}
         </div>
         <div className="flex items-center gap-1 shrink-0">

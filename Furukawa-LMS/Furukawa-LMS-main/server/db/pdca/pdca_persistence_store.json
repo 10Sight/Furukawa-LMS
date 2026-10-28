@@ -8783,10 +8783,10 @@
       "rows": [
         {
           "date": "2026-10-27",
-          "shift": "",
+          "shift": "A",
           "status": "In- Progress",
-          "department": "",
-          "unit": "",
+          "department": "PE",
+          "unit": "Bawal",
           "section": "",
           "sectionId": null,
           "sectionCode": "",
@@ -8794,7 +8794,7 @@
           "lineAreaSectionId": null,
           "lineAreaId": null,
           "lineAreaCode": "",
-          "observation": "",
+          "observation": "Testing",
           "imagesBefore": [],
           "imageBefore": null,
           "imageBeforeName": "",
@@ -8805,17 +8805,24 @@
           "imageAfter": null,
           "imageAfterName": "",
           "fileTypeAfter": "image",
-          "stdDurationMin": "",
+          "stdDurationMin": "01:00",
           "responseDate": "2026-11-26",
           "noOfTimeRevised": 0,
-          "responsiblePersonDept": "",
-          "respUnit": "",
-          "responsiblePersonUnit": "",
-          "staffEmployee": "",
-          "staffEmployees": [],
-          "staffName": "",
-          "staffId": "",
-          "employeeId": "",
+          "responsiblePersonDept": "PE",
+          "respUnit": "Gujrat",
+          "responsiblePersonUnit": "Gujrat",
+          "staffEmployee": "VIKRAM SINGH",
+          "staffEmployees": [
+            {
+              "name": "VIKRAM SINGH",
+              "code": "GJ034112",
+              "department": "PE",
+              "unit": "Gujrat"
+            }
+          ],
+          "staffName": "VIKRAM SINGH",
+          "staffId": "GJ034112",
+          "employeeId": "GJ034112",
           "assignedEmployee": "",
           "cftTopic": "",
           "cftTopicId": "",
@@ -8823,26 +8830,36 @@
           "cftSelectedName": "",
           "cftSelectedCode": "",
           "confirmation": "",
-          "responsiblePersonConfirmation": "",
+          "responsiblePersonConfirmation": "VIKRAM SINGH",
           "initialResponseDate": "2026-11-26",
-          "departments": [],
-          "units": [],
+          "departments": [
+            "Quality"
+          ],
+          "units": [
+            "Bawal"
+          ],
           "revisedDates": [],
-          "respUnits": [],
-          "respDeptsByUnit": {},
+          "respUnits": [
+            "Gujrat"
+          ],
+          "respDeptsByUnit": {
+            "Gujrat": [
+              "PE"
+            ]
+          },
           "confirmedBy": "",
           "instruction": "",
           "sections": [],
           "lineAreas": [],
           "actionTaken": "",
-          "stdDuration": "02:00"
+          "stdDuration": "01:00"
         },
         {
           "date": "",
           "shift": "",
           "status": "",
           "department": "",
-          "unit": "",
+          "unit": "Bawal",
           "section": "",
           "sectionId": null,
           "sectionCode": "",
@@ -8882,7 +8899,9 @@
           "responsiblePersonConfirmation": "",
           "initialResponseDate": "",
           "departments": [],
-          "units": [],
+          "units": [
+            "Bawal"
+          ],
           "revisedDates": [],
           "respUnits": [],
           "respDeptsByUnit": {},
@@ -8897,7 +8916,7 @@
           "shift": "",
           "status": "",
           "department": "",
-          "unit": "",
+          "unit": "Bawal",
           "section": "",
           "sectionId": null,
           "sectionCode": "",
@@ -8937,7 +8956,9 @@
           "responsiblePersonConfirmation": "",
           "initialResponseDate": "",
           "departments": [],
-          "units": [],
+          "units": [
+            "Bawal"
+          ],
           "revisedDates": [],
           "respUnits": [],
           "respDeptsByUnit": {},
@@ -8952,7 +8973,7 @@
           "shift": "",
           "status": "",
           "department": "",
-          "unit": "",
+          "unit": "Bawal",
           "section": "",
           "sectionId": null,
           "sectionCode": "",
@@ -8992,7 +9013,9 @@
           "responsiblePersonConfirmation": "",
           "initialResponseDate": "",
           "departments": [],
-          "units": [],
+          "units": [
+            "Bawal"
+          ],
           "revisedDates": [],
           "respUnits": [],
           "respDeptsByUnit": {},
@@ -9007,7 +9030,7 @@
           "shift": "",
           "status": "",
           "department": "",
-          "unit": "",
+          "unit": "Bawal",
           "section": "",
           "sectionId": null,
           "sectionCode": "",
@@ -9047,7 +9070,9 @@
           "responsiblePersonConfirmation": "",
           "initialResponseDate": "",
           "departments": [],
-          "units": [],
+          "units": [
+            "Bawal"
+          ],
           "revisedDates": [],
           "respUnits": [],
           "respDeptsByUnit": {},
@@ -9062,7 +9087,7 @@
           "shift": "",
           "status": "",
           "department": "",
-          "unit": "",
+          "unit": "Bawal",
           "section": "",
           "sectionId": null,
           "sectionCode": "",
@@ -9102,7 +9127,9 @@
           "responsiblePersonConfirmation": "",
           "initialResponseDate": "",
           "departments": [],
-          "units": [],
+          "units": [
+            "Bawal"
+          ],
           "revisedDates": [],
           "respUnits": [],
           "respDeptsByUnit": {},
@@ -9117,7 +9144,7 @@
           "shift": "",
           "status": "",
           "department": "",
-          "unit": "",
+          "unit": "Bawal",
           "section": "",
           "sectionId": null,
           "sectionCode": "",
@@ -9157,7 +9184,9 @@
           "responsiblePersonConfirmation": "",
           "initialResponseDate": "",
           "departments": [],
-          "units": [],
+          "units": [
+            "Bawal"
+          ],
           "revisedDates": [],
           "respUnits": [],
           "respDeptsByUnit": {},
@@ -9172,7 +9201,7 @@
           "shift": "",
           "status": "",
           "department": "",
-          "unit": "",
+          "unit": "Bawal",
           "section": "",
           "sectionId": null,
           "sectionCode": "",
@@ -9212,7 +9241,9 @@
           "responsiblePersonConfirmation": "",
           "initialResponseDate": "",
           "departments": [],
-          "units": [],
+          "units": [
+            "Bawal"
+          ],
           "revisedDates": [],
           "respUnits": [],
           "respDeptsByUnit": {},
@@ -9227,7 +9258,7 @@
           "shift": "",
           "status": "",
           "department": "",
-          "unit": "",
+          "unit": "Bawal",
           "section": "",
           "sectionId": null,
           "sectionCode": "",
@@ -9267,7 +9298,9 @@
           "responsiblePersonConfirmation": "",
           "initialResponseDate": "",
           "departments": [],
-          "units": [],
+          "units": [
+            "Bawal"
+          ],
           "revisedDates": [],
           "respUnits": [],
           "respDeptsByUnit": {},
@@ -9282,7 +9315,7 @@
           "shift": "",
           "status": "",
           "department": "",
-          "unit": "",
+          "unit": "Bawal",
           "section": "",
           "sectionId": null,
           "sectionCode": "",
@@ -9322,7 +9355,9 @@
           "responsiblePersonConfirmation": "",
           "initialResponseDate": "",
           "departments": [],
-          "units": [],
+          "units": [
+            "Bawal"
+          ],
           "revisedDates": [],
           "respUnits": [],
           "respDeptsByUnit": {},
@@ -10778,6 +10813,14 @@
     }
   ],
   "auditLogs": [
+    {
+      "id": 1793183810800,
+      "pdcaRecordId": "PDCA-75b915ef-d4e7-4b9b-9bfd-05685aea25cb",
+      "action": "SAVE_SHEET",
+      "actor": "Joy Dastidar (ST080014)",
+      "details": "Saved sheet with 10 rows",
+      "createdAt": "2026-10-28T10:36:50.800Z"
+    },
     {
       "id": 1793004961719,
       "pdcaRecordId": "PDCA-LPA-ASSEMBLY-Bawal-1792823708112",

@@ -1262,90 +1262,20 @@ export default function PDCASheet({
   useEffect(() => {
     if (!mustCompleteRequiredInput || typeof document === 'undefined') return undefined;
 
-    const allowedInputs = new Set(missingRequiredInputs.flatMap(requiredInputAllowedElements).filter(Boolean));
-    lastAllowedUrlRef.current = window.location.href;
     const firstRequiredInput = missingRequiredInputs[0];
     const message = requiredInputMessage(firstRequiredInput);
     requiredInputElement(firstRequiredInput)?.focus();
     showToastRef.current?.(message);
-
-    const isReasonInput = (target) => target instanceof Element && (
-      Boolean(target.closest('[data-required-action-allowed="true"]')) ||
-      Boolean(target.closest('[data-duration-picker="true"]'))
-    );
-    const notifyAndFocus = () => {
-      const now = Date.now();
-      if (now - lastRequiredNoticeAtRef.current > 800) {
-        showToastRef.current?.(message);
-        lastRequiredNoticeAtRef.current = now;
-      }
-      const currentInput = requiredInputElement(missingRequiredInputs[0]);
-      currentInput?.focus();
-      currentInput?.reportValidity?.();
-    };
-    const blockOutsideReason = (event) => {
-      if (
-        event.target instanceof Element && (
-          Boolean(event.target.closest('[data-duration-picker="true"]')) ||
-          Boolean(event.target.closest('[data-required-action-allowed="true"]')) ||
-          isReasonInput(event.target)
-        )
-      ) return;
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation?.();
-      notifyAndFocus();
-    };
-    const blockKeyboardOutsideReason = (event) => {
-      if (
-        event.target instanceof Element && (
-          Boolean(event.target.closest('[data-duration-picker="true"]')) ||
-          Boolean(event.target.closest('[data-required-action-allowed="true"]'))
-        )
-      ) return;
-      const navigationKey = event.key === 'Tab' || event.key === 'Escape' || event.altKey ||
-        ((event.ctrlKey || event.metaKey) && ['r', 'w', 'l'].includes(event.key.toLowerCase()));
-      if (isReasonInput(event.target) && !navigationKey) return;
-      blockOutsideReason(event);
-    };
-    const restoreLocation = (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation?.();
-      window.history.pushState({ ...(window.history.state || {}), requiredConfirmationGate: true }, '', lastAllowedUrlRef.current);
-      notifyAndFocus();
-    };
-    const warnBeforeLeaving = (event) => {
-      event.preventDefault();
-      event.returnValue = '';
-    };
-
-    document.addEventListener('pointerdown', blockOutsideReason, true);
-    document.addEventListener('click', blockOutsideReason, true);
-    document.addEventListener('keydown', blockKeyboardOutsideReason, true);
-    document.addEventListener('focusin', blockOutsideReason, true);
-    document.addEventListener('submit', blockOutsideReason, true);
-    window.addEventListener('popstate', restoreLocation, true);
-    window.addEventListener('hashchange', restoreLocation, true);
-    window.addEventListener('beforeunload', warnBeforeLeaving);
-
-    return () => {
-      document.removeEventListener('pointerdown', blockOutsideReason, true);
-      document.removeEventListener('click', blockOutsideReason, true);
-      document.removeEventListener('keydown', blockKeyboardOutsideReason, true);
-      document.removeEventListener('focusin', blockOutsideReason, true);
-      document.removeEventListener('submit', blockOutsideReason, true);
-      window.removeEventListener('popstate', restoreLocation, true);
-      window.removeEventListener('hashchange', restoreLocation, true);
-      window.removeEventListener('beforeunload', warnBeforeLeaving);
-    };
   }, [mustCompleteRequiredInput, requiredInputKey]);
 
-  // Observation Column Resizable Width (default 260px, min 180px, max 650px, persisted in localStorage)
+  const colScope = topic?.section ? String(topic.section).toLowerCase() : (topic?.id && topic.id.includes('CC') ? 'cc' : topic?.id && topic.id.includes('ASSEMBLY') ? 'assembly' : 'general');
+  const getColWidthKey = (col) => `pdca_${colScope}_${col}_col_width`;
+
+  // Observation Column Resizable Width (default 260px, min 180px, max 850px, persisted in localStorage scoped by section)
   const [observationWidth, setObservationWidth] = useState(() => {
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
-        const saved = window.localStorage.getItem('pdca_observation_col_width');
+        const saved = window.localStorage.getItem(getColWidthKey('observation')) || window.localStorage.getItem('pdca_observation_col_width');
         if (saved) {
           const parsed = parseInt(saved, 10);
           if (!isNaN(parsed) && parsed >= MIN_OBSERVATION_WIDTH && parsed <= MAX_OBSERVATION_WIDTH) {
@@ -1394,7 +1324,7 @@ export default function PDCASheet({
     activeColResizeRef.current = null;
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
-        window.localStorage.setItem('pdca_observation_col_width', String(observationWidth));
+        window.localStorage.setItem(getColWidthKey('observation'), String(observationWidth));
       }
     } catch { }
   };
@@ -1412,16 +1342,16 @@ export default function PDCASheet({
   useEffect(() => {
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
-        window.localStorage.setItem('pdca_observation_col_width', String(observationWidth));
+        window.localStorage.setItem(getColWidthKey('observation'), String(observationWidth));
       }
     } catch { }
-  }, [observationWidth]);
+  }, [observationWidth, colScope]);
 
-  // Root Cause Column Resizable Width (default 135px, min 95px, max 550px, persisted in localStorage)
+  // Root Cause Column Resizable Width (default 135px, min 95px, max 550px, persisted in localStorage scoped by section)
   const [rootCauseWidth, setRootCauseWidth] = useState(() => {
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
-        const saved = window.localStorage.getItem('pdca_root_cause_col_width');
+        const saved = window.localStorage.getItem(getColWidthKey('root_cause')) || window.localStorage.getItem('pdca_root_cause_col_width');
         if (saved) {
           const parsed = parseInt(saved, 10);
           if (!isNaN(parsed) && parsed >= MIN_ROOT_CAUSE_WIDTH && parsed <= MAX_ROOT_CAUSE_WIDTH) {
@@ -1824,41 +1754,44 @@ export default function PDCASheet({
   useEffect(() => {
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
-        window.localStorage.setItem('pdca_date_col_width', String(dateWidth));
+        window.localStorage.setItem(getColWidthKey('date'), String(dateWidth));
       }
     } catch { }
-  }, [dateWidth]);
+  }, [dateWidth, colScope]);
 
   useEffect(() => {
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
-        window.localStorage.setItem('pdca_department_col_width', String(departmentWidth));
+        window.localStorage.setItem(getColWidthKey('department'), String(departmentWidth));
       }
     } catch { }
-  }, [departmentWidth]);
+  }, [departmentWidth, colScope]);
 
   useEffect(() => {
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
-        window.localStorage.setItem('pdca_section_col_width', String(sectionWidth));
+        window.localStorage.setItem(getColWidthKey('section'), String(sectionWidth));
       }
     } catch { }
-  }, [sectionWidth]);
+  }, [sectionWidth, colScope]);
 
   useEffect(() => {
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
-        window.localStorage.setItem('pdca_line_area_col_width', String(lineAreaWidth));
+        window.localStorage.setItem(getColWidthKey('line_area'), String(lineAreaWidth));
       }
     } catch { }
-  }, [lineAreaWidth]);
+  }, [lineAreaWidth, colScope]);
 
-  // Load saved sheet from backend on mount or when topic changes
+  // Load saved sheet from backend on mount or when topic ID changes
   useEffect(() => {
     if (!topic?.id) return;
     let active = true;
     pdcaApi.getSheet(topic.id).then(savedSheet => {
       if (!active || !savedSheet) return;
+      // If user has already started typing in this session, protect their in-progress work
+      if (isDirtyRef.current) return;
+
       let finalHeader = headerInfo;
       if (savedSheet.headerInfo && Object.keys(savedSheet.headerInfo).length > 0) {
         const loadedTopicName = savedSheet.headerInfo.topicName;
@@ -1919,7 +1852,7 @@ export default function PDCASheet({
       console.warn('Could not fetch sheet from backend:', err);
     });
     return () => { active = false; };
-  }, [topic?.id, topic?.sheet]);
+  }, [topic?.id]);
 
   const sheetSnapshot = useMemo(() => {
     const normalizedRows = rows.map(r => {
@@ -1960,10 +1893,10 @@ export default function PDCASheet({
       return false;
     }
     if (requireConfirmationReasonBeforeContinuing()) return false;
-    // Validate mandatory fields (Date, Shift, Status, Line/Area, Observation) for active rows
+    // Validate mandatory fields only for completed/confirmed rows, allowing draft observations to be saved
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
-      if (!r.date?.trim()) {
+      if (!r.date?.trim() && !r.observation?.trim()) {
         continue;
       }
       const notConfirmed = ['Not - Confirmed', 'Not-Confirmed'].includes((r.confirmation || '').trim());
@@ -1996,52 +1929,23 @@ export default function PDCASheet({
         showToast(`Row ${i + 1}: Response Date is required when revisions exist.`);
         return false;
       }
-      const hasContent = Boolean(
-        r.date?.trim() ||
-        r.shift?.trim() ||
-        r.lineArea?.trim() ||
-        (Array.isArray(r.lineAreas) && r.lineAreas.some(l => l?.lineArea?.trim())) ||
-        r.observation?.trim() ||
-        r.imageBefore ||
-        (Array.isArray(r.imagesBefore) && r.imagesBefore.length > 0) ||
-        r.rootCause?.trim() ||
-        r.actionTaken?.trim() ||
-        r.counterMeasure?.trim() ||
-        r.imageAfter ||
-        (Array.isArray(r.imagesAfter) && r.imagesAfter.length > 0) ||
-        r.responseDate?.trim() ||
-        r.unit?.trim() ||
-        (r.respUnit || r.responsiblePersonUnit || '').trim() ||
-        r.department?.trim() ||
-        (Array.isArray(r.departments) && r.departments.some(d => d?.trim())) ||
-        (Array.isArray(r.sections) && r.sections.some(s => s?.section?.trim())) ||
-        r.staffEmployee?.trim() ||
-        r.staffName?.trim() ||
-        r.cftTopic?.trim() ||
-        r.responsiblePersonConfirmation?.trim()
-      );
-      if (hasContent) {
-        const hasPrimaryDepartment = Boolean(
-          r.department?.trim() || (Array.isArray(r.departments) && r.departments.some(d => d?.trim()))
-        );
-        const hasResponsibleDepartmentWithoutUnit = Boolean(
-          ((r.responsiblePersonDept && r.responsiblePersonDept !== 'CFT') && !['Bawal', 'Gujrat'].includes(r.respUnit || r.responsiblePersonUnit)) ||
-          (Array.isArray(r.staffEmployees) && r.staffEmployees.some(emp =>
-            emp.department && emp.department !== 'CFT' && !['Bawal', 'Gujrat'].includes(emp.unit || r.respUnit || r.responsiblePersonUnit)
-          ))
-        );
-        if (hasPrimaryDepartment && !['Bawal', 'Gujrat'].includes(r.unit)) {
-          showToast(`Row ${i + 1}: Select a Unit before selecting the Department.`);
-          return false;
+
+      // Default unit/date if row has an observation so draft can be safely saved
+      if (r.observation?.trim()) {
+        if (!r.date?.trim()) {
+          r.date = formDate || new Date().toISOString().split('T')[0];
         }
-        if (hasResponsibleDepartmentWithoutUnit) {
-          showToast(`Row ${i + 1}: Select the Responsible Confirmation Unit before selecting its Department.`);
-          return false;
+        if (!r.unit?.trim()) {
+          r.unit = topic?.plant || 'Bawal';
         }
+      }
+
+      // Only enforce strict completion requirements when row is marked 'Done' or 'Confirmed'
+      const isCompleted = r.status === 'Done' || r.confirmation === 'Confirmed';
+      if (isCompleted) {
         const missing = [];
         if (!r.date?.trim()) missing.push('Date');
         if (!r.shift?.trim()) missing.push('Shift');
-        if (!r.status?.trim()) missing.push('Status');
         const unitVal = (r.unit || (Array.isArray(r.units) && r.units[0]) || '').trim();
         if (!unitVal) missing.push('Unit');
         const deptVal = (r.department || (Array.isArray(r.departments) && r.departments[0]) || '').trim();
@@ -2054,13 +1958,13 @@ export default function PDCASheet({
           setAlertModal({
             isOpen: true,
             type: 'mandatory',
-            title: 'Mandatory Columns Required',
+            title: 'Mandatory Columns Required for Completed Row',
             rowNumber: i + 1,
             missingFields: missing,
-            message: `Row ${i + 1} has missing mandatory columns. The sheet cannot be saved until all required fields are filled.`,
+            message: `Row ${i + 1} is marked as completed but has missing mandatory columns: ${missing.join(', ')}.`,
             confirmText: "I'll fill them"
           });
-          showToast(`Row ${i + 1}: Mandatory column${missing.length > 1 ? 's' : ''} (${missing.join(', ')}) required.`);
+          showToast(`Row ${i + 1}: Mandatory column${missing.length > 1 ? 's' : ''} (${missing.join(', ')}) required to complete.`);
           return false;
         }
       }
@@ -2081,11 +1985,13 @@ export default function PDCASheet({
         return r;
       });
       const snapshotToSave = { rows: sanitizedRows, headerInfo };
+      let backendError = null;
       if (targetId) {
         try {
           await pdcaApi.saveSheet(targetId, snapshotToSave);
         } catch (apiErr) {
-          console.warn('Backend saveSheet warning, persisting locally:', apiErr?.message || apiErr);
+          backendError = apiErr;
+          console.warn('Backend saveSheet error:', apiErr?.message || apiErr);
         }
       }
       persistSheet(snapshotToSave);
@@ -2097,7 +2003,11 @@ export default function PDCASheet({
         headerInfo: { ...headerInfo }
       };
       initialSnapshotRef.current = serializeSheet(sanitizedRows, headerInfo);
-      showToast('PDCA is saved successfully');
+      if (backendError) {
+        showToast(`Saved locally, but server update failed: ${backendError?.response?.data?.message || backendError?.message || 'Check network connection'}`);
+      } else {
+        showToast('PDCA is saved successfully');
+      }
       return true;
     } catch (error) {
       persistSheet(sheetSnapshot);
@@ -3753,7 +3663,7 @@ export default function PDCASheet({
   // Section A: Responsible Person Instruction, etc. Confirmation change handler
   const handleConfirmationChange = (rowIndex, value, userName = '') => {
     const targetRow = rows[rowIndex];
-    const canConfirmThisRow = Boolean(!readOnly && (canConfirmDefault || (targetRow && isUserResponsibleForRow(targetRow, effectiveUser))));
+    const canConfirmThisRow = Boolean(!readOnly && (canConfirmDefault || isCreatorOrAdmin || hasEditAccess || (targetRow && isUserResponsibleForRow(targetRow, effectiveUser))));
     if (!canConfirmThisRow) {
       if (typeof showToast === 'function') showToast('You do not have permission to change confirmation status.');
       return;
@@ -3804,7 +3714,7 @@ export default function PDCASheet({
   // Instruction change handler for Responsible Person Instruction, etc. column
   const handleInstructionChange = (rowIndex, text) => {
     const targetRow = rows[rowIndex];
-    const canConfirmThisRow = Boolean(!readOnly && (canConfirmDefault || (targetRow && isUserResponsibleForRow(targetRow, effectiveUser))));
+    const canConfirmThisRow = Boolean(!readOnly && (canConfirmDefault || isCreatorOrAdmin || hasEditAccess || (targetRow && isUserResponsibleForRow(targetRow, effectiveUser))));
     if (!canConfirmThisRow) {
       if (typeof showToast === 'function') showToast('You do not have permission to change instruction.');
       return;
@@ -4444,7 +4354,7 @@ export default function PDCASheet({
   };
 
   const handleRemoveFile = (rowIndex, field, nameField, typeField) => {
-    if (!isAdmin) return;
+    if (effectiveReadOnly) return;
     setRows((prev) => {
       const updated = [...prev];
       const imagesField = field === 'imageBefore' ? 'imagesBefore' : 'imagesAfter';

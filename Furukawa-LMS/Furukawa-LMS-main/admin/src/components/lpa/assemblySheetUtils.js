@@ -866,29 +866,38 @@ export function createBlankAssemblySheet(baseSheet, date, levels = ['L3'], shift
           srcSheet = sources?.L2;
         }
 
-        if (srcSheet && Array.isArray(srcSheet.rows?.[rIdx])) {
-          const prevRow = srcSheet.rows[rIdx];
-          const existingAuditCols = getActiveAuditColumns(srcSheet, null, false);
-          let matchedPrevCol = null;
-
-          if (colGroup.id) {
-            matchedPrevCol = existingAuditCols.find(p => p.id === colGroup.id);
-          }
-          if (!matchedPrevCol && colGroup.level === 'L3') {
-            matchedPrevCol = existingAuditCols.find(p => p.level === 'L3' && (p.shift === colGroup.shift || (!p.shift && existingAuditCols.filter(x => x.level === 'L3').length === 1)));
-          }
-          if (!matchedPrevCol) {
-            matchedPrevCol = existingAuditCols.find(p => p.level === colGroup.level);
+        if (srcSheet && Array.isArray(srcSheet.rows)) {
+          let prevRow = srcSheet.rows[rIdx];
+          const currentQuestion = String(row[2]?.formatted ?? row[2]?.value ?? '').trim().toLowerCase();
+          const prevQuestion = String(prevRow?.[2]?.formatted ?? prevRow?.[2]?.value ?? '').trim().toLowerCase();
+          if (currentQuestion && prevQuestion !== currentQuestion) {
+            const foundRow = srcSheet.rows.slice(3, 37).find(r => Array.isArray(r) && String(r[2]?.formatted ?? r[2]?.value ?? '').trim().toLowerCase() === currentQuestion);
+            if (foundRow) prevRow = foundRow;
           }
 
-          if (matchedPrevCol && prevRow[matchedPrevCol.obsCol]) {
-            const savedObs = prevRow[matchedPrevCol.obsCol];
-            const savedScore = prevRow[matchedPrevCol.scoreCol];
-            if (savedObs && String(savedObs.value ?? savedObs.formatted ?? '').trim()) {
-              nextRow[colGroup.obsCol] = { ...savedObs };
+          if (prevRow) {
+            const existingAuditCols = getActiveAuditColumns(srcSheet, null, false);
+            let matchedPrevCol = null;
+
+            if (colGroup.id) {
+              matchedPrevCol = existingAuditCols.find(p => p.id === colGroup.id);
             }
-            if (savedScore && String(savedScore.value ?? savedScore.formatted ?? '').trim()) {
-              nextRow[colGroup.scoreCol] = { ...savedScore };
+            if (!matchedPrevCol && colGroup.level === 'L3') {
+              matchedPrevCol = existingAuditCols.find(p => p.level === 'L3' && (p.shift === colGroup.shift || (!p.shift && existingAuditCols.filter(x => x.level === 'L3').length === 1)));
+            }
+            if (!matchedPrevCol) {
+              matchedPrevCol = existingAuditCols.find(p => p.level === colGroup.level);
+            }
+
+            if (matchedPrevCol && prevRow[matchedPrevCol.obsCol]) {
+              const savedObs = prevRow[matchedPrevCol.obsCol];
+              const savedScore = prevRow[matchedPrevCol.scoreCol];
+              if (savedObs && String(savedObs.value ?? savedObs.formatted ?? '').trim()) {
+                nextRow[colGroup.obsCol] = { ...savedObs };
+              }
+              if (savedScore && String(savedScore.value ?? savedScore.formatted ?? '').trim()) {
+                nextRow[colGroup.scoreCol] = { ...savedScore };
+              }
             }
           }
         }

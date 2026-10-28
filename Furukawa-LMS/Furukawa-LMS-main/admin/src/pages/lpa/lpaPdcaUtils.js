@@ -140,7 +140,12 @@ export function getWorksheetScoresList(sheet, record = null) {
     }
 
     // Integer percentage like "68%" without decimal points
-    const pctNumber = applicableMarksSum > 0 ? Math.round((scoreSum / applicableMarksSum) * 100) : 0;
+    const hasEvaluatedObs = sheet.rows.slice(startRow, endRow).some(row => {
+      const obs = normalizeObservationSymbol(row?.[pair.obsCol]?.value ?? row?.[pair.obsCol]?.formatted);
+      return Boolean(obs);
+    });
+    const allEvaluatedAreNA = hasEvaluatedObs && applicableMarksSum === 0;
+    const pctNumber = applicableMarksSum > 0 ? Math.round((scoreSum / applicableMarksSum) * 100) : (allEvaluatedAreNA ? 100 : 0);
     const fullLevelName = pair.level === 'L3' ? 'Level 3' : pair.level === 'L2' ? 'Level 2' : pair.level === 'L1' ? 'Level 1' : pair.level;
     let label = fullLevelName;
     if (pair.level === 'L3' && pair.shift && l3Count > 1) {
@@ -264,7 +269,7 @@ export function extractObservationsFromSheet(sheet, record, date) {
 /**
  * Builds or loads PDCA Topic and rows from Assembly and/or C&C records.
  */
-export function getLpaPdcaTopic({ section = 'assembly', unit = 'Bawal', level = 'L1', date, records = [], templates = {} }) {
+export function getLpaPdcaTopic({ section = 'assembly', unit = 'Bawal', level = 'L1', date, records = [], templates = {}, backendSheet = null }) {
   const sec = (section || 'assembly').toLowerCase();
   const secUpper = sec.toUpperCase();
   const plant = unit || 'Bawal';
@@ -273,7 +278,26 @@ export function getLpaPdcaTopic({ section = 'assembly', unit = 'Bawal', level = 
   const localCacheKey = `lpa_pdca_saved_${storageId}`;
   const targetTopicName = sec === 'cc' ? 'C&C - LPA Observation (PDCA)' : 'Assembly - LPA Observation (PDCA)';
 
-  // Check saved copy in localStorage first
+  // If server database sheet has meaningful rows, prioritize it over localStorage
+  if (backendSheet && Array.isArray(backendSheet.rows) && backendSheet.rows.length > 0) {
+    const hasMeaningful = backendSheet.rows.some(r => Boolean(r && (r.date?.trim() || r.observation?.trim() || r.rootCause?.trim() || r.counterMeasure?.trim())));
+    if (hasMeaningful) {
+      const headerInfo = { ...(backendSheet.headerInfo || {}) };
+      if (!headerInfo.topicName || headerInfo.topicName === 'PDCA - M Tanaka San Audit') {
+        headerInfo.topicName = targetTopicName;
+      }
+      return {
+        id: storageId,
+        topic: targetTopicName,
+        section: sec,
+        scope: 'Company',
+        plant,
+        sheet: { ...backendSheet, headerInfo }
+      };
+    }
+  }
+
+  // Check saved copy in localStorage
   if (typeof localStorage !== 'undefined') {
     try {
       const saved = localStorage.getItem(localCacheKey);

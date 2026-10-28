@@ -13,18 +13,28 @@ export default function PDCASheetPage() {
   const { data, userContext } = usePDCA();
   const [directTopic, setDirectTopic] = useState(null);
 
+  const queryParams = new URLSearchParams(location.search);
+  const sheetParam = queryParams.get('sheet');
+  const activeId = id || sheetParam;
+
   useEffect(() => {
-    if (id && (!data || !data.some((d) => d.id === id))) {
-      pdcaApi.getRecord(id).then((rec) => {
+    if (activeId && (!data || !data.some((d) => d.id === activeId))) {
+      pdcaApi.getRecord(activeId).then((rec) => {
         if (rec) setDirectTopic(rec);
       }).catch((err) => {
         console.warn('Could not load record directly from backend:', err);
       });
     }
-  }, [id, data]);
+  }, [activeId, data]);
 
-  // Find the selected topic by route param ID, fallback to direct fetch, or fallback to first item
-  const selectedTopic = (id ? data.find((d) => d.id === id) : (data.length > 0 ? data[0] : null)) || directTopic;
+  // Find the selected topic by route param ID, query param, fallback to direct fetch, or fallback to first item
+  const selectedTopic = (activeId ? data.find((d) => d.id === activeId) : (data.length > 0 ? data[0] : null)) || directTopic;
+
+  useEffect(() => {
+    if (!activeId && selectedTopic?.id) {
+      navigate(`?sheet=${encodeURIComponent(selectedTopic.id)}`, { replace: true, state: location.state });
+    }
+  }, [activeId, selectedTopic?.id, navigate, location.state]);
 
   const isCreator = selectedTopic ? isRecordCreator(selectedTopic, userContext?.user) : false;
 

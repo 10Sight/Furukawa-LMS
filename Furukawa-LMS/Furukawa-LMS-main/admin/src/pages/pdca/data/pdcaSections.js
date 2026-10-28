@@ -83,12 +83,19 @@ export function isSectionRelatedToDepartment(sec, department) {
   switch (dept) {
     case 'c&c':
     case 'crimping':
+    case 'cutting & crimping':
+    case 'cutting and crimping':
+    case 'cutting & crimping (c&c)':
+    case 'cutting':
       if (category === 'quality') return false;
       return (
         category === 'crimping' ||
         category === 'c&c' ||
+        category === 'cutting & crimping' ||
         name.startsWith('c&c') ||
-        name.includes('_c&c')
+        name.includes('c&c') ||
+        name.includes('crimping') ||
+        name.includes('cutting')
       );
 
     case 'assembly':

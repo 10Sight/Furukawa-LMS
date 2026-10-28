@@ -332,11 +332,19 @@ export default function CcSheet({
         }
       }
 
-      const pctNum = applicableMarks > 0 ? Math.round((scoreSum / applicableMarks) * 100) : 0;
+      const hasEvaluatedRows = sheet.rows.slice(4, 35).some(row => {
+        const obs = normalizeObservationSymbol(row?.[colGroup.obsCol]?.value ?? row?.[colGroup.obsCol]?.formatted);
+        return Boolean(obs);
+      });
+      const allEvaluatedAreNA = hasEvaluatedRows && applicableMarks === 0;
+      const pctNum = applicableMarks > 0
+        ? Math.round((scoreSum / applicableMarks) * 100)
+        : (allEvaluatedAreNA ? 100 : 0);
+
       scores[colGroup.id] = {
-        totalMarks: applicableMarks || 62,
+        totalMarks: applicableMarks > 0 ? applicableMarks : (allEvaluatedAreNA ? 0 : 62),
         totalScore: scoreSum,
-        percentageText: `${pctNum}%`,
+        percentageText: allEvaluatedAreNA ? '100%' : `${pctNum}%`,
         obsCol: colGroup.obsCol,
         scoreCol: colGroup.scoreCol
       };

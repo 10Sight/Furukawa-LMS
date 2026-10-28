@@ -747,13 +747,69 @@ function LpaPageContent({ viewContext }) {
     `${record.name} ${record.sheets?.map(item => item.name).join(' ') || ''}`.toLowerCase().includes(searchQuery.toLowerCase())
   );
   const exportAllRecords = () => {
-    const rows = records.flatMap(record => record.sheets.map(current => ({
-      Unit: record.unit || 'Bawal', Level: record.level || 'L1', Section: record.section === 'assembly' ? 'Assembly' : 'C&C',
-      Form: record.name, Worksheet: current.name, Rows: current.rows.length,
-    })));
+    const exportRows = [];
+    const targetRecords = visibleRecords.length > 0 ? visibleRecords : records;
+    targetRecords.forEach(record => {
+      (record.sheets || []).forEach(current => {
+        const isCc = String(record.section || '').toLowerCase() === 'cc';
+        const startRow = isCc ? 4 : 3;
+        const marksCol = isCc ? 6 : 4;
+        const auditCols = isCc ? 7 : 5;
+        const auditorStr = (current.auditors && current.auditors.length > 0)
+          ? current.auditors.filter(Boolean).join(', ')
+          : (current.auditor || record.auditor || record.createdBy || '-');
+
+        let hasDetailRows = false;
+        for (let r = startRow; r < (current.rows?.length || 0); r++) {
+          const row = current.rows[r];
+          if (!row || !Array.isArray(row)) continue;
+          const firstCell = String(row[0]?.formatted ?? row[0]?.value ?? '').trim();
+          if (/^(total|percentage|legend|auditor)/i.test(firstCell)) break;
+          const checkText = String(row[2]?.formatted ?? row[2]?.value ?? '').trim();
+          if (!checkText) continue;
+          hasDetailRows = true;
+          const slNo = firstCell || String(r - startRow + 1);
+          const marks = row[marksCol]?.formatted ?? row[marksCol]?.value ?? '';
+          const obs = row[auditCols]?.formatted ?? row[auditCols]?.value ?? '';
+          const score = row[auditCols + 1]?.formatted ?? row[auditCols + 1]?.value ?? '';
+          exportRows.push({
+            Unit: record.unit || selectedUnit || 'Bawal',
+            Date: formatLpaDate(record.auditDate || record.date || current.auditDate || current.date),
+            Section: record.section === 'cc' ? 'C&C' : 'Assembly',
+            Level: record.level || 'L3',
+            Shift: record.shift || current.shift || 'A',
+            Form: record.name || 'LPA Check Sheet',
+            Worksheet: current.name || 'Sheet 1',
+            Auditor: auditorStr,
+            'S.No': slNo,
+            'Check Points': checkText,
+            Marks: marks,
+            Observation: obs,
+            Score: score
+          });
+        }
+        if (!hasDetailRows) {
+          exportRows.push({
+            Unit: record.unit || selectedUnit || 'Bawal',
+            Date: formatLpaDate(record.auditDate || record.date || current.auditDate || current.date),
+            Section: record.section === 'cc' ? 'C&C' : 'Assembly',
+            Level: record.level || 'L3',
+            Shift: record.shift || current.shift || 'A',
+            Form: record.name,
+            Worksheet: current.name,
+            Auditor: auditorStr,
+            'S.No': '-',
+            'Check Points': 'No checkpoints recorded',
+            Marks: '-',
+            Observation: '-',
+            Score: '-'
+          });
+        }
+      });
+    });
     const book = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(book, XLSX.utils.json_to_sheet(rows), 'LPA Records');
-    XLSX.writeFile(book, 'LPA_All_Records.xlsx');
+    XLSX.utils.book_append_sheet(book, XLSX.utils.json_to_sheet(exportRows), 'LPA Observations');
+    XLSX.writeFile(book, `LPA_Observations_${activeSection}_${selectedUnit || 'All'}.xlsx`);
   };
   const mergeMap = useMemo(() => {
     const anchors = new Map();
@@ -800,15 +856,17 @@ function LpaPageContent({ viewContext }) {
   const pdcaTopic = useMemo(() => {
     if (customPdcaTopic) return customPdcaTopic;
     if (!selectedUnit) return null;
+    const backendMatching = (backendPdcaSheets || []).find(rec => isLpaRecordForSection(rec, activeSection, selectedUnit));
     return getLpaPdcaTopic({
       section: activeSection,
       unit: selectedUnit,
       level: 'L1',
       date: pdcaDate,
       records,
-      templates: { assemblyTemplate, ccTemplate }
+      templates: { assemblyTemplate, ccTemplate },
+      backendSheet: backendMatching?.sheet || null
     });
-  }, [customPdcaTopic, activeSection, selectedUnit, pdcaDate, records, pdcaSaveVersion]);
+  }, [customPdcaTopic, activeSection, selectedUnit, pdcaDate, records, backendPdcaSheets, pdcaSaveVersion]);
 
   // Custom PDCA Sheets created by Admin (isolated per section & plant)
   const [customPdcaSheets, setCustomPdcaSheets] = useState(() => {
@@ -871,9 +929,7 @@ function LpaPageContent({ viewContext }) {
 
     const map = new Map();
     for (const b of matchingBackend) {
-      if (!deletedDefaultIds.includes(b.id)) {
-        map.set(b.id, b);
-      }
+      map.set(b.id, b);
     }
 
     if (!map.has(baseSheetId) && !deletedDefaultIds.includes(baseSheetId)) {
@@ -895,7 +951,7 @@ function LpaPageContent({ viewContext }) {
       return String(dateB).localeCompare(String(dateA));
     });
   }, [activeSection, selectedUnit, pdcaDate, backendPdcaSheets, customPdcaSheets, pdcaDeleteRevision]);
-  const visiblePdcaSheets = allPdcaSheets.filter(item => matchesLpaDateRange(item.date, fromDate, toDate));
+  const visiblePdcaSheets = allPdcaSheets.filter(item => item.isDefault || matchesLpaDateRange(item.date, fromDate, toDate));
 
   const emailPdcaSheets = useMemo(() => allPdcaSheets.map(item => {
     let sheetData = null;
@@ -1181,9 +1237,11 @@ function LpaPageContent({ viewContext }) {
   const handleSavePDCA = async (sheetSnapshot) => {
     if (!pdcaTopic?.id) return;
     saveLpaPdcaSnapshot(pdcaTopic.id, sheetSnapshot);
+    let backendError = null;
     try {
       await pdcaApi.saveSheet(pdcaTopic.id, sheetSnapshot);
     } catch (err) {
+      backendError = err;
       console.warn('Backend saveSheet error:', err);
     }
     if (customPdcaTopic) {
@@ -1191,7 +1249,11 @@ function LpaPageContent({ viewContext }) {
     }
     setPdcaSaveVersion(v => v + 1);
     await loadBackendPdcaSheets();
-    setMessage({ text: 'PDCA form saved successfully.' });
+    if (backendError) {
+      setMessage({ error: true, text: `PDCA saved locally, but server update failed: ${backendError?.response?.data?.message || backendError?.message || 'Check network connection'}` });
+    } else {
+      setMessage({ text: 'PDCA form saved successfully.' });
+    }
   };
 
   const openRecordPDCA = (record, worksheetIndex) => {
@@ -1526,13 +1588,15 @@ function LpaPageContent({ viewContext }) {
                         return filteredSheets.map((sh, idx) => {
                           let rows = [];
                           try {
-                            const saved = localStorage.getItem(`lpa_pdca_saved_${sh.id}`);
-                            if (saved) {
-                              rows = JSON.parse(saved)?.rows || [];
-                            } else if (sh.sheet?.rows) {
+                            if (sh.sheet?.rows && sh.sheet.rows.length > 0) {
                               rows = sh.sheet.rows;
-                            } else if (sh.isDefault) {
-                              rows = pdcaTopic?.sheet?.rows || [];
+                            } else {
+                              const saved = localStorage.getItem(`lpa_pdca_saved_${sh.id}`);
+                              if (saved) {
+                                rows = JSON.parse(saved)?.rows || [];
+                              } else if (sh.isDefault) {
+                                rows = pdcaTopic?.sheet?.rows || [];
+                              }
                             }
                           } catch {}
 

@@ -512,10 +512,6 @@ export default function LpaPdcaSheet({
 
   useEffect(() => {
     if (missingRequiredInputs.length === 0 || typeof document === 'undefined') return undefined;
-    const allowedControls = new Set(missingRequiredInputs.flatMap((requiredInput) => requiredInput.type === 'confirmation'
-      ? [confirmationReasonRefs.current[requiredInput.rowIndex], confirmationSelectRefs.current[requiredInput.rowIndex]]
-      : [durationRefs.current[requiredInput.rowIndex]]).filter(Boolean));
-    lastAllowedUrlRef.current = window.location.href;
     const firstRequiredInput = missingRequiredInputs[0];
     const firstRowIndex = firstRequiredInput.rowIndex;
     const message = firstRequiredInput.type === 'confirmation'
@@ -524,65 +520,6 @@ export default function LpaPdcaSheet({
     const firstInput = firstRequiredInput.type === 'confirmation' ? confirmationReasonRefs.current[firstRowIndex] : durationRefs.current[firstRowIndex];
     firstInput?.focus();
     notifyRef.current(message, 'error');
-
-    const isAllowedControl = (target) => target instanceof Element && Boolean(target.closest('[data-required-action-allowed="true"]'));
-    const notifyAndFocus = () => {
-      const now = Date.now();
-      if (now - lastRequiredNoticeAtRef.current > 800) {
-        notifyRef.current(message, 'error');
-        lastRequiredNoticeAtRef.current = now;
-      }
-      const currentRequiredInput = missingRequiredInputs[0];
-      const currentInput = currentRequiredInput.type === 'confirmation'
-        ? confirmationReasonRefs.current[currentRequiredInput.rowIndex]
-        : durationRefs.current[currentRequiredInput.rowIndex];
-      currentInput?.focus();
-      currentInput?.reportValidity();
-    };
-    const blockOutsideRequiredCell = (event) => {
-      const control = isAllowedControl(event.target) ? event.target.closest('[data-required-action-allowed="true"]') : null;
-      if (control && allowedControls.has(control)) return;
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation?.();
-      notifyAndFocus();
-    };
-    const blockKeyboardOutsideRequiredCell = (event) => {
-      const navigationKey = event.key === 'Tab' || event.key === 'Escape' || event.altKey ||
-        ((event.ctrlKey || event.metaKey) && ['r', 'w', 'l'].includes(event.key.toLowerCase()));
-      if (isAllowedControl(event.target) && !navigationKey) return;
-      blockOutsideRequiredCell(event);
-    };
-    const restoreLocation = (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation?.();
-      window.history.pushState({ ...(window.history.state || {}), requiredConfirmationGate: true }, '', lastAllowedUrlRef.current);
-      notifyAndFocus();
-    };
-    const warnBeforeLeaving = (event) => {
-      event.preventDefault();
-      event.returnValue = '';
-    };
-
-    document.addEventListener('pointerdown', blockOutsideRequiredCell, true);
-    document.addEventListener('click', blockOutsideRequiredCell, true);
-    document.addEventListener('keydown', blockKeyboardOutsideRequiredCell, true);
-    document.addEventListener('focusin', blockOutsideRequiredCell, true);
-    document.addEventListener('submit', blockOutsideRequiredCell, true);
-    window.addEventListener('popstate', restoreLocation, true);
-    window.addEventListener('hashchange', restoreLocation, true);
-    window.addEventListener('beforeunload', warnBeforeLeaving);
-    return () => {
-      document.removeEventListener('pointerdown', blockOutsideRequiredCell, true);
-      document.removeEventListener('click', blockOutsideRequiredCell, true);
-      document.removeEventListener('keydown', blockKeyboardOutsideRequiredCell, true);
-      document.removeEventListener('focusin', blockOutsideRequiredCell, true);
-      document.removeEventListener('submit', blockOutsideRequiredCell, true);
-      window.removeEventListener('popstate', restoreLocation, true);
-      window.removeEventListener('hashchange', restoreLocation, true);
-      window.removeEventListener('beforeunload', warnBeforeLeaving);
-    };
   }, [requiredConfirmationKey]);
 
   // Resizable column widths for Observation, Root Cause, and Counter Measure

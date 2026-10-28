@@ -157,12 +157,33 @@ function LpaPageContent({ viewContext }) {
       const res = await pdcaApi.getRecords({ limit: 100 });
       const recordsList = Array.isArray(res) ? res : (res?.records || []);
       setBackendPdcaSheets(recordsList);
+
+      const hasContent = (s) => Array.isArray(s?.rows) && s.rows.some(r => Boolean(
+        r?.date?.trim() || r?.observation?.trim() || r?.rootCause?.trim() || r?.counterMeasure?.trim() ||
+        (r?.status && r?.status !== 'Not-Started') || r?.staffEmployee?.trim() || r?.department?.trim()
+      ));
+
+      const currentUnit = selectedUnit || 'Bawal';
+      const baseSheetIds = [
+        `PDCA-LPA-CC-${currentUnit}`,
+        `PDCA-LPA-ASSEMBLY-${currentUnit}`
+      ];
+      for (const sId of baseSheetIds) {
+        try {
+          const sh = await pdcaApi.getSheet(sId);
+          if (hasContent(sh)) {
+            try {
+              localStorage.setItem(`lpa_pdca_saved_${sId}`, JSON.stringify(sh));
+            } catch {}
+          }
+        } catch {}
+      }
     } catch (err) {
       console.warn('Could not fetch backend PDCA records:', err);
     } finally {
       setIsPdcaLoading(false);
     }
-  }, []);
+  }, [selectedUnit]);
 
   useEffect(() => {
     loadBackendPdcaSheets();
@@ -900,28 +921,52 @@ function LpaPageContent({ viewContext }) {
 
   const handleOpenSpecificPdcaSheet = async (sheetItem) => {
     let sheetData = null;
+    const hasMeaningfulRows = (s) => Array.isArray(s?.rows) && s.rows.some(r => Boolean(
+      r?.date?.trim() || r?.observation?.trim() || r?.rootCause?.trim() || r?.counterMeasure?.trim() ||
+      (r?.status && r?.status !== 'Not-Started') || r?.staffEmployee?.trim() || r?.department?.trim()
+    ));
+
+    // 1. Fetch fresh sheet directly from backend API
     try {
-      const saved = localStorage.getItem(`lpa_pdca_saved_${sheetItem.id}`);
-      if (saved) {
-        sheetData = JSON.parse(saved);
+      const fetched = await pdcaApi.getSheet(sheetItem.id);
+      if (hasMeaningfulRows(fetched)) {
+        sheetData = fetched;
+        try {
+          localStorage.setItem(`lpa_pdca_saved_${sheetItem.id}`, JSON.stringify(fetched));
+        } catch {}
       }
     } catch (err) {
-      console.error(err);
+      console.warn('Could not fetch sheet from backend API:', err);
     }
 
-    if (!sheetData && sheetItem.sheet && Array.isArray(sheetItem.sheet.rows) && sheetItem.sheet.rows.length > 0) {
+    // 2. Check localStorage if backend didn't return meaningful rows
+    if (!sheetData) {
+      try {
+        const saved = localStorage.getItem(`lpa_pdca_saved_${sheetItem.id}`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (hasMeaningfulRows(parsed)) {
+            sheetData = parsed;
+          }
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    // 3. Check sheetItem.sheet
+    if (!sheetData && sheetItem.sheet && hasMeaningfulRows(sheetItem.sheet)) {
       sheetData = sheetItem.sheet;
     }
 
-    if (!sheetData || !Array.isArray(sheetData.rows) || sheetData.rows.length === 0) {
+    // 4. Fallback to fetched backend or localStorage even if unstarted
+    if (!sheetData) {
       try {
         const fetched = await pdcaApi.getSheet(sheetItem.id);
         if (fetched && Array.isArray(fetched.rows) && fetched.rows.length > 0) {
           sheetData = fetched;
         }
-      } catch (err) {
-        console.warn('Could not fetch sheet from backend API:', err);
-      }
+      } catch {}
     }
 
     if (!sheetData) {

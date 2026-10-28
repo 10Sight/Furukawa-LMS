@@ -1888,6 +1888,14 @@ export default function PDCASheet({
       if (backendHasContent) {
         finalRows = savedSheet.rows.map(normalizeRow);
         setRows(finalRows);
+        try {
+          if (typeof window !== 'undefined' && window.localStorage && topic?.id) {
+            window.localStorage.setItem(`lpa_pdca_saved_${topic.id}`, JSON.stringify({
+              rows: finalRows,
+              headerInfo: finalHeader
+            }));
+          }
+        } catch {}
       } else if (!localHasContent && Array.isArray(savedSheet.rows) && savedSheet.rows.length > 0) {
         finalRows = savedSheet.rows.map(normalizeRow);
         setRows(finalRows);
@@ -1911,7 +1919,7 @@ export default function PDCASheet({
       console.warn('Could not fetch sheet from backend:', err);
     });
     return () => { active = false; };
-  }, [topic?.id]);
+  }, [topic?.id, topic?.sheet]);
 
   const sheetSnapshot = useMemo(() => {
     const normalizedRows = rows.map(r => {

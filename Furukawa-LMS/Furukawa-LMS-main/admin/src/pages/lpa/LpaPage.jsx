@@ -835,14 +835,6 @@ function LpaPageContent({ viewContext }) {
 
     const matchingBackend = (backendPdcaSheets || [])
       .filter(rec => isLpaRecordForSection(rec, activeSection, selectedUnit))
-      .filter(rec => {
-        if (isCc) {
-          const recId = String(rec.id || rec.recordId || '');
-          if (recId === 'PDCA-LPA-CC-Bawal' || recId === baseSheetId) return false;
-          if (rec.topic === 'C&C - LPA Observation (PDCA)' && !rec.createdAt && !rec.createdBy) return false;
-        }
-        return true;
-      })
       .map(rec => ({
         id: rec.id || rec.recordId,
         title: rec.topic || `${activeSection === 'assembly' ? 'Assembly' : 'C&C'} - LPA Observation (PDCA)`,
@@ -863,12 +855,11 @@ function LpaPageContent({ viewContext }) {
       }
     }
 
-    if (!isCc && !map.has(baseSheetId) && !deletedDefaultIds.includes(baseSheetId)) {
+    if (!map.has(baseSheetId) && !deletedDefaultIds.includes(baseSheetId)) {
       map.set(baseSheetId, baseSheet);
     }
 
     for (const c of (customPdcaSheets || [])) {
-      if (isCc && (c.id === baseSheetId || c.id === 'PDCA-LPA-CC-Bawal')) continue;
       if (!map.has(c.id) && !deletedDefaultIds.includes(c.id)) {
         map.set(c.id, c);
       }
@@ -1193,7 +1184,7 @@ function LpaPageContent({ viewContext }) {
     <div className="fixed inset-0 z-40 h-dvh w-full bg-white text-slate-800 flex flex-col overflow-hidden p-1.5 sm:p-2 pb-0.5 sm:pb-1">
       <PdcaErrorBoundary onBack={handleBackFromPDCA}>
         <PDCASheet
-          key={`${pdcaTopic.id}-${pdcaDate}`}
+          key={pdcaTopic.id}
           topic={pdcaTopic}
           onBack={handleBackFromPDCA}
           onSave={handleSavePDCA}
@@ -1828,9 +1819,10 @@ function LpaPageContent({ viewContext }) {
       <SendMailModal
         isOpen={isSendMailOpen}
         onClose={() => setIsSendMailOpen(false)}
-        formType={activeSection === 'cc' ? 'cc' : activeSubTab === 'pdca' ? 'pdca' : 'assembly'}
+        formType={activeSubTab === 'pdca' ? 'pdca' : (activeSection === 'cc' ? 'cc' : 'assembly')}
+        pdcaOnly={activeSubTab === 'pdca'}
         title={`${activeSection === 'cc' ? 'C&C' : 'Assembly'} ${activeSubTab === 'pdca' ? 'PDCA' : 'LPA'} Sheet`}
-        metadata={{ auditDate: pdcaDate, unit: selectedUnit, sectionName: activeSection === 'cc' ? 'C&C' : 'Assembly' }}
+        metadata={{ auditDate: pdcaDate, unit: selectedUnit, section: activeSection, sectionName: activeSection === 'cc' ? 'C&C' : 'Assembly' }}
         pdcaLabel="LPA Observation PDCA"
         assemblySheets={visibleRecords}
         pdcaSheets={emailPdcaSheets}

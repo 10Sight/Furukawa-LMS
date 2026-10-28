@@ -38,7 +38,7 @@
       "department": "",
       "section": "",
       "sectionId": "",
-      "date": "26 Oct 2026",
+      "date": "28 Oct 2026",
       "time": "12:59 PM",
       "createdBy": {
         "id": 14,
@@ -52,9 +52,9 @@
       "assignedMembers": [],
       "lpaSource": null,
       "isSelf": false,
-      "isDeleted": true,
+      "isDeleted": false,
       "createdAt": "2026-10-26T07:29:30.327Z",
-      "updatedAt": "2026-10-26T07:29:30.327Z"
+      "updatedAt": "2026-10-28T09:10:04.912Z"
     },
     {
       "id": "PDCA-LPA-ASSEMBLY-Bawal-1792939772408",
@@ -9418,19 +9418,13 @@
       ]
     },
     "PDCA-LPA-CC-Bawal": {
-      "headerInfo": {
-        "topicName": "C&C - LPA Observation (PDCA)",
-        "preparedBy": "",
-        "auditNo": "",
-        "attendees": ""
-      },
       "rows": [
         {
-          "date": "",
+          "date": "2026-10-28",
           "shift": "A",
-          "lineArea": "C&C Area",
-          "status": "In- Progress",
-          "observation": "Is the operator working on specific workstation having specific authorization.",
+          "lineArea": "",
+          "status": "Not-Started",
+          "observation": "Testing",
           "imageBefore": null,
           "imageBeforeName": "",
           "fileTypeBefore": "image",
@@ -9440,60 +9434,68 @@
           "imageAfter": null,
           "imageAfterName": "",
           "fileTypeAfter": "image",
-          "responseDate": "2026-11-26",
-          "department": "Die Casting",
-          "staffEmployee": "",
-          "staffEmployees": [],
-          "staffName": "",
-          "staffId": "",
-          "employeeId": "",
-          "assignedEmployee": "",
-          "cftTopic": "",
-          "cftTopicId": "",
-          "cftSelectedType": "",
-          "cftSelectedName": "",
-          "cftSelectedCode": "",
-          "responsiblePersonConfirmation": "",
-          "initialResponseDate": "2026-11-26",
-          "departments": [
-            "Die Casting"
-          ],
-          "unit": "",
-          "units": [],
-          "stdDurationMin": "",
-          "revisedDates": [],
-          "noOfTimeRevised": 0,
-          "respUnit": "",
-          "respUnits": [],
-          "responsiblePersonUnit": "",
-          "respDeptsByUnit": {},
-          "confirmation": "",
-          "confirmedBy": "",
-          "instruction": "",
-          "section": "",
-          "sectionId": null,
-          "sectionCode": "",
-          "sections": [],
-          "lineAreaId": null,
-          "lineAreaCode": "",
-          "lineAreaSectionId": null,
-          "lineAreas": [
+          "responseDate": "",
+          "department": "PE",
+          "staffEmployee": "YOGESH KUMAR",
+          "staffEmployees": [
             {
-              "lineArea": "C&C Area",
-              "lineAreaId": null,
-              "lineAreaCode": "",
-              "sectionId": null
+              "name": "YOGESH KUMAR",
+              "code": "AS081213",
+              "department": "PE",
+              "unit": "Bawal"
             }
           ],
-          "responsiblePersonDept": "",
+          "staffName": "YOGESH KUMAR",
+          "staffId": "AS081213",
+          "employeeId": "AS081213",
+          "assignedEmployee": "",
+          "cftTopic": "",
+          "cftTopicId": "",
+          "cftSelectedType": "",
+          "cftSelectedName": "",
+          "cftSelectedCode": "",
+          "responsiblePersonConfirmation": "YOGESH KUMAR",
+          "initialResponseDate": "",
+          "departments": [
+            "C&C"
+          ],
+          "unit": "Bawal",
+          "units": [
+            "Bawal"
+          ],
+          "stdDurationMin": "",
+          "revisedDates": [],
+          "noOfTimeRevised": 0,
+          "respUnit": "Bawal",
+          "respUnits": [
+            "Bawal"
+          ],
+          "responsiblePersonUnit": "Bawal",
+          "respDeptsByUnit": {
+            "Bawal": [
+              "PE"
+            ]
+          },
+          "confirmation": "",
+          "confirmedBy": "",
+          "instruction": "",
+          "section": "",
+          "sectionId": null,
+          "sectionCode": "",
+          "sections": [],
+          "lineAreaId": null,
+          "lineAreaCode": "",
+          "lineAreaSectionId": null,
+          "lineAreas": [],
+          "responsiblePersonDept": "PE",
           "imagesBefore": [],
           "imagesAfter": []
         },
         {
           "date": "",
-          "shift": "B",
+          "shift": "",
           "lineArea": "",
-          "status": "",
+          "status": "Not-Started",
           "observation": "",
           "imageBefore": null,
           "imageBeforeName": "",
@@ -9505,7 +9507,7 @@
           "imageAfterName": "",
           "fileTypeAfter": "image",
           "responseDate": "",
-          "department": "",
+          "department": "C&C",
           "staffEmployee": "",
           "staffEmployees": [],
           "staffName": "",
@@ -9519,9 +9521,13 @@
           "cftSelectedCode": "",
           "responsiblePersonConfirmation": "",
           "initialResponseDate": "",
-          "departments": [],
-          "unit": "",
-          "units": [],
+          "departments": [
+            "C&C"
+          ],
+          "unit": "Bawal",
+          "units": [
+            "Bawal"
+          ],
           "stdDurationMin": "",
           "revisedDates": [],
           "noOfTimeRevised": 0,
@@ -9546,9 +9552,9 @@
         },
         {
           "date": "",
-          "shift": "A",
+          "shift": "",
           "lineArea": "",
-          "status": "",
+          "status": "Not-Started",
           "observation": "",
           "imageBefore": null,
           "imageBeforeName": "",
@@ -9560,7 +9566,7 @@
           "imageAfterName": "",
           "fileTypeAfter": "image",
           "responseDate": "",
-          "department": "",
+          "department": "C&C",
           "staffEmployee": "",
           "staffEmployees": [],
           "staffName": "",
@@ -9574,9 +9580,13 @@
           "cftSelectedCode": "",
           "responsiblePersonConfirmation": "",
           "initialResponseDate": "",
-          "departments": [],
-          "unit": "",
-          "units": [],
+          "departments": [
+            "C&C"
+          ],
+          "unit": "Bawal",
+          "units": [
+            "Bawal"
+          ],
           "stdDurationMin": "",
           "revisedDates": [],
           "noOfTimeRevised": 0,
@@ -9601,9 +9611,9 @@
         },
         {
           "date": "",
-          "shift": "B",
+          "shift": "",
           "lineArea": "",
-          "status": "",
+          "status": "Not-Started",
           "observation": "",
           "imageBefore": null,
           "imageBeforeName": "",
@@ -9615,7 +9625,7 @@
           "imageAfterName": "",
           "fileTypeAfter": "image",
           "responseDate": "",
-          "department": "",
+          "department": "C&C",
           "staffEmployee": "",
           "staffEmployees": [],
           "staffName": "",
@@ -9629,9 +9639,13 @@
           "cftSelectedCode": "",
           "responsiblePersonConfirmation": "",
           "initialResponseDate": "",
-          "departments": [],
-          "unit": "",
-          "units": [],
+          "departments": [
+            "C&C"
+          ],
+          "unit": "Bawal",
+          "units": [
+            "Bawal"
+          ],
           "stdDurationMin": "",
           "revisedDates": [],
           "noOfTimeRevised": 0,
@@ -9656,9 +9670,9 @@
         },
         {
           "date": "",
-          "shift": "A",
+          "shift": "",
           "lineArea": "",
-          "status": "",
+          "status": "Not-Started",
           "observation": "",
           "imageBefore": null,
           "imageBeforeName": "",
@@ -9670,7 +9684,7 @@
           "imageAfterName": "",
           "fileTypeAfter": "image",
           "responseDate": "",
-          "department": "",
+          "department": "C&C",
           "staffEmployee": "",
           "staffEmployees": [],
           "staffName": "",
@@ -9684,9 +9698,13 @@
           "cftSelectedCode": "",
           "responsiblePersonConfirmation": "",
           "initialResponseDate": "",
-          "departments": [],
-          "unit": "",
-          "units": [],
+          "departments": [
+            "C&C"
+          ],
+          "unit": "Bawal",
+          "units": [
+            "Bawal"
+          ],
           "stdDurationMin": "",
           "revisedDates": [],
           "noOfTimeRevised": 0,
@@ -9711,9 +9729,9 @@
         },
         {
           "date": "",
-          "shift": "B",
+          "shift": "",
           "lineArea": "",
-          "status": "",
+          "status": "Not-Started",
           "observation": "",
           "imageBefore": null,
           "imageBeforeName": "",
@@ -9725,7 +9743,7 @@
           "imageAfterName": "",
           "fileTypeAfter": "image",
           "responseDate": "",
-          "department": "",
+          "department": "C&C",
           "staffEmployee": "",
           "staffEmployees": [],
           "staffName": "",
@@ -9739,9 +9757,13 @@
           "cftSelectedCode": "",
           "responsiblePersonConfirmation": "",
           "initialResponseDate": "",
-          "departments": [],
-          "unit": "",
-          "units": [],
+          "departments": [
+            "C&C"
+          ],
+          "unit": "Bawal",
+          "units": [
+            "Bawal"
+          ],
           "stdDurationMin": "",
           "revisedDates": [],
           "noOfTimeRevised": 0,
@@ -9766,9 +9788,9 @@
         },
         {
           "date": "",
-          "shift": "A",
+          "shift": "",
           "lineArea": "",
-          "status": "",
+          "status": "Not-Started",
           "observation": "",
           "imageBefore": null,
           "imageBeforeName": "",
@@ -9780,7 +9802,7 @@
           "imageAfterName": "",
           "fileTypeAfter": "image",
           "responseDate": "",
-          "department": "",
+          "department": "C&C",
           "staffEmployee": "",
           "staffEmployees": [],
           "staffName": "",
@@ -9794,9 +9816,13 @@
           "cftSelectedCode": "",
           "responsiblePersonConfirmation": "",
           "initialResponseDate": "",
-          "departments": [],
-          "unit": "",
-          "units": [],
+          "departments": [
+            "C&C"
+          ],
+          "unit": "Bawal",
+          "units": [
+            "Bawal"
+          ],
           "stdDurationMin": "",
           "revisedDates": [],
           "noOfTimeRevised": 0,
@@ -9821,9 +9847,9 @@
         },
         {
           "date": "",
-          "shift": "B",
+          "shift": "",
           "lineArea": "",
-          "status": "",
+          "status": "Not-Started",
           "observation": "",
           "imageBefore": null,
           "imageBeforeName": "",
@@ -9835,7 +9861,7 @@
           "imageAfterName": "",
           "fileTypeAfter": "image",
           "responseDate": "",
-          "department": "",
+          "department": "C&C",
           "staffEmployee": "",
           "staffEmployees": [],
           "staffName": "",
@@ -9849,9 +9875,13 @@
           "cftSelectedCode": "",
           "responsiblePersonConfirmation": "",
           "initialResponseDate": "",
-          "departments": [],
-          "unit": "",
-          "units": [],
+          "departments": [
+            "C&C"
+          ],
+          "unit": "Bawal",
+          "units": [
+            "Bawal"
+          ],
           "stdDurationMin": "",
           "revisedDates": [],
           "noOfTimeRevised": 0,
@@ -9876,9 +9906,9 @@
         },
         {
           "date": "",
-          "shift": "A",
+          "shift": "",
           "lineArea": "",
-          "status": "",
+          "status": "Not-Started",
           "observation": "",
           "imageBefore": null,
           "imageBeforeName": "",
@@ -9890,7 +9920,7 @@
           "imageAfterName": "",
           "fileTypeAfter": "image",
           "responseDate": "",
-          "department": "",
+          "department": "C&C",
           "staffEmployee": "",
           "staffEmployees": [],
           "staffName": "",
@@ -9904,9 +9934,13 @@
           "cftSelectedCode": "",
           "responsiblePersonConfirmation": "",
           "initialResponseDate": "",
-          "departments": [],
-          "unit": "",
-          "units": [],
+          "departments": [
+            "C&C"
+          ],
+          "unit": "Bawal",
+          "units": [
+            "Bawal"
+          ],
           "stdDurationMin": "",
           "revisedDates": [],
           "noOfTimeRevised": 0,
@@ -9931,9 +9965,9 @@
         },
         {
           "date": "",
-          "shift": "B",
+          "shift": "",
           "lineArea": "",
-          "status": "",
+          "status": "Not-Started",
           "observation": "",
           "imageBefore": null,
           "imageBeforeName": "",
@@ -9945,7 +9979,7 @@
           "imageAfterName": "",
           "fileTypeAfter": "image",
           "responseDate": "",
-          "department": "",
+          "department": "C&C",
           "staffEmployee": "",
           "staffEmployees": [],
           "staffName": "",
@@ -9959,9 +9993,13 @@
           "cftSelectedCode": "",
           "responsiblePersonConfirmation": "",
           "initialResponseDate": "",
-          "departments": [],
-          "unit": "",
-          "units": [],
+          "departments": [
+            "C&C"
+          ],
+          "unit": "Bawal",
+          "units": [
+            "Bawal"
+          ],
           "stdDurationMin": "",
           "revisedDates": [],
           "noOfTimeRevised": 0,
@@ -9984,7 +10022,13 @@
           "imagesBefore": [],
           "imagesAfter": []
         }
-      ]
+      ],
+      "headerInfo": {
+        "topicName": "C&C Sheet",
+        "preparedBy": "Joy Dastidar",
+        "auditNo": "",
+        "attendees": ""
+      }
     },
     "PDCA-LPA-ASSEMBLY-Bawal-1793003442712": {
       "headerInfo": {

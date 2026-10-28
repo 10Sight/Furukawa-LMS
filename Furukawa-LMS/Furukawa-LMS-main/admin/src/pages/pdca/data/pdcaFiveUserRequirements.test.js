@@ -5,7 +5,11 @@ import path from 'node:path';
 import { normalizePDCAStatus } from './pdcaConstants.js';
 
 test('1. Date column default width is increased and resizable constants are defined in PDCASheet.jsx', () => {
-  const pdcaSheetPath = path.resolve(process.cwd(), 'src/components/pdca/PDCASheet.jsx');
+  const candidatePaths = [
+    path.resolve(process.cwd(), 'src/components/pdca/PDCASheet.jsx'),
+    path.resolve(process.cwd(), 'admin/src/components/pdca/PDCASheet.jsx')
+  ];
+  const pdcaSheetPath = candidatePaths.find(p => fs.existsSync(p)) || candidatePaths[0];
   const content = fs.readFileSync(pdcaSheetPath, 'utf8');
 
   assert.match(content, /export const DEFAULT_DATE_WIDTH = 105;/, 'DEFAULT_DATE_WIDTH should be 105');
@@ -58,14 +62,14 @@ test('3. Row with a selected date requires mandatory fields on save', () => {
   assert.equal(missingMandatory, true, 'Missing unit/department/observation detected when date is present');
 });
 
-test('4. Dummy sheet PDCA-LPA-CC-Bawal is marked deleted in persistence store', () => {
+test('4. Sheet PDCA-LPA-CC-Bawal is active in persistence store', () => {
   const storePath = path.resolve(process.cwd(), '../server/db/pdca/pdca_persistence_store.json');
   if (fs.existsSync(storePath)) {
     const raw = fs.readFileSync(storePath, 'utf8');
     const store = JSON.parse(raw);
-    const ccDummy = (store.records || []).find(r => r.id === 'PDCA-LPA-CC-Bawal' || r.topic === 'C&C - LPA Observation (PDCA)');
-    if (ccDummy) {
-      assert.equal(ccDummy.isDeleted, true, 'PDCA-LPA-CC-Bawal must be marked isDeleted: true');
+    const ccRecord = (store.records || []).find(r => r.id === 'PDCA-LPA-CC-Bawal' || r.topic === 'C&C - LPA Observation (PDCA)');
+    if (ccRecord) {
+      assert.equal(ccRecord.isDeleted, false, 'PDCA-LPA-CC-Bawal must be active (isDeleted: false)');
     }
   }
 });

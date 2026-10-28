@@ -36,7 +36,11 @@ export default function PDCASheetPage() {
         isCreator={isCreator}
         currentUser={userContext?.user}
         onBack={() => {
-          navigate(location.state?.returnTo || '/', { replace: true });
+          if (location.state?.returnTo) {
+            navigate(location.state.returnTo);
+          } else {
+            navigate(-1);
+          }
         }}
       />
     </div>

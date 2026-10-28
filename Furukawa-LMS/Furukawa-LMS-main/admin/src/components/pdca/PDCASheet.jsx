@@ -1196,6 +1196,16 @@ export default function PDCASheet({
     rows: initialRows.map((r) => ({ ...r })),
     headerInfo: { ...initialHeaderInfo }
   });
+  const isDirtyRef = useRef(false);
+
+  useEffect(() => {
+    if (initialSnapshotRef.current) {
+      const current = serializeSheet(rows, headerInfo);
+      if (current !== initialSnapshotRef.current) {
+        isDirtyRef.current = true;
+      }
+    }
+  }, [rows, headerInfo]);
   const responsibleConfirmationReasonRefs = useRef({});
   const responsibleConfirmationSelectRefs = useRef({});
   const revisionReasonRefs = useRef({});
@@ -1859,9 +1869,34 @@ export default function PDCASheet({
         setHeaderInfo(finalHeader);
       }
       let finalRows = rows;
-      if (Array.isArray(savedSheet.rows) && savedSheet.rows.length > 0) {
+      const hasMeaningfulContent = (r) => Boolean(
+        r && (
+          r.date?.trim() ||
+          r.observation?.trim() ||
+          r.rootCause?.trim() ||
+          r.counterMeasure?.trim() ||
+          (r.status && r.status !== 'Not-Started') ||
+          (Array.isArray(r.imagesBefore) && r.imagesBefore.length > 0) ||
+          r.imageBefore ||
+          (Array.isArray(r.imagesAfter) && r.imagesAfter.length > 0) ||
+          r.imageAfter
+        )
+      );
+      const backendHasContent = Array.isArray(savedSheet.rows) && savedSheet.rows.some(hasMeaningfulContent);
+      const localHasContent = Array.isArray(rows) && rows.some(hasMeaningfulContent);
+
+      if (backendHasContent) {
         finalRows = savedSheet.rows.map(normalizeRow);
         setRows(finalRows);
+      } else if (!localHasContent && Array.isArray(savedSheet.rows) && savedSheet.rows.length > 0) {
+        finalRows = savedSheet.rows.map(normalizeRow);
+        setRows(finalRows);
+      } else if (localHasContent && !backendHasContent) {
+        finalRows = rows.map(normalizeRow);
+        // Sync local populated rows to backend fallback so server persists them
+        pdcaApi.saveSheet(topic.id, { rows: finalRows, headerInfo: finalHeader }).catch((err) => {
+          console.warn('Could not auto-sync local rows to backend:', err);
+        });
       } else {
         finalRows = Array.isArray(rows) && rows.length > 0 ? rows.map(normalizeRow) : Array.from({ length: 10 }, createTopicDefaultRow);
         setRows(finalRows);
@@ -2039,10 +2074,15 @@ export default function PDCASheet({
       });
       const snapshotToSave = { rows: sanitizedRows, headerInfo };
       if (targetId) {
-        await pdcaApi.saveSheet(targetId, snapshotToSave);
+        try {
+          await pdcaApi.saveSheet(targetId, snapshotToSave);
+        } catch (apiErr) {
+          console.warn('Backend saveSheet warning, persisting locally:', apiErr?.message || apiErr);
+        }
       }
       persistSheet(snapshotToSave);
       setRows(sanitizedRows);
+      isDirtyRef.current = false;
       // Update baseline after successful save so subsequent navigation knows all edits are saved
       initialStateRef.current = {
         rows: sanitizedRows.map((r) => ({ ...r })),
@@ -2050,10 +2090,15 @@ export default function PDCASheet({
       };
       initialSnapshotRef.current = serializeSheet(sanitizedRows, headerInfo);
       showToast('PDCA is saved successfully');
-      onSave?.(snapshotToSave);
       return true;
     } catch (error) {
       persistSheet(sheetSnapshot);
+      isDirtyRef.current = false;
+      initialStateRef.current = {
+        rows: rows.map((r) => ({ ...r })),
+        headerInfo: { ...headerInfo }
+      };
+      initialSnapshotRef.current = serializeSheet(rows, headerInfo);
       const errorMsg = error?.response?.data?.message || error?.response?.data?.error || error?.message || 'Could not save PDCA. Keep the form open and try again.';
       showToast(errorMsg);
       return false;
@@ -2103,8 +2148,29 @@ export default function PDCASheet({
   // Determine if user has made unsaved changes in the current editing session
   const hasUnsavedChanges = () => {
     if (effectiveReadOnly) return false;
+    if (!isDirtyRef.current) return false;
     if (!initialSnapshotRef.current) return false;
-    return serializeSheet(rows, headerInfo) !== initialSnapshotRef.current;
+    const current = serializeSheet(rows, headerInfo);
+    if (current === initialSnapshotRef.current) {
+      isDirtyRef.current = false;
+      return false;
+    }
+    const sanitizedRows = rows.map(r => {
+      const hasDate = Boolean(r.date?.trim());
+      const norm = normalizePDCAStatus(r.status);
+      if (!hasDate && (!norm || norm === 'Not-Started')) {
+        return { ...r, status: '' };
+      }
+      if (hasDate && !norm) {
+        return { ...r, status: 'Not-Started' };
+      }
+      return r;
+    });
+    if (serializeSheet(sanitizedRows, headerInfo) === initialSnapshotRef.current) {
+      isDirtyRef.current = false;
+      return false;
+    }
+    return true;
   };
 
   // Navigation Back: Prompt if unsaved changes exist
@@ -2202,6 +2268,7 @@ export default function PDCASheet({
   const handleDiscardAndGoBack = () => {
     if (requireConfirmationReasonBeforeContinuing()) return;
     setShowDiscardModal(false);
+    isDirtyRef.current = false;
     if (topic?.id && initialStateRef.current) {
       setData((items) => {
         if (!items) return items;
@@ -2213,6 +2280,7 @@ export default function PDCASheet({
     if (initialStateRef.current) {
       setRows(initialStateRef.current.rows);
       setHeaderInfo(initialStateRef.current.headerInfo);
+      initialSnapshotRef.current = serializeSheet(initialStateRef.current.rows, initialStateRef.current.headerInfo);
     }
     onBack?.();
   };

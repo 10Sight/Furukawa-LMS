@@ -436,7 +436,11 @@ function LpaPageContent({ viewContext }) {
     setBusy(true);
     try {
       await deleteLPAWorkbook(effectiveAuthUser?.id || effectiveAuthUser?._id || userId, record.id);
-      setRecords(previous => previous.filter(item => item.id !== record.id));
+      setRecords(previous => previous.filter(item =>
+        String(item.id) !== String(record.id) &&
+        String(item.recordId || '') !== String(record.id) &&
+        String(item._id || '') !== String(record.id)
+      ));
       try { localStorage.removeItem(draftKey(record.id)); } catch { /* The saved workbook has already been removed. */ }
       if (editor?.id === record.id) { setEditor(null); setDirty(false); }
       setMessage({ text: `${record.name} was deleted.` });
@@ -662,9 +666,7 @@ function LpaPageContent({ viewContext }) {
   const visibleRecords = displayRecords.filter(record =>
     record.unit === selectedUnit &&
     record.section === activeSection &&
-    ((fromDate || toDate)
-      ? matchesLpaDateRange(record.auditDate || record.date, fromDate, toDate)
-      : (!record.auditDate || record.auditDate === pdcaDate)) &&
+    matchesLpaDateRange(record.auditDate || record.date, fromDate, toDate) &&
     `${record.name} ${record.sheets?.map(item => item.name).join(' ') || ''}`.toLowerCase().includes(searchQuery.toLowerCase())
   );
   const exportAllRecords = () => {
@@ -1658,7 +1660,7 @@ function LpaPageContent({ viewContext }) {
                   </table>
                   {visibleRecords.length === 0 && (
                     <p className="p-8 text-center text-sm text-slate-500">
-                      No {activeSection === 'assembly' ? 'Assembly' : 'C&C'} forms for {selectedUnit} on {pdcaDate}. Click "+ Create LPA" to create a check sheet.
+                      No {activeSection === 'assembly' ? 'Assembly' : 'C&C'} forms for {selectedUnit}. Click "+ Create LPA" to create a check sheet.
                     </p>
                   )}
                 </div>

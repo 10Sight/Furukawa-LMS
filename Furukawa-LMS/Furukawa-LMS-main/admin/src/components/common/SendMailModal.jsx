@@ -17,22 +17,13 @@ import { getWorksheetScoresList } from '../../pages/lpa/lpaPdcaUtils.js';
 import lpaApi from '../../services/api/lpaApi.js';
 import pdcaApi from '../../services/api/pdcaApi.js';
 
-// Keep the popup focused on sheets generated after this feature was introduced.
-// The cutoff is stored in this browser so a refresh or a new popup instance does
-// not bring older workbook records back into the selection list.
-const assemblyMailSheetsCutoffKey = 'cms.lpa.assemblyMailSheetsCutoff.v1';
-function getAssemblyMailSheetsCutoff() {
-  try {
-    const saved = Number(window.localStorage.getItem(assemblyMailSheetsCutoffKey));
-    if (Number.isFinite(saved) && saved > 0) return saved;
-    const cutoff = Date.now();
-    window.localStorage.setItem(assemblyMailSheetsCutoffKey, String(cutoff));
-    return cutoff;
-  } catch {
-    return Date.now();
+try {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    window.localStorage.removeItem('cms.lpa.assemblyMailSheetsCutoff.v1');
   }
+} catch {
+  // Ignore storage access errors
 }
-const assemblyMailSheetsCutoff = getAssemblyMailSheetsCutoff();
 
 /**
  * SendMailModal
@@ -193,10 +184,9 @@ export default function SendMailModal({
   const pdcaSheetPrompt = /\bsheet$/i.test(pdcaLabel) ? pdcaLabel : `${pdcaLabel} sheet`;
   const assemblyOptions = isPdcaOnly ? [] : (Array.isArray(suppliedAssemblySheets) ? suppliedAssemblySheets : assemblyRecords)
     .filter((record) => {
-      if (!record || record.isDeleted || record.section !== selectedSection || record.sampleData) return false;
-      if (selectedSection !== 'assembly') return true;
-      const createdAt = Date.parse(record.createdAt || '');
-      return Number.isFinite(createdAt) && createdAt > assemblyMailSheetsCutoff;
+      if (!record || record.isDeleted || record.sampleData) return false;
+      if (selectedSection && String(record.section || '').toLowerCase() !== String(selectedSection || '').toLowerCase()) return false;
+      return true;
     })
     .flatMap((record) => (Array.isArray(record.sheets) ? record.sheets : [])
       .filter((sheet) => sheet && !sheet.isDeleted)
@@ -207,6 +197,12 @@ export default function SendMailModal({
       sheetIndex,
       label: [sheet.name || `Sheet ${sheetIndex + 1}`, record.unit, record.auditDate || record.date].filter(Boolean).join(' · ')
       })));
+
+  useEffect(() => {
+    if (assemblySelection && !assemblyOptions.some((option) => option.key === assemblySelection)) {
+      setAssemblySelection('');
+    }
+  }, [assemblyOptions, assemblySelection]);
   const DUMMY_IDS = new Set(['PDCA-GJ-101', 'PDCA-BW-102', 'PDCA-GJ-103', 'PDCA-BW-104', 'CFT-GJ-201', 'CFT-BW-202']);
   const DUMMY_TOPICS = new Set([
     'Reduction of Solder Bridge Defects in ECU Assembly',

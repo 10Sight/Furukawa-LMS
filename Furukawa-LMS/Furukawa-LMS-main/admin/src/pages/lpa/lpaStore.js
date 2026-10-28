@@ -98,12 +98,32 @@ async function syncToIndexedDB(records) {
   if (!Array.isArray(records)) return;
   try {
     await transaction('readwrite', (store, done) => {
-      for (const rec of records) {
-        if (rec && rec.id) {
-          store.put(rec);
+      try {
+        const clearReq = store.clear();
+        clearReq.onsuccess = () => {
+          for (const rec of records) {
+            if (rec && rec.id) {
+              store.put(rec);
+            }
+          }
+          done(true);
+        };
+        clearReq.onerror = () => {
+          for (const rec of records) {
+            if (rec && rec.id) {
+              store.put(rec);
+            }
+          }
+          done(true);
+        };
+      } catch {
+        for (const rec of records) {
+          if (rec && rec.id) {
+            store.put(rec);
+          }
         }
+        done(true);
       }
-      done(true);
     });
   } catch (err) {
     console.warn('Could not sync to local IndexedDB cache:', err);
@@ -288,10 +308,29 @@ export async function deleteLPAWorkbook(ownerIdOrWorkbookId, maybeWorkbookId) {
 
   // Remove from local IndexedDB cache
   await transaction('readwrite', (store, done) => {
-    const request = store.delete(workbookId);
-    request.onsuccess = () => done(true);
-    request.onerror = () => done(true);
+    try { store.delete(workbookId); } catch {}
+    if (!isNaN(Number(workbookId))) {
+      try { store.delete(Number(workbookId)); } catch {}
+    }
+    try { store.delete(String(workbookId)); } catch {}
+    done(true);
   });
+
+  // Also clean up localStorage cache if present
+  try {
+    const localStr = localStorage.getItem('fme_lpa_records_cache');
+    if (localStr) {
+      const parsed = JSON.parse(localStr);
+      if (Array.isArray(parsed)) {
+        const filtered = parsed.filter(r =>
+          String(r.id) !== String(workbookId) &&
+          String(r.recordId || '') !== String(workbookId) &&
+          String(r._id || '') !== String(workbookId)
+        );
+        localStorage.setItem('fme_lpa_records_cache', JSON.stringify(filtered));
+      }
+    }
+  } catch {}
 
   return true;
 }

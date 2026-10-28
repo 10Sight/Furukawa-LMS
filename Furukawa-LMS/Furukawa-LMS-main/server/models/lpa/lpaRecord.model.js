@@ -951,7 +951,12 @@ export class LpaRecord {
     }
 
     const store = readLpaStore();
-    store.records = (store.records || []).filter(r => String(r.id) !== idStr && String(r.recordId) !== idStr);
+    store.records = (store.records || []).filter(r =>
+      String(r.id) !== idStr &&
+      String(r.recordId || '') !== idStr &&
+      String(r._id || '') !== idStr &&
+      String(r.dbId || '') !== idStr
+    );
     writeLpaStore(store);
 
     return true;

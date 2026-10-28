@@ -315,38 +315,510 @@ const LineSelect = ({ recIndex, formData, onInputChange, disabled }) => {
     );
 };
 
-const SubSectionSelect = ({ recIndex, departmentId, sectionId, formData, onInputChange }) => {
-    const { data: subSectionsData, isLoading } = useGetSubSectionsQuery({ departmentId, sectionId }, { skip: !departmentId });
-    const subSections = subSectionsData?.data || [];
+// Line selector component for Assembly & SRC with wrapped text: lineName <br> (sectionName)
+const Daily5MLineSelect = ({ recIndex, lines, formData, handleInputChange, isLocked }) => {
+    const currentLineVal = formData[`rec_${recIndex}_Line`] || "";
+    const selectedLine = lines.find(l => l.name === currentLineVal);
+
+    let displayLineName = currentLineVal;
+    let displaySectionName = selectedLine?.sectionName || "";
+
+    if (!displaySectionName && currentLineVal && currentLineVal.includes('(')) {
+        const match = currentLineVal.match(/^(.*?)\s*\((.*?)\)$/);
+        if (match) {
+            displayLineName = match[1].trim();
+            displaySectionName = match[2].trim();
+        }
+    }
 
     return (
-        <select
-            className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
-            value={formData[`rec_${recIndex}_StationMC`] || ""}
-            onChange={(e) => {
-                const val = e.target.value;
-                onInputChange(recIndex, 'StationMC', val);
-                // Clear process when station/mc changes
-                onInputChange(recIndex, 'Process', "");
-                // Clear ReqSkill since it's derived from Process
-                onInputChange(recIndex, 'ReqSkill', "");
-            }}
-            disabled={!departmentId}
-        >
-            <option value="">{isLoading ? "Loading..." : "Select Station M/C"}</option>
-            {subSections.map((ss, idx) => {
-                const displayName = ss.lineName ? `${ss.name} (${ss.lineName})` : ss.name;
-                return (
-                    <option key={ss.id || ss._id || idx} value={displayName}>
-                        {displayName}
+        <div className="relative w-full h-full min-h-[36px] flex items-center justify-center p-1">
+            <div className="text-center leading-tight text-[15px] font-medium break-words pointer-events-none select-none">
+                {displayLineName ? (
+                    <>
+                        <span className="font-semibold text-slate-800">{displayLineName}</span>
+                        {displaySectionName && (
+                            <>
+                                <br />
+                                <span className="text-[12px] text-slate-600 font-normal">
+                                    ({displaySectionName})
+                                </span>
+                            </>
+                        )}
+                    </>
+                ) : (
+                    <span className="text-slate-400">-</span>
+                )}
+            </div>
+            <select
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                value={currentLineVal}
+                onChange={(e) => {
+                    const val = e.target.value;
+                    handleInputChange(recIndex, 'Line', val);
+                    const sel = lines.find(l => l.name === val);
+                    const leader = cleanLeaderName(sel?.lineLeader || "");
+                    handleInputChange(recIndex, 'FP_Leader', leader);
+                    handleInputChange(recIndex, 'FP_1', leader);
+                    // Clear Process and ReqSkill on line change
+                    handleInputChange(recIndex, 'Process', "");
+                    handleInputChange(recIndex, 'ReqSkill', "");
+                }}
+                disabled={isLocked}
+                title={displaySectionName ? `${displayLineName} (${displaySectionName})` : displayLineName}
+            >
+                <option value="">-</option>
+                {lines.map((line, idx) => (
+                    <option key={line._id || line.id || idx} value={line.name}>
+                        {line.name} {line.sectionName ? `(${line.sectionName})` : ''}
                     </option>
-                );
-            })}
-        </select>
+                ))}
+            </select>
+        </div>
+    );
+};
+
+export const cleanLeaderName = (str) => {
+    if (!str) return "";
+    return str
+        .replace(/\s*\([^)]*\)/g, "")
+        .replace(/^[A-Za-z0-9_-]+\s*[-:]\s*/g, "")
+        .trim();
+};
+
+export const parseLeadersList = (leaderStr) => {
+    if (!leaderStr) return [];
+    return leaderStr
+        .split(/[,/;\n]+/)
+        .map(s => cleanLeaderName(s))
+        .filter(Boolean);
+};
+
+const LeaderSelect = ({ recIndex, value, onChange, selectedLineName, lines, disabled }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const dropdownRef = React.useRef(null);
+
+    const selectedLine = (lines || []).find(l => l.name === selectedLineName);
+    const lineLeaders = parseLeadersList(selectedLine?.lineLeader || "");
+
+    const otherLeaders = [];
+    (lines || []).forEach(l => {
+        if (l.lineLeader) {
+            parseLeadersList(l.lineLeader).forEach(ldr => {
+                if (!lineLeaders.includes(ldr) && !otherLeaders.includes(ldr)) {
+                    otherLeaders.push(ldr);
+                }
+            });
+        }
+    });
+
+    const allAvailableLeaders = Array.from(new Set([...lineLeaders, ...otherLeaders]));
+    const selectedLeaders = parseLeadersList(value || "");
+
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+                setIsOpen(false);
+            }
+        };
+        if (isOpen) {
+            document.addEventListener("mousedown", handleClickOutside);
+        }
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, [isOpen]);
+
+    const handleToggleLeader = (leader) => {
+        let updated;
+        if (selectedLeaders.includes(leader)) {
+            updated = selectedLeaders.filter(l => l !== leader);
+        } else {
+            updated = [...selectedLeaders, leader];
+        }
+        onChange(recIndex, 'FP_Leader', updated.join(', '));
+    };
+
+    const displayCleanValue = selectedLeaders.join(', ');
+
+    return (
+        <div ref={dropdownRef} className="relative w-full h-full min-h-[32px] flex items-center justify-center p-0.5">
+            <div
+                onClick={() => { if (!disabled && allAvailableLeaders.length > 0) setIsOpen(prev => !prev); }}
+                className={cn(
+                    "w-full text-center text-[15px] font-semibold text-blue-800 break-words cursor-pointer select-none px-1 py-0.5 min-h-[26px] flex items-center justify-center",
+                    disabled ? "cursor-not-allowed opacity-70" : "hover:bg-blue-50/50 rounded"
+                )}
+                title={allAvailableLeaders.length > 0 ? "Click to select leader(s)" : ""}
+            >
+                {displayCleanValue || (
+                    allAvailableLeaders.length > 0 ? (
+                        <span className="text-slate-400 font-normal text-xs">- Select -</span>
+                    ) : (
+                        <AutoResizeTextarea
+                            className="text-center font-semibold text-blue-800"
+                            placeholder="Leader"
+                            value={value || ""}
+                            onChange={(e) => onChange(recIndex, 'FP_Leader', cleanLeaderName(e.target.value))}
+                            disabled={disabled}
+                        />
+                    )
+                )}
+            </div>
+
+            {isOpen && allAvailableLeaders.length > 0 && !disabled && (
+                <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-50 bg-white border border-slate-300 rounded shadow-lg p-2 min-w-[160px] max-w-[240px] text-left">
+                    <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 pb-1 border-b">
+                        Select Leader(s)
+                    </div>
+                    <div className="flex flex-col gap-1 max-h-48 overflow-y-auto">
+                        {allAvailableLeaders.map((ldr, idx) => {
+                            const isChecked = selectedLeaders.includes(ldr);
+                            return (
+                                <label
+                                    key={idx}
+                                    className="flex items-center gap-2 p-1 rounded hover:bg-slate-100 cursor-pointer text-xs font-medium text-slate-800 select-none"
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        onChange={() => handleToggleLeader(ldr)}
+                                        className="rounded border-slate-300 text-blue-600 focus:ring-0 cursor-pointer w-3.5 h-3.5"
+                                    />
+                                    <span className="truncate">{ldr}</span>
+                                </label>
+                            );
+                        })}
+                    </div>
+                    <div className="mt-2 pt-1 border-t flex justify-end">
+                        <button
+                            type="button"
+                            onClick={() => setIsOpen(false)}
+                            className="px-2 py-0.5 bg-blue-600 text-white rounded text-[11px] font-semibold hover:bg-blue-700"
+                        >
+                            Done
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+const SubSectionSelect = ({ recIndex, departmentId, sectionId, formData, onInputChange, disabled }) => {
+    const { data: subSectionsData, isLoading } = useGetSubSectionsQuery({ departmentId, sectionId }, { skip: !departmentId });
+    const subSections = subSectionsData?.data || [];
+    const currentVal = formData[`rec_${recIndex}_StationMC`] || "";
+
+    const matchedSS = subSections.find(ss => {
+        const displayName = ss.lineName ? `${ss.name} (${ss.lineName})` : ss.name;
+        return displayName === currentVal || ss.name === currentVal;
+    });
+
+    let displayLineName = currentVal;
+    let displaySectionName = "";
+
+    if (matchedSS) {
+        displayLineName = matchedSS.name;
+        displaySectionName = matchedSS.lineName || matchedSS.sectionName || "";
+    } else if (currentVal && currentVal.includes('(')) {
+        const match = currentVal.match(/^(.*?)\s*\((.*?)\)$/);
+        if (match) {
+            displayLineName = match[1].trim();
+            displaySectionName = match[2].trim();
+        }
+    }
+
+    return (
+        <div className="relative w-full h-full min-h-[36px] flex items-center justify-center p-1">
+            <div className="text-center leading-tight text-[15px] font-medium break-words pointer-events-none select-none">
+                {displayLineName ? (
+                    <>
+                        <span className="font-semibold text-slate-800">{displayLineName}</span>
+                        {displaySectionName && (
+                            <>
+                                <br />
+                                <span className="text-[12px] text-slate-600 font-normal">
+                                    ({displaySectionName})
+                                </span>
+                            </>
+                        )}
+                    </>
+                ) : (
+                    <span className="text-slate-400">{isLoading ? "Loading..." : "-"}</span>
+                )}
+            </div>
+            <select
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                value={currentVal}
+                onChange={(e) => {
+                    const val = e.target.value;
+                    onInputChange(recIndex, 'StationMC', val);
+                    // Clear process when station/mc changes
+                    onInputChange(recIndex, 'Process', "");
+                    // Clear ReqSkill since it's derived from Process
+                    onInputChange(recIndex, 'ReqSkill', "");
+                }}
+                disabled={!departmentId || disabled}
+                title={displaySectionName ? `${displayLineName} (${displaySectionName})` : displayLineName}
+            >
+                <option value="">{isLoading ? "Loading..." : "Select Station M/C"}</option>
+                {subSections.map((ss, idx) => {
+                    const displayName = ss.lineName ? `${ss.name} (${ss.lineName})` : ss.name;
+                    return (
+                        <option key={ss.id || ss._id || idx} value={displayName}>
+                            {displayName}
+                        </option>
+                    );
+                })}
+            </select>
+        </div>
     );
 };
 
 const StationSelect = ({ recIndex, selectedSubSectionDisplayName, departmentId, sectionId, formData, onInputChange, disabled }) => {
+    const { data: subSectionsData } = useGetSubSectionsQuery({ departmentId, sectionId }, { skip: !departmentId });
+    const subSections = subSectionsData?.data || [];
+
+    const subSection = subSections.find(ss => {
+        const displayName = ss.lineName ? `${ss.name} (${ss.lineName})` : ss.name;
+        return displayName === selectedSubSectionDisplayName;
+    });
+    const subSectionId = subSection?.id || subSection?._id;
+
+    const { data: machinesData, isLoading } = useGetMachinesBySubSectionQuery(subSectionId, { skip: !subSectionId });
+    const machines = machinesData?.data || [];
+
+    useEffect(() => {
+        const currentProcess = formData[`rec_${recIndex}_Process`];
+        const currentReqSkill = formData[`rec_${recIndex}_ReqSkill`];
+        if (currentProcess && !currentReqSkill && machines.length > 0) {
+            const machine = machines.find(m => m.name === currentProcess);
+            const machineLevel = machine?.minimumRequiredLevel || machine?.subSectionMinimumRequiredLevel;
+            if (machineLevel) {
+                onInputChange(recIndex, 'ReqSkill', machineLevel);
+            }
+        }
+    }, [machines, formData[`rec_${recIndex}_Process`], formData[`rec_${recIndex}_ReqSkill`], recIndex, onInputChange]);
+
+    const currentVal = formData[`rec_${recIndex}_Process`] || "";
+    let displaySubSectionName = subSection?.name || "";
+    let displayLineName = subSection?.lineName || "";
+
+    if (!displaySubSectionName && currentVal) {
+        displaySubSectionName = currentVal;
+    }
+
+    return (
+        <div className="relative w-full h-full min-h-[36px] flex items-center justify-center p-1">
+            <div className="text-center leading-tight text-[15px] font-medium break-words pointer-events-none select-none">
+                {currentVal ? (
+                    <>
+                        <span className="font-semibold text-slate-800">{displaySubSectionName || currentVal}</span>
+                        {displayLineName && (
+                            <>
+                                <br />
+                                <span className="text-[12px] text-slate-600 font-normal">
+                                    {displayLineName}
+                                </span>
+                            </>
+                        )}
+                    </>
+                ) : (
+                    <span className="text-slate-400">{isLoading ? "Loading..." : "-"}</span>
+                )}
+            </div>
+            <select
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                value={currentVal}
+                onChange={(e) => {
+                    const val = e.target.value;
+                    onInputChange(recIndex, 'Process', val);
+                    const selectedMachine = machines.find(m => m.name === val);
+                    onInputChange(recIndex, 'ReqSkill', selectedMachine?.minimumRequiredLevel || selectedMachine?.subSectionMinimumRequiredLevel || "");
+                }}
+                disabled={!subSectionId || disabled}
+                title={displaySubSectionName ? (displayLineName ? `${displaySubSectionName} (${displayLineName})` : displaySubSectionName) : "Select Process"}
+            >
+                <option value="">{isLoading ? "Loading..." : "Select Process"}</option>
+                {machines.map((m, idx) => (
+                    <option key={m.id || m._id || idx} value={m.name}>
+                        {m.name}
+                    </option>
+                ))}
+            </select>
+        </div>
+    );
+};
+
+const ProcessSelect = ({ recIndex, selectedLineName, allLines, formData, onInputChange, disabled }) => {
+    const line = allLines.find(l => l.name === selectedLineName);
+    const lineId = line?.id || line?._id;
+    const { data: machinesData, isLoading } = useGetMachinesByLineQuery(lineId, { skip: !lineId });
+    const machines = machinesData?.data || [];
+
+    useEffect(() => {
+        const currentValue = formData[`rec_${recIndex}_Process`];
+        if (currentValue && machines.length > 0) {
+            const machine = machines.find(m => m.name === currentValue);
+            if (machine && machine.subSectionName) {
+                const newDisplayName = `${machine.subSectionName} (${machine.name})`;
+                if (currentValue === machine.name && currentValue !== newDisplayName) {
+                    onInputChange(recIndex, 'Process', newDisplayName);
+                    const machineLevel = machine.minimumRequiredLevel || machine.subSectionMinimumRequiredLevel;
+                    if (machineLevel) {
+                        onInputChange(recIndex, 'ReqSkill', machineLevel);
+                    }
+                }
+            }
+        }
+    }, [machines, formData[`rec_${recIndex}_Process`], recIndex, onInputChange]);
+
+    useEffect(() => {
+        const currentProcess = formData[`rec_${recIndex}_Process`];
+        const currentReqSkill = formData[`rec_${recIndex}_ReqSkill`];
+        if (currentProcess && !currentReqSkill && machines.length > 0) {
+            const machine = machines.find(m => {
+                const displayName = m.subSectionName ? `${m.subSectionName} (${m.name})` : m.name;
+                return displayName === currentProcess || m.name === currentProcess;
+            });
+            const machineLevel = machine?.minimumRequiredLevel || machine?.subSectionMinimumRequiredLevel;
+            if (machineLevel) {
+                onInputChange(recIndex, 'ReqSkill', machineLevel);
+            }
+        }
+    }, [machines, formData[`rec_${recIndex}_Process`], formData[`rec_${recIndex}_ReqSkill`], recIndex, onInputChange]);
+
+    const currentVal = formData[`rec_${recIndex}_Process`] || "";
+    let displaySubSectionName = "";
+    let displayLineName = selectedLineName || line?.name || "";
+
+    if (currentVal) {
+        const selectedMachine = machines.find(m => {
+            const displayName = m.subSectionName ? `${m.subSectionName} (${m.name})` : m.name;
+            return displayName === currentVal || m.name === currentVal;
+        });
+
+        if (selectedMachine && selectedMachine.subSectionName) {
+            displaySubSectionName = selectedMachine.subSectionName;
+            if (!displayLineName && selectedMachine.lineName) {
+                displayLineName = selectedMachine.lineName;
+            }
+        } else if (currentVal.includes('(')) {
+            const match = currentVal.match(/^(.*?)\s*\((.*?)\)$/);
+            if (match) {
+                displaySubSectionName = match[1].trim();
+                if (!displayLineName) displayLineName = match[2].trim();
+            } else {
+                displaySubSectionName = currentVal;
+            }
+        } else {
+            displaySubSectionName = currentVal;
+        }
+    }
+
+    return (
+        <div className="relative w-full h-full min-h-[36px] flex items-center justify-center p-1">
+            <div className="text-center leading-tight text-[15px] font-medium break-words pointer-events-none select-none">
+                {currentVal ? (
+                    <>
+                        <span className="font-semibold text-slate-800">{displaySubSectionName}</span>
+                        {displayLineName && (
+                            <>
+                                <br />
+                                <span className="text-[12px] text-slate-600 font-normal">
+                                    {displayLineName}
+                                </span>
+                            </>
+                        )}
+                    </>
+                ) : (
+                    <span className="text-slate-400">{isLoading ? "Loading..." : "-"}</span>
+                )}
+            </div>
+            <select
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                value={currentVal}
+                onChange={(e) => {
+                    const val = e.target.value;
+                    onInputChange(recIndex, 'Process', val);
+                    const selectedMachine = machines.find(m => {
+                        const displayName = m.subSectionName ? `${m.subSectionName} (${m.name})` : m.name;
+                        return displayName === val || m.name === val;
+                    });
+                    onInputChange(recIndex, 'ReqSkill', selectedMachine?.minimumRequiredLevel || selectedMachine?.subSectionMinimumRequiredLevel || "");
+                }}
+                disabled={disabled || !lineId}
+                title={displaySubSectionName ? (displayLineName ? `${displaySubSectionName} (${displayLineName})` : displaySubSectionName) : "Select Process"}
+            >
+                <option value="">{isLoading ? "Loading..." : "Select Process"}</option>
+                {machines.map((m, idx) => {
+                    const displayName = m.subSectionName ? `${m.subSectionName} (${m.name})` : m.name;
+                    return (
+                        <option key={m.id || m._id || idx} value={displayName}>
+                            {displayName}
+                        </option>
+                    );
+                })}
+                {currentVal && !machines.some(m => (m.subSectionName ? `${m.subSectionName} (${m.name})` : m.name) === currentVal || m.name === currentVal) && (
+                    <option value={currentVal}>{currentVal}</option>
+                )}
+            </select>
+        </div>
+    );
+};
+
+const ProblemSelect = ({ recIndex, value, onChange, disabled }) => {
+    const options = [
+        "Associate on planned leave",
+        "Absent without information (During start of shift)",
+        "New associates",
+        "Job Rotation",
+        "Multi-skill",
+        "Associate work after Long vacation (1 month)",
+        "Planned Gate pass",
+        "Other"
+    ];
+
+    const isPredefined = options.slice(0, -1).includes(value);
+    const showOtherInput = value === "Other" || (value && !isPredefined);
+
+    return (
+        <div className="relative w-full h-full min-h-[36px] flex flex-col items-center justify-center p-1 min-w-[120px]">
+            <div className="text-center leading-tight text-[15px] font-semibold text-blue-800 break-words whitespace-normal pointer-events-none select-none w-full">
+                {value ? (isPredefined ? value : (value === "Other" ? "Other" : value)) : <span className="text-slate-400 font-normal text-xs">Select Problem</span>}
+            </div>
+            <select
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                value={isPredefined ? value : (value ? "Other" : "")}
+                onChange={(e) => {
+                    const val = e.target.value;
+                    onChange(recIndex, 'Problem', val);
+                }}
+                disabled={disabled}
+                title={value || "Select Problem"}
+            >
+                <option value="">Select Problem</option>
+                {options.map((opt, idx) => (
+                    <option key={idx} value={opt}>{opt}</option>
+                ))}
+            </select>
+            {showOtherInput && (
+                <div className="w-full mt-1 z-10">
+                    <AutoResizeTextarea
+                        placeholder="Enter problem details..."
+                        value={value === "Other" ? "" : value}
+                        disabled={disabled}
+                        onChange={(e) => onChange(recIndex, 'Problem', e.target.value)}
+                        className="text-blue-600 font-bold border-t border-dashed border-blue-200 pt-1 text-center w-full"
+                    />
+                </div>
+            )}
+        </div>
+    );
+};
+
+const _OldStationSelect = ({ recIndex, selectedSubSectionDisplayName, departmentId, sectionId, formData, onInputChange, disabled }) => {
     const { data: subSectionsData } = useGetSubSectionsQuery({ departmentId, sectionId }, { skip: !departmentId });
     const subSections = subSectionsData?.data || [];
 
@@ -396,7 +868,7 @@ const StationSelect = ({ recIndex, selectedSubSectionDisplayName, departmentId, 
     );
 };
 
-const ProcessSelect = ({ recIndex, selectedLineName, allLines, formData, onInputChange, disabled }) => {
+const _OldProcessSelect = ({ recIndex, selectedLineName, allLines, formData, onInputChange, disabled }) => {
     const line = allLines.find(l => l.name === selectedLineName);
     const lineId = line?.id || line?._id;
     // console.log(`[ProcessSelect] Row ${recIndex}: Line=${selectedLineName}, ID=${lineId}`);
@@ -471,7 +943,7 @@ const ProcessSelect = ({ recIndex, selectedLineName, allLines, formData, onInput
     );
 };
 
-const ProblemSelect = ({ recIndex, value, onChange, disabled }) => {
+const _OldProblemSelect = ({ recIndex, value, onChange, disabled }) => {
     const options = [
         "Associate on planned leave",
         "Absent without information (During start of shift)",
@@ -623,21 +1095,21 @@ const DEFAULT_CRIMPING_CONFIG = {
             { text: "Date", rowSpan: 2 },
             { text: "Station M/C No", rowSpan: 2 },
             { text: "Shift", rowSpan: 2 },
-            { text: "Planned / Un-Planned", rowSpan: 2 },
+            { text: "Planned / <br /> Un-Planned", rowSpan: 2 },
             { text: "Problem", rowSpan: 2 },
             { text: "Process Name", rowSpan: 2 },
-            { text: "Operator / Inspector Name", rowSpan: 2 },
-            { text: "Operator / Inspector ID", rowSpan: 2 },
-            { text: "Current Skill Level", rowSpan: 2 },
-            { text: "Req. Min Skill Level", rowSpan: 2 },
+            { text: "Auth. Operator / <br /> Inspector Name", rowSpan: 2 },
+            { text: "Operator Code / <br /> ID", rowSpan: 2 },
+            { text: "Current <br /> Skill <br /> Level", rowSpan: 2 },
+            { text: "Req. Min <br /> Skill Level", rowSpan: 2 },
             { text: "Deputy Person Name (If req.)", rowSpan: 2 },
-            { text: "Employee Code", rowSpan: 2 },
-            { text: "Actual Skill Level", rowSpan: 2 },
-            { text: "Deputed From (Line/Process/Station)", rowSpan: 2 },
-            { text: "Deputed on Plan", rowSpan: 2 },
-            { text: "OJT Status (Attended/Not Attended) [Attached OJT sheet]", rowSpan: 2 },
+            { text: "Operator <br /> Code", rowSpan: 2 },
+            { text: "Actual Skill <br /> Level", rowSpan: 2 },
+            { text: "Deputed From <br /> (Line/Process/Station)", rowSpan: 2 },
+            { text: "Deputation Plan <br /> (Date)", rowSpan: 2 },
+            { text: "OJT Status <br /> (Attached OJT sheet)", rowSpan: 2 },
 
-            { text: "Last Produced Part Status (Parameters)", rowSpan: 2 },
+            { text: "Last Produced Part Status <br /> Parameters", rowSpan: 2 },
             { text: "Standard", colSpan: 2 },
             { text: "Result", colSpan: 2 },
             { text: "Status", rowSpan: 2, isSplit: true, splitLabels: ["Status", "Prod Supr Sign"] },
@@ -663,7 +1135,7 @@ const DEFAULT_CRIMPING_CONFIG = {
             // Setup Sub
             { text: "F" }, { text: "R" },
             // Containment Sub
-            { text: "Produce d Qty." }, { text: "NG Qty." },
+            { text: "Produced Qty." }, { text: "NG Qty." },
             { text: "1st Check" }, { text: "2nd Check" }, { text: "3rd Check" }
         ]
     ],
@@ -830,9 +1302,9 @@ const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange
         <>
             {/* Row 1: Common fields and first parameter */}
             <tr className="hover:bg-slate-50">
-                <td rowSpan="5" className="border border-black py-0.5 px-0 text-center">{recIndex + 1}</td>
+                <td rowSpan="5" className="border border-black py-0.5 px-0 text-center w-10 min-w-[36px] max-w-[48px]">{recIndex + 1}</td>
                 <td rowSpan="5" className="border border-black py-0.5 px-0"><input type="date" disabled={isDateLocked} className="w-full text-center bg-transparent h-7 text-[16px]" placeholder="Date" value={formData[`rec_${recIndex}_Date`] || ""} onChange={(e) => handleInputChange(recIndex, 'Date', e.target.value)} min={dateMin} max={dateMax} /></td>
-                <td rowSpan="5" className="border border-black py-0.5 px-0">
+                <td rowSpan="5" className="border border-black py-0.5 px-0 text-center align-middle">
                     <SubSectionSelect
                         recIndex={recIndex}
                         departmentId={departmentId}
@@ -1019,9 +1491,9 @@ const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange
 
                 {/* Setup Part Info */}
                 <td rowSpan="5" className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_InspectorName`] || ""} onChange={(e) => handleInputChange(recIndex, 'InspectorName', e.target.value)} disabled={isLocked} /></td>
-                <td rowSpan="5" className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_PartNo`] || ""} onChange={(e) => handleInputChange(recIndex, 'PartNo', e.target.value)} disabled={isLocked} /></td>
-                <td rowSpan="5" className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_LotNo`] || ""} onChange={(e) => handleInputChange(recIndex, 'LotNo', e.target.value)} disabled={isLocked} /></td>
-                <td rowSpan="5" className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_CircuitNo`] || ""} onChange={(e) => handleInputChange(recIndex, 'CircuitNo', e.target.value)} disabled={isLocked} /></td>
+                <td rowSpan="5" className="border border-black py-0.5 px-0 w-16 min-w-[60px] max-w-[110px]"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_PartNo`] || ""} onChange={(e) => handleInputChange(recIndex, 'PartNo', e.target.value)} disabled={isLocked} /></td>
+                <td rowSpan="5" className="border border-black py-0.5 px-0 w-14 min-w-[50px] max-w-[95px]"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_LotNo`] || ""} onChange={(e) => handleInputChange(recIndex, 'LotNo', e.target.value)} disabled={isLocked} /></td>
+                <td rowSpan="5" className="border border-black py-0.5 px-0 w-16 min-w-[60px] max-w-[100px]"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_CircuitNo`] || ""} onChange={(e) => handleInputChange(recIndex, 'CircuitNo', e.target.value)} disabled={isLocked} /></td>
 
                 {/* Setup Verification sub-row */}
                 <td className="border border-black p-0.5 text-center font-bold bg-gray-50">
@@ -1060,8 +1532,8 @@ const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange
                         disabled={isContainmentLocked}
                     />
                 </td>
-                <td rowSpan="5" className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Cont_ProdQty`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_ProdQty', e.target.value)} disabled={isContainmentLocked} /></td>
-                <td rowSpan="5" className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Cont_NGQty`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_NGQty', e.target.value)} disabled={isContainmentLocked} /></td>
+                <td rowSpan="5" className="border border-black py-0.5 px-0 w-12 min-w-[42px] max-w-[65px]"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Cont_ProdQty`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_ProdQty', e.target.value)} disabled={isContainmentLocked} /></td>
+                <td rowSpan="5" className="border border-black py-0.5 px-0 w-12 min-w-[42px] max-w-[65px]"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_Cont_NGQty`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_NGQty', e.target.value)} disabled={isContainmentLocked} /></td>
 
                 {/* Dimension Check 1st */}
                 <td rowSpan="2" className="border border-black p-0.5 align-top">
@@ -1087,12 +1559,13 @@ const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange
                         <label className="flex items-center whitespace-nowrap cursor-text text-blue-600 w-full"><span className="mr-0.5">Obs.-</span><input className="flex-1 bg-transparent outline-none min-w-0" value={formData[`rec_${recIndex}_Cont_CH_Obs3`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont_CH_Obs3', e.target.value)} disabled={isContainmentLocked} /></label>
                     </div>
                 </td>
-                <td rowSpan="5" className="border border-black py-0.5 px-0"><AutoResizeTextarea placeholder="Remarks" value={formData[`rec_${recIndex}_Remarks`] || ""} onChange={(e) => handleInputChange(recIndex, 'Remarks', e.target.value)} disabled={isContainmentLocked} /></td>
+                <td rowSpan="5" className="border border-black py-0.5 px-0 w-20 min-w-[70px] max-w-[130px]"><AutoResizeTextarea placeholder="Remarks" value={formData[`rec_${recIndex}_Remarks`] || ""} onChange={(e) => handleInputChange(recIndex, 'Remarks', e.target.value)} disabled={isContainmentLocked} /></td>
 
                 <td rowSpan="5" className="border border-black py-0.5 px-0">
                     <div className="flex flex-col gap-1">
                         <AutoResizeTextarea
                             className="text-center font-bold text-blue-700"
+
                             value={formData[`rec_${recIndex}_Process_Owner`] || ""}
                             onChange={(e) => handleInputChange(recIndex, 'Process_Owner', e.target.value)}
                             placeholder="Owner"
@@ -1739,7 +2212,81 @@ const Daily5MRecording = () => {
     };
 
     // Helper to render class names dynamically
+    const renderHeaderContent = (rawText) => {
+        if (!rawText) return "";
+        let text = processText(rawText);
+
+        const HEADER_NORMALIZE_MAP = {
+            "Planned / Un-Planned": "Planned / <br /> Un-Planned",
+            "Planned/Un-Planned": "Planned / <br /> Un-Planned",
+            "Operator Code/ID": "Operator Code / <br /> ID",
+            "Operator / Inspector ID": "Operator Code / <br /> ID",
+            "Auth. Operator / Inspector Name": "Auth. Operator / <br /> Inspector Name",
+            "Operator / Inspector Name": "Auth. Operator / <br /> Inspector Name",
+            "Current Skill Level": "Current <br /> Skill <br /> Level",
+            "Req. Min Skill Level": "Req. Min <br /> Skill Level",
+            "Operator Code": "Operator <br /> Code",
+            "Employee Code": "Operator <br /> Code",
+            "Actual Skill Level": "Actual Skill <br /> Level",
+            "Deputed From (Line/Process/Station)": "Deputed From <br /> (Line/Process/Station)",
+            "Deputed Plan (Date)": "Deputation Plan <br /> (Date)",
+            "Deputed on Plan": "Deputation Plan <br /> (Date)",
+            "Deputation Plan (Date)": "Deputation Plan <br /> (Date)",
+            "OJT Status (Attached OJT sheet)": "OJT Status <br /> (Attached OJT sheet)",
+            "OJT Status (Attached OJT Sheet)": "OJT Status <br /> (Attached OJT sheet)",
+            "OJT Status (Attended/Not Attended) [Attached OJT sheet]": "OJT Status <br /> (Attached OJT sheet)",
+            "Last Produced Part Status (Parameters)": "Last Produced Part Status <br /> Parameters"
+        };
+
+        if (HEADER_NORMALIZE_MAP[text]) {
+            text = HEADER_NORMALIZE_MAP[text];
+        }
+
+        const parts = text.split(/(?:<br\s*\/?>|<\/br>|\n)/gi);
+        if (parts.length === 1) return parts[0];
+
+        return (
+            <span className="inline-block leading-tight text-center">
+                {parts.map((part, idx) => (
+                    <React.Fragment key={idx}>
+                        {part}
+                        {idx < parts.length - 1 && <br />}
+                    </React.Fragment>
+                ))}
+            </span>
+        );
+    };
+
     const getClassName = (header) => {
+        let classes = "border border-black py-0.5 px-0 text-center ";
+        if (header.className) classes += header.className;
+        if (header.width) classes += ` ${header.width}`;
+
+        const plainText = (header.text || "").replace(/<[^>]*>/g, '').trim();
+        if (plainText === "Sr.no" || plainText === "Sr. No.") {
+            classes += " w-10 min-w-[36px] max-w-[48px]";
+        } else if (plainText === "Part No.") {
+            classes += " w-16 min-w-[60px] max-w-[110px]";
+        } else if (plainText === "Lot No.") {
+            classes += " w-14 min-w-[50px] max-w-[95px]";
+        } else if (plainText === "Circuit No.") {
+            classes += " w-16 min-w-[60px] max-w-[100px]";
+        } else if (plainText === "Produced Qty." || plainText === "Produce d Qty.") {
+            classes += " w-12 min-w-[42px] max-w-[65px]";
+        } else if (plainText === "NG Qty.") {
+            classes += " w-12 min-w-[42px] max-w-[65px]";
+        } else if (plainText === "Remarks") {
+            classes += " w-20 min-w-[70px] max-w-[130px]";
+        } else if (plainText === "Process Owner") {
+            classes += " w-20 min-w-[75px] max-w-[110px]";
+        }
+
+        return classes;
+    };
+
+    const _oldGetClassName = (header) => {
+
+
         let classes = "border border-black py-0.5 px-0 text-center ";
         if (header.className) classes += header.className;
         if (header.width) classes += ` ${header.width}`;
@@ -1856,7 +2403,7 @@ const Daily5MRecording = () => {
                     // Set Line Leader (Automated Fetch from Line Name)
                     if (matchedLine) {
                         initialRecordData[`rec_${recIndex}_Line`] = matchedLine.name;
-                        const leader = matchedLine.lineLeader || "";
+                        const leader = cleanLeaderName(matchedLine.lineLeader || "");
                         initialRecordData[`rec_${recIndex}_FP_Leader`] = leader;
                         initialRecordData[`rec_${recIndex}_FP_1`] = leader;
                     } else {
@@ -2539,7 +3086,7 @@ const Daily5MRecording = () => {
                                                             ))}
                                                         </div>
                                                     ) : (
-                                                        headerText
+                                                        renderHeaderContent(header.text)
                                                     )}
                                                 </th>
                                             );
@@ -2597,32 +3144,16 @@ const Daily5MRecording = () => {
                                                 <>
                                                     {/* Row 1 of Record */}
                                                     <tr className="hover:bg-slate-50">
-                                                        <td rowSpan="3" className="border border-black py-0.5 px-0 text-center">{recIndex + 1}</td>
+                                                        <td rowSpan="3" className="border border-black py-0.5 px-0 text-center w-10 min-w-[36px] max-w-[48px]">{recIndex + 1}</td>
                                                         <td rowSpan="3" className="border border-black py-0.5 px-0"><input type="date" disabled={isDateLocked} className="w-full text-center bg-transparent h-7 text-[16px]" placeholder="Date" value={formData[`rec_${recIndex}_Date`] || ""} onChange={(e) => handleInputChange(recIndex, 'Date', e.target.value)} min={dateMin} max={todayStr} /></td>
-                                                        <td rowSpan="3" className="border border-black py-0.5 px-0">
-                                                            <select
-                                                                className="w-full text-center bg-transparent outline-none cursor-pointer h-7 text-[16px]"
-                                                                value={formData[`rec_${recIndex}_Line`] || ""}
-                                                                onChange={(e) => {
-                                                                    const val = e.target.value;
-                                                                    handleInputChange(recIndex, 'Line', val);
-                                                                    const selectedLine = lines.find(l => l.name === val);
-                                                                    const leader = selectedLine?.lineLeader || "";
-                                                                    handleInputChange(recIndex, 'FP_Leader', leader);
-                                                                    handleInputChange(recIndex, 'FP_1', leader);
-                                                                    // Clear Process and ReqSkill on line change
-                                                                    handleInputChange(recIndex, 'Process', "");
-                                                                    handleInputChange(recIndex, 'ReqSkill', "");
-                                                                }}
-                                                                disabled={isLocked}
-                                                            >
-                                                                <option value="">-</option>
-                                                                {lines.map((line, idx) => (
-                                                                    <option key={line._id || line.id || idx} value={line.name}>
-                                                                        {line.name} {line.sectionName ? `(${line.sectionName})` : ''}
-                                                                    </option>
-                                                                ))}
-                                                            </select>
+                                                        <td rowSpan="3" className="border border-black py-0.5 px-0 text-center align-middle">
+                                                            <Daily5MLineSelect
+                                                                recIndex={recIndex}
+                                                                lines={lines}
+                                                                formData={formData}
+                                                                handleInputChange={handleInputChange}
+                                                                isLocked={isLocked}
+                                                            />
                                                         </td>
                                                         <td rowSpan="3" className="border border-black py-0.5 px-0">
                                                             <select
@@ -2782,10 +3313,19 @@ const Daily5MRecording = () => {
                                                         </td>
 
                                                         {/* FP Row 1 */}
-                                                        <td rowSpan="3" className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_FP_Leader`] || ""} onChange={(e) => handleInputChange(recIndex, 'FP_Leader', e.target.value)} disabled={isLocked} /></td>
-                                                        <td rowSpan="3" className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_FP_PartNo`] || ""} onChange={(e) => handleInputChange(recIndex, 'FP_PartNo', e.target.value)} disabled={isLocked} /></td>
-                                                        <td rowSpan="3" className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_FP_LotNo`] || ""} onChange={(e) => handleInputChange(recIndex, 'FP_LotNo', e.target.value)} disabled={isLocked} /></td>
-                                                        <td rowSpan="3" className="border border-black p-0.5 h-full p-0">
+                                                        <td rowSpan="3" className="border border-black py-0.5 px-0">
+                                                            <LeaderSelect
+                                                                recIndex={recIndex}
+                                                                value={formData[`rec_${recIndex}_FP_Leader`] || ""}
+                                                                onChange={handleInputChange}
+                                                                selectedLineName={formData[`rec_${recIndex}_Line`]}
+                                                                lines={lines}
+                                                                disabled={isLocked}
+                                                            />
+                                                        </td>
+                                                        <td rowSpan="3" className="border border-black py-0.5 px-0 w-16 min-w-[60px] max-w-[110px]"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_FP_PartNo`] || ""} onChange={(e) => handleInputChange(recIndex, 'FP_PartNo', e.target.value)} disabled={isLocked} /></td>
+                                                        <td rowSpan="3" className="border border-black py-0.5 px-0 w-14 min-w-[50px] max-w-[95px]"><AutoResizeTextarea className="text-center" value={formData[`rec_${recIndex}_FP_LotNo`] || ""} onChange={(e) => handleInputChange(recIndex, 'FP_LotNo', e.target.value)} disabled={isLocked} /></td>
+                                                        <td rowSpan="3" className="border border-black p-0.5 h-full p-0 w-12 min-w-[46px] max-w-[70px]">
                                                             <div className="flex flex-col h-full text-[8px] min-h-[60px]">
                                                                 <div className="flex-1 flex items-center justify-center border-b border-black"><AutoResizeTextarea className="text-center min-w-0 bg-transparent text-blue-600" value={formData[`rec_${recIndex}_FP_SrNo_1`] !== undefined ? formData[`rec_${recIndex}_FP_SrNo_1`] : ""} onChange={(e) => handleInputChange(recIndex, 'FP_SrNo_1', e.target.value)} disabled={isLocked} /></div>
                                                                 <div className="flex-1 flex items-center justify-center border-b border-black"><AutoResizeTextarea className="text-center min-w-0 bg-transparent text-blue-600" value={formData[`rec_${recIndex}_FP_SrNo_2`] !== undefined ? formData[`rec_${recIndex}_FP_SrNo_2`] : ""} onChange={(e) => handleInputChange(recIndex, 'FP_SrNo_2', e.target.value)} disabled={isLocked} /></div>
@@ -2831,8 +3371,8 @@ const Daily5MRecording = () => {
                                                                 disabled={isContainmentLocked}
                                                             />
                                                         </td>
-                                                        <td rowSpan="2" className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center text-blue-600 font-semibold" value={formData[`rec_${recIndex}_Cont1_Day_1`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont1_Day_1', e.target.value)} disabled={isContainmentLocked} /></td>
-                                                        <td rowSpan="2" className="border border-black py-0.5 px-0"><AutoResizeTextarea className="text-center text-blue-600 font-semibold" value={formData[`rec_${recIndex}_Cont1_Day_2`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont1_Day_2', e.target.value)} disabled={isContainmentLocked} /></td>
+                                                        <td rowSpan="2" className="border border-black py-0.5 px-0 w-12 min-w-[42px] max-w-[65px]"><AutoResizeTextarea className="text-center text-blue-600 font-semibold" value={formData[`rec_${recIndex}_Cont1_Day_1`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont1_Day_1', e.target.value)} disabled={isContainmentLocked} /></td>
+                                                        <td rowSpan="2" className="border border-black py-0.5 px-0 w-12 min-w-[42px] max-w-[65px]"><AutoResizeTextarea className="text-center text-blue-600 font-semibold" value={formData[`rec_${recIndex}_Cont1_Day_2`] || ""} onChange={(e) => handleInputChange(recIndex, 'Cont1_Day_2', e.target.value)} disabled={isContainmentLocked} /></td>
 
                                                         <td rowSpan="2" className="border border-black p-0.5 align-top">
                                                             <div className="flex flex-col text-[16px] p-0.5 text-blue-600">
@@ -2854,7 +3394,7 @@ const Daily5MRecording = () => {
                                                         </td>
 
                                                         <td rowSpan="3" className="border border-black py-0.5 px-0">
-                                                            <div className="flex flex-col h-full relative min-h-[40px] items-center justify-end pb-1">
+                                                            <div className="flex flex-col h-full relative min-h-[40px] items-center justify-end pb-1 w-20 min-w-[70px] max-w-[130px]">
                                                                 <AutoResizeTextarea className="text-center text-blue-600 bg-transparent" value={formData[`rec_${recIndex}_Cont1_Remarks`] || "0"} onChange={(e) => handleInputChange(recIndex, 'Cont1_Remarks', e.target.value)} disabled={isContainmentLocked} />
                                                             </div>
                                                         </td>
@@ -2864,6 +3404,7 @@ const Daily5MRecording = () => {
                                                             <div className="flex flex-col gap-1">
                                                                 <AutoResizeTextarea
                                                                     className="text-center font-bold text-blue-700"
+                                        
                                                                     value={formData[`rec_${recIndex}_Owner_Sign`] || ""}
                                                                     onChange={(e) => handleInputChange(recIndex, 'Owner_Sign', e.target.value)}
                                                                     placeholder="Incharge"

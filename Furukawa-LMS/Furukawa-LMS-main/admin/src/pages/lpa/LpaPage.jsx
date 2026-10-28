@@ -391,8 +391,8 @@ function LpaPageContent({ viewContext }) {
   const hasExplicitPdcaTab = userPermissions.includes('lpa:observation_pdca');
   const canAccessPdcaTab = Boolean(isAdmin || hasPermission('lpa:manage') || hasPermission('pdca:read') || hasExplicitPdcaTab || (!hasExplicitPdcaTab && !userPermissions.includes('lpa:lpa_tab_only')));
 
-  const canCreateLpa = Boolean(isAdmin || hasPermission('lpa:manage') || hasPermission('lpa:create'));
-  const canCreatePdca = Boolean(isAdmin || hasPermission('lpa:manage') || hasPermission('pdca:create') || hasPermission('pdca:create_sheet') || hasPermission('lpa:create'));
+  const canCreateLpa = Boolean(isAdmin || hasPermission('lpa:manage') || hasPermission('lpa:create') || (!userPermissions.includes('lpa:no_create') && !userPermissions.includes('lpa:read_only')));
+  const canCreatePdca = Boolean(isAdmin || hasPermission('lpa:manage') || hasPermission('pdca:create') || hasPermission('pdca:create_sheet') || hasPermission('lpa:create') || (!userPermissions.includes('pdca:no_create') && !userPermissions.includes('pdca:read_only')));
 
   useEffect(() => {
     if (!canAccessAssembly && canAccessCc && activeSection === 'assembly') {

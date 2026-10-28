@@ -156,6 +156,8 @@ router.use(optionalAuth);
 const requireLpa = (perm) => (req, res, next) => {
   if (!req.user) return next();
   if (req.user.role === 'SUPERADMIN' || req.user.isAdmin || req.user.role === 'ADMIN') return next();
+  // Allow all employees to read, create, and update LPA records (ownership/creator is checked in controllers)
+  if (perm === 'lpa:read' || perm === 'lpa:create' || perm === 'lpa:update') return next();
   const perms = req.user.customRole?.permissions || [];
   if (perms.includes(perm) || perms.includes("lpa:manage") || perms.includes("pdca:manage")) return next();
   return res.status(403).json({ success: false, message: `Access denied. Requires '${perm}' permission.` });

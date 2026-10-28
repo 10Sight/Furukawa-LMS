@@ -60,6 +60,22 @@ const optionalAuth = async (req, res, next) => {
                         };
                     } else {
                         const user = await User.findByIdLight(decoded.id);
+                        if (user?.customRoleId) {
+                            try {
+                                const { executeQuery } = await import("../../db/mssqlHelper.js");
+                                const [rows] = await executeQuery(
+                                    "SELECT id, name, description, color, allowedPages, permissions, targetLayout FROM custom_roles WHERE id = ?",
+                                    [user.customRoleId]
+                                );
+                                if (rows.length) {
+                                    let perms = rows[0].permissions;
+                                    if (typeof perms === 'string') {
+                                        try { perms = JSON.parse(perms); } catch {}
+                                    }
+                                    user.customRole = { ...rows[0], permissions: perms };
+                                }
+                            } catch {}
+                        }
                         if (user) {
                             req.user = user;
                         } else if (decoded && (decoded.userName || decoded.empId || decoded.id)) {
@@ -140,24 +156,32 @@ const optionalAuth = async (req, res, next) => {
 
 router.use(optionalAuth);
 
+const requirePdca = (perm) => (req, res, next) => {
+    if (!req.user) return next();
+    if (req.user.role === 'SUPERADMIN' || req.user.isAdmin || req.user.role === 'ADMIN') return next();
+    const perms = req.user.customRole?.permissions || [];
+    if (perms.includes(perm)) return next();
+    return res.status(403).json({ success: false, message: `Access denied. Requires '${perm}' permission.` });
+};
+
 // G. Metadata and Dropdowns
 router.get("/metadata", getPDCAMetadata);
 router.get("/sections", getPDCASections);
 router.get("/employees", getPDCAEmployees);
 
 // C. CFT Topic Management
-router.post("/cft", createCFTTopic);
-router.get("/cft", getCFTTopics);
-router.put("/cft/:id", updateCFTTopic);
-router.delete("/cft/:id", deleteCFTTopic);
+router.post("/cft", requirePdca("pdca:create"), createCFTTopic);
+router.get("/cft", requirePdca("pdca:read"), getCFTTopics);
+router.put("/cft/:id", requirePdca("pdca:update"), updateCFTTopic);
+router.delete("/cft/:id", requirePdca("pdca:delete"), deleteCFTTopic);
 
 // D. CFT Member Management
-router.get("/cft/:id/members", getCFTMembers);
-router.put("/cft/:id/members", updateCFTMembers);
+router.get("/cft/:id/members", requirePdca("pdca:read"), getCFTMembers);
+router.put("/cft/:id/members", requirePdca("pdca:update"), updateCFTMembers);
 
 // B. PDCA Sheet Management
-router.get("/:id/sheet", getPDCASheet);
-router.put("/:id/sheet", savePDCASheet);
+router.get("/:id/sheet", requirePdca("pdca:read"), getPDCASheet);
+router.put("/:id/sheet", requirePdca("pdca:update"), savePDCASheet);
 
 // E. Attachment and Evidence Management
 router.post("/:id/attachments", upload.single("file"), uploadAttachment);
@@ -165,13 +189,13 @@ router.get("/:id/attachments/:attachmentId", getAttachment);
 router.delete("/:id/attachments/:attachmentId", deleteAttachment);
 
 // F. Audit History
-router.get("/:id/history", getPDCAHistory);
+router.get("/:id/history", requirePdca("pdca:read"), getPDCAHistory);
 
 // A. PDCA Record Management
-router.post("/", createPDCARecord);
-router.get("/", getPDCARecords); 
-router.get("/:id", getPDCARecordById);
-router.put("/:id", updatePDCARecord);
-router.delete("/:id", deletePDCARecord);
+router.post("/", requirePdca("pdca:create"), createPDCARecord);
+router.get("/", requirePdca("pdca:read"), getPDCARecords); 
+router.get("/:id", requirePdca("pdca:read"), getPDCARecordById);
+router.put("/:id", requirePdca("pdca:update"), updatePDCARecord);
+router.delete("/:id", requirePdca("pdca:delete"), deletePDCARecord);
 
 export default router;

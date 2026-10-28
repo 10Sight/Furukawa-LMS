@@ -336,7 +336,59 @@ function LpaPageContent({ viewContext }) {
     String(effectiveAuthUser?.role || '').toUpperCase() === 'SUPERADMIN'
   );
 
+  const userPermissions = useMemo(() => {
+    let u = effectiveAuthUser;
+    let perms = u?.customRole?.permissions;
+    if (!perms) {
+      try {
+        const stored = (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('user') : null) ||
+          (typeof localStorage !== 'undefined' ? localStorage.getItem('user') : null);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          perms = parsed?.customRole?.permissions;
+        }
+      } catch { }
+    }
+    if (Array.isArray(perms)) return perms;
+    if (typeof perms === 'string') {
+      try { return JSON.parse(perms); } catch { return []; }
+    }
+    return [];
+  }, [effectiveAuthUser]);
+
+  const hasPermission = useCallback((perm) => {
+    if (isAdmin) return true;
+    if (userPermissions.includes('lpa:manage') || userPermissions.includes('pdca:manage') || userPermissions.includes('pdca:full_access')) return true;
+    return userPermissions.includes(perm);
+  }, [isAdmin, userPermissions]);
+
+  const hasExplicitAssembly = userPermissions.includes('lpa:assembly');
+  const hasExplicitCc = userPermissions.includes('lpa:cc');
+  const canAccessAssembly = Boolean(isAdmin || hasPermission('lpa:manage') || hasExplicitAssembly || (!hasExplicitAssembly && !hasExplicitCc));
+  const canAccessCc = Boolean(isAdmin || hasPermission('lpa:manage') || hasExplicitCc || (!hasExplicitAssembly && !hasExplicitCc));
+
+  const hasExplicitPdcaTab = userPermissions.includes('lpa:observation_pdca');
+  const canAccessPdcaTab = Boolean(isAdmin || hasPermission('lpa:manage') || hasPermission('pdca:read') || hasExplicitPdcaTab || (!hasExplicitPdcaTab && !userPermissions.includes('lpa:lpa_tab_only')));
+
+  const canCreateLpa = Boolean(isAdmin || hasPermission('lpa:manage') || hasPermission('lpa:create'));
+  const canCreatePdca = Boolean(isAdmin || hasPermission('lpa:manage') || hasPermission('pdca:create') || hasPermission('pdca:create_sheet') || hasPermission('lpa:create'));
+
+  useEffect(() => {
+    if (!canAccessAssembly && canAccessCc && activeSection === 'assembly') {
+      setActiveSection('cc');
+    } else if (!canAccessCc && canAccessAssembly && activeSection === 'cc') {
+      setActiveSection('assembly');
+    }
+  }, [canAccessAssembly, canAccessCc, activeSection]);
+
+  useEffect(() => {
+    if (!canAccessPdcaTab && activeSubTab === 'pdca') {
+      setActiveSubTab('lpa');
+    }
+  }, [canAccessPdcaTab, activeSubTab]);
+
   const canEditCurrentRecord = useMemo(() => {
+    if (isAdmin || hasPermission('lpa:manage') || hasPermission('lpa:update')) return true;
     if (!editor) return true;
     return canEditRecord(editor, effectiveAuthUser);
   }, [editor, effectiveAuthUser]);
@@ -422,7 +474,7 @@ function LpaPageContent({ viewContext }) {
     finally { requestInFlight.current = false; setBusy(false); }
   };
   const canDeleteWorkbook = (record) => {
-    return Boolean(isAdmin || isRecordCreator(record, effectiveAuthUser));
+    return Boolean(isAdmin || isRecordCreator(record, effectiveAuthUser) || hasPermission('lpa:manage') || hasPermission('lpa:delete'));
   };
 
   const deleteWorkbook = async record => {
@@ -516,7 +568,7 @@ function LpaPageContent({ viewContext }) {
     event.target.value = '';
     if (!file) return;
     try {
-      if (!isAdmin) throw new Error('Only administrators are authorized to upload Excel workbooks.');
+      if (!isAdmin && !hasPermission('lpa:manage') && !hasPermission('lpa:upload_excel')) throw new Error('You do not have permission to upload Excel workbooks.');
       if (!selectedUnit) throw new Error('Please select Unit before uploading a workbook.');
       if (!/\.xlsx?$/i.test(file.name)) throw new Error('Please upload an .xlsx or .xls Excel file.');
       if (file.size > 15 * 1024 * 1024) throw new Error('The Excel file must be smaller than 15 MB.');
@@ -530,6 +582,10 @@ function LpaPageContent({ viewContext }) {
   };
 
   const handleOpenCreateModal = () => {
+    if (!canCreateLpa) {
+      setMessage({ error: true, text: 'You do not have permission to create LPA check sheets.' });
+      return;
+    }
     if (!selectedUnit) {
       setMessage({ error: true, text: 'Please select Unit before creating an LPA check sheet.' });
       return;
@@ -1006,7 +1062,7 @@ function LpaPageContent({ viewContext }) {
   };
 
   const canDeletePdcaSheet = (sheet) => {
-    return Boolean(isAdmin || isRecordCreator(sheet, effectiveAuthUser));
+    return Boolean(isAdmin || isRecordCreator(sheet, effectiveAuthUser) || hasPermission('lpa:manage') || hasPermission('pdca:delete') || hasPermission('lpa:delete'));
   };
 
   const handleDeletePdcaSheet = async (sheet) => {
@@ -1292,7 +1348,7 @@ function LpaPageContent({ viewContext }) {
           </p>
         ) : <>
           <div className="bg-white rounded-2xl p-2 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-[#ECEFF3] inline-flex flex-wrap items-center gap-1.5 max-w-full" role="tablist" aria-label="LPA pages">
-            {SECTIONS.map(section => {
+            {SECTIONS.filter(s => (s.id === 'assembly' ? canAccessAssembly : s.id === 'cc' ? canAccessCc : true)).map(section => {
               const isActive = activeSection === section.id;
               return (
                 <button
@@ -1323,7 +1379,7 @@ function LpaPageContent({ viewContext }) {
                 {[
                   { id: 'lpa', label: 'LPA' },
                   { id: 'pdca', label: 'LPA Observation (PDCA)' }
-                ].map(tab => {
+                ].filter(tab => (tab.id === 'pdca' ? canAccessPdcaTab : true)).map(tab => {
                   const isActive = activeSubTab === tab.id;
                   return (
                     <button
@@ -1387,7 +1443,7 @@ function LpaPageContent({ viewContext }) {
                         });
                         setIsCreatePdcaModalOpen(true);
                       }}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 text-white font-semibold text-xs hover:bg-blue-700 transition-all cursor-pointer shadow-xs active:scale-98"
+                      className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 text-white font-semibold text-xs hover:bg-blue-700 transition-all cursor-pointer shadow-xs active:scale-98 ${!canCreatePdca ? 'hidden' : ''}`}
                       title="Create new PDCA Sheet"
                     >
                       <Plus size={15} />
@@ -1533,7 +1589,7 @@ function LpaPageContent({ viewContext }) {
                     type="button"
                     disabled={busy || !selectedUnit}
                     onClick={handleOpenCreateModal}
-                    className={`${primary} shrink-0`}
+                    className={`${primary} shrink-0 ${!canCreateLpa ? 'hidden' : ''}`}
                     title="Create a new blank LPA check sheet"
                   >
                     <Plus size={16} />Create LPA
@@ -1541,7 +1597,7 @@ function LpaPageContent({ viewContext }) {
                   <button type="button" onClick={exportAllRecords} className={`${button} shrink-0`}>
                     <Download size={16} />Export Excel
                   </button>
-                  {isAdmin && (
+                  {(isAdmin || hasPermission('lpa:manage') || hasPermission('lpa:upload_excel')) && (
                     <button
                       type="button"
                       disabled={busy || !selectedUnit}

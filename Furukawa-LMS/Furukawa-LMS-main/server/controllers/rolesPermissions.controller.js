@@ -292,6 +292,28 @@ const SYSTEM_PERMISSIONS = {
   REVISION_CREATE: "revision:create",
   REVISION_UPDATE: "revision:update",
   DEPT_REVISION_LOGS_READ: "dept_revision_logs:read",
+
+  // PDCA Management
+  PDCA_MANAGE: "pdca:manage",
+  PDCA_READ: "pdca:read",
+  PDCA_CREATE: "pdca:create",
+  PDCA_UPDATE: "pdca:update",
+  PDCA_DELETE: "pdca:delete",
+  PDCA_ADD_ROW: "pdca:add_row",
+  PDCA_CONFIRM: "pdca:confirm",
+
+  // Layered Process Audit (LPA) Management
+  LPA_READ: "lpa:read",
+  LPA_CREATE: "lpa:create",
+  LPA_UPDATE: "lpa:update",
+  LPA_DELETE: "lpa:delete",
+  LPA_UPLOAD_EXCEL: "lpa:upload_excel",
+  LPA_MANAGE: "lpa:manage",
+  LPA_ASSEMBLY: "lpa:assembly",
+  LPA_CC: "lpa:cc",
+  LPA_OBSERVATION_PDCA: "lpa:observation_pdca",
+  LPA_PDCA_ADD_ROW: "lpa:pdca_add_row",
+  LPA_PDCA_CONFIRM: "lpa:pdca_confirm",
 };
 
 // Define default role permissions
@@ -483,6 +505,18 @@ const ASSIGNABLE_PORTALS = [
       { key: "daily-meeting", name: "MIS Portal Home", description: "The MIS Portal tile on the main menu and its workspace chooser" },
       { key: "mis-morning-meeting", name: "Daily Morning Meeting", description: "Section-wise standup spreadsheets and charts", requires: SYSTEM_PERMISSIONS.DAILY_MEETING_READ },
       { key: "mis-monthly-report", name: "Monthly Meeting Report", description: "Monthly report folders and presentations", requires: SYSTEM_PERMISSIONS.MONTHLY_REPORT_READ }
+    ]
+  },
+  {
+    key: "cms",
+    name: "CMS Portal",
+    description: "Centralized Management System",
+    pages: [
+      { key: "cms-dashboard", name: "CMS Dashboard", description: "Overview of CMS metrics and operations" },
+      { key: "cms-recording", name: "Daily 5M Recording", description: "Daily 5M recording and verification", requires: SYSTEM_PERMISSIONS.DAILY_5M_READ },
+      { key: "abnormal-condition", name: "Abnormal Condition", description: "Abnormal condition reporting and management", requires: SYSTEM_PERMISSIONS.ABNORMAL_CONDITION_READ },
+      { key: "cms-pdca", name: "PDCA", description: "Plan-Do-Check-Act Sheets and Countermeasure Tracking", requires: SYSTEM_PERMISSIONS.PDCA_READ },
+      { key: "cms-lpa", name: "LPA", description: "Layered Process Audit Sheets and Reports", requires: SYSTEM_PERMISSIONS.LPA_READ }
     ]
   }
 ];
@@ -794,6 +828,28 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.MENTOR_UPDATE, name: "Update Mentors", description: "Edit mentor details and assignment limits" },
         { id: SYSTEM_PERMISSIONS.MENTOR_DELETE, name: "Delete Mentors", description: "Delete or remove mentor records" },
         { id: SYSTEM_PERMISSIONS.MENTOR_ASSIGN, name: "Assign / Unassign Mentors", description: "Promote existing operators into the Mentor role and remove them from it, without needing User Management update permissions" }
+      ],
+      "PDCA Management": [
+        { id: SYSTEM_PERMISSIONS.PDCA_MANAGE, name: "PDCA Full Access", description: "Super-permission: full control over PDCA sheets, creation, deletion, adding rows, confirmations, and modifications" },
+        { id: SYSTEM_PERMISSIONS.PDCA_READ, name: "View PDCA Sheets", description: "Access and view PDCA sheets, dashboards, and histories" },
+        { id: SYSTEM_PERMISSIONS.PDCA_CREATE, name: "Create PDCA Records", description: "Create new PDCA records and CFT topics" },
+        { id: SYSTEM_PERMISSIONS.PDCA_UPDATE, name: "Edit PDCA Sheets", description: "Update cells, rows, attachments, and countermeasures in PDCA sheets" },
+        { id: SYSTEM_PERMISSIONS.PDCA_DELETE, name: "Delete PDCA Sheet", description: "Delete entire PDCA sheets and records" },
+        { id: SYSTEM_PERMISSIONS.PDCA_ADD_ROW, name: "Add Rows", description: "Add or insert new rows into PDCA check sheets" },
+        { id: SYSTEM_PERMISSIONS.PDCA_CONFIRM, name: "Responsible Person Confirmation", description: "Confirm or mark Not-Confirmed on responsible person instructions and rows" }
+      ],
+      "LPA Management": [
+        { id: SYSTEM_PERMISSIONS.LPA_READ, name: "View LPA Audits", description: "View Layered Process Audit check sheets, scores, and history" },
+        { id: SYSTEM_PERMISSIONS.LPA_CREATE, name: "Create LPA Sheets", description: "Create or initialize new LPA audit sheets" },
+        { id: SYSTEM_PERMISSIONS.LPA_UPDATE, name: "Edit LPA Sheets", description: "Fill inspection points, evaluate scores, and update LPA sheets" },
+        { id: SYSTEM_PERMISSIONS.LPA_DELETE, name: "Delete LPA Records", description: "Delete LPA check sheets and workbooks" },
+        { id: SYSTEM_PERMISSIONS.LPA_UPLOAD_EXCEL, name: "Upload LPA Excel", description: "Import and upload raw Excel workbooks into LPA" },
+        { id: SYSTEM_PERMISSIONS.LPA_MANAGE, name: "Full LPA Access", description: "Full administrative access to all LPA sheets, sections, and observations" },
+        { id: SYSTEM_PERMISSIONS.LPA_ASSEMBLY, name: "Access Assembly Tab", description: "View and work on Assembly LPA check sheets" },
+        { id: SYSTEM_PERMISSIONS.LPA_CC, name: "Access C&C Tab", description: "View and work on C&C LPA check sheets" },
+        { id: SYSTEM_PERMISSIONS.LPA_OBSERVATION_PDCA, name: "Access LPA Observation (PDCA) Tab", description: "View LPA Observation PDCA sheets and observation records" },
+        { id: SYSTEM_PERMISSIONS.LPA_PDCA_ADD_ROW, name: "LPA PDCA Add Rows", description: "Add or insert rows in LPA Observation (PDCA) sheets" },
+        { id: SYSTEM_PERMISSIONS.LPA_PDCA_CONFIRM, name: "LPA PDCA Responsible Confirmation", description: "Confirm or mark Not-Confirmed in LPA Observation (PDCA) sheets" }
       ]
     };
 

@@ -774,7 +774,8 @@ export default function PDCASheet({
   isCreator: propIsCreator = undefined,
   isAdmin: propIsAdmin = undefined,
   currentUser = null,
-  emailPdcaSheets = undefined
+  emailPdcaSheets = undefined,
+  onDelete = undefined
 }) {
   const { data, setData, showToast, userContext } = usePDCA();
   const lpaSheetIdentity = [
@@ -838,11 +839,51 @@ export default function PDCASheet({
     return false;
   }, [effectiveUser, userContext?.user]);
 
+  const authUser = useMemo(() => {
+    let u = effectiveUser || userContext?.user;
+    if (!u || !u.customRole) {
+      try {
+        const raw = (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('user') : null) ||
+          (typeof localStorage !== 'undefined' ? localStorage.getItem('user') : null);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed) u = { ...parsed, ...u, customRole: parsed.customRole || u?.customRole };
+        }
+      } catch { }
+    }
+    return u;
+  }, [effectiveUser, userContext?.user]);
+
+  const userPermissions = useMemo(() => {
+    const perms = authUser?.customRole?.permissions;
+    if (Array.isArray(perms)) return perms;
+    if (typeof perms === 'string') {
+      try { return JSON.parse(perms); } catch { return []; }
+    }
+    return [];
+  }, [authUser]);
+
+  const hasPermission = useCallback((perm) => {
+    if (isAdmin) return true;
+    if (userPermissions.includes('pdca:manage') || userPermissions.includes('pdca:full_access') || userPermissions.includes('lpa:manage')) return true;
+    return userPermissions.includes(perm);
+  }, [isAdmin, userPermissions]);
+
+  const hasFullAccess = Boolean(isAdmin || hasPermission('pdca:manage') || hasPermission('pdca:full_access') || hasPermission('lpa:manage'));
+
   const isCreator = propIsCreator !== undefined
     ? Boolean(propIsCreator)
     : Boolean(topic?.id ? isRecordCreator(topic, effectiveUser) : true);
-  const isCreatorOrAdmin = Boolean(isAdmin || !topic?.id || isCreator);
+  const isCreatorOrAdmin = Boolean(hasFullAccess || !topic?.id || isCreator);
   const canEditEntireSheet = Boolean(!readOnly && isCreatorOrAdmin);
+
+  // Granular capability flags
+  const canCreateSheet = Boolean(!readOnly && (hasFullAccess || hasPermission('pdca:create') || hasPermission('pdca:create_sheet') || hasPermission('lpa:create')));
+  const canDeleteSheet = Boolean(!readOnly && (hasFullAccess || isCreator || hasPermission('pdca:delete') || hasPermission('pdca:delete_sheet') || hasPermission('lpa:delete')));
+  const canAddRow = Boolean(!readOnly && (hasFullAccess || isCreator || hasPermission('pdca:add_row') || hasPermission('pdca:add_rows') || hasPermission('lpa:pdca_add_row')));
+  const canDeleteRow = Boolean(!readOnly && (hasFullAccess || isCreator || hasPermission('pdca:delete') || hasPermission('pdca:delete_sheet') || hasPermission('lpa:delete')));
+  const canConfirmDefault = Boolean(!readOnly && (hasFullAccess || isCreator || hasPermission('pdca:confirm') || hasPermission('pdca:confirmation') || hasPermission('lpa:pdca_confirm')));
+  const canShowRowActions = Boolean(canEditEntireSheet || canAddRow || canDeleteRow);
   const cftAssignedMembers = topic?.assignedMembers || [];
   const defaultAssignedStr = cftAssignedMembers.length > 0
     ? (cftAssignedMembers.length === 1
@@ -1871,6 +1912,10 @@ export default function PDCASheet({
       return false;
     }
     if (isSaving) return false;
+    if (!topic?.id && !canCreateSheet) {
+      showToast('You do not have permission to create new PDCA sheets.');
+      return false;
+    }
     if (requireConfirmationReasonBeforeContinuing()) return false;
     // Validate mandatory fields (Date, Shift, Status, Line/Area, Observation) for active rows
     for (let i = 0; i < rows.length; i++) {
@@ -2014,6 +2059,25 @@ export default function PDCASheet({
       return false;
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleDeleteSheet = async () => {
+    if (!canDeleteSheet || !topic?.id) return;
+    const confirmed = window.confirm(`Are you sure you want to delete this PDCA sheet "${topic?.topic || topic?.id}"? This action cannot be undone.`);
+    if (!confirmed) return;
+    try {
+      if (typeof onDelete === 'function') {
+        await onDelete(topic.id);
+      } else if (typeof data?.handleDeletePDCA === 'function') {
+        await data.handleDeletePDCA(topic.id);
+      } else {
+        await pdcaApi.deleteRecord(topic.id);
+        if (typeof showToast === 'function') showToast(`Deleted PDCA sheet ${topic.id}`);
+      }
+      if (typeof onBack === 'function') onBack();
+    } catch (err) {
+      if (typeof showToast === 'function') showToast(err?.message || 'Failed to delete PDCA sheet');
     }
   };
 
@@ -3612,6 +3676,12 @@ export default function PDCASheet({
 
   // Section A: Responsible Person Instruction, etc. Confirmation change handler
   const handleConfirmationChange = (rowIndex, value, userName = '') => {
+    const targetRow = rows[rowIndex];
+    const canConfirmThisRow = Boolean(!readOnly && (canConfirmDefault || (targetRow && isUserResponsibleForRow(targetRow, effectiveUser))));
+    if (!canConfirmThisRow) {
+      if (typeof showToast === 'function') showToast('You do not have permission to change confirmation status.');
+      return;
+    }
     setRows((prev) => {
       const updated = [...prev];
       const curr = updated[rowIndex];
@@ -3657,6 +3727,12 @@ export default function PDCASheet({
 
   // Instruction change handler for Responsible Person Instruction, etc. column
   const handleInstructionChange = (rowIndex, text) => {
+    const targetRow = rows[rowIndex];
+    const canConfirmThisRow = Boolean(!readOnly && (canConfirmDefault || (targetRow && isUserResponsibleForRow(targetRow, effectiveUser))));
+    if (!canConfirmThisRow) {
+      if (typeof showToast === 'function') showToast('You do not have permission to change instruction.');
+      return;
+    }
     setRows((prev) => {
       const updated = [...prev];
       const curr = updated[rowIndex];
@@ -4343,12 +4419,18 @@ export default function PDCASheet({
   };
 
   const handleAddRow = () => {
-    if (!canEditEntireSheet) return;
+    if (!canAddRow) {
+      if (typeof showToast === 'function') showToast('You do not have permission to add rows.');
+      return;
+    }
     setRows((prev) => [...prev, createTopicDefaultRow()]);
   };
 
   const handleInsertRowAbove = (rowIndex) => {
-    if (!canEditEntireSheet) return;
+    if (!canAddRow) {
+      if (typeof showToast === 'function') showToast('You do not have permission to add rows.');
+      return;
+    }
     setRows((prev) => {
       const updated = [...prev];
       updated.splice(rowIndex, 0, createTopicDefaultRow());
@@ -4357,7 +4439,10 @@ export default function PDCASheet({
   };
 
   const handleDeleteRow = (rowIndex) => {
-    if (!isAdmin && !isCreator) return;
+    if (!canDeleteRow) {
+      if (typeof showToast === 'function') showToast('You do not have permission to delete rows.');
+      return;
+    }
     if (rows.length <= 1) {
       setRows([createTopicDefaultRow()]);
       return;
@@ -4378,6 +4463,7 @@ export default function PDCASheet({
           if (typeof nextEl.select === 'function') nextEl.select();
         }
       } else {
+        if (!canAddRow) return;
         setRows((prev) => [...prev, createTopicDefaultRow()]);
         setTimeout(() => {
           const nextEl = cellRefs.current[`${nextRowIndex}_${colName}`];
@@ -4525,7 +4611,7 @@ export default function PDCASheet({
     return { total, inProgress, done, delay, notStarted };
   }, [rows]);
 
-  const totalCols = canEditEntireSheet ? 23 : 22;
+  const totalCols = canShowRowActions ? 23 : 22;
 
   const canUserEditActionColsForModalRow = Boolean(
     !readOnly && (
@@ -4646,6 +4732,17 @@ export default function PDCASheet({
                 <span>{showDoneRows ? 'Hide Done Rows' : `Done Rows Hidden (${liveCumulativeStats.done})`}</span>
               </button>
             )}
+            {canDeleteSheet && topic?.id && (
+              <button
+                type="button"
+                onClick={handleDeleteSheet}
+                title="Delete this entire PDCA sheet"
+                className="flex items-center gap-1.5 px-3 py-1 rounded-lg border border-rose-300 bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold text-xs shadow-2xs cursor-pointer transition-colors flex-shrink-0"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                <span>Delete Sheet</span>
+              </button>
+            )}
             {headerInfo.auditNo ? (
               <span className="text-slate-500 text-xs">
                 Audit No: <span className="font-semibold text-slate-700 font-mono">{headerInfo.auditNo}</span>
@@ -4668,10 +4765,10 @@ export default function PDCASheet({
             </div>
 
             {/* Add Row Button (Only for creator/admin) */}
-            {canEditEntireSheet && (
+            {canShowRowActions && (
               <button
                 onClick={handleAddRow}
-                className="flex items-center gap-1.5 px-3.5 py-1 bg-[#2563EB] hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-all cursor-pointer whitespace-nowrap flex-shrink-0"
+                className={`flex items-center gap-1.5 px-3.5 py-1 bg-[#2563EB] hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-all cursor-pointer whitespace-nowrap flex-shrink-0 ${!canAddRow ? 'hidden' : ''}`}
               >
                 <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
                 <span>Add Row</span>
@@ -4719,7 +4816,7 @@ export default function PDCASheet({
             <col style={{ width: '160px', minWidth: '145px' }} />
             <col style={{ width: '95px', minWidth: '85px' }} />
             <col style={{ width: '150px', minWidth: '140px' }} />
-            {canEditEntireSheet && <col style={{ width: '55px', minWidth: '45px' }} />}
+            {canShowRowActions && <col style={{ width: '55px', minWidth: '45px' }} />}
           </colgroup>
 
           {/* Table Column Headers - Frozen on vertical scroll */}
@@ -5184,7 +5281,7 @@ export default function PDCASheet({
                   <span>Confirmation</span>
                 </div>
               </th>
-              {canEditEntireSheet && (
+              {canShowRowActions && (
                 <th rowSpan={2} className="py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 select-none">
                   Actions
                 </th>
@@ -6293,8 +6390,9 @@ export default function PDCASheet({
                             else delete responsibleConfirmationSelectRefs.current[idx];
                           }}
                           reasonRequired={missingRequiredInputs.some((item) => item.type === 'confirmation' && item.rowIndex === idx)}
-                          currentUser={effectiveUser}
+                          currentUser={effectiveUser} /*
                           readOnly={!canEditEntireRow}
+                          */ readOnly={!(canConfirmDefault || isUserResponsibleForRow(row, effectiveUser))}
                           onConfirmationChange={(val, uName) => handleConfirmationChange(idx, val, uName)}
                           onInstructionChange={(text) => handleInstructionChange(idx, text)}
                           sNo={sNo}
@@ -6303,18 +6401,20 @@ export default function PDCASheet({
                     </td>
 
                     {/* 16. Actions Column (Insert Row Above / Delete Row) */}
-                    {canEditEntireSheet && (
+                    {canShowRowActions && (
                       <td className="p-1 align-middle text-center border-r border-b border-[#64748B] w-[44px] min-w-[40px] bg-white group-hover/row:bg-[#F8FAFC]">
                         <div className="flex flex-col items-center justify-center gap-1">
+                          {canShowRowActions && (
                           <button
                             type="button"
                             onClick={() => handleInsertRowAbove(idx)}
-                            className="flex items-center justify-center w-5 h-5 shrink-0 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-all shadow-2xs cursor-pointer"
+                            className={`flex items-center justify-center w-5 h-5 shrink-0 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-all shadow-2xs cursor-pointer ${!canAddRow ? 'hidden' : ''}`}
                             title="Insert row above"
                           >
                             <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
                           </button>
-                          {(isAdmin || isCreator) && (
+                          )}
+                          {canDeleteRow && (
                             <button
                               type="button"
                               onClick={() => handleDeleteRow(idx)}
@@ -6364,7 +6464,7 @@ export default function PDCASheet({
             <span>{rows.length} rows</span>
           </div>
 
-          {canEditEntireSheet && (
+          {canAddRow && (
             <button
               type="button"
               onClick={handleAddRow}

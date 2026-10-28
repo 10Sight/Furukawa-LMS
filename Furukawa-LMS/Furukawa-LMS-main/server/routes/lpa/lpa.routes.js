@@ -54,6 +54,22 @@ const optionalAuth = async (req, res, next) => {
             };
           } else {
             const user = await User.findByIdLight(decoded.id);
+            if (user?.customRoleId) {
+              try {
+                const { executeQuery } = await import("../../db/mssqlHelper.js");
+                const [rows] = await executeQuery(
+                  "SELECT id, name, description, color, allowedPages, permissions, targetLayout FROM custom_roles WHERE id = ?",
+                  [user.customRoleId]
+                );
+                if (rows.length) {
+                  let perms = rows[0].permissions;
+                  if (typeof perms === 'string') {
+                    try { perms = JSON.parse(perms); } catch {}
+                  }
+                  user.customRole = { ...rows[0], permissions: perms };
+                }
+              } catch {}
+            }
             if (user) {
               req.user = user;
             } else if (decoded && (decoded.userName || decoded.empId || decoded.id)) {
@@ -137,6 +153,14 @@ const optionalAuth = async (req, res, next) => {
 
 router.use(optionalAuth);
 
+const requireLpa = (perm) => (req, res, next) => {
+  if (!req.user) return next();
+  if (req.user.role === 'SUPERADMIN' || req.user.isAdmin || req.user.role === 'ADMIN') return next();
+  const perms = req.user.customRole?.permissions || [];
+  if (perms.includes(perm) || perms.includes("lpa:manage") || perms.includes("pdca:manage")) return next();
+  return res.status(403).json({ success: false, message: `Access denied. Requires '${perm}' permission.` });
+};
+
 // Form templates & configuration
 router.get("/templates", getTemplates);
 router.get("/templates/:section", getTemplateBySection);
@@ -148,7 +172,7 @@ router.get("/dropdowns", getDropdowns);
 router.post("/calculate-scores", calculateScores);
 
 // Admin Excel Upload
-router.post("/upload", upload.single("file"), uploadExcel);
+router.post("/upload", requireLpa("lpa:upload_excel"), upload.single("file"), uploadExcel);
 
 // Same-day source data query for multi-level & multi-shift fetching
 router.get("/same-day-source", getSameDaySourceData);
@@ -161,17 +185,17 @@ router.post("/default-mails/attach", verifyJWT, attachDefaultMailRecipients);
 router.put("/default-mails", verifyJWT, saveDefaultMailRecipients);
 
 // LPA Records (explicit endpoints)
-router.get("/records", getRecords);
-router.get("/records/:id", getRecordById);
-router.post("/records", createRecord);
-router.put("/records/:id", updateRecord);
-router.delete("/records/:id", deleteRecord);
+router.get("/records", requireLpa("lpa:read"), getRecords);
+router.get("/records/:id", requireLpa("lpa:read"), getRecordById);
+router.post("/records", requireLpa("lpa:create"), createRecord);
+router.put("/records/:id", requireLpa("lpa:update"), updateRecord);
+router.delete("/records/:id", requireLpa("lpa:delete"), deleteRecord);
 
 // Root path aliases for records
-router.get("/", getRecords);
-router.post("/", createRecord);
-router.get("/:id", getRecordById);
-router.put("/:id", updateRecord);
-router.delete("/:id", deleteRecord);
+router.get("/", requireLpa("lpa:read"), getRecords);
+router.post("/", requireLpa("lpa:create"), createRecord);
+router.get("/:id", requireLpa("lpa:read"), getRecordById);
+router.put("/:id", requireLpa("lpa:update"), updateRecord);
+router.delete("/:id", requireLpa("lpa:delete"), deleteRecord);
 
 export default router;

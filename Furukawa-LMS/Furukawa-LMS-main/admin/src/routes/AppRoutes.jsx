@@ -376,6 +376,7 @@ const AppRoutes = () => {
             <Route path="contractors/:contractorId" element={<ContractorDetail />} />
             <Route path="designations" element={<DesignationsPage />} />
             <Route path="designations/:designationName" element={<DesignationUsersPage />} />
+
             <Route path="settings" element={<AdminSettings />} />
             <Route path="data-management" element={<DataManagement />} />
             <Route path="soft-deleted-users" element={<SoftDeletedUsersManagement />} />
@@ -397,10 +398,22 @@ const AppRoutes = () => {
             } />
             <Route path="abnormal-condition" element={<AbnormalCondition />} />
             <Route path="ptm" element={<FmeDashboardPage key="ptm" page="ptm" />} />
-            <Route path="pdca" element={<FmeDashboardPage key="pdca" page="pdca" />} />
+            <Route path="pdca" element={
+              <RequireAccess allow="pdca:read">
+                <FmeDashboardPage key="pdca" page="pdca" />
+              </RequireAccess>
+            } />
             <Route path="process-audit" element={<FmeDashboardPage key="process-audit" page="process-audit" />} />
-            <Route path="lpa" element={<LpaPage />} />
-            <Route path="lpa/graphs" element={<LpaGraphsPage />} />
+            <Route path="lpa" element={
+              <RequireAccess allow="lpa:read">
+                <LpaPage />
+              </RequireAccess>
+            } />
+            <Route path="lpa/graphs" element={
+              <RequireAccess allow="lpa:read">
+                <LpaGraphsPage />
+              </RequireAccess>
+            } />
           </Route>
 
           {/* Daily Meeting Layout Routes */}
@@ -590,12 +603,28 @@ const AppRoutes = () => {
             <Route path="daily-meeting" element={<MisPortalHub />} />
             <Route path="daily-meeting/morning-meeting" element={<DailyMeeting />} />
             <Route path="daily-meeting/monthly-report" element={<MonthlyMeetingReport />} />
+            <Route path="pdca" element={
+              <RequireAccess allow="pdca:read">
+                <FmeDashboardPage key="pdca" page="pdca" />
+              </RequireAccess>
+            } />
+            <Route path="lpa" element={
+              <RequireAccess allow="lpa:read">
+                <LpaPage />
+              </RequireAccess>
+            } />
+            <Route path="lpa/graphs" element={
+              <RequireAccess allow="lpa:read">
+                <LpaGraphsPage />
+              </RequireAccess>
+            } />
             <Route path="learning" element={<Learning />} />
             <Route path="learning/create" element={<CreateLearningComparison />} />
             <Route path="learning/edit/:id" element={<EditLearningComparison />} />
             <Route path="learning/:id" element={<LearningComparisonDetail />} />
             <Route path="designations" element={<DesignationsPage />} />
             <Route path="designations/:designationName" element={<DesignationUsersPage />} />
+
           </Route>
 
           {/* Fallback routes */}

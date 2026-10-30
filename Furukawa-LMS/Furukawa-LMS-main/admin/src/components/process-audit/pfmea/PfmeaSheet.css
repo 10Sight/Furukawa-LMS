@@ -1,0 +1,488 @@
+/* PFMEA Excel-like Sheet Stylesheet */
+
+.pfmea-sheet-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100vh;
+  background-color: #f8fafc;
+  overflow: hidden;
+  font-family: Calibri, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  color: #000000;
+}
+
+/* Top Sticky Header */
+.pfmea-top-bar {
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 60;
+  display: flex;
+  min-height: 48px;
+  width: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid #cbd5e1;
+  background-color: #ffffff;
+  padding: 6px 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.pfmea-actions-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* Action Buttons */
+.pfmea-btn-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 6px;
+  background-color: #f1f5f9;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+  transition: all 0.15s ease;
+  cursor: pointer;
+}
+.pfmea-btn-back:hover {
+  background-color: #e2e8f0;
+  color: #0f172a;
+}
+
+.pfmea-btn-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 6px;
+  background-color: #2563eb;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #ffffff;
+  border: 1px solid #1d4ed8;
+  transition: all 0.15s ease;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.2);
+}
+.pfmea-btn-save:hover {
+  background-color: #1d4ed8;
+}
+
+.pfmea-btn-icon-only {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background-color: #f8fafc;
+  padding: 6px 8px;
+  color: #475569;
+  transition: all 0.15s ease;
+  cursor: pointer;
+}
+.pfmea-btn-icon-only:hover:not(:disabled) {
+  background-color: #e2e8f0;
+  color: #0f172a;
+}
+.pfmea-btn-icon-only:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pfmea-btn-add-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 6px;
+  background-color: #0284c7;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #ffffff;
+  border: 1px solid #0369a1;
+  transition: all 0.15s ease;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(2, 132, 199, 0.2);
+}
+.pfmea-btn-add-row:hover {
+  background-color: #0369a1;
+}
+
+/* Scroll Area */
+.pfmea-scroll-area {
+  flex: 1 1 0%;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  background-color: #ffffff;
+}
+
+.pfmea-table-wrapper {
+  min-width: 3100px;
+  width: max-content;
+  padding: 16px 20px 40px 20px;
+}
+
+/* Metadata Card */
+.pfmea-meta-card {
+  width: 100%;
+  border: 2px solid #000000;
+  background-color: #ffffff;
+  margin-bottom: 8px;
+}
+
+.pfmea-meta-top-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 2px solid #000000;
+  background-color: #f8fafc;
+  padding: 4px 12px;
+}
+
+.pfmea-meta-top-spacer {
+  width: 180px;
+}
+
+.pfmea-meta-title {
+  text-align: center;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  flex: 1;
+}
+
+.pfmea-meta-top-company {
+  width: 220px;
+  text-align: right;
+  font-size: 11px;
+  font-weight: 700;
+  color: #000000;
+}
+
+.pfmea-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.05fr;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.pfmea-meta-col {
+  display: flex;
+  flex-direction: column;
+}
+
+.pfmea-meta-col-left {
+  border-right: 2px solid #000000;
+}
+
+.pfmea-meta-col-mid {
+  border-right: 2px solid #000000;
+}
+
+.pfmea-meta-col-right {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+}
+
+.pfmea-meta-right-fields {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pfmea-meta-legend-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 12px;
+  border-left: 1px solid #000000;
+  background-color: #ffffff;
+}
+
+.pfmea-legend-box {
+  display: flex;
+  border: 1.5px solid #000000;
+  background-color: #ffffff;
+}
+
+.pfmea-legend-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  font-weight: 700;
+  font-size: 11px;
+  border-right: 1.5px solid #000000;
+  background-color: #f8fafc;
+}
+
+.pfmea-legend-table {
+  border-collapse: collapse;
+}
+
+.pfmea-legend-table td {
+  border: 1px solid #000000;
+  padding: 2px 8px;
+  font-size: 10.5px;
+  line-height: 1.25;
+}
+
+.pfmea-legend-code {
+  font-weight: 700;
+  text-align: center;
+  width: 32px;
+  background-color: #ffffff;
+}
+
+.pfmea-legend-desc {
+  text-align: left;
+  white-space: nowrap;
+  background-color: #ffffff;
+  font-weight: 500;
+}
+
+.pfmea-meta-row {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid #000000;
+  min-height: 24px;
+}
+.pfmea-meta-row:last-child {
+  border-bottom: none;
+}
+
+.pfmea-meta-label {
+  width: 170px;
+  flex-shrink: 0;
+  font-weight: 700;
+  padding: 2px 8px;
+  text-align: right;
+  color: #000000;
+}
+
+.pfmea-meta-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #000000;
+  outline: none;
+}
+.pfmea-meta-input:focus {
+  background-color: #eff6ff;
+}
+
+/* Excel Main Table */
+.pfmea-excel-table {
+  border-collapse: collapse;
+  width: 100%;
+  border: 2px solid #000000;
+  font-size: 11px;
+  background-color: #ffffff;
+}
+
+/* Table Header Styles */
+.pfmea-excel-table thead th {
+  border: 1px solid #000000;
+  padding: 4px 3px;
+  text-align: center;
+  vertical-align: middle;
+  font-weight: 700;
+  color: #000000;
+  box-sizing: border-box;
+}
+
+.pfmea-excel-table thead tr.group-header-row th {
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  font-weight: 800;
+  background-color: #ffffff;
+  padding: 5px 4px;
+  border-top: 2px solid #000000;
+  border-bottom: 2px solid #000000;
+}
+
+.pfmea-excel-table thead tr.column-header-row th {
+  font-size: 10px;
+  line-height: 1.25;
+  height: 150px;
+  padding: 6px 4px;
+  border-bottom: 2px solid #000000;
+  vertical-align: middle;
+}
+
+/* Colored Headers */
+.bg-pfmea-yellow {
+  background-color: #fef9c3 !important;
+}
+.bg-pfmea-blue {
+  background-color: #bfdbfe !important;
+}
+.bg-pfmea-pink {
+  background-color: #fbcfe8 !important;
+}
+.bg-pfmea-gold {
+  background-color: #fbbf24 !important;
+}
+.bg-pfmea-cyan {
+  background-color: #00b0f0 !important;
+  color: #ffffff !important;
+}
+.bg-pfmea-light-blue {
+  background-color: #93c5fd !important;
+}
+
+/* Vertical Rotated Text */
+.pfmea-vertical-text {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  white-space: nowrap;
+  margin: 0 auto;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  display: inline-block;
+}
+
+.pfmea-vertical-text-wrap {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  white-space: normal;
+  max-height: 135px;
+  line-height: 1.2;
+  margin: 0 auto;
+  text-align: left;
+  font-size: 9.5px;
+  font-weight: 600;
+  display: inline-block;
+}
+
+/* Table Body Cells */
+.pfmea-excel-table tbody td {
+  border: 1px solid #000000;
+  padding: 0;
+  vertical-align: top;
+  box-sizing: border-box;
+  background-color: #ffffff;
+  position: relative;
+}
+
+/* Dashed borders within sub-rows */
+.border-dashed-b {
+  border-bottom: 1px dashed #94a3b8 !important;
+}
+.border-solid-b {
+  border-bottom: 2px solid #000000 !important;
+}
+.border-dashed-r {
+  border-right: 1px dashed #94a3b8 !important;
+}
+.border-solid-r {
+  border-right: 1px solid #000000 !important;
+}
+
+/* Cell Input / Textarea */
+.pfmea-cell-textarea {
+  width: 100%;
+  height: 100%;
+  min-height: 24px;
+  border: none;
+  background: transparent;
+  padding: 3px 4px;
+  font-family: inherit;
+  font-size: 10.5px;
+  line-height: 1.3;
+  color: #000000;
+  resize: none;
+  outline: none;
+  display: block;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.pfmea-cell-textarea:focus {
+  background-color: #f0f9ff;
+  box-shadow: inset 0 0 0 1.5px #2563eb;
+}
+
+.pfmea-cell-center {
+  text-align: center;
+}
+
+/* Bottom Revision & Signoff Section */
+.pfmea-bottom-container {
+  margin-top: 16px;
+  width: 100%;
+  background-color: #ffffff;
+}
+
+.pfmea-legend-bar {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  font-size: 11px;
+  padding: 6px 12px;
+  border: 1px solid #000000;
+  border-bottom: none;
+  background-color: #fafafa;
+}
+
+.pfmea-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+
+.pfmea-revision-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid #000000;
+  font-size: 11px;
+}
+.pfmea-revision-table th,
+.pfmea-revision-table td {
+  border: 1px solid #000000;
+  padding: 3px 6px;
+}
+.pfmea-revision-table th {
+  background-color: #f8fafc;
+  font-weight: 700;
+  text-align: left;
+}
+
+.pfmea-signoff-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid #000000;
+  border-top: 2px solid #000000;
+  font-size: 11px;
+  margin-top: 8px;
+}
+.pfmea-signoff-table th,
+.pfmea-signoff-table td {
+  border: 1px solid #000000;
+  padding: 4px 6px;
+  text-align: center;
+}
+.pfmea-signoff-table th {
+  background-color: #f8fafc;
+  font-weight: 700;
+}
+

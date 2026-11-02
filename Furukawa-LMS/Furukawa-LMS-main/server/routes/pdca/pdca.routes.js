@@ -159,8 +159,10 @@ router.use(optionalAuth);
 const requirePdca = (perm) => (req, res, next) => {
     if (!req.user) return next();
     if (req.user.role === 'SUPERADMIN' || req.user.isAdmin || req.user.role === 'ADMIN') return next();
+    // Allow all employees to read, create, and update PDCA records & sheets (row/creator checks are handled in controllers)
+    if (perm === 'pdca:read' || perm === 'pdca:update' || perm === 'pdca:create') return next();
     const perms = req.user.customRole?.permissions || [];
-    if (perms.includes(perm)) return next();
+    if (perms.includes(perm) || perms.includes("pdca:manage") || perms.includes("lpa:manage")) return next();
     return res.status(403).json({ success: false, message: `Access denied. Requires '${perm}' permission.` });
 };
 

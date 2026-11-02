@@ -1,3 +1,4 @@
+import fs from "fs";
 import path from "path";
 import { executeQuery } from "../mssqlHelper.js";
 import migrationHelper from "../migrationHelper.js";

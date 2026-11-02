@@ -1,5 +1,5 @@
-import { PDCA_DEPARTMENTS } from './pdcaConstants.js';
-export { PDCA_DEPARTMENTS };
+import { PDCA_DEPARTMENTS, PDCA_SHEET_TABLE_STATUSES, isActivePDCARow, getEffectivePDCARowStatus, resolvePDCASheetRows, getPDCASheetStatusSummary } from './pdcaConstants.js';
+export { PDCA_DEPARTMENTS, PDCA_SHEET_TABLE_STATUSES, isActivePDCARow, getEffectivePDCARowStatus, resolvePDCASheetRows, getPDCASheetStatusSummary };
 export const PDCA_PLANTS = ['Bawal', 'Gujrat'];
 export const ALL_UNITS_OPTION = 'All Unit';
 
@@ -97,8 +97,8 @@ export function isRecordCreator(record, currentUser) {
   // If backend provided precomputed isCreator flag for the current session, respect it
   if (record.isCreator === true) return true;
 
-  const createdBy = record.createdBy;
-  const createdById = record.createdById || record.ownerId || record.userId;
+  const createdBy = record.createdBy || record.sheet?.createdBy;
+  const createdById = record.createdById || record.ownerId || record.userId || record.sheet?.createdById;
 
   // Older/legacy records with unknown ownership: protected as read-only for ordinary employees
   if (!createdBy && !createdById) {
@@ -117,6 +117,11 @@ export function isRecordCreator(record, currentUser) {
     currentUser.code,
     currentUser.userName,
     currentUser.empCode
+  ].filter(v => v !== undefined && v !== null && String(v).trim() !== '').map(s => String(s).trim().toUpperCase());
+
+  const userNames = [
+    currentUser.name,
+    currentUser.fullName
   ].filter(v => v !== undefined && v !== null && String(v).trim() !== '').map(s => String(s).trim().toUpperCase());
 
   // Check createdById
@@ -146,10 +151,20 @@ export function isRecordCreator(record, currentUser) {
     for (const rcode of rCodes) {
       if (userCodes.includes(rcode)) return true;
     }
+
+    if (rIds.length === 0 && rCodes.length === 0) {
+      const rNames = [createdBy.name, createdBy.fullName]
+        .filter(v => v !== undefined && v !== null && String(v).trim() !== '')
+        .map(s => String(s).trim().toUpperCase());
+      for (const rname of rNames) {
+        if (userNames.includes(rname)) return true;
+      }
+    }
   } else if (typeof createdBy === 'string' && createdBy.trim()) {
     const cStr = createdBy.trim();
     if (userIds.includes(cStr)) return true;
     if (userCodes.includes(cStr.toUpperCase())) return true;
+    if (!createdById && userNames.includes(cStr.toUpperCase())) return true;
   }
 
   return false;
@@ -179,6 +194,257 @@ export const EDITABLE_RESPONSIBLE_COLUMNS = [
   'revisions',
   'noOfTimeRevised'
 ];
+
+export const SAVE_MANDATORY_COLUMNS = [
+  'Date',
+  'Shift',
+  'Status',
+  'Unit',
+  'Department',
+  'Observation',
+  'Staff Name'
+];
+
+export function isRowStartedForSave(row) {
+  if (!row || typeof row !== 'object') return false;
+  return Boolean(
+    String(row.date || '').trim() ||
+    String(row.shift || '').trim() ||
+    String(row.observation || '').trim() ||
+    String(row.rootCause || '').trim() ||
+    String(row.actionTaken ?? row.correctiveAction ?? '').trim() ||
+    String(row.counterMeasure || '').trim() ||
+    String(row.responseDate || '').trim() ||
+    String(row.staffName || row.staffEmployee || '').trim() ||
+    (Array.isArray(row.staffEmployees) && row.staffEmployees.some(e => String(e?.name || e?.fullName || '').trim())) ||
+    String(row.confirmation || '').trim() ||
+    (Array.isArray(row.imagesBefore) && row.imagesBefore.length > 0) ||
+    Boolean(row.imageBefore) ||
+    (Array.isArray(row.imagesAfter) && row.imagesAfter.length > 0) ||
+    Boolean(row.imageAfter)
+  );
+}
+
+export function getMissingSaveMandatoryFields(row) {
+  if (!row || typeof row !== 'object') {
+    return [...SAVE_MANDATORY_COLUMNS];
+  }
+  const missing = [];
+
+  // 1. Date
+  if (!String(row.date || '').trim()) {
+    missing.push('Date');
+  }
+
+  // 2. Shift
+  if (!String(row.shift || '').trim()) {
+    missing.push('Shift');
+  }
+
+  // 3. Status
+  if (!String(row.status || '').trim()) {
+    missing.push('Status');
+  }
+
+  // 4. Unit (Plan section)
+  const unitVal = String(
+    row.unit ||
+    (Array.isArray(row.units) ? (row.units.find(u => String(u || '').trim()) || '') : '') ||
+    ''
+  ).trim();
+  if (!unitVal) {
+    missing.push('Unit');
+  }
+
+  // 5. Department (Plan section)
+  const deptVal = String(
+    row.department ||
+    (Array.isArray(row.departments) ? (row.departments.find(d => String(d || '').trim()) || '') : '') ||
+    ''
+  ).trim();
+  if (!deptVal) {
+    missing.push('Department');
+  }
+
+  // 6. Observation
+  if (!String(row.observation || '').trim()) {
+    missing.push('Observation');
+  }
+
+  // 7. Staff Name
+  const staffFromList = Array.isArray(row.staffEmployees)
+    ? row.staffEmployees.map(e => String(e?.name || e?.fullName || '').trim()).filter(Boolean)
+    : [];
+  const staffNameVal = String(row.staffName || row.staffEmployee || staffFromList[0] || '').trim();
+  if (!staffNameVal) {
+    missing.push('Staff Name');
+  }
+
+  return missing;
+}
+
+export const CONFIRMATION_MANDATORY_COLUMNS = [
+  'Date',
+  'Shift',
+  'Status',
+  'Unit',
+  'Department',
+  'Observation',
+  'Root Cause',
+  'Corrective action',
+  'Counter Measure',
+  'Std. Duration in Min',
+  'Response date',
+  'Unit (Responsible Person)',
+  'Department (Responsible Person)',
+  'Staff name (Responsible Person)'
+];
+
+export function hasValidStdDuration(value) {
+  if (value === null || value === undefined) return false;
+  const str = String(value).trim();
+  if (!str) return false;
+  if (/^\d{1,2}:\d{1,2}/.test(str)) return true;
+  const normalized = str.replace(/\s*(min|hrs|hr)$/i, '').trim();
+  return normalized !== '' && Number.isFinite(Number(normalized)) && Number(normalized) >= 0;
+}
+
+export function getMissingConfirmationMandatoryFields(row) {
+  if (!row || typeof row !== 'object') {
+    return [...CONFIRMATION_MANDATORY_COLUMNS];
+  }
+  const missing = [];
+
+  // 1. Date
+  if (!String(row.date || '').trim()) {
+    missing.push('Date');
+  }
+
+  // 2. Shift
+  if (!String(row.shift || '').trim()) {
+    missing.push('Shift');
+  }
+
+  // 3. Status
+  if (!String(row.status || '').trim()) {
+    missing.push('Status');
+  }
+
+  // 4. Unit (Plan section)
+  const unitVal = String(
+    row.unit ||
+    (Array.isArray(row.units) ? (row.units.find(u => String(u || '').trim()) || '') : '') ||
+    ''
+  ).trim();
+  if (!unitVal) {
+    missing.push('Unit');
+  }
+
+  // 5. Department (Plan section)
+  const deptVal = String(
+    row.department ||
+    (Array.isArray(row.departments) ? (row.departments.find(d => String(d || '').trim()) || '') : '') ||
+    ''
+  ).trim();
+  if (!deptVal) {
+    missing.push('Department');
+  }
+
+  // 6. Observation
+  if (!String(row.observation || '').trim()) {
+    missing.push('Observation');
+  }
+
+  // 7. Root Cause
+  if (!String(row.rootCause || '').trim()) {
+    missing.push('Root Cause');
+  }
+
+  // 8. Corrective action
+  if (!String(row.actionTaken ?? row.correctiveAction ?? '').trim()) {
+    missing.push('Corrective action');
+  }
+
+  // 9. Counter Measure
+  if (!String(row.counterMeasure || '').trim()) {
+    missing.push('Counter Measure');
+  }
+
+  // 10. Std. Duration in Min
+  if (!hasValidStdDuration(row.stdDurationMin ?? row.stdDuration)) {
+    missing.push('Std. Duration in Min');
+  }
+
+  // 11. Response date
+  if (!String(row.responseDate || '').trim()) {
+    missing.push('Response date');
+  }
+
+  // 12. Unit (Responsible Person)
+  const respUnitVal = String(
+    row.respUnit ||
+    row.responsiblePersonUnit ||
+    (Array.isArray(row.respUnits) ? (row.respUnits.find(u => String(u || '').trim()) || '') : '') ||
+    (Array.isArray(row.staffEmployees) ? (row.staffEmployees.find(e => e && String(e.unit || '').trim())?.unit || '') : '') ||
+    ''
+  ).trim();
+  if (!respUnitVal) {
+    missing.push('Unit (Responsible Person)');
+  }
+
+  // 13. Department (Responsible Person)
+  const deptsFromMap = row.respDeptsByUnit && typeof row.respDeptsByUnit === 'object'
+    ? Object.values(row.respDeptsByUnit).flat().map(d => String(d || '').trim()).filter(Boolean)
+    : [];
+  const deptsFromStaff = Array.isArray(row.staffEmployees)
+    ? row.staffEmployees.map(e => String(e?.department || '').trim()).filter(d => d && d !== 'CFT')
+    : [];
+  const directRespDept = String(row.responsiblePersonDept || row.respDept || '').trim();
+  const respDeptVal = (directRespDept && directRespDept !== 'CFT' ? directRespDept : '') || deptsFromMap[0] || deptsFromStaff[0] || '';
+  if (!respDeptVal) {
+    missing.push('Department (Responsible Person)');
+  }
+
+  // 14. Staff name (Responsible Person)
+  const staffFromList = Array.isArray(row.staffEmployees)
+    ? row.staffEmployees.map(e => String(e?.name || e?.fullName || '').trim()).filter(Boolean)
+    : [];
+  const staffNameVal = String(row.staffName || row.staffEmployee || staffFromList[0] || '').trim();
+  if (!staffNameVal) {
+    missing.push('Staff name (Responsible Person)');
+  }
+
+  return missing;
+}
+
+export function canUserSelectConfirmation(row, recordOrIsCreator, currentUser = null, readOnly = false) {
+  const isCreator = typeof recordOrIsCreator === 'boolean'
+    ? recordOrIsCreator
+    : isRecordCreator(recordOrIsCreator, currentUser);
+  const missingFields = getMissingConfirmationMandatoryFields(row);
+  if (readOnly || !isCreator) {
+    return {
+      allowed: false,
+      isCreator: Boolean(!readOnly && isCreator),
+      reason: 'creator_only',
+      missingFields
+    };
+  }
+  if (missingFields.length > 0) {
+    return {
+      allowed: false,
+      isCreator: true,
+      reason: 'missing_mandatory_fields',
+      missingFields
+    };
+  }
+  return {
+    allowed: true,
+    isCreator: true,
+    reason: null,
+    missingFields: []
+  };
+}
 
 export function isUserResponsibleForRow(row, user) {
   if (!user || !row) return false;
@@ -301,6 +567,9 @@ export function canUserEditPDCARow(row, user, record, targetColumn = null) {
   if (!user) {
     if (targetColumn) return false;
     return { canEditEntireRow: false, canEditActionCols: false };
+  }
+  if (targetColumn === 'confirmation' && record) {
+    return isRecordCreator(record, user);
   }
   const isAdmin = Boolean(
     user?.isAdmin ||

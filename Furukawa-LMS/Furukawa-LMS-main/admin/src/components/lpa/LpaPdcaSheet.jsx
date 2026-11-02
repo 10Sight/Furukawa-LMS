@@ -42,7 +42,11 @@ import { PDCA_DEPARTMENTS, PDCA_STATUS_OPTIONS, normalizePDCAStatus, computePDCA
 import {
   isRecordCreator,
   isUserResponsibleForRow,
-  isUserInResponsibleDepartment
+  isUserInResponsibleDepartment,
+  getMissingConfirmationMandatoryFields,
+  SAVE_MANDATORY_COLUMNS,
+  isRowStartedForSave,
+  getMissingSaveMandatoryFields
 } from '../../pages/pdca/data/recordFilters.js';
 import { parseStaffEmployee, findEmployeeDepartment, stripEmployeeId, VERIFIED_EMPLOYEE_MASTER } from '../../pages/pdca/data/pdcaEmployees.js';
 import SearchableLineAreaSelect, { getCachedDbSections } from '../pdca/SearchableLineAreaSelect';
@@ -464,7 +468,7 @@ export default function LpaPdcaSheet({
     if (['Not - Confirmed', 'Not-Confirmed'].includes((row.confirmation || '').trim()) && !row.instruction?.trim()) {
       missing.push({ type: 'confirmation', rowIndex, key: `confirmation:${rowIndex}` });
     }
-    if (row.responseDate?.trim() && !hasValidStdDuration(row.stdDurationMin ?? row.stdDuration)) {
+    if (false && row.responseDate?.trim() && !hasValidStdDuration(row.stdDurationMin ?? row.stdDuration)) {
       missing.push({ type: 'duration', rowIndex, key: `duration:${rowIndex}` });
     }
     return missing;
@@ -512,10 +516,6 @@ export default function LpaPdcaSheet({
 
   useEffect(() => {
     if (missingRequiredInputs.length === 0 || typeof document === 'undefined') return undefined;
-    const allowedControls = new Set(missingRequiredInputs.flatMap((requiredInput) => requiredInput.type === 'confirmation'
-      ? [confirmationReasonRefs.current[requiredInput.rowIndex], confirmationSelectRefs.current[requiredInput.rowIndex]]
-      : [durationRefs.current[requiredInput.rowIndex]]).filter(Boolean));
-    lastAllowedUrlRef.current = window.location.href;
     const firstRequiredInput = missingRequiredInputs[0];
     const firstRowIndex = firstRequiredInput.rowIndex;
     const message = firstRequiredInput.type === 'confirmation'
@@ -524,65 +524,6 @@ export default function LpaPdcaSheet({
     const firstInput = firstRequiredInput.type === 'confirmation' ? confirmationReasonRefs.current[firstRowIndex] : durationRefs.current[firstRowIndex];
     firstInput?.focus();
     notifyRef.current(message, 'error');
-
-    const isAllowedControl = (target) => target instanceof Element && Boolean(target.closest('[data-required-action-allowed="true"]'));
-    const notifyAndFocus = () => {
-      const now = Date.now();
-      if (now - lastRequiredNoticeAtRef.current > 800) {
-        notifyRef.current(message, 'error');
-        lastRequiredNoticeAtRef.current = now;
-      }
-      const currentRequiredInput = missingRequiredInputs[0];
-      const currentInput = currentRequiredInput.type === 'confirmation'
-        ? confirmationReasonRefs.current[currentRequiredInput.rowIndex]
-        : durationRefs.current[currentRequiredInput.rowIndex];
-      currentInput?.focus();
-      currentInput?.reportValidity();
-    };
-    const blockOutsideRequiredCell = (event) => {
-      const control = isAllowedControl(event.target) ? event.target.closest('[data-required-action-allowed="true"]') : null;
-      if (control && allowedControls.has(control)) return;
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation?.();
-      notifyAndFocus();
-    };
-    const blockKeyboardOutsideRequiredCell = (event) => {
-      const navigationKey = event.key === 'Tab' || event.key === 'Escape' || event.altKey ||
-        ((event.ctrlKey || event.metaKey) && ['r', 'w', 'l'].includes(event.key.toLowerCase()));
-      if (isAllowedControl(event.target) && !navigationKey) return;
-      blockOutsideRequiredCell(event);
-    };
-    const restoreLocation = (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation?.();
-      window.history.pushState({ ...(window.history.state || {}), requiredConfirmationGate: true }, '', lastAllowedUrlRef.current);
-      notifyAndFocus();
-    };
-    const warnBeforeLeaving = (event) => {
-      event.preventDefault();
-      event.returnValue = '';
-    };
-
-    document.addEventListener('pointerdown', blockOutsideRequiredCell, true);
-    document.addEventListener('click', blockOutsideRequiredCell, true);
-    document.addEventListener('keydown', blockKeyboardOutsideRequiredCell, true);
-    document.addEventListener('focusin', blockOutsideRequiredCell, true);
-    document.addEventListener('submit', blockOutsideRequiredCell, true);
-    window.addEventListener('popstate', restoreLocation, true);
-    window.addEventListener('hashchange', restoreLocation, true);
-    window.addEventListener('beforeunload', warnBeforeLeaving);
-    return () => {
-      document.removeEventListener('pointerdown', blockOutsideRequiredCell, true);
-      document.removeEventListener('click', blockOutsideRequiredCell, true);
-      document.removeEventListener('keydown', blockKeyboardOutsideRequiredCell, true);
-      document.removeEventListener('focusin', blockOutsideRequiredCell, true);
-      document.removeEventListener('submit', blockOutsideRequiredCell, true);
-      window.removeEventListener('popstate', restoreLocation, true);
-      window.removeEventListener('hashchange', restoreLocation, true);
-      window.removeEventListener('beforeunload', warnBeforeLeaving);
-    };
   }, [requiredConfirmationKey]);
 
   // Resizable column widths for Observation, Root Cause, and Counter Measure
@@ -774,7 +715,31 @@ export default function LpaPdcaSheet({
     if (isSaving) return false;
     if (requireConfirmationReasonBeforeContinuing()) return false;
 
-    // Validate mandatory fields for rows that have observations/findings
+    // Validate Save Mandatory Columns (Date, Shift, Status, Unit, Department, Observation, Staff Name) for started rows, and Confirmation Mandatory Columns when Confirmation is selected
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (!isRowStartedForSave(r)) {
+        continue;
+      }
+      const rowForCheck = r.date?.trim() && !r.status?.trim() ? { ...r, status: 'Not-Started' } : r;
+      if (r.date?.trim() && !r.status?.trim()) {
+        r.status = 'Not-Started';
+      }
+      const missingSave = getMissingSaveMandatoryFields(rowForCheck);
+      if (missingSave.length > 0) {
+        notify(`Row ${i + 1}: Mandatory column${missingSave.length > 1 ? 's' : ''} (${missingSave.join(', ')}) required to save the sheet.`, 'error');
+        return false;
+      }
+      const hasConfirmationSelected = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((r.confirmation || '').trim());
+      if (hasConfirmationSelected) {
+        const missingForConf = getMissingConfirmationMandatoryFields(rowForCheck);
+        if (missingForConf.length > 0) {
+          notify(`Row ${i + 1}: Mandatory column${missingForConf.length > 1 ? 's' : ''} (${missingForConf.join(', ')}) required for Confirmation.`, 'error');
+          return false;
+        }
+      }
+    }
+    if (false) {
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
       if (r.responseDate?.trim() && !hasValidStdDuration(r.stdDurationMin ?? r.stdDuration)) {
@@ -809,6 +774,7 @@ export default function LpaPdcaSheet({
       }
     }
 
+    }
     setIsSaving(true);
     try {
       if (topic?.id) {
@@ -1606,6 +1572,21 @@ export default function LpaPdcaSheet({
   };
 
   const handleConfirmationChange = (rowIndex, value, userName = '') => {
+    const targetRow = rows[rowIndex];
+    if (readOnly || !isCreator) {
+      if (typeof showToast === 'function') showToast('Only the sheet creator has access to select Confirmation.');
+      return false;
+    }
+    const isSelectingConfirmation = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((value || '').trim());
+    if (isSelectingConfirmation && targetRow) {
+      const missing = getMissingConfirmationMandatoryFields(targetRow);
+      if (missing.length > 0) {
+        if (typeof showToast === 'function') {
+          showToast(`Row ${rowIndex + 1}: Mandatory column${missing.length > 1 ? 's' : ''} (${missing.join(', ')}) required to select Confirmation.`);
+        }
+        return false;
+      }
+    }
     setRows((prev) => {
       const updated = [...prev];
       const curr = updated[rowIndex];
@@ -2978,7 +2959,8 @@ export default function LpaPdcaSheet({
                             }}
                             reasonRequired={missingConfirmationReasonIndices.includes(idx)}
                             currentUser={effectiveUser}
-                            readOnly={!canEditEntireRow}
+                            readOnly={!(!readOnly && isCreator)}
+                            missingMandatoryFields={getMissingConfirmationMandatoryFields(row)}
                             onConfirmationChange={(val, uName) => handleConfirmationChange(idx, val, uName)}
                             onInstructionChange={(text) => handleInstructionChange(idx, text)}
                             sNo={sNo}

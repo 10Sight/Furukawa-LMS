@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { EDITABLE_RESPONSIBLE_COLUMNS, isUserInResponsibleDepartment, canUserEditPDCARow } from './recordFilters.js';
+import { EDITABLE_RESPONSIBLE_COLUMNS, isUserInResponsibleDepartment, canUserEditPDCARow, PDCA_SHEET_TABLE_STATUSES, getPDCASheetStatusSummary, SAVE_MANDATORY_COLUMNS, CONFIRMATION_MANDATORY_COLUMNS, isRowStartedForSave, getMissingSaveMandatoryFields, getMissingConfirmationMandatoryFields } from './recordFilters.js';
 import { normalizePDCAStatus, getDepartmentsForUnit, UNIT_DEPARTMENT_MAPPING } from './pdcaConstants.js';
 import { createEmptyPdcaRow } from '../../lpa/lpaPdcaUtils.js';
 
@@ -387,3 +387,249 @@ test('11. Responsible Department column access, delete restriction, and LPA moda
   assert.equal(initialModalForm.department, 'Assembly', 'Department matches active section');
 });
 
+
+test('12. Confirmation Column Rule: Creator-only access and 14 mandatory columns required before selecting Confirm or Not-Confirm', async () => {
+  const {
+    CONFIRMATION_MANDATORY_COLUMNS,
+    getMissingConfirmationMandatoryFields,
+    canUserSelectConfirmation,
+    canUserEditPDCARow
+  } = await import('./recordFilters.js');
+
+  // Verify the exact 14 mandatory columns list
+  assert.deepEqual(CONFIRMATION_MANDATORY_COLUMNS, [
+    'Date',
+    'Shift',
+    'Status',
+    'Unit',
+    'Department',
+    'Observation',
+    'Root Cause',
+    'Corrective action',
+    'Counter Measure',
+    'Std. Duration in Min',
+    'Response date',
+    'Unit (Responsible Person)',
+    'Department (Responsible Person)',
+    'Staff name (Responsible Person)'
+  ]);
+
+  const creatorUser = { id: 'creator-1', empId: 'EMP001', name: 'Creator User', role: 'user', isAdmin: false };
+  const nonCreatorAdmin = { id: 'admin-99', empId: 'ADM099', name: 'Other Admin', role: 'ADMIN', isAdmin: true };
+  const responsibleStaffUser = { id: 'staff-2', empId: 'EMP002', name: 'Ramesh Sharma', department: 'Quality', role: 'user', isAdmin: false };
+  const otherUser = { id: 'other-3', empId: 'EMP003', name: 'Random Employee', department: 'IT', role: 'user', isAdmin: false };
+
+  const pdcaSheetRecord = {
+    id: 'PDCA-100',
+    topic: 'PDCA Page Sheet',
+    createdById: 'creator-1',
+    createdBy: { id: 'creator-1', code: 'EMP001', name: 'Creator User' }
+  };
+
+  const lpaPdcaSheetRecord = {
+    id: 'PDCA-LPA-ASSEMBLY-Bawal-100',
+    topic: 'Assembly - LPA Observation (PDCA)',
+    createdById: 'creator-1',
+    createdBy: { id: 'creator-1', code: 'EMP001', name: 'Creator User' }
+  };
+
+  const completeRow = {
+    date: '2026-10-28',
+    shift: 'A',
+    status: 'In- Progress',
+    unit: 'Bawal',
+    department: 'Assembly',
+    observation: 'Loose bolt on fixture',
+    rootCause: 'Missing lock washer',
+    actionTaken: 'Added lock washer and retightened',
+    counterMeasure: 'Updated daily checklist and poka-yoke',
+    stdDurationMin: '00:15',
+    responseDate: '2026-10-30',
+    respUnit: 'Bawal',
+    responsiblePersonDept: 'Quality',
+    staffName: 'Ramesh Sharma',
+    staffEmployee: 'Ramesh Sharma (EMP002)',
+    staffEmployees: [{ id: 'staff-2', name: 'Ramesh Sharma', code: 'EMP002', unit: 'Bawal', department: 'Quality' }]
+  };
+
+  // 1. When all 14 mandatory columns are filled:
+  assert.deepEqual(getMissingConfirmationMandatoryFields(completeRow), []);
+
+  // Only sheet creator has access to select Confirmation on PDCA Sheet and LPA Observation (PDCA) Sheet
+  for (const sheet of [pdcaSheetRecord, lpaPdcaSheetRecord]) {
+    assert.equal(canUserSelectConfirmation(completeRow, sheet, creatorUser).allowed, true, 'Sheet creator should be allowed when all 14 mandatory columns are filled');
+    assert.equal(canUserEditPDCARow(completeRow, creatorUser, sheet, 'confirmation'), true, 'Sheet creator can edit confirmation column');
+
+    // Non-creator Admin cannot select Confirmation
+    const adminCheck = canUserSelectConfirmation(completeRow, sheet, nonCreatorAdmin);
+    assert.equal(adminCheck.allowed, false, 'Non-creator Admin must NOT select Confirmation');
+    assert.equal(adminCheck.reason, 'creator_only');
+    assert.equal(canUserEditPDCARow(completeRow, nonCreatorAdmin, sheet, 'confirmation'), false);
+
+    // Responsible Person cannot select Confirmation
+    const respCheck = canUserSelectConfirmation(completeRow, sheet, responsibleStaffUser);
+    assert.equal(respCheck.allowed, false, 'Responsible person must NOT select Confirmation');
+    assert.equal(respCheck.reason, 'creator_only');
+    assert.equal(canUserEditPDCARow(completeRow, responsibleStaffUser, sheet, 'confirmation'), false);
+
+    // Random user cannot select Confirmation
+    assert.equal(canUserSelectConfirmation(completeRow, sheet, otherUser).allowed, false);
+  }
+
+  // 2. Each of the 14 mandatory columns individually blocks Confirmation selection when missing
+  const fieldClears = [
+    { label: 'Date', mutate: r => ({ ...r, date: '' }) },
+    { label: 'Shift', mutate: r => ({ ...r, shift: '' }) },
+    { label: 'Status', mutate: r => ({ ...r, status: '' }) },
+    { label: 'Unit', mutate: r => ({ ...r, unit: '', units: [] }) },
+    { label: 'Department', mutate: r => ({ ...r, department: '', departments: [] }) },
+    { label: 'Observation', mutate: r => ({ ...r, observation: '' }) },
+    { label: 'Root Cause', mutate: r => ({ ...r, rootCause: '' }) },
+    { label: 'Corrective action', mutate: r => ({ ...r, actionTaken: '', correctiveAction: '' }) },
+    { label: 'Counter Measure', mutate: r => ({ ...r, counterMeasure: '' }) },
+    { label: 'Std. Duration in Min', mutate: r => ({ ...r, stdDurationMin: '', stdDuration: '' }) },
+    { label: 'Response date', mutate: r => ({ ...r, responseDate: '' }) },
+    { label: 'Unit (Responsible Person)', mutate: r => ({ ...r, respUnit: '', responsiblePersonUnit: '', respUnits: [], staffEmployees: [{ name: 'Ramesh Sharma', department: 'Quality' }] }) },
+    { label: 'Department (Responsible Person)', mutate: r => ({ ...r, responsiblePersonDept: '', respDept: '', respDeptsByUnit: {}, staffEmployees: [{ name: 'Ramesh Sharma', unit: 'Bawal' }] }) },
+    { label: 'Staff name (Responsible Person)', mutate: r => ({ ...r, staffName: '', staffEmployee: '', staffEmployees: [] }) }
+  ];
+
+  for (const { label, mutate } of fieldClears) {
+    const incompleteRow = mutate(completeRow);
+    const missing = getMissingConfirmationMandatoryFields(incompleteRow);
+    assert.ok(missing.includes(label), `Missing "${label}" must be detected (got: ${missing.join(', ')})`);
+    const result = canUserSelectConfirmation(incompleteRow, pdcaSheetRecord, creatorUser);
+    assert.equal(result.allowed, false, `Creator must NOT be able to select Confirmation when "${label}" is missing`);
+    assert.equal(result.reason, 'missing_mandatory_fields');
+    assert.ok(result.missingFields.includes(label));
+  }
+});
+
+test('15. PDCA Sheets Table Status column (In-progress, Done, Delay, Not-Started) and centered CreateLpaModal', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+
+  // Verify the 4 status options in PDCA_SHEET_TABLE_STATUSES
+  assert.deepEqual(
+    PDCA_SHEET_TABLE_STATUSES.map(s => s.label),
+    ['In-progress', 'Done', 'Delay', 'Not-Started']
+  );
+
+  // Verify status summary calculation across active rows while ignoring blank default rows
+  const sampleSheet = {
+    id: 'PDCA-TEST-SHEET-1',
+    sheet: {
+      rows: [
+        { date: '2026-11-01', observation: 'Obs 1', status: 'In- Progress', responseDate: '2026-11-10' },
+        { date: '2026-11-01', observation: 'Obs 2', status: 'Done', confirmation: 'Confirm', responseDate: '2026-11-02' },
+        { date: '2026-10-15', observation: 'Obs 3', status: 'Delay', responseDate: '2026-10-20' },
+        { date: '2026-11-02', observation: 'Obs 4', status: 'Not-Started', responseDate: '' },
+        { date: '', observation: '', status: '', unit: 'Bawal', department: 'Assembly' } // Blank default row
+      ]
+    }
+  };
+  const summary = getPDCASheetStatusSummary(sampleSheet, '2026-11-02');
+  assert.equal(summary.inProgress, 1);
+  assert.equal(summary.done, 1);
+  assert.equal(summary.delay, 1);
+  assert.equal(summary.notStarted, 1);
+  assert.equal(summary.total, 4);
+
+  // Verify CreateLpaModal portals to document.body and centers in the viewport
+  const modalPaths = [
+    path.resolve(process.cwd(), 'src/components/lpa/CreateLpaModal.jsx'),
+    path.resolve(process.cwd(), 'admin/src/components/lpa/CreateLpaModal.jsx')
+  ];
+  const modalPath = modalPaths.find(p => fs.existsSync(p)) || modalPaths[0];
+  const modalContent = fs.readFileSync(modalPath, 'utf8');
+  assert.match(modalContent, /createPortal\(modalContent,\s*document\.body\)/);
+  assert.match(modalContent, /fixed inset-0 z-50 flex items-center justify-center/);
+});
+
+test('16. Separate Save Mandatory Columns (7) from Confirmation Mandatory Columns (14)', () => {
+  assert.deepEqual(SAVE_MANDATORY_COLUMNS, [
+    'Date',
+    'Shift',
+    'Status',
+    'Unit',
+    'Department',
+    'Observation',
+    'Staff Name'
+  ]);
+
+  assert.deepEqual(CONFIRMATION_MANDATORY_COLUMNS, [
+    'Date',
+    'Shift',
+    'Status',
+    'Unit',
+    'Department',
+    'Observation',
+    'Root Cause',
+    'Corrective action',
+    'Counter Measure',
+    'Std. Duration in Min',
+    'Response date',
+    'Unit (Responsible Person)',
+    'Department (Responsible Person)',
+    'Staff name (Responsible Person)'
+  ]);
+
+  // A blank template row (even with default unit/department) is not considered started for save
+  const blankDefaultRow = {
+    date: '',
+    shift: '',
+    status: '',
+    unit: 'Bawal',
+    department: 'Assembly',
+    observation: '',
+    staffName: ''
+  };
+  assert.equal(isRowStartedForSave(blankDefaultRow), false, 'Untouched default row should be skipped during save validation');
+
+  // Row with ONLY the 7 Save Mandatory Columns filled (and WITHOUT Root Cause, Corrective action, Counter Measure, Std. Duration in Min, Response date)
+  const saveOnlyRow = {
+    date: '2026-11-02',
+    shift: 'A',
+    status: 'In- Progress',
+    unit: 'Bawal',
+    department: 'Assembly',
+    observation: 'Wire routing loose near station 3',
+    staffName: 'Ramesh Sharma (EMP101)',
+    rootCause: '',
+    actionTaken: '',
+    counterMeasure: '',
+    stdDurationMin: '',
+    responseDate: ''
+  };
+  assert.equal(isRowStartedForSave(saveOnlyRow), true);
+  assert.deepEqual(getMissingSaveMandatoryFields(saveOnlyRow), [], 'User CAN save the sheet when the 7 Save Mandatory Columns are filled without Confirmation columns');
+
+  // Meanwhile, Confirmation Mandatory Columns still report the missing fields so Confirmation dropdown cannot be selected yet
+  const missingForConfirmation = getMissingConfirmationMandatoryFields(saveOnlyRow);
+  assert.deepEqual(missingForConfirmation, [
+    'Root Cause',
+    'Corrective action',
+    'Counter Measure',
+    'Std. Duration in Min',
+    'Response date',
+    'Unit (Responsible Person)',
+    'Department (Responsible Person)'
+  ]);
+
+  // Verify each of the 7 Save Mandatory Columns blocks saving when missing
+  const saveFieldClears = [
+    { label: 'Date', mutate: r => ({ ...r, date: '' }) },
+    { label: 'Shift', mutate: r => ({ ...r, shift: '' }) },
+    { label: 'Status', mutate: r => ({ ...r, status: '' }) },
+    { label: 'Unit', mutate: r => ({ ...r, unit: '', units: [], respUnit: '', responsiblePersonUnit: '', respUnits: [] }) },
+    { label: 'Department', mutate: r => ({ ...r, department: '', departments: [], responsiblePersonDept: '', respDept: '', respDeptsByUnit: {} }) },
+    { label: 'Observation', mutate: r => ({ ...r, observation: '' }) },
+    { label: 'Staff Name', mutate: r => ({ ...r, staffName: '', staffEmployee: '', staffEmployees: [] }) }
+  ];
+
+  for (const { label, mutate } of saveFieldClears) {
+    const incompleteSaveRow = mutate(saveOnlyRow);
+    const missingSave = getMissingSaveMandatoryFields(incompleteSaveRow);
+    assert.ok(missingSave.includes(label), `Missing Save Mandatory Column "${label}" must be reported (got: ${missingSave.join(', ')})`);
+  }
+});

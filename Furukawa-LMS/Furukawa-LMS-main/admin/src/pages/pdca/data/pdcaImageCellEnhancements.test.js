@@ -17,7 +17,7 @@ function computeImageColumnWidth(rows, field, imagesField, imageDimensions = {})
   if (!hasAnyImages) {
     return DEFAULT_IMAGE_COL_WIDTH;
   }
-
+  // that is the code of todays c;
   let maxRatio = 1.33; // Default 4:3
   (rows || []).forEach(row => {
     const list = Array.isArray(row?.[imagesField])

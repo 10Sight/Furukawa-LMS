@@ -20,7 +20,7 @@ import CreateLpaModal from '../../components/lpa/CreateLpaModal';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import { PDCAProvider } from '../pdca/context/PDCAContext';
 import { getLpaPdcaTopic, saveLpaPdcaSnapshot, extractObservationsFromSheet, createEmptyPdcaRow, getWorksheetScore, getWorksheetScoresList } from './lpaPdcaUtils';
-import { isRecordCreator, canEditRecord } from '@pages/pdca/data/recordFilters.js';
+import { isRecordCreator, canEditRecord, resolvePDCASheetRows, getPDCASheetStatusSummary } from '@pages/pdca/data/recordFilters.js';
 import LpaTable from '../../components/lpa/LpaTable';
 import LpaGraphSection from '../../components/lpa/LpaGraphSection';
 import { matchesLpaDateRange, normalizeLpaDate } from './lpaDateFilters.js';
@@ -158,12 +158,33 @@ function LpaPageContent({ viewContext }) {
       const res = await pdcaApi.getRecords({ limit: 100 });
       const recordsList = Array.isArray(res) ? res : (res?.records || []);
       setBackendPdcaSheets(recordsList);
+
+      const hasContent = (s) => Array.isArray(s?.rows) && s.rows.some(r => Boolean(
+        r?.date?.trim() || r?.observation?.trim() || r?.rootCause?.trim() || r?.counterMeasure?.trim() ||
+        (r?.status && r?.status !== 'Not-Started') || r?.staffEmployee?.trim() || r?.department?.trim()
+      ));
+
+      const currentUnit = selectedUnit || 'Bawal';
+      const baseSheetIds = [
+        `PDCA-LPA-CC-${currentUnit}`,
+        `PDCA-LPA-ASSEMBLY-${currentUnit}`
+      ];
+      for (const sId of baseSheetIds) {
+        try {
+          const sh = await pdcaApi.getSheet(sId);
+          if (hasContent(sh)) {
+            try {
+              localStorage.setItem(`lpa_pdca_saved_${sId}`, JSON.stringify(sh));
+            } catch {}
+          }
+        } catch {}
+      }
     } catch (err) {
       console.warn('Could not fetch backend PDCA records:', err);
     } finally {
       setIsPdcaLoading(false);
     }
-  }, []);
+  }, [selectedUnit]);
 
   useEffect(() => {
     loadBackendPdcaSheets();
@@ -371,8 +392,8 @@ function LpaPageContent({ viewContext }) {
   const hasExplicitPdcaTab = userPermissions.includes('lpa:observation_pdca');
   const canAccessPdcaTab = Boolean(isAdmin || hasPermission('lpa:manage') || hasPermission('pdca:read') || hasExplicitPdcaTab || (!hasExplicitPdcaTab && !userPermissions.includes('lpa:lpa_tab_only')));
 
-  const canCreateLpa = Boolean(isAdmin || hasPermission('lpa:manage') || hasPermission('lpa:create'));
-  const canCreatePdca = Boolean(isAdmin || hasPermission('lpa:manage') || hasPermission('pdca:create') || hasPermission('pdca:create_sheet') || hasPermission('lpa:create'));
+  const canCreateLpa = Boolean(isAdmin || hasPermission('lpa:manage') || hasPermission('lpa:create') || (!userPermissions.includes('lpa:no_create') && !userPermissions.includes('lpa:read_only')));
+  const canCreatePdca = Boolean(isAdmin || hasPermission('lpa:manage') || hasPermission('pdca:create') || hasPermission('pdca:create_sheet') || hasPermission('lpa:create') || (!userPermissions.includes('pdca:no_create') && !userPermissions.includes('pdca:read_only')));
 
   useEffect(() => {
     if (!canAccessAssembly && canAccessCc && activeSection === 'assembly') {
@@ -727,13 +748,69 @@ function LpaPageContent({ viewContext }) {
     `${record.name} ${record.sheets?.map(item => item.name).join(' ') || ''}`.toLowerCase().includes(searchQuery.toLowerCase())
   );
   const exportAllRecords = () => {
-    const rows = records.flatMap(record => record.sheets.map(current => ({
-      Unit: record.unit || 'Bawal', Level: record.level || 'L1', Section: record.section === 'assembly' ? 'Assembly' : 'C&C',
-      Form: record.name, Worksheet: current.name, Rows: current.rows.length,
-    })));
+    const exportRows = [];
+    const targetRecords = visibleRecords.length > 0 ? visibleRecords : records;
+    targetRecords.forEach(record => {
+      (record.sheets || []).forEach(current => {
+        const isCc = String(record.section || '').toLowerCase() === 'cc';
+        const startRow = isCc ? 4 : 3;
+        const marksCol = isCc ? 6 : 4;
+        const auditCols = isCc ? 7 : 5;
+        const auditorStr = (current.auditors && current.auditors.length > 0)
+          ? current.auditors.filter(Boolean).join(', ')
+          : (current.auditor || record.auditor || record.createdBy || '-');
+
+        let hasDetailRows = false;
+        for (let r = startRow; r < (current.rows?.length || 0); r++) {
+          const row = current.rows[r];
+          if (!row || !Array.isArray(row)) continue;
+          const firstCell = String(row[0]?.formatted ?? row[0]?.value ?? '').trim();
+          if (/^(total|percentage|legend|auditor)/i.test(firstCell)) break;
+          const checkText = String(row[2]?.formatted ?? row[2]?.value ?? '').trim();
+          if (!checkText) continue;
+          hasDetailRows = true;
+          const slNo = firstCell || String(r - startRow + 1);
+          const marks = row[marksCol]?.formatted ?? row[marksCol]?.value ?? '';
+          const obs = row[auditCols]?.formatted ?? row[auditCols]?.value ?? '';
+          const score = row[auditCols + 1]?.formatted ?? row[auditCols + 1]?.value ?? '';
+          exportRows.push({
+            Unit: record.unit || selectedUnit || 'Bawal',
+            Date: formatLpaDate(record.auditDate || record.date || current.auditDate || current.date),
+            Section: record.section === 'cc' ? 'C&C' : 'Assembly',
+            Level: record.level || 'L3',
+            Shift: record.shift || current.shift || 'A',
+            Form: record.name || 'LPA Check Sheet',
+            Worksheet: current.name || 'Sheet 1',
+            Auditor: auditorStr,
+            'S.No': slNo,
+            'Check Points': checkText,
+            Marks: marks,
+            Observation: obs,
+            Score: score
+          });
+        }
+        if (!hasDetailRows) {
+          exportRows.push({
+            Unit: record.unit || selectedUnit || 'Bawal',
+            Date: formatLpaDate(record.auditDate || record.date || current.auditDate || current.date),
+            Section: record.section === 'cc' ? 'C&C' : 'Assembly',
+            Level: record.level || 'L3',
+            Shift: record.shift || current.shift || 'A',
+            Form: record.name,
+            Worksheet: current.name,
+            Auditor: auditorStr,
+            'S.No': '-',
+            'Check Points': 'No checkpoints recorded',
+            Marks: '-',
+            Observation: '-',
+            Score: '-'
+          });
+        }
+      });
+    });
     const book = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(book, XLSX.utils.json_to_sheet(rows), 'LPA Records');
-    XLSX.writeFile(book, 'LPA_All_Records.xlsx');
+    XLSX.utils.book_append_sheet(book, XLSX.utils.json_to_sheet(exportRows), 'LPA Observations');
+    XLSX.writeFile(book, `LPA_Observations_${activeSection}_${selectedUnit || 'All'}.xlsx`);
   };
   const mergeMap = useMemo(() => {
     const anchors = new Map();
@@ -780,15 +857,17 @@ function LpaPageContent({ viewContext }) {
   const pdcaTopic = useMemo(() => {
     if (customPdcaTopic) return customPdcaTopic;
     if (!selectedUnit) return null;
+    const backendMatching = (backendPdcaSheets || []).find(rec => isLpaRecordForSection(rec, activeSection, selectedUnit));
     return getLpaPdcaTopic({
       section: activeSection,
       unit: selectedUnit,
       level: 'L1',
       date: pdcaDate,
       records,
-      templates: { assemblyTemplate, ccTemplate }
+      templates: { assemblyTemplate, ccTemplate },
+      backendSheet: backendMatching?.sheet || null
     });
-  }, [customPdcaTopic, activeSection, selectedUnit, pdcaDate, records, pdcaSaveVersion]);
+  }, [customPdcaTopic, activeSection, selectedUnit, pdcaDate, records, backendPdcaSheets, pdcaSaveVersion]);
 
   // Custom PDCA Sheets created by Admin (isolated per section & plant)
   const [customPdcaSheets, setCustomPdcaSheets] = useState(() => {
@@ -836,14 +915,6 @@ function LpaPageContent({ viewContext }) {
 
     const matchingBackend = (backendPdcaSheets || [])
       .filter(rec => isLpaRecordForSection(rec, activeSection, selectedUnit))
-      .filter(rec => {
-        if (isCc) {
-          const recId = String(rec.id || rec.recordId || '');
-          if (recId === 'PDCA-LPA-CC-Bawal' || recId === baseSheetId) return false;
-          if (rec.topic === 'C&C - LPA Observation (PDCA)' && !rec.createdAt && !rec.createdBy) return false;
-        }
-        return true;
-      })
       .map(rec => ({
         id: rec.id || rec.recordId,
         title: rec.topic || `${activeSection === 'assembly' ? 'Assembly' : 'C&C'} - LPA Observation (PDCA)`,
@@ -859,17 +930,14 @@ function LpaPageContent({ viewContext }) {
 
     const map = new Map();
     for (const b of matchingBackend) {
-      if (!deletedDefaultIds.includes(b.id)) {
-        map.set(b.id, b);
-      }
+      map.set(b.id, b);
     }
 
-    if (!isCc && !map.has(baseSheetId) && !deletedDefaultIds.includes(baseSheetId)) {
+    if (!map.has(baseSheetId) && !deletedDefaultIds.includes(baseSheetId)) {
       map.set(baseSheetId, baseSheet);
     }
 
     for (const c of (customPdcaSheets || [])) {
-      if (isCc && (c.id === baseSheetId || c.id === 'PDCA-LPA-CC-Bawal')) continue;
       if (!map.has(c.id) && !deletedDefaultIds.includes(c.id)) {
         map.set(c.id, c);
       }
@@ -884,7 +952,7 @@ function LpaPageContent({ viewContext }) {
       return String(dateB).localeCompare(String(dateA));
     });
   }, [activeSection, selectedUnit, pdcaDate, backendPdcaSheets, customPdcaSheets, pdcaDeleteRevision]);
-  const visiblePdcaSheets = allPdcaSheets.filter(item => matchesLpaDateRange(item.date, fromDate, toDate));
+  const visiblePdcaSheets = allPdcaSheets.filter(item => item.isDefault || matchesLpaDateRange(item.date, fromDate, toDate));
 
   const emailPdcaSheets = useMemo(() => allPdcaSheets.map(item => {
     let sheetData = null;
@@ -910,28 +978,52 @@ function LpaPageContent({ viewContext }) {
 
   const handleOpenSpecificPdcaSheet = async (sheetItem) => {
     let sheetData = null;
+    const hasMeaningfulRows = (s) => Array.isArray(s?.rows) && s.rows.some(r => Boolean(
+      r?.date?.trim() || r?.observation?.trim() || r?.rootCause?.trim() || r?.counterMeasure?.trim() ||
+      (r?.status && r?.status !== 'Not-Started') || r?.staffEmployee?.trim() || r?.department?.trim()
+    ));
+
+    // 1. Fetch fresh sheet directly from backend API
     try {
-      const saved = localStorage.getItem(`lpa_pdca_saved_${sheetItem.id}`);
-      if (saved) {
-        sheetData = JSON.parse(saved);
+      const fetched = await pdcaApi.getSheet(sheetItem.id);
+      if (hasMeaningfulRows(fetched)) {
+        sheetData = fetched;
+        try {
+          localStorage.setItem(`lpa_pdca_saved_${sheetItem.id}`, JSON.stringify(fetched));
+        } catch {}
       }
     } catch (err) {
-      console.error(err);
+      console.warn('Could not fetch sheet from backend API:', err);
     }
 
-    if (!sheetData && sheetItem.sheet && Array.isArray(sheetItem.sheet.rows) && sheetItem.sheet.rows.length > 0) {
+    // 2. Check localStorage if backend didn't return meaningful rows
+    if (!sheetData) {
+      try {
+        const saved = localStorage.getItem(`lpa_pdca_saved_${sheetItem.id}`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (hasMeaningfulRows(parsed)) {
+            sheetData = parsed;
+          }
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    // 3. Check sheetItem.sheet
+    if (!sheetData && sheetItem.sheet && hasMeaningfulRows(sheetItem.sheet)) {
       sheetData = sheetItem.sheet;
     }
 
-    if (!sheetData || !Array.isArray(sheetData.rows) || sheetData.rows.length === 0) {
+    // 4. Fallback to fetched backend or localStorage even if unstarted
+    if (!sheetData) {
       try {
         const fetched = await pdcaApi.getSheet(sheetItem.id);
         if (fetched && Array.isArray(fetched.rows) && fetched.rows.length > 0) {
           sheetData = fetched;
         }
-      } catch (err) {
-        console.warn('Could not fetch sheet from backend API:', err);
-      }
+      } catch {}
     }
 
     if (!sheetData) {
@@ -1146,9 +1238,11 @@ function LpaPageContent({ viewContext }) {
   const handleSavePDCA = async (sheetSnapshot) => {
     if (!pdcaTopic?.id) return;
     saveLpaPdcaSnapshot(pdcaTopic.id, sheetSnapshot);
+    let backendError = null;
     try {
       await pdcaApi.saveSheet(pdcaTopic.id, sheetSnapshot);
     } catch (err) {
+      backendError = err;
       console.warn('Backend saveSheet error:', err);
     }
     if (customPdcaTopic) {
@@ -1156,7 +1250,11 @@ function LpaPageContent({ viewContext }) {
     }
     setPdcaSaveVersion(v => v + 1);
     await loadBackendPdcaSheets();
-    setMessage({ text: 'PDCA form saved successfully.' });
+    if (backendError) {
+      setMessage({ error: true, text: `PDCA saved locally, but server update failed: ${backendError?.response?.data?.message || backendError?.message || 'Check network connection'}` });
+    } else {
+      setMessage({ text: 'PDCA form saved successfully.' });
+    }
   };
 
   const openRecordPDCA = (record, worksheetIndex) => {
@@ -1194,7 +1292,7 @@ function LpaPageContent({ viewContext }) {
     <div className="fixed inset-0 z-40 h-dvh w-full bg-white text-slate-800 flex flex-col overflow-hidden p-1.5 sm:p-2 pb-0.5 sm:pb-1">
       <PdcaErrorBoundary onBack={handleBackFromPDCA}>
         <PDCASheet
-          key={`${pdcaTopic.id}-${pdcaDate}`}
+          key={pdcaTopic.id}
           topic={pdcaTopic}
           onBack={handleBackFromPDCA}
           onSave={handleSavePDCA}
@@ -1202,7 +1300,7 @@ function LpaPageContent({ viewContext }) {
           onDateChange={setPdcaDate}
           currentUser={effectiveAuthUser}
           isAdmin={isAdmin}
-          isCreator={isAdmin || isRecordCreator(pdcaTopic, effectiveAuthUser)}
+          isCreator={isRecordCreator(pdcaTopic, effectiveAuthUser)}
           emailPdcaSheets={[{
             id: pdcaTopic.id,
             title: pdcaTopic.topic,
@@ -1480,13 +1578,15 @@ function LpaPageContent({ viewContext }) {
                         return filteredSheets.map((sh, idx) => {
                           let rows = [];
                           try {
-                            const saved = localStorage.getItem(`lpa_pdca_saved_${sh.id}`);
-                            if (saved) {
-                              rows = JSON.parse(saved)?.rows || [];
-                            } else if (sh.sheet?.rows) {
+                            if (sh.sheet?.rows && sh.sheet.rows.length > 0) {
                               rows = sh.sheet.rows;
-                            } else if (sh.isDefault) {
-                              rows = pdcaTopic?.sheet?.rows || [];
+                            } else {
+                              const saved = localStorage.getItem(`lpa_pdca_saved_${sh.id}`);
+                              if (saved) {
+                                rows = JSON.parse(saved)?.rows || [];
+                              } else if (sh.isDefault) {
+                                rows = pdcaTopic?.sheet?.rows || [];
+                              }
                             }
                           } catch {}
 
@@ -1527,7 +1627,33 @@ function LpaPageContent({ viewContext }) {
                                 )}
                               </td>
                               <td className="px-4 py-4 text-slate-700">
-                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <div className="grid grid-cols-2 gap-1.5 min-w-[210px] max-w-[240px]">
+                                  {(() => {
+                                    const resolvedRows = resolvePDCASheetRows(sh, rows.length > 0 ? rows : (sh.isDefault ? (pdcaTopic?.sheet?.rows || []) : []));
+                                    const statusSummary = getPDCASheetStatusSummary(resolvedRows.length > 0 ? resolvedRows : rows, pdcaDate);
+                                    return (
+                                      <>
+                                        <span className="inline-flex items-center justify-between gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap">
+                                          <span>In-progress</span>
+                                          <span className="px-1.5 py-0.5 rounded bg-amber-100/80 text-amber-900 font-bold text-[10px] leading-none">{statusSummary.inProgress}</span>
+                                        </span>
+                                        <span className="inline-flex items-center justify-between gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
+                                          <span>Done</span>
+                                          <span className="px-1.5 py-0.5 rounded bg-emerald-100/80 text-emerald-900 font-bold text-[10px] leading-none">{statusSummary.done}</span>
+                                        </span>
+                                        <span className="inline-flex items-center justify-between gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-200 whitespace-nowrap">
+                                          <span>Delay</span>
+                                          <span className="px-1.5 py-0.5 rounded bg-rose-100/80 text-rose-900 font-bold text-[10px] leading-none">{statusSummary.delay}</span>
+                                        </span>
+                                        <span className="inline-flex items-center justify-between gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">
+                                          <span>Not-Started</span>
+                                          <span className="px-1.5 py-0.5 rounded bg-blue-100/80 text-blue-900 font-bold text-[10px] leading-none">{statusSummary.notStarted}</span>
+                                        </span>
+                                      </>
+                                    );
+                                  })()}
+                                </div>
+                                <span className="hidden">
                                   Active
                                 </span>
                               </td>
@@ -1818,9 +1944,10 @@ function LpaPageContent({ viewContext }) {
       <SendMailModal
         isOpen={isSendMailOpen}
         onClose={() => setIsSendMailOpen(false)}
-        formType={activeSection === 'cc' ? 'cc' : activeSubTab === 'pdca' ? 'pdca' : 'assembly'}
+        formType={activeSubTab === 'pdca' ? 'pdca' : (activeSection === 'cc' ? 'cc' : 'assembly')}
+        pdcaOnly={activeSubTab === 'pdca'}
         title={`${activeSection === 'cc' ? 'C&C' : 'Assembly'} ${activeSubTab === 'pdca' ? 'PDCA' : 'LPA'} Sheet`}
-        metadata={{ auditDate: pdcaDate, unit: selectedUnit, sectionName: activeSection === 'cc' ? 'C&C' : 'Assembly' }}
+        metadata={{ auditDate: pdcaDate, unit: selectedUnit, section: activeSection, sectionName: activeSection === 'cc' ? 'C&C' : 'Assembly' }}
         pdcaLabel="LPA Observation PDCA"
         assemblySheets={visibleRecords}
         pdcaSheets={emailPdcaSheets}

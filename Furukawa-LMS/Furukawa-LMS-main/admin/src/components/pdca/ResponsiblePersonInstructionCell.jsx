@@ -16,7 +16,8 @@ import { stripEmployeeId } from '../../pages/pdca/data/pdcaEmployees.js';
  *      - Textarea with red border and placeholder "Enter reason (required)".
  *      - Full support for spaces, text selection, and multi-line typing without character loss.
  *    - When "Confirmed": nothing shown below.
- * 4. Only Admin and PDCA Sheet Creator can change the value.
+ * 4. Only the PDCA Sheet Creator has access to select the Confirmation dropdown,
+ *    and all 14 mandatory columns must be filled before selecting Confirm or Not-Confirm.
  */
 export default function ResponsiblePersonInstructionCell({
   row,
@@ -26,6 +27,7 @@ export default function ResponsiblePersonInstructionCell({
   reasonRequired = false,
   currentUser,
   readOnly = false,
+  missingMandatoryFields = [],
   onConfirmationChange,
   onInstructionChange,
   sNo = 1
@@ -51,16 +53,33 @@ export default function ResponsiblePersonInstructionCell({
         ? String(row.responsiblePersonConfirmation)
         : '');
 
+  const selectValue = isConfirmed ? 'Confirmed' : isNotConfirmed ? 'Not-Confirmed' : '';
+
   const handleSelectConfirmation = (e) => {
     const val = e.target.value;
+    let allowed = true;
     if (val === 'Confirmed' || val === 'Confirm') {
-      onConfirmationChange('Confirmed', currentUserName);
+      allowed = onConfirmationChange('Confirmed', currentUserName);
     } else if (val === 'Not-Confirmed' || val === 'Not-Confirm') {
-      onConfirmationChange('Not - Confirmed', currentUserName);
+      allowed = onConfirmationChange('Not - Confirmed', currentUserName);
     } else {
-      onConfirmationChange('', '');
+      allowed = onConfirmationChange('', '');
+    }
+    if (allowed === false && e?.target) {
+      e.target.value = selectValue;
     }
   };
+
+  const selectTitle = readOnly
+    ? 'Only the sheet creator has access to select Confirmation'
+    : (isConfirmed
+        ? `Confirmed by ${confirmedBy || 'User'}`
+        : isNotConfirmed
+        ? `Not-Confirmed by ${confirmedBy || 'User'}`
+        : (Array.isArray(missingMandatoryFields) && missingMandatoryFields.length > 0
+            ? `Mandatory columns required to select Confirmation: ${missingMandatoryFields.join(', ')}`
+            : 'Select Confirmation'));
+
   return (
     <div className="w-full flex flex-col items-start p-1">
       {/* 1. Upside: User name printed directly in cell */}
@@ -81,7 +100,7 @@ export default function ResponsiblePersonInstructionCell({
           disabled={readOnly}
           data-required-action-allowed={reasonRequired && !readOnly ? 'true' : undefined}
           aria-label={`Responsible person confirmation for row ${sNo}`}
-          value={isConfirmed ? 'Confirmed' : isNotConfirmed ? 'Not-Confirmed' : ''}
+          value={selectValue}
           onChange={handleSelectConfirmation}
           className={`w-full rounded-lg border px-2.5 py-1.5 text-[14px] font-medium outline-none text-left appearance-none transition-all ${
             readOnly ? 'cursor-default' : 'cursor-pointer focus:ring-2 focus:ring-blue-300'
@@ -92,7 +111,7 @@ export default function ResponsiblePersonInstructionCell({
               ? 'border-blue-400 text-slate-800 bg-white hover:border-blue-500'
               : 'border-slate-300 text-slate-600 bg-white hover:border-slate-400'
           }`}
-          title={isConfirmed ? `Confirmed by ${confirmedBy || 'User'}` : isNotConfirmed ? `Not-Confirmed by ${confirmedBy || 'User'}` : 'Select Confirmation'}
+          title={selectTitle}
         >
           <option value="">Select...</option>
           <option value="Confirmed">Confirm</option>

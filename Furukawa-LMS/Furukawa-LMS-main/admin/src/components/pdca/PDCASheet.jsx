@@ -51,7 +51,12 @@ import {
   isUserResponsibleForRow,
   isUserInResponsibleDepartment,
   isUserResponsibleForAnyRow,
-  EDITABLE_RESPONSIBLE_COLUMNS
+  EDITABLE_RESPONSIBLE_COLUMNS,
+  getMissingConfirmationMandatoryFields,
+  CONFIRMATION_MANDATORY_COLUMNS,
+  SAVE_MANDATORY_COLUMNS,
+  isRowStartedForSave,
+  getMissingSaveMandatoryFields
 } from '../../pages/pdca/data/recordFilters.js';
 import {
   parseStaffEmployee,
@@ -256,7 +261,7 @@ const createEmptyRow = (customDefaults = {}) => ({
   respUnit: customDefaults.respUnit || customDefaults.responsiblePersonUnit || '',
   respUnits: Array.isArray(customDefaults.respUnits) ? customDefaults.respUnits : (customDefaults.respUnit || customDefaults.responsiblePersonUnit ? [customDefaults.respUnit || customDefaults.responsiblePersonUnit] : []),
   responsiblePersonUnit: customDefaults.responsiblePersonUnit || customDefaults.respUnit || '',
-  responsiblePersonDept: customDefaults.responsiblePersonDept || customDefaults.department || '',
+  responsiblePersonDept: customDefaults.responsiblePersonDept || '',
   staffEmployee: customDefaults.staffEmployee || '',
   staffEmployees: Array.isArray(customDefaults.staffEmployees) ? customDefaults.staffEmployees : [],
   staffName: customDefaults.staffName || '',
@@ -882,7 +887,7 @@ export default function PDCASheet({
   const canDeleteSheet = Boolean(!readOnly && (hasFullAccess || isCreator || hasPermission('pdca:delete') || hasPermission('pdca:delete_sheet') || hasPermission('lpa:delete')));
   const canAddRow = Boolean(!readOnly && (hasFullAccess || isCreator || hasPermission('pdca:add_row') || hasPermission('pdca:add_rows') || hasPermission('lpa:pdca_add_row')));
   const canDeleteRow = Boolean(!readOnly && (hasFullAccess || isCreator || hasPermission('pdca:delete') || hasPermission('pdca:delete_sheet') || hasPermission('lpa:delete')));
-  const canConfirmDefault = Boolean(!readOnly && (hasFullAccess || isCreator || hasPermission('pdca:confirm') || hasPermission('pdca:confirmation') || hasPermission('lpa:pdca_confirm')));
+  const canConfirmDefault = Boolean(!readOnly && isCreator);
   const canShowRowActions = Boolean(canEditEntireSheet || canAddRow || canDeleteRow);
   const cftAssignedMembers = topic?.assignedMembers || [];
   const defaultAssignedStr = cftAssignedMembers.length > 0
@@ -1150,7 +1155,7 @@ export default function PDCASheet({
     if (['Not - Confirmed', 'Not-Confirmed'].includes((row.confirmation || '').trim()) && !row.instruction?.trim()) {
       missing.push({ type: 'confirmation', rowIndex, key: `confirmation:${rowIndex}` });
     }
-    if (row.responseDate?.trim() && !hasValidStdDuration(row.stdDurationMin ?? row.stdDuration)) {
+    if (false && row.responseDate?.trim() && !hasValidStdDuration(row.stdDurationMin ?? row.stdDuration)) {
       missing.push({ type: 'duration', rowIndex, key: `duration:${rowIndex}` });
     }
     (Array.isArray(row.revisedDates) ? row.revisedDates : []).forEach((item, revisionIndex) => {
@@ -1196,6 +1201,16 @@ export default function PDCASheet({
     rows: initialRows.map((r) => ({ ...r })),
     headerInfo: { ...initialHeaderInfo }
   });
+  const isDirtyRef = useRef(false);
+
+  useEffect(() => {
+    if (initialSnapshotRef.current) {
+      const current = serializeSheet(rows, headerInfo);
+      if (current !== initialSnapshotRef.current) {
+        isDirtyRef.current = true;
+      }
+    }
+  }, [rows, headerInfo]);
   const responsibleConfirmationReasonRefs = useRef({});
   const responsibleConfirmationSelectRefs = useRef({});
   const revisionReasonRefs = useRef({});
@@ -1252,90 +1267,20 @@ export default function PDCASheet({
   useEffect(() => {
     if (!mustCompleteRequiredInput || typeof document === 'undefined') return undefined;
 
-    const allowedInputs = new Set(missingRequiredInputs.flatMap(requiredInputAllowedElements).filter(Boolean));
-    lastAllowedUrlRef.current = window.location.href;
     const firstRequiredInput = missingRequiredInputs[0];
     const message = requiredInputMessage(firstRequiredInput);
     requiredInputElement(firstRequiredInput)?.focus();
     showToastRef.current?.(message);
-
-    const isReasonInput = (target) => target instanceof Element && (
-      Boolean(target.closest('[data-required-action-allowed="true"]')) ||
-      Boolean(target.closest('[data-duration-picker="true"]'))
-    );
-    const notifyAndFocus = () => {
-      const now = Date.now();
-      if (now - lastRequiredNoticeAtRef.current > 800) {
-        showToastRef.current?.(message);
-        lastRequiredNoticeAtRef.current = now;
-      }
-      const currentInput = requiredInputElement(missingRequiredInputs[0]);
-      currentInput?.focus();
-      currentInput?.reportValidity?.();
-    };
-    const blockOutsideReason = (event) => {
-      if (
-        event.target instanceof Element && (
-          Boolean(event.target.closest('[data-duration-picker="true"]')) ||
-          Boolean(event.target.closest('[data-required-action-allowed="true"]')) ||
-          isReasonInput(event.target)
-        )
-      ) return;
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation?.();
-      notifyAndFocus();
-    };
-    const blockKeyboardOutsideReason = (event) => {
-      if (
-        event.target instanceof Element && (
-          Boolean(event.target.closest('[data-duration-picker="true"]')) ||
-          Boolean(event.target.closest('[data-required-action-allowed="true"]'))
-        )
-      ) return;
-      const navigationKey = event.key === 'Tab' || event.key === 'Escape' || event.altKey ||
-        ((event.ctrlKey || event.metaKey) && ['r', 'w', 'l'].includes(event.key.toLowerCase()));
-      if (isReasonInput(event.target) && !navigationKey) return;
-      blockOutsideReason(event);
-    };
-    const restoreLocation = (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation?.();
-      window.history.pushState({ ...(window.history.state || {}), requiredConfirmationGate: true }, '', lastAllowedUrlRef.current);
-      notifyAndFocus();
-    };
-    const warnBeforeLeaving = (event) => {
-      event.preventDefault();
-      event.returnValue = '';
-    };
-
-    document.addEventListener('pointerdown', blockOutsideReason, true);
-    document.addEventListener('click', blockOutsideReason, true);
-    document.addEventListener('keydown', blockKeyboardOutsideReason, true);
-    document.addEventListener('focusin', blockOutsideReason, true);
-    document.addEventListener('submit', blockOutsideReason, true);
-    window.addEventListener('popstate', restoreLocation, true);
-    window.addEventListener('hashchange', restoreLocation, true);
-    window.addEventListener('beforeunload', warnBeforeLeaving);
-
-    return () => {
-      document.removeEventListener('pointerdown', blockOutsideReason, true);
-      document.removeEventListener('click', blockOutsideReason, true);
-      document.removeEventListener('keydown', blockKeyboardOutsideReason, true);
-      document.removeEventListener('focusin', blockOutsideReason, true);
-      document.removeEventListener('submit', blockOutsideReason, true);
-      window.removeEventListener('popstate', restoreLocation, true);
-      window.removeEventListener('hashchange', restoreLocation, true);
-      window.removeEventListener('beforeunload', warnBeforeLeaving);
-    };
   }, [mustCompleteRequiredInput, requiredInputKey]);
 
-  // Observation Column Resizable Width (default 260px, min 180px, max 650px, persisted in localStorage)
+  const colScope = topic?.section ? String(topic.section).toLowerCase() : (topic?.id && topic.id.includes('CC') ? 'cc' : topic?.id && topic.id.includes('ASSEMBLY') ? 'assembly' : 'general');
+  const getColWidthKey = (col) => `pdca_${colScope}_${col}_col_width`;
+
+  // Observation Column Resizable Width (default 260px, min 180px, max 850px, persisted in localStorage scoped by section)
   const [observationWidth, setObservationWidth] = useState(() => {
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
-        const saved = window.localStorage.getItem('pdca_observation_col_width');
+        const saved = window.localStorage.getItem(getColWidthKey('observation')) || window.localStorage.getItem('pdca_observation_col_width');
         if (saved) {
           const parsed = parseInt(saved, 10);
           if (!isNaN(parsed) && parsed >= MIN_OBSERVATION_WIDTH && parsed <= MAX_OBSERVATION_WIDTH) {
@@ -1384,7 +1329,7 @@ export default function PDCASheet({
     activeColResizeRef.current = null;
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
-        window.localStorage.setItem('pdca_observation_col_width', String(observationWidth));
+        window.localStorage.setItem(getColWidthKey('observation'), String(observationWidth));
       }
     } catch { }
   };
@@ -1402,16 +1347,16 @@ export default function PDCASheet({
   useEffect(() => {
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
-        window.localStorage.setItem('pdca_observation_col_width', String(observationWidth));
+        window.localStorage.setItem(getColWidthKey('observation'), String(observationWidth));
       }
     } catch { }
-  }, [observationWidth]);
+  }, [observationWidth, colScope]);
 
-  // Root Cause Column Resizable Width (default 135px, min 95px, max 550px, persisted in localStorage)
+  // Root Cause Column Resizable Width (default 135px, min 95px, max 550px, persisted in localStorage scoped by section)
   const [rootCauseWidth, setRootCauseWidth] = useState(() => {
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
-        const saved = window.localStorage.getItem('pdca_root_cause_col_width');
+        const saved = window.localStorage.getItem(getColWidthKey('root_cause')) || window.localStorage.getItem('pdca_root_cause_col_width');
         if (saved) {
           const parsed = parseInt(saved, 10);
           if (!isNaN(parsed) && parsed >= MIN_ROOT_CAUSE_WIDTH && parsed <= MAX_ROOT_CAUSE_WIDTH) {
@@ -1814,41 +1759,44 @@ export default function PDCASheet({
   useEffect(() => {
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
-        window.localStorage.setItem('pdca_date_col_width', String(dateWidth));
+        window.localStorage.setItem(getColWidthKey('date'), String(dateWidth));
       }
     } catch { }
-  }, [dateWidth]);
+  }, [dateWidth, colScope]);
 
   useEffect(() => {
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
-        window.localStorage.setItem('pdca_department_col_width', String(departmentWidth));
+        window.localStorage.setItem(getColWidthKey('department'), String(departmentWidth));
       }
     } catch { }
-  }, [departmentWidth]);
+  }, [departmentWidth, colScope]);
 
   useEffect(() => {
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
-        window.localStorage.setItem('pdca_section_col_width', String(sectionWidth));
+        window.localStorage.setItem(getColWidthKey('section'), String(sectionWidth));
       }
     } catch { }
-  }, [sectionWidth]);
+  }, [sectionWidth, colScope]);
 
   useEffect(() => {
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
-        window.localStorage.setItem('pdca_line_area_col_width', String(lineAreaWidth));
+        window.localStorage.setItem(getColWidthKey('line_area'), String(lineAreaWidth));
       }
     } catch { }
-  }, [lineAreaWidth]);
+  }, [lineAreaWidth, colScope]);
 
-  // Load saved sheet from backend on mount or when topic changes
+  // Load saved sheet from backend on mount or when topic ID changes
   useEffect(() => {
     if (!topic?.id) return;
     let active = true;
     pdcaApi.getSheet(topic.id).then(savedSheet => {
       if (!active || !savedSheet) return;
+      // If user has already started typing in this session, protect their in-progress work
+      if (isDirtyRef.current) return;
+
       let finalHeader = headerInfo;
       if (savedSheet.headerInfo && Object.keys(savedSheet.headerInfo).length > 0) {
         const loadedTopicName = savedSheet.headerInfo.topicName;
@@ -1859,9 +1807,42 @@ export default function PDCASheet({
         setHeaderInfo(finalHeader);
       }
       let finalRows = rows;
-      if (Array.isArray(savedSheet.rows) && savedSheet.rows.length > 0) {
+      const hasMeaningfulContent = (r) => Boolean(
+        r && (
+          r.date?.trim() ||
+          r.observation?.trim() ||
+          r.rootCause?.trim() ||
+          r.counterMeasure?.trim() ||
+          (r.status && r.status !== 'Not-Started') ||
+          (Array.isArray(r.imagesBefore) && r.imagesBefore.length > 0) ||
+          r.imageBefore ||
+          (Array.isArray(r.imagesAfter) && r.imagesAfter.length > 0) ||
+          r.imageAfter
+        )
+      );
+      const backendHasContent = Array.isArray(savedSheet.rows) && savedSheet.rows.some(hasMeaningfulContent);
+      const localHasContent = Array.isArray(rows) && rows.some(hasMeaningfulContent);
+
+      if (backendHasContent) {
         finalRows = savedSheet.rows.map(normalizeRow);
         setRows(finalRows);
+        try {
+          if (typeof window !== 'undefined' && window.localStorage && topic?.id) {
+            window.localStorage.setItem(`lpa_pdca_saved_${topic.id}`, JSON.stringify({
+              rows: finalRows,
+              headerInfo: finalHeader
+            }));
+          }
+        } catch {}
+      } else if (!localHasContent && Array.isArray(savedSheet.rows) && savedSheet.rows.length > 0) {
+        finalRows = savedSheet.rows.map(normalizeRow);
+        setRows(finalRows);
+      } else if (localHasContent && !backendHasContent) {
+        finalRows = rows.map(normalizeRow);
+        // Sync local populated rows to backend fallback so server persists them
+        pdcaApi.saveSheet(topic.id, { rows: finalRows, headerInfo: finalHeader }).catch((err) => {
+          console.warn('Could not auto-sync local rows to backend:', err);
+        });
       } else {
         finalRows = Array.isArray(rows) && rows.length > 0 ? rows.map(normalizeRow) : Array.from({ length: 10 }, createTopicDefaultRow);
         setRows(finalRows);
@@ -1917,10 +1898,81 @@ export default function PDCASheet({
       return false;
     }
     if (requireConfirmationReasonBeforeContinuing()) return false;
-    // Validate mandatory fields (Date, Shift, Status, Line/Area, Observation) for active rows
+    // Validate Save Mandatory Columns (Date, Shift, Status, Unit, Department, Observation, Staff Name) for started rows, and Confirmation Mandatory Columns when Confirmation is selected
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
-      if (!r.date?.trim()) {
+      if (!isRowStartedForSave(r)) {
+        continue;
+      }
+      const notConfirmed = ['Not - Confirmed', 'Not-Confirmed'].includes((r.confirmation || '').trim());
+      if (notConfirmed && !r.instruction?.trim()) {
+        const reasonInput = responsibleConfirmationReasonRefs.current[i];
+        reasonInput?.focus();
+        reasonInput?.reportValidity();
+        showToast(`Row ${i + 1}: Please enter the required Responsible Person Confirmation reason.`);
+        return false;
+      }
+      if (Array.isArray(r.revisedDates)) {
+        for (let revisionIndex = 0; revisionIndex < r.revisedDates.length; revisionIndex++) {
+          const revision = r.revisedDates[revisionIndex];
+          const reason = typeof revision === 'object' && revision !== null ? (revision.reason || '') : '';
+          if (!reason.trim()) {
+            const reasonInput = revisionReasonRefs.current[`${i}:${revisionIndex}`];
+            reasonInput?.focus();
+            reasonInput?.reportValidity();
+            showToast(`Row ${i + 1}: Please enter a reason for revision ${revisionIndex + 1}.`);
+            return false;
+          }
+        }
+      }
+      if (Array.isArray(r.revisedDates) && r.revisedDates.length > 0 && !r.responseDate?.trim()) {
+        showToast(`Row ${i + 1}: Response Date is required when revisions exist.`);
+        return false;
+      }
+
+      const rowForCheck = r.date?.trim() && !r.status?.trim() ? { ...r, status: 'Not-Started' } : r;
+      if (r.date?.trim() && !r.status?.trim()) {
+        r.status = 'Not-Started';
+      }
+
+      const missingSaveFields = getMissingSaveMandatoryFields(rowForCheck);
+      if (missingSaveFields.length > 0) {
+        setAlertModal({
+          isOpen: true,
+          type: 'mandatory',
+          title: 'Mandatory Columns Required to Save Sheet',
+          rowNumber: i + 1,
+          missingFields: missingSaveFields,
+          message: `Row ${i + 1} has missing mandatory column${missingSaveFields.length > 1 ? 's' : ''} required to save the sheet: ${missingSaveFields.join(', ')}.`,
+          confirmText: "I'll fill them"
+        });
+        showToast(`Row ${i + 1}: Mandatory column${missingSaveFields.length > 1 ? 's' : ''} (${missingSaveFields.join(', ')}) required to save the sheet.`);
+        return false;
+      }
+
+      const hasConfirmationSelected = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((r.confirmation || '').trim());
+      if (hasConfirmationSelected) {
+        const missingForConf = getMissingConfirmationMandatoryFields(rowForCheck);
+        if (missingForConf.length > 0) {
+          setAlertModal({
+            isOpen: true,
+            type: 'mandatory',
+            title: 'Mandatory Columns Required for Confirmation',
+            rowNumber: i + 1,
+            missingFields: missingForConf,
+            message: `Row ${i + 1} has Confirmation selected but is missing mandatory columns: ${missingForConf.join(', ')}.`,
+            confirmText: "I'll fill them"
+          });
+          showToast(`Row ${i + 1}: Mandatory column${missingForConf.length > 1 ? 's' : ''} (${missingForConf.join(', ')}) required for Confirmation.`);
+          return false;
+        }
+      }
+    }
+    if (false) {
+      const missing = [];
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r.date?.trim() && !r.observation?.trim()) {
         continue;
       }
       const notConfirmed = ['Not - Confirmed', 'Not-Confirmed'].includes((r.confirmation || '').trim());
@@ -1953,52 +2005,92 @@ export default function PDCASheet({
         showToast(`Row ${i + 1}: Response Date is required when revisions exist.`);
         return false;
       }
-      const hasContent = Boolean(
-        r.date?.trim() ||
-        r.shift?.trim() ||
-        r.lineArea?.trim() ||
-        (Array.isArray(r.lineAreas) && r.lineAreas.some(l => l?.lineArea?.trim())) ||
-        r.observation?.trim() ||
-        r.imageBefore ||
-        (Array.isArray(r.imagesBefore) && r.imagesBefore.length > 0) ||
-        r.rootCause?.trim() ||
-        r.actionTaken?.trim() ||
-        r.counterMeasure?.trim() ||
-        r.imageAfter ||
-        (Array.isArray(r.imagesAfter) && r.imagesAfter.length > 0) ||
-        r.responseDate?.trim() ||
-        r.unit?.trim() ||
-        (r.respUnit || r.responsiblePersonUnit || '').trim() ||
-        r.department?.trim() ||
-        (Array.isArray(r.departments) && r.departments.some(d => d?.trim())) ||
-        (Array.isArray(r.sections) && r.sections.some(s => s?.section?.trim())) ||
-        r.staffEmployee?.trim() ||
-        r.staffName?.trim() ||
-        r.cftTopic?.trim() ||
-        r.responsiblePersonConfirmation?.trim()
-      );
-      if (hasContent) {
-        const hasPrimaryDepartment = Boolean(
-          r.department?.trim() || (Array.isArray(r.departments) && r.departments.some(d => d?.trim()))
-        );
-        const hasResponsibleDepartmentWithoutUnit = Boolean(
-          ((r.responsiblePersonDept && r.responsiblePersonDept !== 'CFT') && !['Bawal', 'Gujrat'].includes(r.respUnit || r.responsiblePersonUnit)) ||
-          (Array.isArray(r.staffEmployees) && r.staffEmployees.some(emp =>
-            emp.department && emp.department !== 'CFT' && !['Bawal', 'Gujrat'].includes(emp.unit || r.respUnit || r.responsiblePersonUnit)
-          ))
-        );
-        if (hasPrimaryDepartment && !['Bawal', 'Gujrat'].includes(r.unit)) {
-          showToast(`Row ${i + 1}: Select a Unit before selecting the Department.`);
-          return false;
+
+      // Default unit/date if row has an observation so draft can be safely saved
+      if (r.observation?.trim()) {
+        if (!isRowStartedForSave(r)) {
+        continue;
+      }
+      const rowForCheck = r.date?.trim() && !r.status?.trim() ? { ...r, status: 'Not-Started' } : r;
+      const missingSave = getMissingSaveMandatoryFields(rowForCheck);
+      if (missingSave.length > 0) {
+        setAlertModal({
+          isOpen: true,
+          type: 'send-mail-warning',
+          title: 'Cannot Send Email',
+          rowNumber: i + 1,
+          missingFields: missingSave,
+          message: `Cannot send mail because Row ${i + 1} has mandatory column(s) required to save the sheet that are not filled: ${missingSave.join(', ')}.`,
+          confirmText: 'Understood'
+        });
+        showToast(`Row ${i + 1}: Mandatory columns (${missingSave.join(', ')}) required before sending mail.`);
+        return;
+      }
+      const hasConfirmationSelected = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((r.confirmation || '').trim());
+      if (hasConfirmationSelected) {
+        const missingForConf = getMissingConfirmationMandatoryFields(rowForCheck);
+        if (missingForConf.length > 0) {
+          setAlertModal({
+            isOpen: true,
+            type: 'mandatory',
+            title: 'Mandatory Columns Required for Confirmation',
+            rowNumber: i + 1,
+            missingFields: missingForConf,
+            message: `Row ${i + 1} has Confirmation selected but is missing mandatory columns: ${missingForConf.join(', ')}.`,
+            confirmText: "I'll fill them"
+          });
+          showToast(`Row ${i + 1}: Mandatory column${missingForConf.length > 1 ? 's' : ''} (${missingForConf.join(', ')}) required for Confirmation.`);
+          return;
         }
-        if (hasResponsibleDepartmentWithoutUnit) {
-          showToast(`Row ${i + 1}: Select the Responsible Confirmation Unit before selecting its Department.`);
-          return false;
+      }
+    }
+    if (false) {
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        const isCompletedInner = false;
+        if (!r.date?.trim()) {
+          r.date = formDate || new Date().toISOString().split('T')[0];
         }
+        if (!r.unit?.trim()) {
+          r.unit = topic?.plant || 'Bawal';
+        }
+      }
+
+      // Only enforce strict completion requirements when row is marked 'Done' or 'Confirmed'
+      const isCompleted = r.status === 'Done' || r.confirmation === 'Confirmed';
+      if (false) {
         const missing = [];
         if (!r.date?.trim()) missing.push('Date');
         if (!r.shift?.trim()) missing.push('Shift');
-        if (!r.status?.trim()) missing.push('Status');
+        const unitVal = (r.unit || (Array.isArray(r.units) && r.units[0]) || '').trim();
+        if (!unitVal) missing.push('Unit');
+        const deptVal = (r.department || (Array.isArray(r.departments) && r.departments[0]) || '').trim();
+        if (!deptVal) missing.push('Department');
+        if (!r.observation?.trim()) missing.push('Observation');
+        const staffVal = (r.staffName || r.staffEmployee || (Array.isArray(r.staffEmployees) && (r.staffEmployees[0]?.name || r.staffEmployees[0]?.fullName)) || '').trim();
+        if (!staffVal) missing.push('Staff name');
+      }
+      const hasConfirmationSelected = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((r.confirmation || '').trim());
+      if (hasConfirmationSelected) {
+        const missingForConf = getMissingConfirmationMandatoryFields(r);
+        if (missingForConf.length > 0) {
+          setAlertModal({
+            isOpen: true,
+            type: 'mandatory',
+            title: 'Mandatory Columns Required for Confirmation',
+            rowNumber: i + 1,
+            missingFields: missingForConf,
+            message: `Row ${i + 1} has Confirmation selected but is missing mandatory columns: ${missingForConf.join(', ')}.`,
+            confirmText: "I'll fill them"
+          });
+          showToast(`Row ${i + 1}: Mandatory column${missingForConf.length > 1 ? 's' : ''} (${missingForConf.join(', ')}) required for Confirmation.`);
+          return false;
+        }
+      }
+      if (false) {
+        const missing = [];
+        if (!r.date?.trim()) missing.push('Date');
+        if (!r.shift?.trim()) missing.push('Shift');
         const unitVal = (r.unit || (Array.isArray(r.units) && r.units[0]) || '').trim();
         if (!unitVal) missing.push('Unit');
         const deptVal = (r.department || (Array.isArray(r.departments) && r.departments[0]) || '').trim();
@@ -2011,13 +2103,15 @@ export default function PDCASheet({
           setAlertModal({
             isOpen: true,
             type: 'mandatory',
-            title: 'Mandatory Columns Required',
+            title: 'Mandatory Columns Required for Completed Row',
             rowNumber: i + 1,
             missingFields: missing,
-            message: `Row ${i + 1} has missing mandatory columns. The sheet cannot be saved until all required fields are filled.`,
+            message: `Row ${i + 1} is marked as completed but has missing mandatory columns: ${missing.join(', ')}.`,
             confirmText: "I'll fill them"
           });
-          showToast(`Row ${i + 1}: Mandatory column${missing.length > 1 ? 's' : ''} (${missing.join(', ')}) required.`);
+          showToast(`Row ${i + 1}: Mandatory column${missing.length > 1 ? 's' : ''} (${missing.join(', ')}) required to complete.`);
+        }
+      }
           return false;
         }
       }
@@ -2038,22 +2132,38 @@ export default function PDCASheet({
         return r;
       });
       const snapshotToSave = { rows: sanitizedRows, headerInfo };
+      let backendError = null;
       if (targetId) {
-        await pdcaApi.saveSheet(targetId, snapshotToSave);
+        try {
+          await pdcaApi.saveSheet(targetId, snapshotToSave);
+        } catch (apiErr) {
+          backendError = apiErr;
+          console.warn('Backend saveSheet error:', apiErr?.message || apiErr);
+        }
       }
       persistSheet(snapshotToSave);
       setRows(sanitizedRows);
+      isDirtyRef.current = false;
       // Update baseline after successful save so subsequent navigation knows all edits are saved
       initialStateRef.current = {
         rows: sanitizedRows.map((r) => ({ ...r })),
         headerInfo: { ...headerInfo }
       };
       initialSnapshotRef.current = serializeSheet(sanitizedRows, headerInfo);
-      showToast('PDCA is saved successfully');
-      onSave?.(snapshotToSave);
+      if (backendError) {
+        showToast(`Saved locally, but server update failed: ${backendError?.response?.data?.message || backendError?.message || 'Check network connection'}`);
+      } else {
+        showToast('PDCA is saved successfully');
+      }
       return true;
     } catch (error) {
       persistSheet(sheetSnapshot);
+      isDirtyRef.current = false;
+      initialStateRef.current = {
+        rows: rows.map((r) => ({ ...r })),
+        headerInfo: { ...headerInfo }
+      };
+      initialSnapshotRef.current = serializeSheet(rows, headerInfo);
       const errorMsg = error?.response?.data?.message || error?.response?.data?.error || error?.message || 'Could not save PDCA. Keep the form open and try again.';
       showToast(errorMsg);
       return false;
@@ -2103,8 +2213,29 @@ export default function PDCASheet({
   // Determine if user has made unsaved changes in the current editing session
   const hasUnsavedChanges = () => {
     if (effectiveReadOnly) return false;
+    if (!isDirtyRef.current) return false;
     if (!initialSnapshotRef.current) return false;
-    return serializeSheet(rows, headerInfo) !== initialSnapshotRef.current;
+    const current = serializeSheet(rows, headerInfo);
+    if (current === initialSnapshotRef.current) {
+      isDirtyRef.current = false;
+      return false;
+    }
+    const sanitizedRows = rows.map(r => {
+      const hasDate = Boolean(r.date?.trim());
+      const norm = normalizePDCAStatus(r.status);
+      if (!hasDate && (!norm || norm === 'Not-Started')) {
+        return { ...r, status: '' };
+      }
+      if (hasDate && !norm) {
+        return { ...r, status: 'Not-Started' };
+      }
+      return r;
+    });
+    if (serializeSheet(sanitizedRows, headerInfo) === initialSnapshotRef.current) {
+      isDirtyRef.current = false;
+      return false;
+    }
+    return true;
   };
 
   // Navigation Back: Prompt if unsaved changes exist
@@ -2140,7 +2271,47 @@ export default function PDCASheet({
     }
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
-      if (!r.date?.trim()) {
+      if (!isRowStartedForSave(r)) {
+        continue;
+      }
+      const rowForCheck = r.date?.trim() && !r.status?.trim() ? { ...r, status: 'Not-Started' } : r;
+      const missingSave = getMissingSaveMandatoryFields(rowForCheck);
+      if (missingSave.length > 0) {
+        setAlertModal({
+          isOpen: true,
+          type: 'send-mail-warning',
+          title: 'Cannot Send Email',
+          rowNumber: i + 1,
+          missingFields: missingSave,
+          message: `Cannot send mail because Row ${i + 1} has mandatory column(s) required to save the sheet that are not filled: ${missingSave.join(', ')}.`,
+          confirmText: 'Understood'
+        });
+        showToast(`Row ${i + 1}: Mandatory columns (${missingSave.join(', ')}) required before sending mail.`);
+        return;
+      }
+      const hasConfirmationSelected = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((r.confirmation || '').trim());
+      if (hasConfirmationSelected) {
+        const missingForConf = getMissingConfirmationMandatoryFields(rowForCheck);
+        if (missingForConf.length > 0) {
+          setAlertModal({
+            isOpen: true,
+            type: 'mandatory',
+            title: 'Mandatory Columns Required for Confirmation',
+            rowNumber: i + 1,
+            missingFields: missingForConf,
+            message: `Row ${i + 1} has Confirmation selected but is missing mandatory columns: ${missingForConf.join(', ')}.`,
+            confirmText: "I'll fill them"
+          });
+          showToast(`Row ${i + 1}: Mandatory column${missingForConf.length > 1 ? 's' : ''} (${missingForConf.join(', ')}) required for Confirmation.`);
+          return;
+        }
+      }
+    }
+    if (false) {
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        const isCompletedInner = false;
+        if (!r.date?.trim()) {
         continue;
       }
       const hasContent = Boolean(
@@ -2179,6 +2350,35 @@ export default function PDCASheet({
         if (!r.observation?.trim()) missing.push('Observation');
         const staffVal = (r.staffName || r.staffEmployee || (Array.isArray(r.staffEmployees) && (r.staffEmployees[0]?.name || r.staffEmployees[0]?.fullName)) || '').trim();
         if (!staffVal) missing.push('Staff name');
+      }
+      const hasConfirmationSelected = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((r.confirmation || '').trim());
+      if (hasConfirmationSelected) {
+        const missingForConf = getMissingConfirmationMandatoryFields(r);
+        if (missingForConf.length > 0) {
+          setAlertModal({
+            isOpen: true,
+            type: 'mandatory',
+            title: 'Mandatory Columns Required for Confirmation',
+            rowNumber: i + 1,
+            missingFields: missingForConf,
+            message: `Row ${i + 1} has Confirmation selected but is missing mandatory columns: ${missingForConf.join(', ')}.`,
+            confirmText: "I'll fill them"
+          });
+          showToast(`Row ${i + 1}: Mandatory column${missingForConf.length > 1 ? 's' : ''} (${missingForConf.join(', ')}) required for Confirmation.`);
+          return false;
+        }
+      }
+      if (false) {
+        const missing = [];
+        if (!r.date?.trim()) missing.push('Date');
+        if (!r.shift?.trim()) missing.push('Shift');
+        const unitVal = (r.unit || (Array.isArray(r.units) && r.units[0]) || '').trim();
+        if (!unitVal) missing.push('Unit');
+        const deptVal = (r.department || (Array.isArray(r.departments) && r.departments[0]) || '').trim();
+        if (!deptVal) missing.push('Department');
+        if (!r.observation?.trim()) missing.push('Observation');
+        const staffVal = (r.staffName || r.staffEmployee || (Array.isArray(r.staffEmployees) && (r.staffEmployees[0]?.name || r.staffEmployees[0]?.fullName)) || '').trim();
+        if (!staffVal) missing.push('Staff name');
 
         if (missing.length > 0) {
           setAlertModal({
@@ -2195,13 +2395,15 @@ export default function PDCASheet({
         }
       }
     }
-    setIsSendMailOpen(true);
+      }
+      setIsSendMailOpen(true);
   };
 
   // Discard all unsaved edits made during the session and navigate back immediately
   const handleDiscardAndGoBack = () => {
     if (requireConfirmationReasonBeforeContinuing()) return;
     setShowDiscardModal(false);
+    isDirtyRef.current = false;
     if (topic?.id && initialStateRef.current) {
       setData((items) => {
         if (!items) return items;
@@ -2213,6 +2415,7 @@ export default function PDCASheet({
     if (initialStateRef.current) {
       setRows(initialStateRef.current.rows);
       setHeaderInfo(initialStateRef.current.headerInfo);
+      initialSnapshotRef.current = serializeSheet(initialStateRef.current.rows, initialStateRef.current.headerInfo);
     }
     onBack?.();
   };
@@ -3677,9 +3880,31 @@ export default function PDCASheet({
   // Section A: Responsible Person Instruction, etc. Confirmation change handler
   const handleConfirmationChange = (rowIndex, value, userName = '') => {
     const targetRow = rows[rowIndex];
-    const canConfirmThisRow = Boolean(!readOnly && (canConfirmDefault || (targetRow && isUserResponsibleForRow(targetRow, effectiveUser))));
+    const canConfirmThisRow = Boolean(!readOnly && isCreator);
     if (!canConfirmThisRow) {
-      if (typeof showToast === 'function') showToast('You do not have permission to change confirmation status.');
+      if (typeof showToast === 'function') showToast('Only the sheet creator has access to select Confirmation.');
+      return false;
+    }
+    const isSelectingConfirmation = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((value || '').trim());
+    if (isSelectingConfirmation && targetRow) {
+      const missing = getMissingConfirmationMandatoryFields(targetRow);
+      if (missing.length > 0) {
+        setAlertModal({
+          isOpen: true,
+          type: 'mandatory',
+          title: 'Mandatory Columns Required for Confirmation',
+          rowNumber: rowIndex + 1,
+          missingFields: missing,
+          message: `Row ${rowIndex + 1}: Please fill all mandatory columns before selecting Confirmation (${missing.join(', ')}).`,
+          confirmText: "I'll fill them"
+        });
+        if (typeof showToast === 'function') {
+          showToast(`Row ${rowIndex + 1}: Mandatory column${missing.length > 1 ? 's' : ''} (${missing.join(', ')}) required to select Confirmation.`);
+        }
+        return false;
+      }
+    }
+    if (false) {
       return;
     }
     setRows((prev) => {
@@ -3728,7 +3953,7 @@ export default function PDCASheet({
   // Instruction change handler for Responsible Person Instruction, etc. column
   const handleInstructionChange = (rowIndex, text) => {
     const targetRow = rows[rowIndex];
-    const canConfirmThisRow = Boolean(!readOnly && (canConfirmDefault || (targetRow && isUserResponsibleForRow(targetRow, effectiveUser))));
+    const canConfirmThisRow = Boolean(!readOnly && isCreator);
     if (!canConfirmThisRow) {
       if (typeof showToast === 'function') showToast('You do not have permission to change instruction.');
       return;
@@ -4368,7 +4593,7 @@ export default function PDCASheet({
   };
 
   const handleRemoveFile = (rowIndex, field, nameField, typeField) => {
-    if (!isAdmin) return;
+    if (effectiveReadOnly) return;
     setRows((prev) => {
       const updated = [...prev];
       const imagesField = field === 'imageBefore' ? 'imagesBefore' : 'imagesAfter';
@@ -6392,7 +6617,7 @@ export default function PDCASheet({
                           reasonRequired={missingRequiredInputs.some((item) => item.type === 'confirmation' && item.rowIndex === idx)}
                           currentUser={effectiveUser} /*
                           readOnly={!canEditEntireRow}
-                          */ readOnly={!(canConfirmDefault || isUserResponsibleForRow(row, effectiveUser))}
+                          */ readOnly={!canConfirmDefault} missingMandatoryFields={getMissingConfirmationMandatoryFields(row)}
                           onConfirmationChange={(val, uName) => handleConfirmationChange(idx, val, uName)}
                           onInstructionChange={(text) => handleInstructionChange(idx, text)}
                           sNo={sNo}

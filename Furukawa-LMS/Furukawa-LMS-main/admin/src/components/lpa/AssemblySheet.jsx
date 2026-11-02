@@ -200,7 +200,7 @@ export default function AssemblySheet({
   const initialDate = rawSheet?.date || editor?.date || editor?.auditDate || new Date().toISOString().slice(0, 10);
   const [formDate, setFormDate] = useState(initialDate);
   const [formShift, setFormShift] = useState(rawSheet?.shift || editor?.shift || '');
-  const [formDepartment, setFormDepartment] = useState('Assembly');
+  const [formDepartment, setFormDepartment] = useState(rawSheet?.department || editor?.department || 'Assembly');
   const [formSection, setFormSection] = useState(rawSheet?.sectionName || rawSheet?.section || editor?.sectionName || '');
   const [formLine, setFormLine] = useState(rawSheet?.line || rawSheet?.lineArea || editor?.line || editor?.lineArea || '');
 
@@ -239,7 +239,9 @@ export default function AssemblySheet({
     if (rawSheet?.shift || editor?.shift) {
       setFormShift(rawSheet?.shift || editor?.shift);
     }
-    setFormDepartment('Assembly');
+    if (rawSheet?.department || editor?.department) {
+      setFormDepartment(rawSheet?.department || editor?.department);
+    }
     if (rawSheet?.sectionName || rawSheet?.section || editor?.sectionName) {
       setFormSection(rawSheet?.sectionName || rawSheet?.section || editor?.sectionName);
     }
@@ -373,21 +375,22 @@ export default function AssemblySheet({
     const next = [...auditorList];
     next[index] = value;
     setAuditorList(next);
-    notifyMetadataChange({ auditors: next });
+    const cleaned = next.filter(a => typeof a === 'string' && a.trim() !== '');
+    notifyMetadataChange({ auditors: cleaned, auditor: cleaned[0] || '' });
   };
 
   const handleAddAuditor = () => {
     const next = [...auditorList, ''];
     setAuditorList(next);
     setAuditorFieldsVisible(true);
-    notifyMetadataChange({ auditors: next });
   };
 
   const handleRemoveAuditor = (index) => {
-    if (auditorList.length <= 1) return;
     const next = auditorList.filter((_, i) => i !== index);
-    setAuditorList(next);
-    notifyMetadataChange({ auditors: next });
+    const cleaned = next.filter(a => typeof a === 'string' && a.trim() !== '');
+    setAuditorList(next.length > 0 ? next : ['']);
+    setAuditorFieldsVisible(cleaned.length > 0);
+    notifyMetadataChange({ auditors: cleaned, auditor: cleaned[0] || '' });
   };
 
   // Dynamic Column Widths based on Active Audit Columns

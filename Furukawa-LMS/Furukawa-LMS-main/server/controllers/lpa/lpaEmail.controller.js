@@ -365,7 +365,8 @@ export const createSendLpaEmailHandler = ({ sendMailFn = sendMail, log = logger,
   const pdcaOnly = req.body?.emailMode === "pdca-only";
   if (!pdcaOnly && (!assembly?.workbookId || !Number.isInteger(Number(assembly.sheetIndex)) || Number(assembly.sheetIndex) < 0)) {
     attemptStore.delete(attemptKey);
-    throw new ApiError("Select a valid Assembly sheet before sending.", 400);
+    const reqSection = req.body?.assemblySheet?.section || req.body?.pdcaSheet?.section;
+    throw new ApiError(`Select a valid ${reqSection === "cc" ? "C&C" : "Assembly"} sheet before sending.`, 400);
   }
   if (!pdca?.id || !["lpa", "pdca"].includes(pdca.source)) {
     throw new ApiError("Select a valid PDCA sheet before sending.", 400);

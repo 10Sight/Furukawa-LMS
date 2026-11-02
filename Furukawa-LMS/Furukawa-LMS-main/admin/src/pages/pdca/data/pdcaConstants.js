@@ -136,3 +136,122 @@ export const computePDCAStatus = (row = {}, currentDateStr = '') => {
   return normStatus || 'In- Progress';
 };
 
+export const PDCA_SHEET_TABLE_STATUSES = [
+  { key: 'inProgress', label: 'In-progress', status: 'In- Progress' },
+  { key: 'done', label: 'Done', status: 'Done' },
+  { key: 'delay', label: 'Delay', status: 'Delay' },
+  { key: 'notStarted', label: 'Not-Started', status: 'Not-Started' }
+];
+
+export const isActivePDCARow = (r) => {
+  if (!r || typeof r !== 'object') return false;
+  return Boolean(
+    String(r.date || '').trim() ||
+    String(r.observation || '').trim() ||
+    String(r.rootCause || '').trim() ||
+    String(r.actionTaken || r.correctiveAction || '').trim() ||
+    String(r.counterMeasure || '').trim() ||
+    String(r.responseDate || '').trim() ||
+    String(r.lineArea || '').trim() ||
+    (Array.isArray(r.lineAreas) && r.lineAreas.some(l => String(l?.lineArea || '').trim())) ||
+    String(r.staffName || r.staffEmployee || '').trim() ||
+    (Array.isArray(r.staffEmployees) && r.staffEmployees.some(e => String(e?.name || e?.fullName || '').trim())) ||
+    (String(r.status || '').trim() && normalizePDCAStatus(r.status) !== 'Not-Started') ||
+    (Array.isArray(r.imagesBefore) && r.imagesBefore.length > 0) ||
+    Boolean(r.imageBefore) ||
+    (Array.isArray(r.imagesAfter) && r.imagesAfter.length > 0) ||
+    Boolean(r.imageAfter)
+  );
+};
+
+export const getEffectivePDCARowStatus = (r = {}, currentDateStr = '') => {
+  const conf = String(r.confirmation || r.responsiblePersonConfirmation || '').trim();
+  const normStatus = normalizePDCAStatus(r.status);
+
+  if (normStatus === 'Done' || conf === 'Confirmed' || conf === 'Confirm') {
+    return 'Done';
+  }
+  if (conf === 'Not-Confirmed' || conf === 'Not - Confirmed' || conf === 'Not-Confirm') {
+    return 'In- Progress';
+  }
+  if (r.responseDate && String(r.responseDate).trim()) {
+    return computePDCAStatus(r, currentDateStr);
+  }
+  if (normStatus === 'In- Progress') return 'In- Progress';
+  if (normStatus === 'Delay') return 'Delay';
+  return 'Not-Started';
+};
+
+export const resolvePDCASheetRows = (recordOrSheet, fallbackRows = []) => {
+  if (!recordOrSheet || typeof recordOrSheet !== 'object') {
+    return Array.isArray(fallbackRows) ? fallbackRows : [];
+  }
+  const directRows = Array.isArray(recordOrSheet.rows)
+    ? recordOrSheet.rows
+    : (Array.isArray(recordOrSheet.sheet?.rows) ? recordOrSheet.sheet.rows : []);
+
+  let savedRows = [];
+  const sheetId = recordOrSheet.id || recordOrSheet.recordId || recordOrSheet._id;
+  if (sheetId && typeof localStorage !== 'undefined') {
+    try {
+      const saved = localStorage.getItem(`lpa_pdca_saved_${sheetId}`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed?.rows)) {
+          savedRows = parsed.rows;
+        }
+      }
+    } catch {}
+  }
+
+  const savedActiveCount = savedRows.filter(isActivePDCARow).length;
+  const directActiveCount = directRows.filter(isActivePDCARow).length;
+
+  if (savedActiveCount > 0 && savedActiveCount >= directActiveCount) {
+    return savedRows;
+  }
+  if (directRows.length > 0) {
+    return directRows;
+  }
+  if (savedRows.length > 0) {
+    return savedRows;
+  }
+  return Array.isArray(fallbackRows) ? fallbackRows : [];
+};
+
+export const getPDCASheetStatusSummary = (rowsOrRecord = [], currentDateStr = '') => {
+  const rows = Array.isArray(rowsOrRecord)
+    ? rowsOrRecord
+    : resolvePDCASheetRows(rowsOrRecord);
+
+  let inProgress = 0;
+  let done = 0;
+  let delay = 0;
+  let notStarted = 0;
+
+  (rows || []).forEach(r => {
+    if (!isActivePDCARow(r)) return;
+    const status = getEffectivePDCARowStatus(r, currentDateStr);
+    if (status === 'Done') done += 1;
+    else if (status === 'In- Progress') inProgress += 1;
+    else if (status === 'Delay') delay += 1;
+    else notStarted += 1;
+  });
+
+  const total = inProgress + done + delay + notStarted;
+
+  return {
+    inProgress,
+    done,
+    delay,
+    notStarted,
+    total,
+    items: [
+      { key: 'inProgress', label: 'In-progress', count: inProgress },
+      { key: 'done', label: 'Done', count: done },
+      { key: 'delay', label: 'Delay', count: delay },
+      { key: 'notStarted', label: 'Not-Started', count: notStarted }
+    ]
+  };
+};
+

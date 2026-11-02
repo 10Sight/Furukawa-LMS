@@ -483,7 +483,7 @@ export default function SendMailModal({
   const handleSend = async () => {
     if (requestInFlightRef.current || sentSuccess) return;
     if (!isPdcaOnly && !selectedAssembly) {
-      toast.error('Please select an Assembly sheet before sending the email.');
+      toast.error(`Please select an ${selectedSection === 'cc' ? 'LPA C&C' : 'Assembly'} sheet before sending the email.`);
       return;
     }
     const targetPdca = autoPdcaSheet || selectedPdca?.sheet;

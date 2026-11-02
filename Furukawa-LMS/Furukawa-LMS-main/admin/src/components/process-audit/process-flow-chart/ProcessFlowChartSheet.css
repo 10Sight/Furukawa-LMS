@@ -1,0 +1,669 @@
+/* Process Flow Chart Sheet - Excel-like Styling */
+
+.pfc-sheet-container {
+  font-family: Arial, Calibri, 'Segoe UI', sans-serif;
+  color: #000;
+  background-color: #e2e8f0;
+}
+
+/* ── Top Action Bar ── */
+.pfc-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background-color: #ffffff;
+  border-bottom: 1px solid #cbd5e1;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  flex-shrink: 0;
+}
+
+.pfc-actions-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 1. Back button */
+.pfc-btn-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+  background-color: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.pfc-btn-back:hover {
+  background-color: #e2e8f0;
+  color: #0f172a;
+}
+
+/* 2. Save button */
+.pfc-btn-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
+  background-color: #16a34a;
+  border: 1px solid #15803d;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 2px rgba(22, 163, 74, 0.2);
+}
+.pfc-btn-save:hover {
+  background-color: #15803d;
+}
+
+/* 3 & 4. Undo and Redo buttons (Icon only, no text) */
+.pfc-btn-icon-only {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: #475569;
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.pfc-btn-icon-only:hover:not(:disabled) {
+  background-color: #f1f5f9;
+  color: #0f172a;
+  border-color: #94a3b8;
+}
+.pfc-btn-icon-only:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 5. + Add row button */
+.pfc-btn-add-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
+  background-color: #2563eb;
+  border: 1px solid #1d4ed8;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.2);
+}
+.pfc-btn-add-row:hover {
+  background-color: #1d4ed8;
+}
+
+.pfc-top-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pfc-doc-badge {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1e293b;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+.pfc-zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background-color: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+.pfc-zoom-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #475569;
+}
+.pfc-zoom-btn:hover {
+  background-color: #e2e8f0;
+  color: #0f172a;
+}
+.pfc-zoom-text {
+  font-size: 11px;
+  font-weight: 600;
+  color: #475569;
+  min-width: 38px;
+  text-align: center;
+}
+
+/* ── Toast Notification ── */
+.pfc-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background-color: #0f172a;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+  z-index: 300;
+  animation: pfc-slide-up 0.2s ease-out;
+}
+@keyframes pfc-slide-up {
+  from {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* ── Workspace / Scrollport ── */
+.pfc-sheet-viewport {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.pfc-paper {
+  background: #ffffff;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+  border: 1px solid #94a3b8;
+  padding: 20px;
+  width: 100%;
+  max-width: 2600px;
+  box-sizing: border-box;
+}
+
+/* ── Top Header / Metadata Block ── */
+.pfc-header-block {
+  border: 1px solid #000;
+  margin-bottom: -1px;
+  background-color: #fff;
+}
+
+.pfc-top-company-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-bottom: 1px solid #000;
+}
+
+.pfc-logo-text-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pfc-logo-badge {
+  font-weight: 900;
+  font-style: italic;
+  font-size: 18px;
+  color: #0284c7;
+  letter-spacing: -0.5px;
+}
+.pfc-company-sub {
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: #000;
+  text-transform: uppercase;
+}
+
+.pfc-company-right {
+  font-size: 12px;
+  font-weight: 700;
+  color: #000;
+  letter-spacing: 0.3px;
+}
+
+.pfc-title-row {
+  text-align: center;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 4px;
+  border-bottom: 1px solid #000;
+  background-color: #fff;
+}
+
+.pfc-phases-row {
+  display: flex;
+  align-items: center;
+  gap: 36px;
+  padding: 4px 16px;
+  border-bottom: 1px solid #000;
+  font-size: 11px;
+}
+
+.pfc-phase-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.pfc-phase-item input[type='radio'] {
+  width: 14px;
+  height: 14px;
+  accent-color: #0284c7;
+  cursor: pointer;
+}
+
+.pfc-meta-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 1.6fr 1.3fr;
+  font-size: 11px;
+}
+
+.pfc-meta-col {
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pfc-meta-col:not(:last-child) {
+  border-right: 1px solid #000;
+}
+
+.pfc-meta-field {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.pfc-meta-label {
+  font-weight: 700;
+  white-space: nowrap;
+  min-width: fit-content;
+  color: #000;
+}
+
+.pfc-meta-input {
+  flex: 1;
+  border: none;
+  border-bottom: 1px solid #000;
+  padding: 1px 4px;
+  font-size: 11px;
+  background: transparent;
+  color: #000;
+  outline: none;
+}
+.pfc-meta-input:focus {
+  border-bottom: 1.5px solid #2563eb;
+  background-color: #f8fafc;
+}
+
+/* ── Main Excel Table ── */
+.pfc-table-wrapper {
+  overflow-x: auto;
+  width: 100%;
+  border: 1px solid #000;
+  background-color: #fff;
+}
+
+.pfc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  table-layout: fixed;
+}
+
+.pfc-table th,
+.pfc-table td {
+  border: 1px solid #000;
+  padding: 4px 4px;
+  vertical-align: middle;
+  box-sizing: border-box;
+}
+
+.pfc-table thead th {
+  background-color: #ffffff;
+  color: #000000;
+  font-weight: 700;
+  text-align: center;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.pfc-table thead tr:nth-child(2) th {
+  top: 32px;
+  z-index: 19;
+}
+
+/* Vertical text header for part numbers */
+.pfc-th-vertical {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  white-space: nowrap;
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 8px 1px;
+  max-height: 110px;
+  line-height: 1;
+  letter-spacing: -0.2px;
+}
+
+/* Cell Textareas */
+.pfc-cell-textarea {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.25;
+  color: #000;
+  resize: none;
+  outline: none;
+  padding: 0;
+  margin: 0;
+  display: block;
+  field-sizing: content;
+  min-height: 20px;
+  box-sizing: border-box;
+}
+.pfc-cell-textarea:focus {
+  background-color: #eff6ff;
+  outline: 1px solid #3b82f6;
+  outline-offset: 1px;
+}
+
+.pfc-cell-center {
+  text-align: center;
+}
+.pfc-cell-center .pfc-cell-textarea {
+  text-align: center;
+}
+
+/* Flowchart diagram column & cells */
+.pfc-cell-flowchart {
+  width: 250px;
+  min-width: 250px;
+  max-width: 250px;
+  padding: 0 !important;
+  height: 100%;
+  position: relative;
+  background-color: #ffffff;
+  vertical-align: middle;
+}
+
+.pfc-flowchart-cell-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 52px;
+}
+
+.pfc-symbol-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  min-height: 24px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+.pfc-symbol-btn:hover {
+  background-color: #f1f5f9;
+  transform: scale(1.15);
+}
+
+/* Flowchart symbols styling */
+.pfc-fc-cell {
+  position: relative;
+  height: 100%;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pfc-symbol-node {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+  z-index: 2;
+  background-color: #fff;
+}
+.pfc-symbol-node:hover {
+  transform: scale(1.15);
+}
+
+.pfc-node-op {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid #000;
+  font-size: 9px;
+}
+
+.pfc-node-insp {
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid #000;
+  transform: rotate(45deg);
+  margin: 3px;
+}
+.pfc-node-insp:hover {
+  transform: rotate(45deg) scale(1.15);
+}
+
+.pfc-node-storage {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid #000;
+  border-radius: 0 8px 8px 0;
+  width: 16px;
+  height: 16px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.pfc-node-rework {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px double #000;
+  box-shadow: 0 0 0 1px #000 inset;
+}
+
+/* Part tick button / display */
+.pfc-tick-btn {
+  width: 100%;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 11px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background-color 0.1s ease;
+}
+.pfc-tick-btn:hover {
+  background-color: #f1f5f9;
+}
+.pfc-tick-ok {
+  color: #16a34a;
+}
+.pfc-tick-no {
+  color: #dc2626;
+}
+
+/* Diamond badges */
+.pfc-badge-diamond-c {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid #000;
+  transform: rotate(45deg);
+  margin: 2px;
+}
+.pfc-badge-diamond-c span {
+  transform: rotate(-45deg);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.pfc-badge-diamond-circle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid #000;
+  transform: rotate(45deg);
+  margin: 2px;
+}
+.pfc-badge-diamond-circle span {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1px solid #000;
+}
+
+/* Row Action */
+.pfc-btn-del-row {
+  background: transparent;
+  border: none;
+  color: #ef4444;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+}
+.pfc-btn-del-row:hover {
+  background-color: #fee2e2;
+}
+
+/* ── Bottom Section ── */
+.pfc-bottom-container {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.pfc-jis-line {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #000;
+}
+
+.pfc-symbol-legend-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  font-size: 11px;
+  padding: 6px 12px;
+  border: 1px solid #000;
+  background-color: #fff;
+}
+.pfc-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Revision History & Signoff Tables */
+.pfc-rev-table,
+.pfc-signoff-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  border: 1px solid #000;
+  background-color: #fff;
+}
+
+.pfc-rev-table th,
+.pfc-rev-table td,
+.pfc-signoff-table th,
+.pfc-signoff-table td {
+  border: 1px solid #000;
+  padding: 4px 6px;
+  vertical-align: middle;
+}
+
+.pfc-rev-table th,
+.pfc-signoff-table th {
+  background-color: #fff;
+  font-weight: 700;
+  text-align: center;
+}
+
+.pfc-signoff-header-cell {
+  background-color: #fff;
+  font-weight: 700;
+  text-align: center;
+  font-size: 10.5px;
+}
+
+.pfc-signoff-label-cell {
+  font-weight: 700;
+  font-size: 11px;
+  white-space: nowrap;
+  background-color: #fff;
+}
+
+.pfc-footer-labels {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 9.5px;
+  color: #475569;
+  font-weight: 600;
+  padding-top: 8px;
+}
+

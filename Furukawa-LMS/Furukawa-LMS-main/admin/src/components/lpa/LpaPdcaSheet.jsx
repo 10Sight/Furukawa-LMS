@@ -418,7 +418,7 @@ export default function LpaPdcaSheet({
       confirmation = row.responsiblePersonConfirmation.trim();
     }
     if (confirmation === 'Not-Confirmed') confirmation = 'Not - Confirmed';
-    const confirmedBy = (row.confirmedBy || '').trim();
+    let confirmedBy = (row.confirmedBy || '').trim();
     const instruction = (row.instruction || '').trim();
 
     const computedStatus = computePDCAStatus({
@@ -427,6 +427,22 @@ export default function LpaPdcaSheet({
       confirmation,
       status: row.status
     }, currentDate);
+
+    const candidateNormalizedRow = {
+      ...row,
+      status: computedStatus,
+      staffEmployee,
+      staffEmployees,
+      staffName,
+      stdDurationMin: row.stdDurationMin ?? row.stdDuration ?? ''
+    };
+    if (confirmation && getMissingConfirmationMandatoryFields(candidateNormalizedRow).length > 0) {
+      confirmation = '';
+      confirmedBy = '';
+    }
+    const cleanedRespConf = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((row.responsiblePersonConfirmation || '').trim()) && !confirmation
+      ? ''
+      : row.responsiblePersonConfirmation;
 
     return {
       ...row,
@@ -448,7 +464,7 @@ export default function LpaPdcaSheet({
       staffId,
       employeeId: staffId,
       stdDurationMin: row.stdDurationMin ?? row.stdDuration ?? '',
-      responsiblePersonConfirmation: confirmation || row.responsiblePersonConfirmation || staffEmployee || ''
+      responsiblePersonConfirmation: confirmation || cleanedRespConf || staffEmployee || ''
     };
   };
 
@@ -465,7 +481,7 @@ export default function LpaPdcaSheet({
   };
   const missingRequiredInputs = rows.flatMap((row, rowIndex) => {
     const missing = [];
-    if (['Not - Confirmed', 'Not-Confirmed'].includes((row.confirmation || '').trim()) && !row.instruction?.trim()) {
+    if (['Not - Confirmed', 'Not-Confirmed'].includes((row.confirmation || '').trim()) && getMissingConfirmationMandatoryFields(row).length === 0 && !row.instruction?.trim()) {
       missing.push({ type: 'confirmation', rowIndex, key: `confirmation:${rowIndex}` });
     }
     if (false && row.responseDate?.trim() && !hasValidStdDuration(row.stdDurationMin ?? row.stdDuration)) {
@@ -731,7 +747,7 @@ export default function LpaPdcaSheet({
         return false;
       }
       const hasConfirmationSelected = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((r.confirmation || '').trim());
-      if (hasConfirmationSelected) {
+      if (false && hasConfirmationSelected) {
         const missingForConf = getMissingConfirmationMandatoryFields(rowForCheck);
         if (missingForConf.length > 0) {
           notify(`Row ${i + 1}: Mandatory column${missingForConf.length > 1 ? 's' : ''} (${missingForConf.join(', ')}) required for Confirmation.`, 'error');
@@ -1556,7 +1572,7 @@ export default function LpaPdcaSheet({
         updatedRow.status = nextStatus;
       } else if (field === 'status') {
         const normStatus = normalizePDCAStatus(value);
-        if (!curr.responseDate && normStatus !== 'Not-Started') {
+        if (false && !curr.responseDate && normStatus !== 'Not-Started') {
           updatedRow.status = 'Not-Started';
           if (typeof showToast === 'function') {
             showToast('Response date is required before updating status.');

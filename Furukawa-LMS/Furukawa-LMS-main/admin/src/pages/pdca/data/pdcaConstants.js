@@ -86,7 +86,7 @@ export const computePDCAStatus = (row = {}, currentDateStr = '') => {
 
   // Rule: If response date is not selected by user, status is Not-Started
   if (!respDate) {
-    return 'Not-Started';
+    return normStatus || 'Not-Started';
   }
 
   const conf = String(row.confirmation || row.responsiblePersonConfirmation || '').trim();

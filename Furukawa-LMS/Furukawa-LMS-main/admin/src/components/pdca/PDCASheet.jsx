@@ -55,7 +55,8 @@ import {
   CONFIRMATION_MANDATORY_COLUMNS,
   SAVE_MANDATORY_COLUMNS,
   isRowStartedForSave,
-  getMissingSaveMandatoryFields
+  getMissingSaveMandatoryFields,
+  isUserInSameDepartmentAsRecord
 } from '../../pages/pdca/data/recordFilters.js';
 import {
   parseStaffEmployee,
@@ -878,13 +879,22 @@ export default function PDCASheet({
   const isCreator = propIsCreator !== undefined
     ? Boolean(propIsCreator)
     : Boolean(topic?.id ? isRecordCreator(topic, effectiveUser) : true);
-  const isCreatorOrAdmin = Boolean(hasFullAccess || !topic?.id || isCreator);
+  // Database-backed employee master records
+  // Database-backed employee master records (initialized above)
+
+  const [dbEmployees, setDbEmployees] = useState(VERIFIED_EMPLOYEE_MASTER);
+  const isSameDepartmentAsSheet = useMemo(
+    () => Boolean(topic?.id && isUserInSameDepartmentAsRecord(topic, authUser || effectiveUser, dbEmployees)),
+    [topic, authUser, effectiveUser, dbEmployees]
+  );
+  const isCreatorOrSameDept = Boolean(isCreator || isSameDepartmentAsSheet);
+  const isCreatorOrAdmin = Boolean(hasFullAccess || !topic?.id || isCreatorOrSameDept);
   const canEditEntireSheet = Boolean(!readOnly && isCreatorOrAdmin);
 
   // Granular capability flags
   const canCreateSheet = Boolean(!readOnly && (hasFullAccess || hasPermission('pdca:create') || hasPermission('pdca:create_sheet') || hasPermission('lpa:create')));
   const canDeleteSheet = Boolean(!readOnly && (hasFullAccess || isCreator || hasPermission('pdca:delete') || hasPermission('pdca:delete_sheet') || hasPermission('lpa:delete')));
-  const canAddRow = Boolean(!readOnly && (hasFullAccess || isCreator || hasPermission('pdca:add_row') || hasPermission('pdca:add_rows') || hasPermission('lpa:pdca_add_row')));
+  const canAddRow = Boolean(!readOnly && (hasFullAccess || isCreatorOrSameDept || hasPermission('pdca:add_row') || hasPermission('pdca:add_rows') || hasPermission('lpa:pdca_add_row')));
   const canDeleteRow = Boolean(!readOnly && (hasFullAccess || isCreator || hasPermission('pdca:delete') || hasPermission('pdca:delete_sheet') || hasPermission('lpa:delete')));
   const canConfirmDefault = Boolean(!readOnly && isCreator);
   const canShowRowActions = Boolean(canEditEntireSheet || canAddRow || canDeleteRow);
@@ -904,7 +914,7 @@ export default function PDCASheet({
   const [staffSearchQuery, setStaffSearchQuery] = useState('');
 
   // Database-backed employee master records
-  const [dbEmployees, setDbEmployees] = useState(VERIFIED_EMPLOYEE_MASTER);
+  // Database-backed employee master records (initialized above)
 
   // Fetch verified employee records from database via metadata API
   useEffect(() => {
@@ -1926,9 +1936,27 @@ export default function PDCASheet({
     }
     if (requireConfirmationReasonBeforeContinuing()) return false;
     // Validate Save Mandatory Columns (Date, Shift, Status, Unit, Department, Observation, Staff Name) for started rows, and Confirmation Mandatory Columns when Confirmation is selected
+    const saverowOpts = { defaultUnit: lpaDefaultUnit, defaultDepartment: lpaDefaultDepartment };
+    const hasAnyStartedRow = rows.some((rowItem) => isRowStartedForSave(rowItem, saverowOpts));
+    if (!hasAnyStartedRow && rows.length > 0) {
+      const missingFirstRow = getMissingSaveMandatoryFields(rows[0]);
+      if (missingFirstRow.length > 0) {
+        setAlertModal({
+          isOpen: true,
+          type: 'mandatory',
+          title: 'Mandatory Columns Required to Save Sheet',
+          rowNumber: 1,
+          missingFields: missingFirstRow,
+          message: `Row 1 has missing mandatory column${missingFirstRow.length > 1 ? 's' : ''} required to save the sheet: ${missingFirstRow.join(', ')}.`,
+          confirmText: "I'll fill them"
+        });
+        showToast(`Row 1: Mandatory column${missingFirstRow.length > 1 ? 's' : ''} (${missingFirstRow.join(', ')}) required to save the sheet.`);
+        return false;
+      }
+    }
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
-      if (!isRowStartedForSave(r)) {
+      if (!isRowStartedForSave(r, { defaultUnit: lpaDefaultUnit, defaultDepartment: lpaDefaultDepartment })) {
         continue;
       }
       const notConfirmed = ['Not - Confirmed', 'Not-Confirmed'].includes((r.confirmation || '').trim()) && getMissingConfirmationMandatoryFields(r).length === 0;
@@ -2035,7 +2063,7 @@ export default function PDCASheet({
 
       // Default unit/date if row has an observation so draft can be safely saved
       if (r.observation?.trim()) {
-        if (!isRowStartedForSave(r)) {
+        if (!isRowStartedForSave(r, { defaultUnit: lpaDefaultUnit, defaultDepartment: lpaDefaultDepartment })) {
         continue;
       }
       const rowForCheck = r.date?.trim() && !r.status?.trim() ? { ...r, status: 'Not-Started' } : r;
@@ -2298,7 +2326,7 @@ export default function PDCASheet({
     }
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
-      if (!isRowStartedForSave(r)) {
+      if (!isRowStartedForSave(r, { defaultUnit: lpaDefaultUnit, defaultDepartment: lpaDefaultDepartment })) {
         continue;
       }
       const rowForCheck = r.date?.trim() && !r.status?.trim() ? { ...r, status: 'Not-Started' } : r;

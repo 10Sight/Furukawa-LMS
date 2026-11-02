@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 import { X, Layers, Check, ChevronDown, AlignLeft, Calendar } from 'lucide-react';
 
 import { PDCA_DEPARTMENTS } from '../../pages/pdca/data/pdcaConstants.js';
+import { findEmployeeDepartment } from '../../pages/pdca/data/pdcaEmployees.js';
 import { createDefaultRows } from '../../pages/pdca/data/pdcaStore.js';
 import CascadingLineAreaSelect from './CascadingLineAreaSelect';
 import { safeRandomUUID } from '../../utils/uuid.js';
@@ -152,6 +153,13 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
       const creatorName = (isEditMode ? formData.createdBy : activeUser?.name) || 'USER';
       const creatorCode = (isEditMode ? formData.employeeId : activeUser?.code) || '';
       const creatorEmail = activeUser?.email || editData?.createdBy?.email || (creatorCode ? `${creatorCode.toLowerCase()}@fme-minda.co.in` : '');
+      const creatorDepartment = activeUser?.department?.name ||
+        (typeof activeUser?.department === 'string' ? activeUser.department : '') ||
+        activeUser?.deptName ||
+        findEmployeeDepartment({ name: creatorName, code: creatorCode }) ||
+        editData?.createdBy?.department ||
+        formData.department ||
+        '';
 
       if (formData.department && !departmentOptions.includes(formData.department)) {
         throw new Error('Please select a Department from the available options.');
@@ -181,6 +189,7 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
             name: creatorName.toUpperCase(),
             code: creatorCode,
             email: creatorEmail,
+            department: creatorDepartment,
             avatarBg: editData.createdBy?.avatarBg || randomAvatarBg,
             initials: getInitials(creatorName || 'NA'),
           },
@@ -203,6 +212,7 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
             name: creatorName.toUpperCase(),
             code: creatorCode,
             email: creatorEmail,
+            department: creatorDepartment,
             avatarBg: randomAvatarBg,
             initials: getInitials(creatorName || 'NA'),
           },

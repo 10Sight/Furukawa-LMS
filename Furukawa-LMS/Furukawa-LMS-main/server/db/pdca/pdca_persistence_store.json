@@ -9559,7 +9559,7 @@
           ],
           "lineAreaId": null,
           "lineAreaCode": "",
-          "lineAreaSectionId": null,
+          "lineAreaSectionId": 122,
           "lineAreas": [],
           "responsiblePersonDept": "PE",
           "imagesBefore": [],
@@ -11456,6 +11456,70 @@
     }
   ],
   "auditLogs": [
+    {
+      "id": 1793609009916,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal",
+      "action": "SAVE_SHEET",
+      "actor": "Joy Dastidar (ST080014)",
+      "details": "Saved sheet with 10 rows",
+      "createdAt": "2026-11-02T08:43:29.916Z"
+    },
+    {
+      "id": 1793609009642,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal",
+      "action": "SAVE_SHEET",
+      "actor": "Joy Dastidar (ST080014)",
+      "details": "Saved sheet with 10 rows",
+      "createdAt": "2026-11-02T08:43:29.642Z"
+    },
+    {
+      "id": 1793608998838,
+      "pdcaRecordId": "PDCA-LPA-ASSEMBLY-Bawal-1793027903395",
+      "action": "SAVE_SHEET",
+      "actor": "Joy Dastidar (ST080014)",
+      "details": "Saved sheet with 10 rows",
+      "createdAt": "2026-11-02T08:43:18.838Z"
+    },
+    {
+      "id": 1793608998533,
+      "pdcaRecordId": "PDCA-LPA-ASSEMBLY-Bawal-1793027903395",
+      "action": "SAVE_SHEET",
+      "actor": "Joy Dastidar (ST080014)",
+      "details": "Saved sheet with 10 rows",
+      "createdAt": "2026-11-02T08:43:18.533Z"
+    },
+    {
+      "id": 1793608992030,
+      "pdcaRecordId": "PDCA-LPA-ASSEMBLY-Bawal-1793027903395",
+      "action": "SAVE_SHEET",
+      "actor": "Joy Dastidar (ST080014)",
+      "details": "Saved sheet with 10 rows",
+      "createdAt": "2026-11-02T08:43:12.030Z"
+    },
+    {
+      "id": 1793608991677,
+      "pdcaRecordId": "PDCA-LPA-ASSEMBLY-Bawal-1793027903395",
+      "action": "SAVE_SHEET",
+      "actor": "Joy Dastidar (ST080014)",
+      "details": "Saved sheet with 10 rows",
+      "createdAt": "2026-11-02T08:43:11.677Z"
+    },
+    {
+      "id": 1793608990391,
+      "pdcaRecordId": "PDCA-LPA-ASSEMBLY-Bawal-1793027903395",
+      "action": "SAVE_SHEET",
+      "actor": "Joy Dastidar (ST080014)",
+      "details": "Saved sheet with 10 rows",
+      "createdAt": "2026-11-02T08:43:10.391Z"
+    },
+    {
+      "id": 1793608990116,
+      "pdcaRecordId": "PDCA-LPA-ASSEMBLY-Bawal-1793027903395",
+      "action": "SAVE_SHEET",
+      "actor": "Joy Dastidar (ST080014)",
+      "details": "Saved sheet with 10 rows",
+      "createdAt": "2026-11-02T08:43:10.116Z"
+    },
     {
       "id": 1793186595129,
       "pdcaRecordId": "PDCA-LPA-ASSEMBLY-Bawal-1793027903395",

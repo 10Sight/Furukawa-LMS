@@ -20,7 +20,7 @@ import CreateLpaModal from '../../components/lpa/CreateLpaModal';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import { PDCAProvider } from '../pdca/context/PDCAContext';
 import { getLpaPdcaTopic, saveLpaPdcaSnapshot, extractObservationsFromSheet, createEmptyPdcaRow, getWorksheetScore, getWorksheetScoresList } from './lpaPdcaUtils';
-import { isRecordCreator, canEditRecord, resolvePDCASheetRows, getPDCASheetStatusSummary } from '@pages/pdca/data/recordFilters.js';
+import { isRecordCreator, isUserInSameDepartmentAsRecord, canEditRecord, resolvePDCASheetRows, getPDCASheetStatusSummary } from '@pages/pdca/data/recordFilters.js';
 import LpaTable from '../../components/lpa/LpaTable';
 import LpaGraphSection from '../../components/lpa/LpaGraphSection';
 import { matchesLpaDateRange, normalizeLpaDate } from './lpaDateFilters.js';
@@ -1046,6 +1046,7 @@ function LpaPageContent({ viewContext }) {
       section: activeSection,
       scope: 'Company',
       plant: sheetItem.unit || selectedUnit || 'Bawal',
+      department: sheetItem.department || sheetData?.department || (activeSection === 'cc' ? 'C&C' : 'Assembly'),
       createdBy: sheetItem.createdBy || sheetData?.createdBy,
       createdById: sheetItem.createdById || sheetData?.createdById,
       sheet: sheetData
@@ -1099,7 +1100,8 @@ function LpaPageContent({ viewContext }) {
         id: effectiveAuthUser.id || effectiveAuthUser._id,
         name: effectiveAuthUser.name || effectiveAuthUser.userName,
         code: effectiveAuthUser.code || effectiveAuthUser.empCode,
-        userName: effectiveAuthUser.userName
+        userName: effectiveAuthUser.userName,
+        department: effectiveAuthUser?.department?.name || (typeof effectiveAuthUser?.department === 'string' ? effectiveAuthUser.department : '') || effectiveAuthUser?.deptName || newPdcaForm.department || (activeSection === 'assembly' ? 'Assembly' : 'C&C')
       } : {
         id: 'user_anonymous',
         name: 'User',
@@ -1281,6 +1283,7 @@ function LpaPageContent({ viewContext }) {
       topic: `${secName} - LPA Observation (PDCA)`,
       scope: 'Company',
       plant: record.unit || selectedUnit || 'Bawal',
+      department: record.department || secName,
       createdBy: record.createdBy,
       createdById: record.createdById,
       sheet: loadedSheet

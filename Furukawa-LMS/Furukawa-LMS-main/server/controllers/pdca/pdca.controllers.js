@@ -43,6 +43,7 @@ export const getAuthenticatedUser = (req) => {
                 userName: name || code,
                 fullName: name || code,
                 email: creator?.email || '',
+                department: req.headers?.['x-user-department'] || creator?.department || '',
                 role: "EMPLOYEE",
                 isAdmin: false
             };
@@ -111,6 +112,85 @@ export const isUserCreatorOfRecord = (user, record) => {
     return false;
 };
 
+const SERVER_EMPLOYEE_DEPT_LOOKUP = [
+    { code: 'AS081213', name: 'Yogesh Kumar', department: 'PE' },
+    { code: 'GJ034112', name: 'Vikram Singh', department: 'PE' },
+    { code: 'GJ045819', name: 'Deepak Mehta', department: 'Quality' },
+    { code: 'BW051211', name: 'Ramesh Sharma', department: 'Quality' },
+    { code: 'BW051212', name: 'Suresh Patel', department: 'Quality' },
+    { code: 'BW061211', name: 'Anil Verma', department: 'C&C' },
+    { code: 'BW061212', name: 'Sunil Kumar', department: 'C&C' },
+    { code: 'GJ071211', name: 'Karan Patel', department: 'IT' },
+    { code: 'GJ071212', name: 'Neha Shah', department: 'IT' },
+    { code: 'GJ018442', name: 'Priya Nair', department: 'HR' },
+    { code: 'GJ081211', name: 'Rohit Mehta', department: 'HR' },
+    { code: 'BW041920', name: 'Rahul Sharma', department: 'Assembly' },
+    { code: 'BW081290', name: 'Rajesh Kumar', department: 'Maintenance' },
+    { code: 'BW039182', name: 'Pooja Nair', department: 'Maintenance' },
+    { code: 'GJ092311', name: 'Amit Patel', department: 'Safety' },
+    { code: 'BW092301', name: 'Manish Joshi', department: 'Maintenance' },
+    { code: 'ST080014', name: 'Joy Dastidar', department: 'D&D' },
+    { code: 'BW019283', name: 'Sanjeev Verma', department: 'Store' },
+    { code: 'GJ058291', name: 'Anita Deshmukh', department: 'IT' }
+];
+
+const lookupEmployeeDept = (person) => {
+    if (!person) return '';
+    const code = String(person.code || person.empId || person.employeeId || person.userName || '').trim().toUpperCase();
+    const name = String(person.fullName || person.name || '').replace(/\s*\([^)]*\)/g, '').trim().toLowerCase();
+    if (code) {
+        const byCode = SERVER_EMPLOYEE_DEPT_LOOKUP.find(e => e.code.toUpperCase() === code);
+        if (byCode) return byCode.department;
+    }
+    if (name) {
+        const byName = SERVER_EMPLOYEE_DEPT_LOOKUP.find(e => e.name.toLowerCase() === name);
+        if (byName) return byName.department;
+    }
+    return '';
+};
+
+export const isUserInSameDepartmentAsRecord = (user, record) => {
+    if (!user || !record) return false;
+    const norm = (v) => {
+        if (!v) return '';
+        if (typeof v === 'object') return norm(v.name || v.department || v.deptName || '');
+        const s = String(v).trim().toLowerCase();
+        return s && s !== 'cft' ? s : '';
+    };
+    const userDepts = new Set();
+    [user.deptName, user.department, user.departmentName, ...(Array.isArray(user.departments) ? user.departments : []), lookupEmployeeDept(user)]
+        .forEach(d => {
+            if (!d) return;
+            String(typeof d === 'object' ? (d.name || d.department || '') : d).split(/[,;]/).forEach(part => {
+                const n = norm(part);
+                if (n) userDepts.add(n);
+            });
+        });
+    if (userDepts.size === 0) return false;
+
+    const recordDepts = new Set();
+    const createdBy = record.createdBy || record.sheet?.createdBy;
+    [
+        record.department,
+        record.sheet?.department,
+        createdBy?.department,
+        createdBy?.deptName,
+        lookupEmployeeDept(createdBy)
+    ].forEach(d => {
+        if (!d) return;
+        String(typeof d === 'object' ? (d.name || d.department || '') : d).split(/[,;]/).forEach(part => {
+            const n = norm(part);
+            if (n) recordDepts.add(n);
+        });
+    });
+    if (recordDepts.size === 0) return false;
+
+    for (const ud of userDepts) {
+        if (recordDepts.has(ud)) return true;
+    }
+    return false;
+};
+
 // Helper to determine if an authenticated user is assigned as responsible staff in any PDCA row
 export const isUserResponsibleStaff = (user, rows) => {
     if (!user || !Array.isArray(rows)) return false;
@@ -169,6 +249,7 @@ export const createPDCARecord = asyncHandler(async (req, res) => {
         code: creatorCode,
         name: user.fullName || user.userName,
         email: user.email || '',
+        department: user.department?.name || (typeof user.department === 'string' ? user.department : '') || user.deptName || lookupEmployeeDept(user) || req.body?.createdBy?.department || req.body?.department || '',
         avatarBg: req.body?.createdBy?.avatarBg || 'bg-blue-100 text-blue-700',
         initials: req.body?.createdBy?.initials || (user.fullName ? user.fullName.split(' ').map(n => n[0]).join('') : 'U')
     };
@@ -313,12 +394,13 @@ export const savePDCASheet = asyncHandler(async (req, res) => {
     let record = await PDCAModel.findByRecordId(id);
     if (record) {
         const isCreator = isUserCreatorOfRecord(user, record);
+        const isSameDepartment = isUserInSameDepartmentAsRecord(user, record);
         const isAdmin = Boolean(user.isAdmin || user.role === 'ADMIN' || user.role === 'SUPERADMIN');
         const existingRows = record.sheet?.rows || record.rows || [];
         const incomingRows = Array.isArray(req.body?.rows) ? req.body.rows : (req.body?.sheetData || []);
         const isResponsible = isUserResponsibleStaff(user, existingRows) || isUserResponsibleStaff(user, incomingRows);
 
-        if (!isCreator && !isAdmin && !isResponsible) {
+        if (!isCreator && !isSameDepartment && !isAdmin && !isResponsible) {
             throw new ApiError("Forbidden: Only the employee who created this PDCA record or assigned responsible staff can edit its sheet", 403);
         }
     } else {
@@ -424,6 +506,7 @@ export const createCFTTopic = asyncHandler(async (req, res) => {
         code: creatorCode,
         name: user.fullName || user.userName,
         email: user.email || '',
+        department: user.department?.name || (typeof user.department === 'string' ? user.department : '') || user.deptName || lookupEmployeeDept(user) || req.body?.createdBy?.department || req.body?.department || '',
         avatarBg: req.body?.createdBy?.avatarBg || 'bg-emerald-100 text-emerald-700',
         initials: req.body?.createdBy?.initials || (user.fullName ? user.fullName.split(' ').map(n => n[0]).join('') : 'U')
     };

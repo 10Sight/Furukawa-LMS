@@ -24,8 +24,6 @@ const DATE_RANGES = [
   { key: 'all', label: 'All Recorded Dates' }
 ];
 
-const ASSEMBLY_LINE_COLOR = '#e11d48';
-const CC_LINE_COLOR = '#f59e0b';
 const VIEWPORT_WIDTH = 800;
 
 const escapeHtml = (str) => String(str ?? '')
@@ -85,7 +83,8 @@ export default function LpaPerformanceChartCard({
   const isBoth = activeTab === 'both';
   const hasData = slots.length > 0;
 
-  const slotWidth = isBoth ? 110 : 90;
+  // Wide enough that a "100%" label fits above each of the 3 bars
+  const slotWidth = isBoth ? 140 : 130;
   const needsScroll = slots.length * slotWidth > VIEWPORT_WIDTH;
 
   const chartOptions = useMemo(() => {
@@ -104,13 +103,6 @@ export default function LpaPerformanceChartCard({
         .filter(v => v !== null)
         .map(value => ({ value, width: 1, dashStyle: 'Dash', color: '#cbd5e1', zIndex: 3 }))
       : [];
-
-    const lineDataLabels = (color) => ({
-      enabled: true,
-      formatter() { return this.y != null ? `${this.y}%` : ''; },
-      style: { fontSize: '11px', fontWeight: '800', color, textOutline: '2px white' },
-      y: -6
-    });
 
     return {
       chart: {
@@ -217,12 +209,15 @@ export default function LpaPerformanceChartCard({
           borderWidth: 0,
           pointPadding: 0.08,
           groupPadding: 0.18,
-          maxPointWidth: 28
-        },
-        line: {
-          connectNulls: true,
-          lineWidth: 3,
-          marker: { enabled: true, radius: 5, fillColor: '#ffffff', lineWidth: 2.5, lineColor: null }
+          maxPointWidth: 28,
+          dataLabels: {
+            enabled: true,
+            inside: false,
+            crop: false,
+            overflow: 'allow',
+            formatter() { return this.y != null ? `${this.y}%` : ''; },
+            style: { fontSize: '10px', fontWeight: '800', color: '#334155', textOutline: '2px white' }
+          }
         }
       },
       responsive: {
@@ -237,30 +232,10 @@ export default function LpaPerformanceChartCard({
       series: [
         { type: 'column', name: 'Level 3 Score (%)', color: COLORS.level3, data: slots.map(s => s.level3Score) },
         { type: 'column', name: 'Level 2 Score (%)', color: COLORS.level2, data: slots.map(s => s.level2Score) },
-        { type: 'column', name: 'Level 1 Score (%)', color: COLORS.level1, data: slots.map(s => s.level1Score) },
-        {
-          type: 'line',
-          name: 'Assembly Overall (%)',
-          color: ASSEMBLY_LINE_COLOR,
-          data: slots.map(s => s.assemblyAvg),
-          dataLabels: lineDataLabels(ASSEMBLY_LINE_COLOR),
-          visible: activeTab !== 'cc',
-          showInLegend: activeTab !== 'cc',
-          zIndex: 5
-        },
-        {
-          type: 'line',
-          name: 'C&C Overall (%)',
-          color: CC_LINE_COLOR,
-          data: slots.map(s => s.ccAvg),
-          dataLabels: lineDataLabels(CC_LINE_COLOR),
-          visible: activeTab !== 'assembly',
-          showInLegend: activeTab !== 'assembly',
-          zIndex: 5
-        }
+        { type: 'column', name: 'Level 1 Score (%)', color: COLORS.level1, data: slots.map(s => s.level1Score) }
       ]
     };
-  }, [slots, isBoth, activeTab, needsScroll, slotWidth, targetBenchmark]);
+  }, [slots, isBoth, needsScroll, slotWidth, targetBenchmark]);
 
   return (
     <Card className="rounded-2xl border-slate-200/80 bg-white">

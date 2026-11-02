@@ -10,6 +10,7 @@ import LpaPerformanceChartCard from './LpaPerformanceChartCard.jsx';
 
 const DEFAULT_TARGET = 85;
 const DEFAULT_DATE_RANGE = '30d';
+const DEFAULT_TAB = 'assembly';
 
 /**
  * LPA Analytics & Performance Graph shown inline on the LPA page.
@@ -19,7 +20,7 @@ const DEFAULT_DATE_RANGE = '30d';
 export default function LpaGraphSection({ records = [], loading = false, selectedUnit, isAdmin = false }) {
   const [isVisible, setIsVisible] = useState(true);
   const [dateRange, setDateRange] = useState(DEFAULT_DATE_RANGE); // '7d' | '14d' | '30d' | 'month' | 'all'
-  const [activeTab, setActiveTab] = useState('both'); // 'both' | 'assembly' | 'cc'
+  const [activeTab, setActiveTab] = useState(DEFAULT_TAB); // 'both' | 'assembly' | 'cc'
 
   // Target Benchmark line settable by Admin
   const [targetBenchmark, setTargetBenchmark] = useState(() => {
@@ -71,7 +72,7 @@ export default function LpaGraphSection({ records = [], loading = false, selecte
 
   const handleResetFilters = () => {
     setDateRange(DEFAULT_DATE_RANGE);
-    setActiveTab('both');
+    setActiveTab(DEFAULT_TAB);
   };
 
   if (!isVisible) {

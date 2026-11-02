@@ -1,4 +1,5 @@
 import { PDCA_DEPARTMENTS, PDCA_SHEET_TABLE_STATUSES, isActivePDCARow, getEffectivePDCARowStatus, resolvePDCASheetRows, getPDCASheetStatusSummary } from './pdcaConstants.js';
+import { findEmployeeDepartment, VERIFIED_EMPLOYEE_MASTER } from './pdcaEmployees.js';
 export { PDCA_DEPARTMENTS, PDCA_SHEET_TABLE_STATUSES, isActivePDCARow, getEffectivePDCARowStatus, resolvePDCASheetRows, getPDCASheetStatusSummary };
 export const PDCA_PLANTS = ['Bawal', 'Gujrat'];
 export const ALL_UNITS_OPTION = 'All Unit';
@@ -170,7 +171,113 @@ export function isRecordCreator(record, currentUser) {
   return false;
 }
 
-export function canEditRecord(record, currentUser) {
+function normalizeDepartmentName(dept) {
+  if (!dept) return '';
+  if (typeof dept === 'object') {
+    return normalizeDepartmentName(dept.name || dept.department || dept.deptName || '');
+  }
+  const trimmed = String(dept).trim();
+  if (!trimmed || trimmed.toLowerCase() === 'cft') return '';
+  return trimmed.toLowerCase();
+}
+
+export function getUserDepartments(user, employeeDatabase = VERIFIED_EMPLOYEE_MASTER) {
+  if (!user || typeof user !== 'object') return [];
+  const depts = new Set();
+  const addDept = (val) => {
+    if (!val) return;
+    if (Array.isArray(val)) {
+      val.forEach(addDept);
+      return;
+    }
+    if (typeof val === 'object') {
+      addDept(val.name || val.department || val.deptName || val.label || '');
+      return;
+    }
+    String(val).split(/[,;]/).forEach(part => {
+      const norm = normalizeDepartmentName(part);
+      if (norm) depts.add(norm);
+    });
+  };
+
+  addDept(user.deptName);
+  addDept(user.department);
+  addDept(user.departmentName);
+  addDept(user.departments);
+
+  const userName = user.name || user.fullName || '';
+  const userCode = user.code || user.empId || user.employeeId || user.empCode || user.userName || '';
+  if (userName || userCode) {
+    const dbDept = findEmployeeDepartment({ name: userName, code: userCode }, employeeDatabase) ||
+      findEmployeeDepartment({ name: userName, code: userCode }, VERIFIED_EMPLOYEE_MASTER);
+    addDept(dbDept);
+  }
+
+  return Array.from(depts);
+}
+
+export function getRecordDepartments(record, employeeDatabase = VERIFIED_EMPLOYEE_MASTER) {
+  if (!record || typeof record !== 'object') return [];
+  const depts = new Set();
+  const addDept = (val) => {
+    if (!val) return;
+    if (Array.isArray(val)) {
+      val.forEach(addDept);
+      return;
+    }
+    if (typeof val === 'object') {
+      addDept(val.name || val.department || val.deptName || val.label || '');
+      return;
+    }
+    String(val).split(/[,;]/).forEach(part => {
+      const norm = normalizeDepartmentName(part);
+      if (norm) depts.add(norm);
+    });
+  };
+
+  addDept(record.department);
+  addDept(record.departments);
+  addDept(record.sheet?.department);
+
+  const createdBy = record.createdBy || record.sheet?.createdBy;
+  if (createdBy && typeof createdBy === 'object') {
+    addDept(createdBy.department);
+    addDept(createdBy.deptName);
+    addDept(createdBy.departmentName);
+    addDept(createdBy.departments);
+    const creatorName = createdBy.name || createdBy.fullName || '';
+    const creatorCode = createdBy.code || createdBy.empId || createdBy.employeeId || createdBy.empCode || createdBy.userName || '';
+    if (creatorName || creatorCode) {
+      const dbDept = findEmployeeDepartment({ name: creatorName, code: creatorCode }, employeeDatabase) ||
+        findEmployeeDepartment({ name: creatorName, code: creatorCode }, VERIFIED_EMPLOYEE_MASTER);
+      addDept(dbDept);
+    }
+  } else if (typeof createdBy === 'string' && createdBy.trim()) {
+    const dbDept = findEmployeeDepartment(createdBy, employeeDatabase) ||
+      findEmployeeDepartment(createdBy, VERIFIED_EMPLOYEE_MASTER);
+    addDept(dbDept);
+  }
+
+  const preparedBy = record.sheet?.headerInfo?.preparedBy;
+  if (preparedBy && typeof preparedBy === 'string' && preparedBy.trim()) {
+    const dbDept = findEmployeeDepartment(preparedBy, employeeDatabase) ||
+      findEmployeeDepartment(preparedBy, VERIFIED_EMPLOYEE_MASTER);
+    addDept(dbDept);
+  }
+
+  return Array.from(depts);
+}
+
+export function isUserInSameDepartmentAsRecord(record, currentUser, employeeDatabase = VERIFIED_EMPLOYEE_MASTER) {
+  if (!record || !currentUser) return false;
+  const userDepts = getUserDepartments(currentUser, employeeDatabase);
+  if (userDepts.length === 0) return false;
+  const recordDepts = getRecordDepartments(record, employeeDatabase);
+  if (recordDepts.length === 0) return false;
+  return userDepts.some(ud => recordDepts.includes(ud));
+}
+
+export function canEditRecord(record, currentUser, employeeDatabase = VERIFIED_EMPLOYEE_MASTER) {
   if (!record || !currentUser) return false;
   const isAdmin = Boolean(
     currentUser?.isAdmin ||
@@ -179,7 +286,7 @@ export function canEditRecord(record, currentUser) {
     String(currentUser?.role || '').toUpperCase() === 'SUPERADMIN'
   );
   if (isAdmin) return true;
-  return isRecordCreator(record, currentUser);
+  return isRecordCreator(record, currentUser) || isUserInSameDepartmentAsRecord(record, currentUser, employeeDatabase);
 }
 
 export const EDITABLE_RESPONSIBLE_COLUMNS = [
@@ -205,19 +312,52 @@ export const SAVE_MANDATORY_COLUMNS = [
   'Staff Name'
 ];
 
-export function isRowStartedForSave(row) {
+export function isRowStartedForSave(row, options = {}) {
   if (!row || typeof row !== 'object') return false;
+  const defaultUnit = String(options.defaultUnit || '').trim().toLowerCase();
+  const defaultDept = String(options.defaultDepartment || '').trim().toLowerCase();
+
+  const rowUnits = [
+    row.unit,
+    ...(Array.isArray(row.units) ? row.units : [])
+  ].map(u => String(u || '').trim()).filter(Boolean);
+  const hasUserUnit = rowUnits.some(u => u.toLowerCase() !== defaultUnit);
+
+  const rowDepts = [
+    row.department,
+    ...(Array.isArray(row.departments) ? row.departments : [])
+  ].map(d => String(d || '').trim()).filter(Boolean);
+  const hasUserDept = rowDepts.some(d => d.toLowerCase() !== defaultDept);
+
+  const respDepts = row.respDeptsByUnit && typeof row.respDeptsByUnit === 'object'
+    ? Object.values(row.respDeptsByUnit).flat().map(d => String(d || '').trim()).filter(Boolean)
+    : [];
+
   return Boolean(
     String(row.date || '').trim() ||
     String(row.shift || '').trim() ||
+    String(row.status || '').trim() ||
+    hasUserUnit ||
+    hasUserDept ||
+    String(row.section || '').trim() ||
+    (Array.isArray(row.sections) && row.sections.some(s => String(s?.section || s || '').trim())) ||
+    String(row.lineArea || '').trim() ||
+    (Array.isArray(row.lineAreas) && row.lineAreas.some(l => String(l?.lineArea || l || '').trim())) ||
     String(row.observation || '').trim() ||
     String(row.rootCause || '').trim() ||
     String(row.actionTaken ?? row.correctiveAction ?? '').trim() ||
     String(row.counterMeasure || '').trim() ||
+    String(row.stdDurationMin ?? row.stdDuration ?? '').trim() ||
     String(row.responseDate || '').trim() ||
+    String(row.respUnit || row.responsiblePersonUnit || '').trim() ||
+    (Array.isArray(row.respUnits) && row.respUnits.some(u => String(u || '').trim())) ||
+    String(row.responsiblePersonDept || row.respDept || '').trim() ||
+    respDepts.length > 0 ||
     String(row.staffName || row.staffEmployee || '').trim() ||
     (Array.isArray(row.staffEmployees) && row.staffEmployees.some(e => String(e?.name || e?.fullName || '').trim())) ||
+    String(row.cftTopic || '').trim() ||
     String(row.confirmation || '').trim() ||
+    String(row.instruction || '').trim() ||
     (Array.isArray(row.imagesBefore) && row.imagesBefore.length > 0) ||
     Boolean(row.imageBefore) ||
     (Array.isArray(row.imagesAfter) && row.imagesAfter.length > 0) ||
@@ -563,7 +703,7 @@ export function isUserResponsibleForAnyRow(rows, user) {
   return rows.some(r => isUserInResponsibleDepartment(r, user));
 }
 
-export function canUserEditPDCARow(row, user, record, targetColumn = null) {
+export function canUserEditPDCARow(row, user, record, targetColumn = null, employeeDatabase = VERIFIED_EMPLOYEE_MASTER) {
   if (!user) {
     if (targetColumn) return false;
     return { canEditEntireRow: false, canEditActionCols: false };
@@ -581,7 +721,7 @@ export function canUserEditPDCARow(row, user, record, targetColumn = null) {
     if (targetColumn) return true;
     return { canEditEntireRow: true, canEditActionCols: true };
   }
-  if (record && isRecordCreator(record, user)) {
+  if (record && (isRecordCreator(record, user) || isUserInSameDepartmentAsRecord(record, user, employeeDatabase))) {
     if (targetColumn) return true;
     return { canEditEntireRow: true, canEditActionCols: true };
   }

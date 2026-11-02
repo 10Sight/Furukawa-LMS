@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { EDITABLE_RESPONSIBLE_COLUMNS, isUserInResponsibleDepartment, canUserEditPDCARow, PDCA_SHEET_TABLE_STATUSES, getPDCASheetStatusSummary, SAVE_MANDATORY_COLUMNS, CONFIRMATION_MANDATORY_COLUMNS, isRowStartedForSave, getMissingSaveMandatoryFields, getMissingConfirmationMandatoryFields } from './recordFilters.js';
+import { EDITABLE_RESPONSIBLE_COLUMNS, isUserInResponsibleDepartment, canUserEditPDCARow, canEditRecord, isUserInSameDepartmentAsRecord, PDCA_SHEET_TABLE_STATUSES, getPDCASheetStatusSummary, SAVE_MANDATORY_COLUMNS, CONFIRMATION_MANDATORY_COLUMNS, isRowStartedForSave, getMissingSaveMandatoryFields, getMissingConfirmationMandatoryFields } from './recordFilters.js';
 import { normalizePDCAStatus, getDepartmentsForUnit, UNIT_DEPARTMENT_MAPPING } from './pdcaConstants.js';
 import { createEmptyPdcaRow } from '../../lpa/lpaPdcaUtils.js';
 
@@ -584,7 +584,7 @@ test('16. Separate Save Mandatory Columns (7) from Confirmation Mandatory Column
     observation: '',
     staffName: ''
   };
-  assert.equal(isRowStartedForSave(blankDefaultRow), false, 'Untouched default row should be skipped during save validation');
+  assert.equal(isRowStartedForSave(blankDefaultRow, { defaultUnit: 'Bawal', defaultDepartment: 'Assembly' }), false, 'Untouched default row should be skipped during save validation');
 
   // Row with ONLY the 7 Save Mandatory Columns filled (and WITHOUT Root Cause, Corrective action, Counter Measure, Std. Duration in Min, Response date)
   const saveOnlyRow = {
@@ -632,4 +632,70 @@ test('16. Separate Save Mandatory Columns (7) from Confirmation Mandatory Column
     const missingSave = getMissingSaveMandatoryFields(incompleteSaveRow);
     assert.ok(missingSave.includes(label), `Missing Save Mandatory Column "${label}" must be reported (got: ${missingSave.join(', ')})`);
   }
+});
+
+test('17. Same-department users have full access to edit the whole PDCA Sheet, while Confirmation dropdown remains restricted to sheet creator', () => {
+  const qualityCreator = {
+    id: 'u-qa-1',
+    code: 'BW051211',
+    name: 'Ramesh Sharma',
+    department: 'Quality',
+    role: 'EMPLOYEE'
+  };
+  const qualityColleague = {
+    id: 'u-qa-2',
+    code: 'BW051212',
+    name: 'Suresh Patel',
+    department: 'Quality',
+    role: 'EMPLOYEE'
+  };
+  const maintenanceUser = {
+    id: 'u-maint-1',
+    code: 'BW081290',
+    name: 'Rajesh Kumar',
+    department: 'Maintenance',
+    role: 'EMPLOYEE'
+  };
+
+  const qualitySheetRecord = {
+    id: 'PDCA-QUALITY-01',
+    topic: 'Quality Audit PDCA',
+    department: 'Quality',
+    createdBy: {
+      id: 'u-qa-1',
+      code: 'BW051211',
+      name: 'Ramesh Sharma',
+      department: 'Quality'
+    },
+    createdById: 'u-qa-1'
+  };
+
+  const sampleRow = {
+    date: '2026-11-02',
+    shift: 'A',
+    status: 'In- Progress',
+    unit: 'Bawal',
+    department: 'Quality',
+    observation: 'Inspection gauge calibration check',
+    staffName: 'Rajesh Kumar'
+  };
+
+  // Same-department user (Quality) matches the Quality sheet
+  assert.equal(isUserInSameDepartmentAsRecord(qualitySheetRecord, qualityColleague), true);
+  assert.equal(canEditRecord(qualitySheetRecord, qualityColleague), true);
+
+  // Same-department user gets full row & action column edit access across the whole sheet
+  const colleaguePerms = canUserEditPDCARow(sampleRow, qualityColleague, qualitySheetRecord);
+  assert.deepEqual(colleaguePerms, { canEditEntireRow: true, canEditActionCols: true });
+  assert.equal(canUserEditPDCARow(sampleRow, qualityColleague, qualitySheetRecord, 'observation'), true);
+  assert.equal(canUserEditPDCARow(sampleRow, qualityColleague, qualitySheetRecord, 'rootCause'), true);
+
+  // Confirmation dropdown remains restricted strictly to the sheet creator
+  assert.equal(canUserEditPDCARow(sampleRow, qualityCreator, qualitySheetRecord, 'confirmation'), true);
+  assert.equal(canUserEditPDCARow(sampleRow, qualityColleague, qualitySheetRecord, 'confirmation'), false);
+
+  // Different-department user (Maintenance) is NOT in same department as the sheet
+  assert.equal(isUserInSameDepartmentAsRecord(qualitySheetRecord, maintenanceUser), false);
+  const diffDeptPerms = canUserEditPDCARow({ ...sampleRow, staffName: 'Other Person' }, maintenanceUser, qualitySheetRecord);
+  assert.deepEqual(diffDeptPerms, { canEditEntireRow: false, canEditActionCols: false });
 });

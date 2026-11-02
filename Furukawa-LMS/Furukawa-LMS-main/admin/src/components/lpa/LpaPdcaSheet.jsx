@@ -46,7 +46,8 @@ import {
   getMissingConfirmationMandatoryFields,
   SAVE_MANDATORY_COLUMNS,
   isRowStartedForSave,
-  getMissingSaveMandatoryFields
+  getMissingSaveMandatoryFields,
+  isUserInSameDepartmentAsRecord
 } from '../../pages/pdca/data/recordFilters.js';
 import { parseStaffEmployee, findEmployeeDepartment, stripEmployeeId, VERIFIED_EMPLOYEE_MASTER } from '../../pages/pdca/data/pdcaEmployees.js';
 import SearchableLineAreaSelect, { getCachedDbSections } from '../pdca/SearchableLineAreaSelect';
@@ -322,7 +323,14 @@ export default function LpaPdcaSheet({
   const isCreator = propIsCreator !== undefined
     ? Boolean(propIsCreator)
     : Boolean(topic?.id ? isRecordCreator(topic, effectiveUser) : true);
-  const isCreatorOrAdmin = Boolean(isAdmin || !topic?.id || isCreator);
+  // Database-backed employee master records (initialized above)
+  const [dbEmployees, setDbEmployees] = useState(VERIFIED_EMPLOYEE_MASTER);
+  const isSameDepartmentAsSheet = useMemo(
+    () => Boolean(topic?.id && isUserInSameDepartmentAsRecord(topic, effectiveUser, dbEmployees)),
+    [topic, effectiveUser, dbEmployees]
+  );
+  const isCreatorOrSameDept = Boolean(isCreator || isSameDepartmentAsSheet);
+  const isCreatorOrAdmin = Boolean(isAdmin || !topic?.id || isCreatorOrSameDept);
   const canEditEntireSheet = Boolean(!readOnly && isCreatorOrAdmin);
 
   const cftAssignedMembers = topic?.assignedMembers || [];
@@ -341,7 +349,7 @@ export default function LpaPdcaSheet({
   const [staffSearchQuery, setStaffSearchQuery] = useState('');
 
   // Database-backed employee master records
-  const [dbEmployees, setDbEmployees] = useState(VERIFIED_EMPLOYEE_MASTER);
+  // Database-backed employee master records (initialized above)
   const [isSendMailOpen, setIsSendMailOpen] = useState(false);
   const [showMonthlyGraph, setShowMonthlyGraph] = useState(false);
 
@@ -732,6 +740,14 @@ export default function LpaPdcaSheet({
     if (requireConfirmationReasonBeforeContinuing()) return false;
 
     // Validate Save Mandatory Columns (Date, Shift, Status, Unit, Department, Observation, Staff Name) for started rows, and Confirmation Mandatory Columns when Confirmation is selected
+    const hasAnyStartedRow = rows.some((rowItem) => isRowStartedForSave(rowItem));
+    if (!hasAnyStartedRow && rows.length > 0) {
+      const missingFirstRow = getMissingSaveMandatoryFields(rows[0]);
+      if (missingFirstRow.length > 0) {
+        notify(`Row 1: Mandatory column${missingFirstRow.length > 1 ? 's' : ''} (${missingFirstRow.join(', ')}) required to save the sheet.`, 'error');
+        return false;
+      }
+    }
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
       if (!isRowStartedForSave(r)) {
@@ -1574,7 +1590,8 @@ export default function LpaPdcaSheet({
         const normStatus = normalizePDCAStatus(value);
         if (false && !curr.responseDate && normStatus !== 'Not-Started') {
           updatedRow.status = 'Not-Started';
-          if (typeof showToast === 'function') {
+          /* status warning */
+        if (typeof showToast === 'function') {
             showToast('Response date is required before updating status.');
           }
         } else {
@@ -1597,8 +1614,10 @@ export default function LpaPdcaSheet({
     if (isSelectingConfirmation && targetRow) {
       const missing = getMissingConfirmationMandatoryFields(targetRow);
       if (missing.length > 0) {
+        notify(`Row ${rowIndex + 1}: Mandatory column${missing.length > 1 ? 's' : ''} (${missing.join(', ')}) required to select Confirmation.`, 'error');
         if (typeof showToast === 'function') {
-          showToast(`Row ${rowIndex + 1}: Mandatory column${missing.length > 1 ? 's' : ''} (${missing.join(', ')}) required to select Confirmation.`);
+        notify(`Row ${rowIndex + 1}: Mandatory column${missing.length > 1 ? 's' : ''} (${missing.join(', ')}) required to select Confirmation.`, 'error');
+        showToast(`Row ${rowIndex + 1}: Mandatory column${missing.length > 1 ? 's' : ''} (${missing.join(', ')}) required to select Confirmation.`);
         }
         return false;
       }

@@ -20,7 +20,7 @@ import CreateLpaModal from '../../components/lpa/CreateLpaModal';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import { PDCAProvider } from '../pdca/context/PDCAContext';
 import { getLpaPdcaTopic, saveLpaPdcaSnapshot, extractObservationsFromSheet, createEmptyPdcaRow, getWorksheetScore, getWorksheetScoresList } from './lpaPdcaUtils';
-import { isRecordCreator, canEditRecord } from '@pages/pdca/data/recordFilters.js';
+import { isRecordCreator, canEditRecord, resolvePDCASheetRows, getPDCASheetStatusSummary } from '@pages/pdca/data/recordFilters.js';
 import LpaTable from '../../components/lpa/LpaTable';
 import { matchesLpaDateRange, normalizeLpaDate } from './lpaDateFilters.js';
 
@@ -1637,7 +1637,33 @@ function LpaPageContent({ viewContext }) {
                                 )}
                               </td>
                               <td className="px-4 py-4 text-slate-700">
-                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <div className="grid grid-cols-2 gap-1.5 min-w-[210px] max-w-[240px]">
+                                  {(() => {
+                                    const resolvedRows = resolvePDCASheetRows(sh, rows.length > 0 ? rows : (sh.isDefault ? (pdcaTopic?.sheet?.rows || []) : []));
+                                    const statusSummary = getPDCASheetStatusSummary(resolvedRows.length > 0 ? resolvedRows : rows, pdcaDate);
+                                    return (
+                                      <>
+                                        <span className="inline-flex items-center justify-between gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap">
+                                          <span>In-progress</span>
+                                          <span className="px-1.5 py-0.5 rounded bg-amber-100/80 text-amber-900 font-bold text-[10px] leading-none">{statusSummary.inProgress}</span>
+                                        </span>
+                                        <span className="inline-flex items-center justify-between gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
+                                          <span>Done</span>
+                                          <span className="px-1.5 py-0.5 rounded bg-emerald-100/80 text-emerald-900 font-bold text-[10px] leading-none">{statusSummary.done}</span>
+                                        </span>
+                                        <span className="inline-flex items-center justify-between gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-200 whitespace-nowrap">
+                                          <span>Delay</span>
+                                          <span className="px-1.5 py-0.5 rounded bg-rose-100/80 text-rose-900 font-bold text-[10px] leading-none">{statusSummary.delay}</span>
+                                        </span>
+                                        <span className="inline-flex items-center justify-between gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">
+                                          <span>Not-Started</span>
+                                          <span className="px-1.5 py-0.5 rounded bg-blue-100/80 text-blue-900 font-bold text-[10px] leading-none">{statusSummary.notStarted}</span>
+                                        </span>
+                                      </>
+                                    );
+                                  })()}
+                                </div>
+                                <span className="hidden">
                                   Active
                                 </span>
                               </td>

@@ -451,14 +451,14 @@ export default function CreateLpaModal({
     });
   };
 
-  return (
+  const modalContent = (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto animate-in fade-in duration-200"
       role="dialog"
       aria-modal="true"
       aria-labelledby="create-lpa-modal-title"
     >
-      <div className="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+      <div className="relative my-auto w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
         {/* Modal Header - Compact & Clean */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 bg-gradient-to-r from-blue-50/80 via-slate-50 to-white">
           <div className="flex items-center gap-2.5">
@@ -665,4 +665,9 @@ export default function CreateLpaModal({
       </div>
     </div>
   );
+
+  if (typeof document !== 'undefined' && document.body) {
+    return createPortal(modalContent, document.body);
+  }
+  return modalContent;
 }

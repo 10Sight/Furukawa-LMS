@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { EDITABLE_RESPONSIBLE_COLUMNS, isUserInResponsibleDepartment, canUserEditPDCARow } from './recordFilters.js';
+import { EDITABLE_RESPONSIBLE_COLUMNS, isUserInResponsibleDepartment, canUserEditPDCARow, PDCA_SHEET_TABLE_STATUSES, getPDCASheetStatusSummary } from './recordFilters.js';
 import { normalizePDCAStatus, getDepartmentsForUnit, UNIT_DEPARTMENT_MAPPING } from './pdcaConstants.js';
 import { createEmptyPdcaRow } from '../../lpa/lpaPdcaUtils.js';
 
@@ -503,4 +503,45 @@ test('12. Confirmation Column Rule: Creator-only access and 14 mandatory columns
     assert.equal(result.reason, 'missing_mandatory_fields');
     assert.ok(result.missingFields.includes(label));
   }
+});
+
+test('15. PDCA Sheets Table Status column (In-progress, Done, Delay, Not-Started) and centered CreateLpaModal', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+
+  // Verify the 4 status options in PDCA_SHEET_TABLE_STATUSES
+  assert.deepEqual(
+    PDCA_SHEET_TABLE_STATUSES.map(s => s.label),
+    ['In-progress', 'Done', 'Delay', 'Not-Started']
+  );
+
+  // Verify status summary calculation across active rows while ignoring blank default rows
+  const sampleSheet = {
+    id: 'PDCA-TEST-SHEET-1',
+    sheet: {
+      rows: [
+        { date: '2026-11-01', observation: 'Obs 1', status: 'In- Progress', responseDate: '2026-11-10' },
+        { date: '2026-11-01', observation: 'Obs 2', status: 'Done', confirmation: 'Confirm', responseDate: '2026-11-02' },
+        { date: '2026-10-15', observation: 'Obs 3', status: 'Delay', responseDate: '2026-10-20' },
+        { date: '2026-11-02', observation: 'Obs 4', status: 'Not-Started', responseDate: '' },
+        { date: '', observation: '', status: '', unit: 'Bawal', department: 'Assembly' } // Blank default row
+      ]
+    }
+  };
+  const summary = getPDCASheetStatusSummary(sampleSheet, '2026-11-02');
+  assert.equal(summary.inProgress, 1);
+  assert.equal(summary.done, 1);
+  assert.equal(summary.delay, 1);
+  assert.equal(summary.notStarted, 1);
+  assert.equal(summary.total, 4);
+
+  // Verify CreateLpaModal portals to document.body and centers in the viewport
+  const modalPaths = [
+    path.resolve(process.cwd(), 'src/components/lpa/CreateLpaModal.jsx'),
+    path.resolve(process.cwd(), 'admin/src/components/lpa/CreateLpaModal.jsx')
+  ];
+  const modalPath = modalPaths.find(p => fs.existsSync(p)) || modalPaths[0];
+  const modalContent = fs.readFileSync(modalPath, 'utf8');
+  assert.match(modalContent, /createPortal\(modalContent,\s*document\.body\)/);
+  assert.match(modalContent, /fixed inset-0 z-50 flex items-center justify-center/);
 });

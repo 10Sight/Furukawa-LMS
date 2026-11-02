@@ -1,6 +1,6 @@
 import React from 'react';
 import { Download, Copy, Trash2, Building2, UserPlus, Users, Edit3 } from 'lucide-react';
-import { isRecordCreator } from '../../pages/pdca/data/recordFilters.js';
+import { isRecordCreator, getPDCASheetStatusSummary } from '../../pages/pdca/data/recordFilters.js';
 
 export default function PDCATable({
   items,
@@ -55,8 +55,8 @@ export default function PDCATable({
   const isCFTTab = activeTab === 'CFT';
 
   const tableHeaders = isCFTTab
-    ? ['S.No', 'Topic', 'Description', 'Date', 'Time', 'Created By', 'Assigned Employees', 'Actions']
-    : ['S.No', 'Topic', 'Description', 'Date', 'Time', 'Created By', 'Actions'];
+    ? ['S.No', 'Topic', 'Description', 'Date', 'Time', 'Created By', 'Assigned Employees', 'Status', 'Actions']
+    : ['S.No', 'Topic', 'Description', 'Date', 'Time', 'Created By', 'Status', 'Actions'];
 
   return (
     <div className="w-full min-w-0 bg-white rounded-2xl border border-[#ECEFF3] shadow-[0_2px_8px_rgba(0,0,0,0.03)] overflow-hidden">
@@ -184,6 +184,33 @@ export default function PDCATable({
                     )}
                   </td>
                 )}
+
+                {/* Status: In-progress, Done, Delay, Not-Started */}
+                <td className="py-4 px-4">
+                  {(() => {
+                    const statusSummary = getPDCASheetStatusSummary(row);
+                    return (
+                      <div className="grid grid-cols-2 gap-1.5 min-w-[210px] max-w-[240px]">
+                        <span className="inline-flex items-center justify-between gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap">
+                          <span>In-progress</span>
+                          <span className="px-1.5 py-0.5 rounded bg-amber-100/80 text-amber-900 font-bold text-[10px] leading-none">{statusSummary.inProgress}</span>
+                        </span>
+                        <span className="inline-flex items-center justify-between gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
+                          <span>Done</span>
+                          <span className="px-1.5 py-0.5 rounded bg-emerald-100/80 text-emerald-900 font-bold text-[10px] leading-none">{statusSummary.done}</span>
+                        </span>
+                        <span className="inline-flex items-center justify-between gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-200 whitespace-nowrap">
+                          <span>Delay</span>
+                          <span className="px-1.5 py-0.5 rounded bg-rose-100/80 text-rose-900 font-bold text-[10px] leading-none">{statusSummary.delay}</span>
+                        </span>
+                        <span className="inline-flex items-center justify-between gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">
+                          <span>Not-Started</span>
+                          <span className="px-1.5 py-0.5 rounded bg-blue-100/80 text-blue-900 font-bold text-[10px] leading-none">{statusSummary.notStarted}</span>
+                        </span>
+                      </div>
+                    );
+                  })()}
+                </td>
 
                 {/* Actions: Download, Copy, Delete */}
                 <td className="py-4 px-4 whitespace-nowrap">

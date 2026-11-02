@@ -9,7 +9,7 @@ import {
   Inbox,
   ChevronRight
 } from 'lucide-react';
-import { isRecordCreator } from '../../pages/pdca/data/recordFilters.js';
+import { isRecordCreator, getPDCASheetStatusSummary } from '../../pages/pdca/data/recordFilters.js';
 
 export default function CFTCardGrid({
   items = [],
@@ -176,6 +176,36 @@ export default function CFTCardGrid({
                   )}
                 </div>
               </div>
+
+                {/* 6. Status Breakdown (In-progress, Done, Delay, Not-Started) */}
+                {(() => {
+                  const statusSummary = getPDCASheetStatusSummary(row);
+                  return (
+                    <div className="pt-2.5 border-t border-slate-100">
+                      <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                        Status
+                      </span>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <span className="inline-flex items-center justify-between gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap">
+                          <span>In-progress</span>
+                          <span className="px-1.5 py-0.5 rounded bg-amber-100/80 text-amber-900 font-bold text-[10px] leading-none">{statusSummary.inProgress}</span>
+                        </span>
+                        <span className="inline-flex items-center justify-between gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
+                          <span>Done</span>
+                          <span className="px-1.5 py-0.5 rounded bg-emerald-100/80 text-emerald-900 font-bold text-[10px] leading-none">{statusSummary.done}</span>
+                        </span>
+                        <span className="inline-flex items-center justify-between gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-200 whitespace-nowrap">
+                          <span>Delay</span>
+                          <span className="px-1.5 py-0.5 rounded bg-rose-100/80 text-rose-900 font-bold text-[10px] leading-none">{statusSummary.delay}</span>
+                        </span>
+                        <span className="inline-flex items-center justify-between gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">
+                          <span>Not-Started</span>
+                          <span className="px-1.5 py-0.5 rounded bg-blue-100/80 text-blue-900 font-bold text-[10px] leading-none">{statusSummary.notStarted}</span>
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
 
               {/* Card Footer Actions (View Sheet, Download, Copy, Delete) */}
               <div className="pt-3.5 mt-3 border-t border-slate-100 flex items-center justify-between gap-2">

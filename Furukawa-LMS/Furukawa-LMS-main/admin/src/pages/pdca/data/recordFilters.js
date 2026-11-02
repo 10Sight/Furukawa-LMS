@@ -1,5 +1,5 @@
-import { PDCA_DEPARTMENTS } from './pdcaConstants.js';
-export { PDCA_DEPARTMENTS };
+import { PDCA_DEPARTMENTS, PDCA_SHEET_TABLE_STATUSES, isActivePDCARow, getEffectivePDCARowStatus, resolvePDCASheetRows, getPDCASheetStatusSummary } from './pdcaConstants.js';
+export { PDCA_DEPARTMENTS, PDCA_SHEET_TABLE_STATUSES, isActivePDCARow, getEffectivePDCARowStatus, resolvePDCASheetRows, getPDCASheetStatusSummary };
 export const PDCA_PLANTS = ['Bawal', 'Gujrat'];
 export const ALL_UNITS_OPTION = 'All Unit';
 

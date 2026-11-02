@@ -53,7 +53,10 @@ import {
   isUserResponsibleForAnyRow,
   EDITABLE_RESPONSIBLE_COLUMNS,
   getMissingConfirmationMandatoryFields,
-  CONFIRMATION_MANDATORY_COLUMNS
+  CONFIRMATION_MANDATORY_COLUMNS,
+  SAVE_MANDATORY_COLUMNS,
+  isRowStartedForSave,
+  getMissingSaveMandatoryFields
 } from '../../pages/pdca/data/recordFilters.js';
 import {
   parseStaffEmployee,
@@ -1152,7 +1155,7 @@ export default function PDCASheet({
     if (['Not - Confirmed', 'Not-Confirmed'].includes((row.confirmation || '').trim()) && !row.instruction?.trim()) {
       missing.push({ type: 'confirmation', rowIndex, key: `confirmation:${rowIndex}` });
     }
-    if (row.responseDate?.trim() && !hasValidStdDuration(row.stdDurationMin ?? row.stdDuration)) {
+    if (false && row.responseDate?.trim() && !hasValidStdDuration(row.stdDurationMin ?? row.stdDuration)) {
       missing.push({ type: 'duration', rowIndex, key: `duration:${rowIndex}` });
     }
     (Array.isArray(row.revisedDates) ? row.revisedDates : []).forEach((item, revisionIndex) => {
@@ -1895,7 +1898,78 @@ export default function PDCASheet({
       return false;
     }
     if (requireConfirmationReasonBeforeContinuing()) return false;
-    // Validate mandatory fields only for completed/confirmed rows, allowing draft observations to be saved
+    // Validate Save Mandatory Columns (Date, Shift, Status, Unit, Department, Observation, Staff Name) for started rows, and Confirmation Mandatory Columns when Confirmation is selected
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (!isRowStartedForSave(r)) {
+        continue;
+      }
+      const notConfirmed = ['Not - Confirmed', 'Not-Confirmed'].includes((r.confirmation || '').trim());
+      if (notConfirmed && !r.instruction?.trim()) {
+        const reasonInput = responsibleConfirmationReasonRefs.current[i];
+        reasonInput?.focus();
+        reasonInput?.reportValidity();
+        showToast(`Row ${i + 1}: Please enter the required Responsible Person Confirmation reason.`);
+        return false;
+      }
+      if (Array.isArray(r.revisedDates)) {
+        for (let revisionIndex = 0; revisionIndex < r.revisedDates.length; revisionIndex++) {
+          const revision = r.revisedDates[revisionIndex];
+          const reason = typeof revision === 'object' && revision !== null ? (revision.reason || '') : '';
+          if (!reason.trim()) {
+            const reasonInput = revisionReasonRefs.current[`${i}:${revisionIndex}`];
+            reasonInput?.focus();
+            reasonInput?.reportValidity();
+            showToast(`Row ${i + 1}: Please enter a reason for revision ${revisionIndex + 1}.`);
+            return false;
+          }
+        }
+      }
+      if (Array.isArray(r.revisedDates) && r.revisedDates.length > 0 && !r.responseDate?.trim()) {
+        showToast(`Row ${i + 1}: Response Date is required when revisions exist.`);
+        return false;
+      }
+
+      const rowForCheck = r.date?.trim() && !r.status?.trim() ? { ...r, status: 'Not-Started' } : r;
+      if (r.date?.trim() && !r.status?.trim()) {
+        r.status = 'Not-Started';
+      }
+
+      const missingSaveFields = getMissingSaveMandatoryFields(rowForCheck);
+      if (missingSaveFields.length > 0) {
+        setAlertModal({
+          isOpen: true,
+          type: 'mandatory',
+          title: 'Mandatory Columns Required to Save Sheet',
+          rowNumber: i + 1,
+          missingFields: missingSaveFields,
+          message: `Row ${i + 1} has missing mandatory column${missingSaveFields.length > 1 ? 's' : ''} required to save the sheet: ${missingSaveFields.join(', ')}.`,
+          confirmText: "I'll fill them"
+        });
+        showToast(`Row ${i + 1}: Mandatory column${missingSaveFields.length > 1 ? 's' : ''} (${missingSaveFields.join(', ')}) required to save the sheet.`);
+        return false;
+      }
+
+      const hasConfirmationSelected = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((r.confirmation || '').trim());
+      if (hasConfirmationSelected) {
+        const missingForConf = getMissingConfirmationMandatoryFields(rowForCheck);
+        if (missingForConf.length > 0) {
+          setAlertModal({
+            isOpen: true,
+            type: 'mandatory',
+            title: 'Mandatory Columns Required for Confirmation',
+            rowNumber: i + 1,
+            missingFields: missingForConf,
+            message: `Row ${i + 1} has Confirmation selected but is missing mandatory columns: ${missingForConf.join(', ')}.`,
+            confirmText: "I'll fill them"
+          });
+          showToast(`Row ${i + 1}: Mandatory column${missingForConf.length > 1 ? 's' : ''} (${missingForConf.join(', ')}) required for Confirmation.`);
+          return false;
+        }
+      }
+    }
+    if (false) {
+      const missing = [];
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
       if (!r.date?.trim() && !r.observation?.trim()) {
@@ -1934,6 +2008,46 @@ export default function PDCASheet({
 
       // Default unit/date if row has an observation so draft can be safely saved
       if (r.observation?.trim()) {
+        if (!isRowStartedForSave(r)) {
+        continue;
+      }
+      const rowForCheck = r.date?.trim() && !r.status?.trim() ? { ...r, status: 'Not-Started' } : r;
+      const missingSave = getMissingSaveMandatoryFields(rowForCheck);
+      if (missingSave.length > 0) {
+        setAlertModal({
+          isOpen: true,
+          type: 'send-mail-warning',
+          title: 'Cannot Send Email',
+          rowNumber: i + 1,
+          missingFields: missingSave,
+          message: `Cannot send mail because Row ${i + 1} has mandatory column(s) required to save the sheet that are not filled: ${missingSave.join(', ')}.`,
+          confirmText: 'Understood'
+        });
+        showToast(`Row ${i + 1}: Mandatory columns (${missingSave.join(', ')}) required before sending mail.`);
+        return;
+      }
+      const hasConfirmationSelected = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((r.confirmation || '').trim());
+      if (hasConfirmationSelected) {
+        const missingForConf = getMissingConfirmationMandatoryFields(rowForCheck);
+        if (missingForConf.length > 0) {
+          setAlertModal({
+            isOpen: true,
+            type: 'mandatory',
+            title: 'Mandatory Columns Required for Confirmation',
+            rowNumber: i + 1,
+            missingFields: missingForConf,
+            message: `Row ${i + 1} has Confirmation selected but is missing mandatory columns: ${missingForConf.join(', ')}.`,
+            confirmText: "I'll fill them"
+          });
+          showToast(`Row ${i + 1}: Mandatory column${missingForConf.length > 1 ? 's' : ''} (${missingForConf.join(', ')}) required for Confirmation.`);
+          return;
+        }
+      }
+    }
+    if (false) {
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        const isCompletedInner = false;
         if (!r.date?.trim()) {
           r.date = formDate || new Date().toISOString().split('T')[0];
         }
@@ -1944,7 +2058,7 @@ export default function PDCASheet({
 
       // Only enforce strict completion requirements when row is marked 'Done' or 'Confirmed'
       const isCompleted = r.status === 'Done' || r.confirmation === 'Confirmed';
-      if (isCompleted) {
+      if (false) {
         const missing = [];
         if (!r.date?.trim()) missing.push('Date');
         if (!r.shift?.trim()) missing.push('Shift');
@@ -1973,7 +2087,7 @@ export default function PDCASheet({
           return false;
         }
       }
-      if (isCompleted) {
+      if (false) {
         const missing = [];
         if (!r.date?.trim()) missing.push('Date');
         if (!r.shift?.trim()) missing.push('Shift');
@@ -1996,6 +2110,8 @@ export default function PDCASheet({
             confirmText: "I'll fill them"
           });
           showToast(`Row ${i + 1}: Mandatory column${missing.length > 1 ? 's' : ''} (${missing.join(', ')}) required to complete.`);
+        }
+      }
           return false;
         }
       }
@@ -2155,7 +2271,47 @@ export default function PDCASheet({
     }
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
-      if (!r.date?.trim()) {
+      if (!isRowStartedForSave(r)) {
+        continue;
+      }
+      const rowForCheck = r.date?.trim() && !r.status?.trim() ? { ...r, status: 'Not-Started' } : r;
+      const missingSave = getMissingSaveMandatoryFields(rowForCheck);
+      if (missingSave.length > 0) {
+        setAlertModal({
+          isOpen: true,
+          type: 'send-mail-warning',
+          title: 'Cannot Send Email',
+          rowNumber: i + 1,
+          missingFields: missingSave,
+          message: `Cannot send mail because Row ${i + 1} has mandatory column(s) required to save the sheet that are not filled: ${missingSave.join(', ')}.`,
+          confirmText: 'Understood'
+        });
+        showToast(`Row ${i + 1}: Mandatory columns (${missingSave.join(', ')}) required before sending mail.`);
+        return;
+      }
+      const hasConfirmationSelected = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((r.confirmation || '').trim());
+      if (hasConfirmationSelected) {
+        const missingForConf = getMissingConfirmationMandatoryFields(rowForCheck);
+        if (missingForConf.length > 0) {
+          setAlertModal({
+            isOpen: true,
+            type: 'mandatory',
+            title: 'Mandatory Columns Required for Confirmation',
+            rowNumber: i + 1,
+            missingFields: missingForConf,
+            message: `Row ${i + 1} has Confirmation selected but is missing mandatory columns: ${missingForConf.join(', ')}.`,
+            confirmText: "I'll fill them"
+          });
+          showToast(`Row ${i + 1}: Mandatory column${missingForConf.length > 1 ? 's' : ''} (${missingForConf.join(', ')}) required for Confirmation.`);
+          return;
+        }
+      }
+    }
+    if (false) {
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        const isCompletedInner = false;
+        if (!r.date?.trim()) {
         continue;
       }
       const hasContent = Boolean(
@@ -2212,7 +2368,7 @@ export default function PDCASheet({
           return false;
         }
       }
-      if (isCompleted) {
+      if (false) {
         const missing = [];
         if (!r.date?.trim()) missing.push('Date');
         if (!r.shift?.trim()) missing.push('Shift');
@@ -2239,7 +2395,8 @@ export default function PDCASheet({
         }
       }
     }
-    setIsSendMailOpen(true);
+      }
+      setIsSendMailOpen(true);
   };
 
   // Discard all unsaved edits made during the session and navigate back immediately

@@ -43,7 +43,10 @@ import {
   isRecordCreator,
   isUserResponsibleForRow,
   isUserInResponsibleDepartment,
-  getMissingConfirmationMandatoryFields
+  getMissingConfirmationMandatoryFields,
+  SAVE_MANDATORY_COLUMNS,
+  isRowStartedForSave,
+  getMissingSaveMandatoryFields
 } from '../../pages/pdca/data/recordFilters.js';
 import { parseStaffEmployee, findEmployeeDepartment, stripEmployeeId, VERIFIED_EMPLOYEE_MASTER } from '../../pages/pdca/data/pdcaEmployees.js';
 import SearchableLineAreaSelect, { getCachedDbSections } from '../pdca/SearchableLineAreaSelect';
@@ -465,7 +468,7 @@ export default function LpaPdcaSheet({
     if (['Not - Confirmed', 'Not-Confirmed'].includes((row.confirmation || '').trim()) && !row.instruction?.trim()) {
       missing.push({ type: 'confirmation', rowIndex, key: `confirmation:${rowIndex}` });
     }
-    if (row.responseDate?.trim() && !hasValidStdDuration(row.stdDurationMin ?? row.stdDuration)) {
+    if (false && row.responseDate?.trim() && !hasValidStdDuration(row.stdDurationMin ?? row.stdDuration)) {
       missing.push({ type: 'duration', rowIndex, key: `duration:${rowIndex}` });
     }
     return missing;
@@ -712,7 +715,31 @@ export default function LpaPdcaSheet({
     if (isSaving) return false;
     if (requireConfirmationReasonBeforeContinuing()) return false;
 
-    // Validate mandatory fields for rows that have observations/findings
+    // Validate Save Mandatory Columns (Date, Shift, Status, Unit, Department, Observation, Staff Name) for started rows, and Confirmation Mandatory Columns when Confirmation is selected
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (!isRowStartedForSave(r)) {
+        continue;
+      }
+      const rowForCheck = r.date?.trim() && !r.status?.trim() ? { ...r, status: 'Not-Started' } : r;
+      if (r.date?.trim() && !r.status?.trim()) {
+        r.status = 'Not-Started';
+      }
+      const missingSave = getMissingSaveMandatoryFields(rowForCheck);
+      if (missingSave.length > 0) {
+        notify(`Row ${i + 1}: Mandatory column${missingSave.length > 1 ? 's' : ''} (${missingSave.join(', ')}) required to save the sheet.`, 'error');
+        return false;
+      }
+      const hasConfirmationSelected = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((r.confirmation || '').trim());
+      if (hasConfirmationSelected) {
+        const missingForConf = getMissingConfirmationMandatoryFields(rowForCheck);
+        if (missingForConf.length > 0) {
+          notify(`Row ${i + 1}: Mandatory column${missingForConf.length > 1 ? 's' : ''} (${missingForConf.join(', ')}) required for Confirmation.`, 'error');
+          return false;
+        }
+      }
+    }
+    if (false) {
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
       if (r.responseDate?.trim() && !hasValidStdDuration(r.stdDurationMin ?? r.stdDuration)) {
@@ -747,6 +774,7 @@ export default function LpaPdcaSheet({
       }
     }
 
+    }
     setIsSaving(true);
     try {
       if (topic?.id) {

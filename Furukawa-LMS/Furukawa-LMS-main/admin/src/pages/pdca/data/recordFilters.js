@@ -195,6 +195,94 @@ export const EDITABLE_RESPONSIBLE_COLUMNS = [
   'noOfTimeRevised'
 ];
 
+export const SAVE_MANDATORY_COLUMNS = [
+  'Date',
+  'Shift',
+  'Status',
+  'Unit',
+  'Department',
+  'Observation',
+  'Staff Name'
+];
+
+export function isRowStartedForSave(row) {
+  if (!row || typeof row !== 'object') return false;
+  return Boolean(
+    String(row.date || '').trim() ||
+    String(row.shift || '').trim() ||
+    String(row.observation || '').trim() ||
+    String(row.rootCause || '').trim() ||
+    String(row.actionTaken ?? row.correctiveAction ?? '').trim() ||
+    String(row.counterMeasure || '').trim() ||
+    String(row.responseDate || '').trim() ||
+    String(row.staffName || row.staffEmployee || '').trim() ||
+    (Array.isArray(row.staffEmployees) && row.staffEmployees.some(e => String(e?.name || e?.fullName || '').trim())) ||
+    String(row.confirmation || '').trim() ||
+    (Array.isArray(row.imagesBefore) && row.imagesBefore.length > 0) ||
+    Boolean(row.imageBefore) ||
+    (Array.isArray(row.imagesAfter) && row.imagesAfter.length > 0) ||
+    Boolean(row.imageAfter)
+  );
+}
+
+export function getMissingSaveMandatoryFields(row) {
+  if (!row || typeof row !== 'object') {
+    return [...SAVE_MANDATORY_COLUMNS];
+  }
+  const missing = [];
+
+  // 1. Date
+  if (!String(row.date || '').trim()) {
+    missing.push('Date');
+  }
+
+  // 2. Shift
+  if (!String(row.shift || '').trim()) {
+    missing.push('Shift');
+  }
+
+  // 3. Status
+  if (!String(row.status || '').trim()) {
+    missing.push('Status');
+  }
+
+  // 4. Unit (Plan section)
+  const unitVal = String(
+    row.unit ||
+    (Array.isArray(row.units) ? (row.units.find(u => String(u || '').trim()) || '') : '') ||
+    ''
+  ).trim();
+  if (!unitVal) {
+    missing.push('Unit');
+  }
+
+  // 5. Department (Plan section)
+  const deptVal = String(
+    row.department ||
+    (Array.isArray(row.departments) ? (row.departments.find(d => String(d || '').trim()) || '') : '') ||
+    ''
+  ).trim();
+  if (!deptVal) {
+    missing.push('Department');
+  }
+
+  // 6. Observation
+  if (!String(row.observation || '').trim()) {
+    missing.push('Observation');
+  }
+
+  // 7. Staff Name
+  const staffFromList = Array.isArray(row.staffEmployees)
+    ? row.staffEmployees.map(e => String(e?.name || e?.fullName || '').trim()).filter(Boolean)
+    : [];
+  const staffNameVal = String(row.staffName || row.staffEmployee || staffFromList[0] || '').trim();
+  if (!staffNameVal) {
+    missing.push('Staff Name');
+  }
+
+  return missing;
+}
+
 export const CONFIRMATION_MANDATORY_COLUMNS = [
   'Date',
   'Shift',

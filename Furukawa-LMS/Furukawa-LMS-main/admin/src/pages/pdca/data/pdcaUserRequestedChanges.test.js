@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { EDITABLE_RESPONSIBLE_COLUMNS, isUserInResponsibleDepartment, canUserEditPDCARow, PDCA_SHEET_TABLE_STATUSES, getPDCASheetStatusSummary } from './recordFilters.js';
+import { EDITABLE_RESPONSIBLE_COLUMNS, isUserInResponsibleDepartment, canUserEditPDCARow, PDCA_SHEET_TABLE_STATUSES, getPDCASheetStatusSummary, SAVE_MANDATORY_COLUMNS, CONFIRMATION_MANDATORY_COLUMNS, isRowStartedForSave, getMissingSaveMandatoryFields, getMissingConfirmationMandatoryFields } from './recordFilters.js';
 import { normalizePDCAStatus, getDepartmentsForUnit, UNIT_DEPARTMENT_MAPPING } from './pdcaConstants.js';
 import { createEmptyPdcaRow } from '../../lpa/lpaPdcaUtils.js';
 
@@ -544,4 +544,92 @@ test('15. PDCA Sheets Table Status column (In-progress, Done, Delay, Not-Started
   const modalContent = fs.readFileSync(modalPath, 'utf8');
   assert.match(modalContent, /createPortal\(modalContent,\s*document\.body\)/);
   assert.match(modalContent, /fixed inset-0 z-50 flex items-center justify-center/);
+});
+
+test('16. Separate Save Mandatory Columns (7) from Confirmation Mandatory Columns (14)', () => {
+  assert.deepEqual(SAVE_MANDATORY_COLUMNS, [
+    'Date',
+    'Shift',
+    'Status',
+    'Unit',
+    'Department',
+    'Observation',
+    'Staff Name'
+  ]);
+
+  assert.deepEqual(CONFIRMATION_MANDATORY_COLUMNS, [
+    'Date',
+    'Shift',
+    'Status',
+    'Unit',
+    'Department',
+    'Observation',
+    'Root Cause',
+    'Corrective action',
+    'Counter Measure',
+    'Std. Duration in Min',
+    'Response date',
+    'Unit (Responsible Person)',
+    'Department (Responsible Person)',
+    'Staff name (Responsible Person)'
+  ]);
+
+  // A blank template row (even with default unit/department) is not considered started for save
+  const blankDefaultRow = {
+    date: '',
+    shift: '',
+    status: '',
+    unit: 'Bawal',
+    department: 'Assembly',
+    observation: '',
+    staffName: ''
+  };
+  assert.equal(isRowStartedForSave(blankDefaultRow), false, 'Untouched default row should be skipped during save validation');
+
+  // Row with ONLY the 7 Save Mandatory Columns filled (and WITHOUT Root Cause, Corrective action, Counter Measure, Std. Duration in Min, Response date)
+  const saveOnlyRow = {
+    date: '2026-11-02',
+    shift: 'A',
+    status: 'In- Progress',
+    unit: 'Bawal',
+    department: 'Assembly',
+    observation: 'Wire routing loose near station 3',
+    staffName: 'Ramesh Sharma (EMP101)',
+    rootCause: '',
+    actionTaken: '',
+    counterMeasure: '',
+    stdDurationMin: '',
+    responseDate: ''
+  };
+  assert.equal(isRowStartedForSave(saveOnlyRow), true);
+  assert.deepEqual(getMissingSaveMandatoryFields(saveOnlyRow), [], 'User CAN save the sheet when the 7 Save Mandatory Columns are filled without Confirmation columns');
+
+  // Meanwhile, Confirmation Mandatory Columns still report the missing fields so Confirmation dropdown cannot be selected yet
+  const missingForConfirmation = getMissingConfirmationMandatoryFields(saveOnlyRow);
+  assert.deepEqual(missingForConfirmation, [
+    'Root Cause',
+    'Corrective action',
+    'Counter Measure',
+    'Std. Duration in Min',
+    'Response date',
+    'Unit (Responsible Person)',
+    'Department (Responsible Person)'
+  ]);
+
+  // Verify each of the 7 Save Mandatory Columns blocks saving when missing
+  const saveFieldClears = [
+    { label: 'Date', mutate: r => ({ ...r, date: '' }) },
+    { label: 'Shift', mutate: r => ({ ...r, shift: '' }) },
+    { label: 'Status', mutate: r => ({ ...r, status: '' }) },
+    { label: 'Unit', mutate: r => ({ ...r, unit: '', units: [], respUnit: '', responsiblePersonUnit: '', respUnits: [] }) },
+    { label: 'Department', mutate: r => ({ ...r, department: '', departments: [], responsiblePersonDept: '', respDept: '', respDeptsByUnit: {} }) },
+    { label: 'Observation', mutate: r => ({ ...r, observation: '' }) },
+    { label: 'Staff Name', mutate: r => ({ ...r, staffName: '', staffEmployee: '', staffEmployees: [] }) }
+  ];
+
+  for (const { label, mutate } of saveFieldClears) {
+    const incompleteSaveRow = mutate(saveOnlyRow);
+    const missingSave = getMissingSaveMandatoryFields(incompleteSaveRow);
+    assert.ok(missingSave.includes(label), `Missing Save Mandatory Column "${label}" must be reported (got: ${missingSave.join(', ')})`);
+  }
 });

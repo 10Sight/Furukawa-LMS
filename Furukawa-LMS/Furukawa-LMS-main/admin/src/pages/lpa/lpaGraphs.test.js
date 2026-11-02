@@ -4,7 +4,9 @@ import assert from 'node:assert/strict';
 import {
   aggregateSectionData,
   formatShortDate,
-  extractSheetScore
+  extractSheetScore,
+  buildCombinedChartSlots,
+  buildCombinedTableRows
 } from './lpaGraphUtils.js';
 
 test('1. formatShortDate correctly formats ISO dates', () => {
@@ -165,4 +167,102 @@ test('4. Unit filtering correctly isolates records by Unit', () => {
   assert.equal(gujratOnly.summary.totalSheets, 1);
   assert.equal(gujratOnly.summary.totalShiftA, 0);
   assert.equal(gujratOnly.summary.totalShiftB, 1);
+});
+
+// Minimal dailyData entries shaped like aggregateSectionData() output
+const day = (date, avgScore, extra = {}) => ({
+  date,
+  avgScore,
+  totalSheets: 1,
+  level3Score: avgScore,
+  level2Score: null,
+  level1Score: null,
+  ...extra
+});
+
+test('5. buildCombinedChartSlots pairs Assembly and C&C slots per date in both mode', () => {
+  const slots = buildCombinedChartSlots(
+    [day('2026-10-19', 80), day('2026-10-20', 90)],
+    [day('2026-10-19', 70), day('2026-10-20', 60)],
+    'both'
+  );
+
+  assert.deepEqual(slots.map(s => `${s.sheet}:${s.date}`), [
+    'assembly:2026-10-19',
+    'cc:2026-10-19',
+    'assembly:2026-10-20',
+    'cc:2026-10-20'
+  ]);
+  assert.deepEqual(slots.map(s => s.isGroupStart), [true, false, true, false]);
+  assert.equal(slots[0].formattedDate, '19 Oct');
+  assert.equal(slots[1].sheetLabel, 'C&C');
+});
+
+test('6. Both mode keeps an empty slot when one sheet has no audit that date', () => {
+  const slots = buildCombinedChartSlots(
+    [day('2026-10-19', 80), day('2026-10-20', 90)],
+    [day('2026-10-19', 70)],
+    'both'
+  );
+
+  assert.equal(slots.length, 4);
+  const ccDay2 = slots[3];
+  assert.equal(ccDay2.sheet, 'cc');
+  assert.equal(ccDay2.isEmpty, true);
+  assert.equal(ccDay2.avgScore, null);
+  assert.equal(ccDay2.ccAvg, null);
+  assert.equal(ccDay2.level3Score, null);
+  assert.equal(ccDay2.totalSheets, 0);
+});
+
+test('7. Per-sheet trend values never cross sheets (no zigzag line)', () => {
+  const slots = buildCombinedChartSlots(
+    [day('2026-10-19', 80), day('2026-10-20', 90)],
+    [day('2026-10-19', 70), day('2026-10-20', 60)],
+    'both'
+  );
+
+  slots.filter(s => s.sheet === 'cc').forEach(s => assert.equal(s.assemblyAvg, null));
+  slots.filter(s => s.sheet === 'assembly').forEach(s => assert.equal(s.ccAvg, null));
+  assert.deepEqual(slots.map(s => s.assemblyAvg), [80, null, 90, null]);
+  assert.deepEqual(slots.map(s => s.ccAvg), [null, 70, null, 60]);
+});
+
+test('8. Single sheet mode returns only that sheet and its dates', () => {
+  const assembly = [day('2026-10-19', 80)];
+  const cc = [day('2026-10-21', 70)];
+
+  const asmSlots = buildCombinedChartSlots(assembly, cc, 'assembly');
+  assert.equal(asmSlots.length, 1);
+  assert.equal(asmSlots[0].sheet, 'assembly');
+  assert.equal(asmSlots[0].isGroupStart, true);
+  assert.equal(asmSlots[0].ccAvg, null);
+
+  const ccSlots = buildCombinedChartSlots(assembly, cc, 'cc');
+  assert.deepEqual(ccSlots.map(s => s.date), ['2026-10-21']);
+  assert.deepEqual(ccSlots.map(s => s.ccAvg), [70]);
+});
+
+test('9. A real day with 0% average stays 0, not null', () => {
+  const slots = buildCombinedChartSlots([day('2026-10-19', 0)], [], 'assembly');
+  assert.equal(slots[0].isEmpty, false);
+  assert.equal(slots[0].avgScore, 0);
+  assert.equal(slots[0].assemblyAvg, 0);
+});
+
+test('10. buildCombinedTableRows sorts newest first, Assembly before C&C, skips empty dates', () => {
+  const rows = buildCombinedTableRows(
+    [day('2026-10-19', 80), day('2026-10-20', 90)],
+    [day('2026-10-20', 60)],
+    'both'
+  );
+
+  assert.deepEqual(rows.map(r => `${r.sheetLabel}:${r.date}`), [
+    'Assembly:2026-10-20',
+    'C&C:2026-10-20',
+    'Assembly:2026-10-19'
+  ]);
+
+  const ccOnly = buildCombinedTableRows([day('2026-10-19', 80)], [day('2026-10-20', 60)], 'cc');
+  assert.deepEqual(ccOnly.map(r => r.sheet), ['cc']);
 });

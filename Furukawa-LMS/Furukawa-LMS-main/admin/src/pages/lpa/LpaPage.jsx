@@ -951,15 +951,8 @@ function LpaPageContent({ viewContext }) {
       }
     }
 
-    const rawList = Array.from(map.values());
-    // Department-Based Access Control:
-    // Admin has unrestricted access to all LPA PDCA sheets.
-    // Non-admin users only have access to sheets belonging to their department (or sheets they created).
-    const filteredByDept = (isAdmin || !effectiveAuthUser)
-      ? rawList
-      : rawList.filter(sheet => isRecordCreator(sheet, effectiveAuthUser) || isUserInSameDepartmentAsRecord(sheet, effectiveAuthUser));
-
-    return filteredByDept.sort((a, b) => {
+    const result = Array.from(map.values());
+    return result.sort((a, b) => {
       if (a.id === baseSheetId) return -1;
       if (b.id === baseSheetId) return 1;
       const dateA = a.createdAt || a.date || '';

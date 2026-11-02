@@ -322,13 +322,7 @@ export const getPDCARecords = asyncHandler(async (req, res) => {
             user && (user.isAdmin === true || user.isAdmin === 1 || String(user.role || '').toUpperCase() === 'ADMIN' || String(user.role || '').toUpperCase() === 'SUPERADMIN')
         );
 
-        // Department-Based Access Control:
-        // Admin has unrestricted access to all records.
-        // Non-admin users can only view records of their own department or records they created.
-        if (user && !isAdmin) {
-            result.records = result.records.filter(rec => canUserAccessPDCARecord(user, rec));
-            result.total = result.records.length;
-        }
+
 
         result.records = result.records.map(rec => ({
             ...rec,
@@ -356,9 +350,7 @@ export const getPDCARecordById = asyncHandler(async (req, res) => {
         try { user = getAuthenticatedUser(req); } catch {}
     }
 
-    if (user && !canUserAccessPDCARecord(user, record)) {
-        throw new ApiError("Forbidden: Access restricted to members of the same department or the sheet creator", 403);
-    }
+
 
     const decorated = {
         ...record,
@@ -444,9 +436,7 @@ export const getPDCASheet = asyncHandler(async (req, res) => {
         try { user = getAuthenticatedUser(req); } catch {}
     }
 
-    if (user && !canUserAccessPDCARecord(user, record)) {
-        throw new ApiError("Forbidden: Access restricted to members of the same department or the sheet creator", 403);
-    }
+
 
     const sheet = await PDCAModel.getSheet(record.id);
     return res.status(200).json(new ApiResponse(200, sheet, "PDCA sheet retrieved successfully"));

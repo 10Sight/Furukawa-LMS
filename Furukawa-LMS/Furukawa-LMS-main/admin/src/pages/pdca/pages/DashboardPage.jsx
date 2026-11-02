@@ -97,13 +97,7 @@ export default function DashboardPage() {
         if (!matchesLpa) return false;
       }
 
-      // Department-Based Access Control:
-      // Admin has unrestricted access to all records.
-      // Non-admin users can only view records of their own department or records they created.
-      if (!isUserAdmin && userContext?.user) {
-        const canAccess = isRecordCreator(item, userContext.user) || isUserInSameDepartmentAsRecord(item, userContext.user);
-        if (!canAccess) return false;
-      }
+
 
       return true;
     });
@@ -370,13 +364,7 @@ export default function DashboardPage() {
           onDownload={handleDownloadPDCASheet}
           onCopy={handleCopy}
           onDelete={requestDeletePDCA}
-          onTopicClick={(topicRow) => {
-            if (!isUserAdmin && !isRecordCreator(topicRow, userContext?.user) && !isUserInSameDepartmentAsRecord(topicRow, userContext?.user)) {
-              showToast('Forbidden: Access restricted to members of the same department or the creator.');
-              return;
-            }
-            navigate(`/sheet/${topicRow.id}`);
-          }}
+          onTopicClick={(topicRow) => navigate(`/sheet/${topicRow.id}`)}
           onOpenAddMember={(item) => setTargetItemForMemberModal(item)}
           onEdit={handleEditPDCA}
         />
@@ -392,13 +380,7 @@ export default function DashboardPage() {
           onDownload={handleDownloadPDCASheet}
           onCopy={handleCopy}
           onDelete={requestDeletePDCA}
-          onTopicClick={(topicRow) => {
-            if (!isUserAdmin && !isRecordCreator(topicRow, userContext?.user) && !isUserInSameDepartmentAsRecord(topicRow, userContext?.user)) {
-              showToast('Forbidden: Access restricted to members of the same department or the creator.');
-              return;
-            }
-            navigate(`/sheet/${topicRow.id}`);
-          }}
+          onTopicClick={(topicRow) => navigate(`/sheet/${topicRow.id}`)}
           onOpenAddMember={(item) => setTargetItemForMemberModal(item)}
           onEdit={handleEditPDCA}
         />

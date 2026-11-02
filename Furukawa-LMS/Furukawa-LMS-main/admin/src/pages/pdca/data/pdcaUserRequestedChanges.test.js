@@ -702,19 +702,11 @@ test('17. Same-department users have full access to edit the whole PDCA Sheet, w
 });
 
 
-test('18. Department-Based Access Control for PDCA & LPA Observation (PDCA)', () => {
+test('18. All sheets restored and visible to all user IDs on PDCA & LPA Observation (PDCA)', () => {
   const qualityCreator = {
     id: 'user-qa-1',
     name: 'Deepak Mehta',
     empId: 'GJ045819',
-    department: 'Quality',
-    role: 'EMPLOYEE'
-  };
-
-  const qualityColleague = {
-    id: 'user-qa-2',
-    name: 'Ramesh Sharma',
-    empId: 'BW051211',
     department: 'Quality',
     role: 'EMPLOYEE'
   };
@@ -727,14 +719,6 @@ test('18. Department-Based Access Control for PDCA & LPA Observation (PDCA)', ()
     role: 'EMPLOYEE'
   };
 
-  const prodUser = {
-    id: 'user-prod-1',
-    name: 'Rahul Sharma',
-    empId: 'BW041920',
-    department: 'Assembly',
-    role: 'EMPLOYEE'
-  };
-
   const adminUser = {
     id: 14,
     name: 'Joy Dastidar',
@@ -744,12 +728,6 @@ test('18. Department-Based Access Control for PDCA & LPA Observation (PDCA)', ()
     isAdmin: true
   };
 
-  // 1. Primary department resolution
-  assert.equal(getUserPrimaryDepartment(qualityCreator), 'Quality');
-  assert.equal(getUserPrimaryDepartment(hrUser), 'HR');
-  assert.equal(getUserPrimaryDepartment({ name: 'Deepak Mehta', code: 'GJ045819' }), 'Quality');
-
-  // 2. PDCA Sheet Access Control
   const qualityPdcaRecord = {
     id: 'PDCA-QA-001',
     topic: 'Quality Gauge Calibration Audit',
@@ -757,46 +735,22 @@ test('18. Department-Based Access Control for PDCA & LPA Observation (PDCA)', ()
     createdBy: qualityCreator
   };
 
-  // Quality user & colleague have full access to Quality sheet
-  assert.equal(canAccessRecord(qualityPdcaRecord, qualityCreator), true, 'Creator has access');
-  assert.equal(canAccessRecord(qualityPdcaRecord, qualityColleague), true, 'Same department colleague has access');
-  assert.equal(canEditRecord(qualityPdcaRecord, qualityColleague), true, 'Same department colleague can edit');
-
-  // Other departments (HR, Assembly/Prod) CANNOT access Quality sheet
-  assert.equal(canAccessRecord(qualityPdcaRecord, hrUser), false, 'HR user cannot access Quality sheet');
-  assert.equal(canEditRecord(qualityPdcaRecord, hrUser), false, 'HR user cannot edit Quality sheet');
-  assert.equal(canAccessRecord(qualityPdcaRecord, prodUser), false, 'Assembly user cannot access Quality sheet');
-  assert.equal(canEditRecord(qualityPdcaRecord, prodUser), false, 'Assembly user cannot edit Quality sheet');
-
-  // Admin has unrestricted access to all records across all departments
-  assert.equal(canAccessRecord(qualityPdcaRecord, adminUser), true, 'Admin can access Quality sheet');
-  assert.equal(canEditRecord(qualityPdcaRecord, adminUser), true, 'Admin can edit Quality sheet');
+  // Admin has full access to select confirmation
   assert.equal(canUserEditPDCARow({ department: 'Quality' }, adminUser, qualityPdcaRecord, 'confirmation'), true, 'Admin can edit confirmation column');
+  // Creator has access to confirmation
+  assert.equal(canUserEditPDCARow({ department: 'Quality' }, qualityCreator, qualityPdcaRecord, 'confirmation'), true, 'Creator can edit confirmation column');
+  // Other users cannot select confirmation
+  assert.equal(canUserEditPDCARow({ department: 'Quality' }, hrUser, qualityPdcaRecord, 'confirmation'), false, 'Non-creator/non-admin cannot edit confirmation');
 
-  // 3. LPA Observation (PDCA) Access Control
-  const qualityLpaPdcaSheet = {
-    id: 'PDCA-LPA-ASSEMBLY-Bawal-001',
-    title: 'Assembly - LPA Observation (PDCA) #Quality',
-    department: 'Quality',
-    createdBy: qualityCreator
-  };
-
-  assert.equal(canAccessRecord(qualityLpaPdcaSheet, qualityCreator), true, 'Quality creator can access LPA PDCA');
-  assert.equal(canAccessRecord(qualityLpaPdcaSheet, qualityColleague), true, 'Quality colleague can access LPA PDCA');
-  assert.equal(canAccessRecord(qualityLpaPdcaSheet, hrUser), false, 'HR user cannot access Quality LPA PDCA');
-  assert.equal(canAccessRecord(qualityLpaPdcaSheet, adminUser), true, 'Admin can access Quality LPA PDCA');
-
-  // 4. Source code verification for frontend and backend access enforcement
+  // Verify DashboardPage does not hide sheets from non-admin users
   const dashboardSrc = fs.readFileSync(path.join('D:/FME Portal/Furukawa-LMS/Furukawa-LMS-main', 'admin/src/pages/pdca/pages/DashboardPage.jsx'), 'utf8');
-  assert.ok(dashboardSrc.includes('isUserInSameDepartmentAsRecord'), 'DashboardPage must use isUserInSameDepartmentAsRecord');
-  assert.ok(dashboardSrc.includes('isUserAdmin'), 'DashboardPage must check isUserAdmin');
+  assert.ok(!dashboardSrc.includes('if (!canAccess) return false;'), 'DashboardPage must not filter out sheets from users');
 
+  // Verify LpaPage allPdcaSheets includes all sheets for users
   const lpaSrc = fs.readFileSync(path.join('D:/FME Portal/Furukawa-LMS/Furukawa-LMS-main', 'admin/src/pages/lpa/LpaPage.jsx'), 'utf8');
-  assert.ok(lpaSrc.includes('filteredByDept'), 'LpaPage must filter allPdcaSheets by department');
-  assert.ok(lpaSrc.includes('getUserPrimaryDepartment'), 'LpaPage must use getUserPrimaryDepartment for new sheets');
+  assert.ok(!lpaSrc.includes('filteredByDept'), 'LpaPage must not filter allPdcaSheets by department');
 
+  // Verify server does not filter records list by department
   const serverControllerSrc = fs.readFileSync(path.join('D:/FME Portal/Furukawa-LMS/Furukawa-LMS-main', 'server/controllers/pdca/pdca.controllers.js'), 'utf8');
-  assert.ok(serverControllerSrc.includes('canUserAccessPDCARecord'), 'server pdca.controllers.js must export canUserAccessPDCARecord');
-  assert.ok(serverControllerSrc.includes('getPDCARecords'), 'server pdca.controllers.js must filter getPDCARecords for non-admins');
-  assert.ok(serverControllerSrc.includes('getPDCARecordById'), 'server pdca.controllers.js must enforce department in getPDCARecordById');
+  assert.ok(!serverControllerSrc.includes('result.records = result.records.filter(rec => canUserAccessPDCARecord'), 'server must not filter getPDCARecords');
 });

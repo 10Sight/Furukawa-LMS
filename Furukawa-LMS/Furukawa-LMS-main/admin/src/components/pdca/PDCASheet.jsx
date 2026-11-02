@@ -30,7 +30,6 @@ import {
   Images,
   AlertCircle,
   Mail,
-  BarChart3,
   Lock,
   Clock
 } from 'lucide-react';
@@ -41,7 +40,7 @@ import AddStaffEmployeeModal from './AddStaffEmployeeModal';
 import SendMailModal from '../common/SendMailModal';
 import PDCAAlertModal from './PDCAAlertModal';
 import DurationWatchPicker from './DurationWatchPicker';
-import PDCAMonthlyGraph from './PDCAMonthlyGraph';
+import PDCAGraphSection from './PDCAGraphSection';
 import ResponsiblePersonInstructionCell from './ResponsiblePersonInstructionCell';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import pdcaApi from '@/services/api/pdcaApi.js';
@@ -1279,7 +1278,6 @@ export default function PDCASheet({
   };
   const [showDiscardModal, setShowDiscardModal] = useState(false);
   const [isSendMailOpen, setIsSendMailOpen] = useState(false);
-  const [showMonthlyGraph, setShowMonthlyGraph] = useState(false);
   const [showDoneRows, setShowDoneRows] = useState(false);
   const [alertModal, setAlertModal] = useState({
     isOpen: false,
@@ -4882,7 +4880,7 @@ export default function PDCASheet({
   );
 
   return (
-    <div className="pdca-form-root w-full min-w-0 flex-1 flex flex-col min-h-0 space-y-2 animate-in fade-in duration-150 overflow-hidden">
+    <div className="pdca-form-root w-full min-w-0 flex-1 flex flex-col min-h-0 space-y-2 animate-in fade-in duration-150 overflow-x-hidden overflow-y-auto">
       {/* Control Bar: Back Button, Save, Calendar Date, Excel Export, Search & Add Row */}
       <div className="sticky top-0 z-30 w-full min-w-0 bg-white rounded-xl border border-[#D5DCE5] shadow-[0_1px_3px_rgba(0,0,0,0.03)] overflow-hidden">
         {/* Control Toolbar */}
@@ -4958,19 +4956,6 @@ export default function PDCASheet({
               <Mail className="w-3.5 h-3.5 text-blue-600" />
               <span>Send Mail</span>
             </button>
-            {/* PDCA Graph Button */}
-            <button
-              type="button"
-              onClick={() => setShowMonthlyGraph(prev => !prev)}
-              title="Toggle PDCA Status Graph (Daily & Monthly analytics for In-Progress, Done, Delay, Not-Started)"
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg border text-xs font-semibold shadow-2xs cursor-pointer transition-colors flex-shrink-0 ${showMonthlyGraph
-                ? 'border-indigo-600 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold'
-                : 'border-slate-300 bg-white hover:bg-slate-50 text-slate-700'
-                }`}
-            >
-              <BarChart3 className="w-3.5 h-3.5 text-indigo-600" />
-              <span>PDCA Graph</span>
-            </button>
             {/* Done Rows Visibility Toggle Button */}
             {liveCumulativeStats.done > 0 && (
               <button
@@ -5034,18 +5019,15 @@ export default function PDCASheet({
       </div>
 
       {/* Monthly PDCA Status Analytics Graph */}
-      {showMonthlyGraph && (
-        <PDCAMonthlyGraph
-          rows={rows}
-          allPDCARecords={data}
-          currentDate={formDate}
-          topic={topic}
-          onToggleCollapse={() => setShowMonthlyGraph(false)}
-        />
-      )}
+      <PDCAGraphSection
+        rows={rows}
+        allPDCARecords={data}
+        currentDate={formDate}
+        topic={topic}
+      />
 
       {/* Spreadsheet Matrix Table Grid */}
-      <div className="w-full min-w-0 flex-1 min-h-0 bg-white border border-[#B0BEC5] shadow-xs overflow-auto max-h-[calc(100vh-62px)]">
+      <div className="w-full min-w-0 flex-auto shrink-0 min-h-[320px] bg-white border border-[#B0BEC5] shadow-xs overflow-auto max-h-[calc(100vh-62px)]">
         <table className="w-full min-w-max text-left table-fixed border-separate border-spacing-0 border-t border-l border-[#B0BEC5] text-[11px]">
           <colgroup>
             <col style={{ width: `${dateColWidth}px`, minWidth: `${dateColWidth}px` }} />

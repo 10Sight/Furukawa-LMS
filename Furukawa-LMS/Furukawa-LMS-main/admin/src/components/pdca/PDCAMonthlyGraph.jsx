@@ -1,17 +1,65 @@
 import React, { useState, useMemo } from 'react';
 import {
   BarChart3,
-  ChevronUp,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Calendar,
-  Filter,
+  CalendarDays,
   Info,
   Columns,
+  EyeOff,
   X
 } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/common/ui/card.jsx';
+import { Button } from '@/components/common/ui/button.jsx';
+import { Label } from '@/components/forms/primitives/label.jsx';
 import { normalizePDCAStatus } from '../../pages/pdca/data/pdcaConstants.js';
+
+const TIMEFRAMES = [
+  { key: 'daily', label: 'Daily' },
+  { key: 'monthly', label: 'Monthly' }
+];
+
+function FilterSelect({ label, value, onChange, options }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">{label}</Label>
+      <div className="relative">
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="h-8 appearance-none rounded-md border border-slate-200 bg-white pl-3 pr-8 text-xs font-medium text-slate-700 shadow-xs focus:border-blue-500 focus:outline-none cursor-pointer hover:bg-slate-50"
+        >
+          {options.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+        </select>
+        <ChevronDown size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+      </div>
+    </div>
+  );
+}
+
+function FilterButtons({ label, value, onChange, options }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">{label}</Label>
+      <div className="flex flex-wrap gap-1">
+        {options.map(o => (
+          <Button
+            key={o.key}
+            variant={value === o.key ? 'default' : 'outline'}
+            size="sm"
+            className="h-8 px-3 text-xs"
+            onClick={() => onChange(o.key)}
+            title={o.title}
+          >
+            {o.label}
+          </Button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 /**
  * PDCAMonthlyGraph (Daily & Monthly PDCA Status Graph)
@@ -33,8 +81,7 @@ export default function PDCAMonthlyGraph({
   allPDCARecords = [],
   currentDate = '',
   topic = null,
-  isCollapsed = false,
-  onToggleCollapse
+  onHide
 }) {
   const [viewTimeframe, setViewTimeframe] = useState('daily'); // 'daily' | 'monthly'
   const [chartType, setChartType] = useState('stacked'); // default to 'stacked' (single candle per date)
@@ -352,7 +399,7 @@ export default function PDCAMonthlyGraph({
 
   // SVG Chart Geometry
   const slotCount = currentDataset.length;
-  const minSlotWidth = viewTimeframe === 'daily' ? 52 : 70;
+  const minSlotWidth = viewTimeframe === 'daily' ? 72 : 84;
   const padding = { top: 30, right: 25, bottom: 60, left: 45 };
   const graphWidth = Math.max(880, slotCount * minSlotWidth);
   const svgWidth = graphWidth + padding.left + padding.right;
@@ -380,184 +427,105 @@ export default function PDCAMonthlyGraph({
   }, [maxChartValue]);
 
   return (
-    <div className="w-full bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden transition-all duration-200 mb-3 animate-in fade-in">
-      {/* Header Bar */}
-      <div className="px-4 py-3 bg-gradient-to-r from-slate-50 via-white to-blue-50/30 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2.5">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs">
-            <BarChart3 className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-xs sm:text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                <span>{viewTimeframe === 'daily' ? 'Daily PDCA Status Graph' : 'Monthly PDCA Status Graph'}</span>
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
-                  {viewTimeframe === 'daily' ? `${fullMonthNames[selectedMonth]} ${selectedYear}` : selectedYear}
-                </span>
-              </h3>
-            </div>
-            <p className="text-[11px] text-slate-500">
+    <Card className="w-full shrink-0 rounded-2xl border-slate-200/80 bg-white animate-in fade-in">
+      <CardHeader className="pb-4">
+        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-3">
+          <div className="space-y-1">
+            <CardTitle className="flex flex-wrap items-center gap-2 text-lg text-slate-800">
+              <BarChart3 className="h-5 w-5 text-blue-600" />
+              {viewTimeframe === 'daily' ? 'Daily PDCA Status Graph' : 'Monthly PDCA Status Graph'}
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                {viewTimeframe === 'daily' ? `${fullMonthNames[selectedMonth]} ${selectedYear}` : selectedYear}
+              </span>
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-50 text-slate-600 border border-slate-200">
+                {activeItems.length} Observations
+              </span>
+            </CardTitle>
+            <CardDescription className="text-xs text-slate-500">
               {viewTimeframe === 'daily'
                 ? `Daily breakdown for ${fullMonthNames[selectedMonth]} ${selectedYear} (In-Progress, Done, Delay, Not-Started)`
                 : `Monthly breakdown for ${selectedYear} (In-Progress, Done, Delay, Not-Started)`}
-            </p>
+            </CardDescription>
+          </div>
+
+          <div className="flex flex-wrap gap-1">
+            {TIMEFRAMES.map(({ key, label }) => (
+              <Button
+                key={key}
+                variant={viewTimeframe === key ? 'default' : 'outline'}
+                size="sm"
+                className="h-8 px-3 text-xs"
+                onClick={() => setViewTimeframe(key)}
+              >
+                {key === 'daily' ? <CalendarDays className="h-3.5 w-3.5" /> : <Calendar className="h-3.5 w-3.5" />}
+                {label}
+              </Button>
+            ))}
+            {onHide && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 px-3 text-xs text-slate-500 hover:text-slate-800"
+                onClick={onHide}
+                title="Hide graph"
+              >
+                <EyeOff className="h-3.5 w-3.5" />
+                Hide Graph
+              </Button>
+            )}
           </div>
         </div>
 
-        {/* Action Controls in Header */}
-        <div className="flex items-center flex-wrap gap-2 text-xs">
-          {/* Timeframe Toggle: Daily vs Monthly */}
-          <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-100/80">
-            <button
-              type="button"
-              onClick={() => setViewTimeframe('daily')}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
-                viewTimeframe === 'daily'
-                  ? 'bg-white text-blue-700 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-              title="Show daily observations for the selected month"
-            >
-              Daily
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewTimeframe('monthly')}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
-                viewTimeframe === 'monthly'
-                  ? 'bg-white text-blue-700 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-              title="Show monthly observations for the selected year"
-            >
-              Monthly
-            </button>
-          </div>
-
-          {/* Month Select (Only in Daily view) */}
+        {/* Filter bar */}
+        <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-end gap-4">
           {viewTimeframe === 'daily' && (
-            <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-0.5">
-              <select
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(parseInt(e.target.value, 10))}
-                className="bg-transparent border-0 outline-none text-xs font-semibold text-slate-700 cursor-pointer pr-1"
-                aria-label="Select month"
-              >
-                {monthNames.map((m, idx) => (
-                  <option key={m} value={idx}>{fullMonthNames[idx]}</option>
-                ))}
-              </select>
-            </div>
+            <FilterSelect
+              label="Month"
+              value={selectedMonth}
+              onChange={(v) => setSelectedMonth(parseInt(v, 10))}
+              options={fullMonthNames.map((name, idx) => ({ key: idx, label: name }))}
+            />
           )}
-
-          {/* Year Select */}
-          <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-0.5">
-            <Calendar className="w-3.5 h-3.5 text-slate-400" />
-            <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(parseInt(e.target.value, 10))}
-              className="bg-transparent border-0 outline-none text-xs font-semibold text-slate-700 cursor-pointer pr-1"
-              aria-label="Select year"
-            >
-              {availableYears.map(y => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Data Scope Toggle */}
-          <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-100/80">
-            <button
-              type="button"
-              onClick={() => setDataScope('sheet')}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
-                dataScope === 'sheet'
-                  ? 'bg-white text-blue-700 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-              title="Show observations for this sheet only"
-            >
-              This Sheet ({activeItems.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setDataScope('all')}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
-                dataScope === 'all'
-                  ? 'bg-white text-blue-700 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-              title="Show observations across all PDCA forms in system"
-            >
-              All Sheets
-            </button>
-          </div>
-
-          {/* Chart View Mode */}
-          <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-100/80">
-            <button
-              type="button"
-              onClick={() => setChartType('stacked')}
-              className={`px-2 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
-                chartType === 'stacked' ? 'bg-white text-blue-700 shadow-2xs font-bold' : 'text-slate-600 hover:text-slate-900'
-              }`}
-              title="Single candle per date showing In-Progress, Done, Delay, Not-Started"
-            >
-              Single Candle
-            </button>
-            <button
-              type="button"
-              onClick={() => setChartType('grouped')}
-              className={`px-2 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
-                chartType === 'grouped' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
-              }`}
-              title="Grouped bar chart"
-            >
-              Bars
-            </button>
-            <button
-              type="button"
-              onClick={() => setChartType('line')}
-              className={`px-2 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
-                chartType === 'line' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
-              }`}
-              title="Line trend chart"
-            >
-              Lines
-            </button>
-          </div>
-
-          {/* Toggle Cumulative Section */}
-          <button
-            type="button"
+          <FilterSelect
+            label="Year"
+            value={selectedYear}
+            onChange={(v) => setSelectedYear(parseInt(v, 10))}
+            options={availableYears.map(y => ({ key: y, label: String(y) }))}
+          />
+          <FilterButtons
+            label="Data Scope"
+            value={dataScope}
+            onChange={setDataScope}
+            options={[
+              { key: 'sheet', label: 'This Sheet', title: 'Show observations for this sheet only' },
+              { key: 'all', label: 'All Sheets', title: 'Show observations across all PDCA forms in system' }
+            ]}
+          />
+          <FilterButtons
+            label="Chart Type"
+            value={chartType}
+            onChange={setChartType}
+            options={[
+              { key: 'stacked', label: 'Single Candle', title: 'Single candle per date showing In-Progress, Done, Delay, Not-Started' },
+              { key: 'grouped', label: 'Bars', title: 'Grouped bar chart' },
+              { key: 'line', label: 'Lines', title: 'Line trend chart' }
+            ]}
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 px-3 text-xs text-slate-500 hover:text-slate-800 self-end"
             onClick={() => setShowCumulativeSection(prev => !prev)}
-            className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer inline-flex items-center gap-1.5 border ${
-              showCumulativeSection
-                ? 'bg-indigo-50 text-indigo-700 border-indigo-200 shadow-2xs'
-                : 'bg-white text-slate-600 border-slate-200 hover:text-slate-900 hover:bg-slate-50'
-            }`}
             title={showCumulativeSection ? 'Hide Cumulative section' : 'Show Cumulative section'}
           >
-            <Columns className="w-3.5 h-3.5 text-indigo-600" />
-            <span>{showCumulativeSection ? 'Hide Cumulative' : 'Show Cumulative'}</span>
-          </button>
-
-          {/* Collapse/Expand Toggle */}
-          {onToggleCollapse && (
-            <button
-              type="button"
-              onClick={onToggleCollapse}
-              className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
-              title={isCollapsed ? 'Expand graph' : 'Collapse graph'}
-            >
-              {isCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
-            </button>
-          )}
+            <Columns className="h-3.5 w-3.5" />
+            {showCumulativeSection ? 'Hide Cumulative' : 'Show Cumulative'}
+          </Button>
         </div>
-      </div>
+      </CardHeader>
 
-      {!isCollapsed && (
-        <div className="p-4 space-y-4">
+      <CardContent>
+        <div className="space-y-4">
           {/* Interactive Chart Container */}
           <div className="bg-slate-50/50 rounded-xl border border-slate-200/80 p-3 relative">
             <div className="flex flex-col md:flex-row items-stretch gap-3">
@@ -572,21 +540,21 @@ export default function PDCAMonthlyGraph({
                   aria-label="Expand Cumulative table"
                 >
                   <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 transition-colors" />
-                  <span className="[writing-mode:vertical-rl] rotate-180 text-[10px] font-bold tracking-widest uppercase text-slate-500 group-hover:text-indigo-700">
+                  <span className="[writing-mode:vertical-rl] rotate-180 text-xs font-bold tracking-widest uppercase text-slate-500 group-hover:text-indigo-700">
                     Cumulative
                   </span>
-                  <span className="mt-auto text-[9px] font-mono font-bold px-1 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
+                  <span className="mt-auto text-[11px] font-mono font-bold px-1 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
                     {allMonthsCumulative.total}
                   </span>
                 </button>
               ) : (
-                <div className="w-full md:w-36 lg:w-40 shrink-0 bg-white rounded-lg border border-slate-200 shadow-2xs flex flex-col overflow-hidden animate-in fade-in duration-150">
-                  <div className="px-2.5 py-1.5 bg-slate-100/90 border-b border-slate-200 flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                <div className="w-full md:w-52 lg:w-56 shrink-0 bg-white rounded-lg border border-slate-200 shadow-2xs flex flex-col overflow-hidden animate-in fade-in duration-150">
+                  <div className="px-2.5 py-1.5 bg-slate-100/90 border-b border-slate-200 flex items-center justify-between gap-2">
+                    <span className="min-w-0 truncate text-xs font-bold text-slate-700 uppercase tracking-wide">
                       Cumulative
                     </span>
-                    <div className="flex items-center gap-1">
-                      <span className="text-[10px] font-bold font-mono px-1.5 py-0.2 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
+                    <div className="flex shrink-0 items-center gap-1">
+                      <span className="text-[11px] font-bold font-mono px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
                         {selectedYear}
                       </span>
                       <button
@@ -608,11 +576,11 @@ export default function PDCAMonthlyGraph({
                       </button>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 px-2.5 py-1 bg-slate-50/80 border-b border-slate-200/70 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                  <div className="grid grid-cols-2 gap-2 px-2.5 py-1 bg-slate-50/80 border-b border-slate-200/70 text-[11px] font-bold text-slate-500 uppercase tracking-wide">
                     <span>Month</span>
                     <span className="text-right">Cumulative</span>
                   </div>
-                  <div className="flex-1 divide-y divide-slate-100 text-xs overflow-y-auto max-h-[260px] md:max-h-none">
+                  <div className="flex-1 divide-y divide-slate-100 text-sm overflow-y-auto max-h-[260px] md:max-h-none">
                     {monthlyStats.map((m, idx) => {
                       const isSelected = viewTimeframe === 'daily' && selectedMonth === idx;
                       return (
@@ -632,8 +600,8 @@ export default function PDCAMonthlyGraph({
                           }`}
                           title={viewTimeframe === 'daily' ? `Switch to ${m.fullName}` : `${m.fullName}`}
                         >
-                          <span className="text-xs truncate">{m.month}</span>
-                          <span className={`text-right font-mono text-xs font-semibold ${
+                          <span className="text-sm truncate">{m.month}</span>
+                          <span className={`text-right font-mono text-sm font-semibold ${
                             m.total > 0 ? 'text-indigo-600 font-bold' : 'text-slate-400'
                           }`}>
                             {m.total}
@@ -642,7 +610,7 @@ export default function PDCAMonthlyGraph({
                       );
                     })}
                   </div>
-                  <div className="grid grid-cols-2 px-2.5 py-1.5 bg-slate-100 border-t border-slate-200 text-xs font-bold text-slate-800">
+                  <div className="grid grid-cols-2 px-2.5 py-1.5 bg-slate-100 border-t border-slate-200 text-sm font-bold text-slate-800">
                     <span>Total</span>
                     <span className="text-right font-mono text-indigo-700">{allMonthsCumulative.total}</span>
                   </div>
@@ -652,12 +620,12 @@ export default function PDCAMonthlyGraph({
               {/* Right Column: Metrics Row & SVG Graph */}
               <div className="flex-1 min-w-0 flex flex-col">
                 {/* Chart Series Legend & Filter Toggles */}
-                <div className="flex items-center justify-between flex-wrap gap-2 mb-2 pb-2 border-b border-slate-200/60 text-xs">
+                <div className="flex items-center justify-between flex-wrap gap-2 mb-2 pb-2 border-b border-slate-200/60 text-sm">
                   <div className="flex items-center flex-wrap gap-2 sm:gap-3">
                     <button
                       type="button"
                       onClick={() => setIsCumulativeCollapsed(prev => !prev)}
-                      className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                      className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-sm font-semibold transition-all cursor-pointer ${
                         !isCumulativeCollapsed
                           ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'
                           : 'bg-slate-100 text-slate-600 hover:bg-slate-200/80 border border-slate-200'
@@ -667,13 +635,13 @@ export default function PDCAMonthlyGraph({
                       {isCumulativeCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
                       <span>Cumulative</span>
                     </button>
-                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Metrics:</span>
+                    <span className="text-[13px] font-bold text-slate-500 uppercase tracking-wider">Metrics:</span>
 
                 {/* In-Progress Legend Toggle */}
                 <button
                   type="button"
                   onClick={() => toggleSeries('inProgress')}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-semibold text-xs transition-all cursor-pointer ${
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-semibold text-sm transition-all cursor-pointer ${
                     visibleSeries.inProgress
                       ? 'bg-amber-100 text-amber-900 border border-amber-300'
                       : 'bg-slate-100 text-slate-400 border border-slate-200 line-through opacity-60'
@@ -682,14 +650,14 @@ export default function PDCAMonthlyGraph({
                 >
                   <span className="w-2.5 h-2.5 rounded-xs bg-amber-500" />
                   <span>In-Progress</span>
-                  <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-amber-200/60 font-bold">{kpis.inProgress}</span>
+                  <span className="text-xs font-mono px-1 py-0.2 rounded bg-amber-200/60 font-bold">{kpis.inProgress}</span>
                 </button>
 
                 {/* Done Legend Toggle */}
                 <button
                   type="button"
                   onClick={() => toggleSeries('done')}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-semibold text-xs transition-all cursor-pointer ${
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-semibold text-sm transition-all cursor-pointer ${
                     visibleSeries.done
                       ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
                       : 'bg-slate-100 text-slate-400 border border-slate-200 line-through opacity-60'
@@ -698,14 +666,14 @@ export default function PDCAMonthlyGraph({
                 >
                   <span className="w-2.5 h-2.5 rounded-xs bg-emerald-600" />
                   <span>Done</span>
-                  <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-emerald-200/60 font-bold">{kpis.done}</span>
+                  <span className="text-xs font-mono px-1 py-0.2 rounded bg-emerald-200/60 font-bold">{kpis.done}</span>
                 </button>
 
                 {/* Delay Legend Toggle */}
                 <button
                   type="button"
                   onClick={() => toggleSeries('delay')}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-semibold text-xs transition-all cursor-pointer ${
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-semibold text-sm transition-all cursor-pointer ${
                     visibleSeries.delay
                       ? 'bg-rose-100 text-rose-900 border border-rose-300'
                       : 'bg-slate-100 text-slate-400 border border-slate-200 line-through opacity-60'
@@ -714,7 +682,7 @@ export default function PDCAMonthlyGraph({
                 >
                   <span className="w-2.5 h-2.5 rounded-xs bg-rose-600" />
                   <span>Delay</span>
-                  <span className={`text-[10px] font-mono px-1 py-0.2 rounded font-bold ${
+                  <span className={`text-xs font-mono px-1 py-0.2 rounded font-bold ${
                     kpis.delay > 0 ? 'bg-rose-200 text-rose-800' : 'bg-slate-200/60 text-slate-600'
                   }`}>
                     {kpis.delay}
@@ -725,7 +693,7 @@ export default function PDCAMonthlyGraph({
                 <button
                   type="button"
                   onClick={() => toggleSeries('notStarted')}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-semibold text-xs transition-all cursor-pointer ${
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-semibold text-sm transition-all cursor-pointer ${
                     visibleSeries.notStarted
                       ? 'bg-blue-100 text-blue-900 border border-blue-300'
                       : 'bg-slate-100 text-slate-400 border border-slate-200 line-through opacity-60'
@@ -734,11 +702,11 @@ export default function PDCAMonthlyGraph({
                 >
                   <span className="w-2.5 h-2.5 rounded-xs bg-blue-600" />
                   <span>Not-Started</span>
-                  <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-blue-200/60 font-bold">{kpis.notStarted}</span>
+                  <span className="text-xs font-mono px-1 py-0.2 rounded bg-blue-200/60 font-bold">{kpis.notStarted}</span>
                 </button>
               </div>
 
-              <div className="text-[11px] text-slate-400 flex items-center gap-1">
+              <div className="text-[13px] text-slate-400 flex items-center gap-1">
                 <Info className="w-3 h-3" />
                 <span>
                   {viewTimeframe === 'daily'
@@ -793,7 +761,7 @@ export default function PDCAMonthlyGraph({
                           x={padding.left - 8}
                           y={y + 4}
                           textAnchor="end"
-                          className="text-[10px] fill-slate-400 font-mono font-medium"
+                          className="text-xs fill-slate-400 font-mono font-medium"
                         >
                           {val}
                         </text>
@@ -917,7 +885,7 @@ export default function PDCAMonthlyGraph({
                                     x={bx + calculatedBarW / 2}
                                     y={by - 3}
                                     textAnchor="middle"
-                                    className={`text-[9px] font-bold ${b.textClass} font-mono`}
+                                    className={`text-[11px] font-bold ${b.textClass} font-mono`}
                                   >
                                     {b.val}
                                   </text>
@@ -959,7 +927,7 @@ export default function PDCAMonthlyGraph({
                                     x={xCenter}
                                     y={baseY - accumulatedH - 4}
                                     textAnchor="middle"
-                                    className={`text-[9.5px] font-bold font-mono ${
+                                    className={`text-[12px] font-bold font-mono ${
                                       item.isPastMonthCumulative ? 'fill-indigo-700 font-extrabold' : 'fill-slate-700'
                                     }`}
                                   >
@@ -974,9 +942,9 @@ export default function PDCAMonthlyGraph({
                         {/* Current Date Badge Indicator (Behind Label) */}
                         {item.isCurrentDate && (
                           <rect
-                            x={xCenter - 24}
+                            x={xCenter - 30}
                             y={svgHeight - 37}
-                            width="48"
+                            width="60"
                             height="20"
                             rx="5"
                             fill="#EFF6FF"
@@ -990,7 +958,7 @@ export default function PDCAMonthlyGraph({
                           x={xCenter}
                           y={svgHeight - 23}
                           textAnchor="middle"
-                          className={`text-[11.5px] tracking-tight transition-colors ${
+                          className={`text-[12px] tracking-tight transition-colors ${
                             item.isCurrentDate
                               ? 'fill-blue-700 font-black'
                               : item.isPastMonthCumulative
@@ -1149,11 +1117,11 @@ export default function PDCAMonthlyGraph({
         </div>
 
             {/* Bottom Info / Hover Detail Bar (Fixed height to prevent sheet jumping/blinking) */}
-            <div className="mt-2.5 min-h-[46px] p-2.5 bg-white border border-slate-200 rounded-lg shadow-2xs flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="mt-2.5 min-h-[46px] p-2.5 bg-white border border-slate-200 rounded-lg shadow-2xs flex flex-wrap items-center justify-between gap-3 text-sm">
               {hoveredIndex !== null && currentDataset[hoveredIndex] ? (
                 <>
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-slate-800 text-sm">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-bold text-slate-800 text-base">
                       {currentDataset[hoveredIndex].isPastMonthCumulative
                         ? currentDataset[hoveredIndex].fullDateStr
                         : viewTimeframe === 'daily'
@@ -1161,16 +1129,16 @@ export default function PDCAMonthlyGraph({
                         : `${currentDataset[hoveredIndex].fullName} ${selectedYear}`}
                     </span>
                     {currentDataset[hoveredIndex].isPastMonthCumulative && (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200">
+                      <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200">
                         Past Month Cumulative
                       </span>
                     )}
                     {viewTimeframe === 'daily' && currentDataset[hoveredIndex].isCurrentDate && (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200">
+                      <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200">
                         Current Date
                       </span>
                     )}
-                    <span className="text-[10px] text-slate-400 font-medium">
+                    <span className="text-xs text-slate-400 font-medium">
                       Total: {currentDataset[hoveredIndex].total}
                     </span>
                   </div>
@@ -1180,7 +1148,7 @@ export default function PDCAMonthlyGraph({
                     <div className="flex items-center gap-1.5">
                       <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
                       <span className="text-slate-500 font-medium">In-Progress:</span>
-                      <span className="font-bold text-amber-700 font-mono text-sm">
+                      <span className="font-bold text-amber-700 font-mono text-base">
                         {currentDataset[hoveredIndex].inProgress}
                       </span>
                     </div>
@@ -1189,7 +1157,7 @@ export default function PDCAMonthlyGraph({
                     <div className="flex items-center gap-1.5">
                       <span className="w-2.5 h-2.5 rounded-full bg-emerald-600" />
                       <span className="text-slate-500 font-medium">Done:</span>
-                      <span className="font-bold text-emerald-700 font-mono text-sm">
+                      <span className="font-bold text-emerald-700 font-mono text-base">
                         {currentDataset[hoveredIndex].done}
                       </span>
                     </div>
@@ -1198,7 +1166,7 @@ export default function PDCAMonthlyGraph({
                     <div className="flex items-center gap-1.5">
                       <span className="w-2.5 h-2.5 rounded-full bg-rose-600" />
                       <span className="text-slate-500 font-medium">Delay:</span>
-                      <span className={`font-bold font-mono text-sm ${
+                      <span className={`font-bold font-mono text-base ${
                         currentDataset[hoveredIndex].delay > 0 ? 'text-rose-700 font-extrabold' : 'text-slate-500'
                       }`}>
                         {currentDataset[hoveredIndex].delay}
@@ -1209,14 +1177,14 @@ export default function PDCAMonthlyGraph({
                     <div className="flex items-center gap-1.5">
                       <span className="w-2.5 h-2.5 rounded-full bg-blue-600" />
                       <span className="text-slate-500 font-medium">Not-Started:</span>
-                      <span className="font-bold text-blue-700 font-mono text-sm">
+                      <span className="font-bold text-blue-700 font-mono text-base">
                         {currentDataset[hoveredIndex].notStarted}
                       </span>
                     </div>
                   </div>
                 </>
               ) : (
-                <div className="w-full flex items-center justify-between text-slate-400 text-xs">
+                <div className="w-full flex items-center justify-between text-slate-400 text-sm">
                   <div className="flex items-center gap-2">
                     <Info className="w-3.5 h-3.5 text-blue-500" />
                     <span className="text-slate-500 font-medium">
@@ -1225,7 +1193,7 @@ export default function PDCAMonthlyGraph({
                         : 'Hover over any month to inspect detailed status breakdown'}
                     </span>
                   </div>
-                  <div className="text-[11px] text-slate-400 font-medium">
+                  <div className="text-[13px] text-slate-400 font-medium">
                     {viewTimeframe === 'daily' ? `${fullMonthNames[selectedMonth]} ${selectedYear}` : selectedYear}
                   </div>
                 </div>
@@ -1233,7 +1201,7 @@ export default function PDCAMonthlyGraph({
             </div>
           </div>
         </div>
-      )}
-    </div>
+      </CardContent>
+    </Card>
   );
 }

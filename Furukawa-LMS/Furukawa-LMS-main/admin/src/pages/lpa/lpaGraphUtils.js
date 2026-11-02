@@ -243,3 +243,66 @@ export function aggregateSectionData(records, sectionKey, unitFilter, dateRangeF
     }
   };
 }
+
+// Display metadata for the two LPA sheets
+export const SHEET_META = {
+  assembly: { key: 'assembly', label: 'Assembly', fullLabel: 'Assembly Sheet', color: '#2563eb' },
+  cc: { key: 'cc', label: 'C&C', fullLabel: 'C&C Sheet', color: '#059669' }
+};
+
+function getActiveSheetKeys(activeTab) {
+  return activeTab === 'assembly' || activeTab === 'cc' ? [activeTab] : ['assembly', 'cc'];
+}
+
+/**
+ * Builds one chart slot per (date, sheet) from aggregateSectionData() dailyData.
+ * In 'both' mode every date gets an Assembly slot followed by a C&C slot, so pairs
+ * stay aligned even when one sheet has no audit that day. Per-sheet trend values
+ * (assemblyAvg / ccAvg) are null on the other sheet's slots so each line only
+ * connects its own sheet's points.
+ */
+export function buildCombinedChartSlots(assemblyDaily = [], ccDaily = [], activeTab = 'both') {
+  const sheetKeys = getActiveSheetKeys(activeTab);
+  const byDate = {
+    assembly: new Map((assemblyDaily || []).map(d => [d.date, d])),
+    cc: new Map((ccDaily || []).map(d => [d.date, d]))
+  };
+  const dates = [...new Set(sheetKeys.flatMap(k => [...byDate[k].keys()]))].sort();
+
+  const slots = [];
+  dates.forEach(date => {
+    sheetKeys.forEach((sheet, idx) => {
+      const day = byDate[sheet].get(date);
+      slots.push({
+        date,
+        formattedDate: formatShortDate(date),
+        sheet,
+        sheetLabel: SHEET_META[sheet].label,
+        isGroupStart: idx === 0,
+        isEmpty: !day,
+        totalSheets: day ? day.totalSheets : 0,
+        level3Score: day?.level3Score ?? null,
+        level2Score: day?.level2Score ?? null,
+        level1Score: day?.level1Score ?? null,
+        avgScore: day ? day.avgScore : null,
+        assemblyAvg: sheet === 'assembly' && day ? day.avgScore : null,
+        ccAvg: sheet === 'cc' && day ? day.avgScore : null
+      });
+    });
+  });
+  return slots;
+}
+
+/**
+ * Builds rows for the Daily Activity table: newest date first, Assembly before C&C.
+ * Dates without an audit for a sheet are omitted.
+ */
+export function buildCombinedTableRows(assemblyDaily = [], ccDaily = [], activeTab = 'both') {
+  const sheetKeys = getActiveSheetKeys(activeTab);
+  const source = { assembly: assemblyDaily || [], cc: ccDaily || [] };
+  const order = { assembly: 0, cc: 1 };
+
+  return sheetKeys
+    .flatMap(sheet => source[sheet].map(day => ({ ...day, sheet, sheetLabel: SHEET_META[sheet].label })))
+    .sort((a, b) => b.date.localeCompare(a.date) || order[a.sheet] - order[b.sheet]);
+}

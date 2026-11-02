@@ -397,10 +397,17 @@ const AppRoutes = () => {
             } />
             <Route path="abnormal-condition" element={<AbnormalCondition />} />
             <Route path="ptm" element={<FmeDashboardPage key="ptm" page="ptm" />} />
-            <Route path="pdca" element={<FmeDashboardPage key="pdca" page="pdca" />} />
+            <Route path="pdca" element={
+              <RequireAccess allow="pdca:read">
+                <FmeDashboardPage key="pdca" page="pdca" />
+              </RequireAccess>
+            } />
             <Route path="process-audit" element={<FmeDashboardPage key="process-audit" page="process-audit" />} />
-            <Route path="lpa" element={<LpaPage />} />
-            <Route path="lpa/graphs" element={<LpaGraphsPage />} />
+            <Route path="lpa" element={
+              <RequireAccess allow="lpa:read">
+                <LpaPage />
+              </RequireAccess>
+            } />
           </Route>
 
           {/* Daily Meeting Layout Routes */}
@@ -590,9 +597,16 @@ const AppRoutes = () => {
             <Route path="daily-meeting" element={<MisPortalHub />} />
             <Route path="daily-meeting/morning-meeting" element={<DailyMeeting />} />
             <Route path="daily-meeting/monthly-report" element={<MonthlyMeetingReport />} />
-            <Route path="pdca" element={<FmeDashboardPage key="pdca" page="pdca" />} />
-            <Route path="lpa" element={<LpaPage />} />
-            <Route path="lpa/graphs" element={<LpaGraphsPage />} />
+            <Route path="pdca" element={
+              <RequireAccess allow="pdca:read">
+                <FmeDashboardPage key="pdca" page="pdca" />
+              </RequireAccess>
+            } />
+            <Route path="lpa" element={
+              <RequireAccess allow="lpa:read">
+                <LpaPage />
+              </RequireAccess>
+            } />
             <Route path="learning" element={<Learning />} />
             <Route path="learning/create" element={<CreateLearningComparison />} />
             <Route path="learning/edit/:id" element={<EditLearningComparison />} />

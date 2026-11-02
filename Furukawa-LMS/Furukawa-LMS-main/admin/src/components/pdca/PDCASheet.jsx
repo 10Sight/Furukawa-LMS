@@ -5098,7 +5098,7 @@ export default function PDCASheet({
             <col style={{ width: '160px', minWidth: '145px' }} />
             <col style={{ width: '95px', minWidth: '85px' }} />
             <col style={{ width: '150px', minWidth: '140px' }} />
-            {canShowRowActions && <col style={{ width: '55px', minWidth: '45px' }} />}
+            {canShowRowActions && <col style={{ width: '68px', minWidth: '64px' }} />}
           </colgroup>
 
           {/* Table Column Headers - Frozen on vertical scroll */}
@@ -5135,7 +5135,7 @@ export default function PDCASheet({
                 作成者 :
               </th>
               <th
-                colSpan={totalCols - 15}
+                colSpan={7}
                 className="bg-white border-r border-b border-[#94A3B8] p-0 font-normal align-middle"
               >
                 <input
@@ -5181,7 +5181,7 @@ export default function PDCASheet({
                 議事録No
               </th>
               <th
-                colSpan={totalCols - 15}
+                colSpan={7}
                 className="bg-white border-r border-b border-[#94A3B8] p-0 font-normal align-middle"
               >
                 <input
@@ -5232,7 +5232,7 @@ export default function PDCASheet({
 
               {/* A: Act */}
               <th
-                colSpan={totalCols - 21}
+                colSpan={1}
                 className="bg-white text-slate-900 font-bold border-r border-b-2 border-slate-700 py-1 px-2 text-center text-xs tracking-widest"
                 title="Act (A)"
               >
@@ -5564,7 +5564,7 @@ export default function PDCASheet({
                 </div>
               </th>
               {canShowRowActions && (
-                <th rowSpan={2} className="py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 select-none">
+                <th rowSpan={2} className="py-1.5 px-2 text-center border-t-2 border-b-2 border-[#475569] bg-[#1D6CE7] text-white text-[14px] font-bold select-none w-[68px] min-w-[64px]">
                   Actions
                 </th>
               )}
@@ -6684,13 +6684,13 @@ export default function PDCASheet({
 
                     {/* 16. Actions Column (Insert Row Above / Delete Row) */}
                     {canShowRowActions && (
-                      <td className="p-1 align-middle text-center border-r border-b border-[#64748B] w-[44px] min-w-[40px] bg-white group-hover/row:bg-[#F8FAFC]">
-                        <div className="flex flex-col items-center justify-center gap-1">
+                      <td className="py-1 px-1.5 align-middle text-center border-0 w-[68px] min-w-[64px] bg-white">
+                        <div className="flex flex-row items-center justify-center gap-1.5">
                           {canShowRowActions && (
                           <button
                             type="button"
                             onClick={() => handleInsertRowAbove(idx)}
-                            className={`flex items-center justify-center w-5 h-5 shrink-0 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-all shadow-2xs cursor-pointer ${!canAddRow ? 'hidden' : ''}`}
+                            className={`flex items-center justify-center w-6 h-6 shrink-0 rounded-md bg-white border border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-all shadow-2xs cursor-pointer ${!canAddRow ? 'hidden' : ''}`}
                             title="Insert row above"
                           >
                             <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
@@ -6700,7 +6700,7 @@ export default function PDCASheet({
                             <button
                               type="button"
                               onClick={() => handleDeleteRow(idx)}
-                              className="flex items-center justify-center w-5 h-5 shrink-0 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-400 hover:bg-rose-50 transition-all shadow-2xs cursor-pointer"
+                              className="flex items-center justify-center w-6 h-6 shrink-0 rounded-md bg-white border border-slate-200 text-slate-600 hover:text-rose-600 hover:border-rose-400 hover:bg-rose-50 transition-all shadow-2xs cursor-pointer"
                               title="Delete this row"
                             >
                               <Trash2 className="w-3.5 h-3.5 stroke-[2]" />

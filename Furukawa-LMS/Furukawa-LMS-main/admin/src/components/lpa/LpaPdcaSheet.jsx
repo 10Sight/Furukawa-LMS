@@ -3010,10 +3010,10 @@ export default function LpaPdcaSheet({
           </div>
 
           {/* ── ACTIONS Side Panel ── */}
-          <div className="flex-shrink-0 w-[40px] bg-[#F8FAFC] flex flex-col">
+          <div className="flex-shrink-0 w-[68px] bg-white flex flex-col">
             <div ref={actionsHeaderRef} className="sticky top-0 z-10 bg-white px-2 py-[9px] flex items-center justify-center gap-1.5 select-none" />
 
-            <div style={{ height: Math.max(0, theadHeight - actionsHeaderHeight), boxSizing: 'border-box' }} aria-hidden="true" />
+            <div style={{ height: Math.max(0, theadHeight - actionsHeaderHeight), boxSizing: 'border-box' }} className="flex flex-col justify-end" aria-hidden="true">{canEditEntireSheet && <div className="bg-[#1D6CE7] text-white text-[13px] font-bold py-2.5 text-center select-none">Actions</div>}</div>
 
             {filteredRows.map((row) => {
               const idx = row.originalIndex;
@@ -3021,14 +3021,14 @@ export default function LpaPdcaSheet({
                 <div
                   key={idx}
                   style={{ height: rowHeights[idx] ? `${rowHeights[idx]}px` : '43px', boxSizing: 'border-box' }}
-                  className="flex flex-col items-center justify-center gap-0.5 px-2 border-b border-[#64748B] group hover:bg-blue-50/20 transition-colors"
+                  className="flex flex-row items-center justify-center gap-1.5 px-1.5 bg-white transition-colors"
                 >
                   {canEditEntireSheet && (
                     <>
                       <button
                         type="button"
                         onClick={() => handleInsertRowAbove(idx)}
-                        className="flex items-center justify-center w-5 h-5 shrink-0 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-all shadow-2xs cursor-pointer"
+                        className="flex items-center justify-center w-6 h-6 shrink-0 rounded-md bg-white border border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-all shadow-2xs cursor-pointer"
                         title="Insert row above"
                       >
                         <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
@@ -3036,7 +3036,7 @@ export default function LpaPdcaSheet({
                       <button
                         type="button"
                         onClick={() => handleDeleteRow(idx)}
-                        className="flex items-center justify-center w-5 h-5 shrink-0 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-400 hover:bg-rose-50 transition-all shadow-2xs cursor-pointer"
+                        className="flex items-center justify-center w-6 h-6 shrink-0 rounded-md bg-white border border-slate-200 text-slate-600 hover:text-rose-600 hover:border-rose-400 hover:bg-rose-50 transition-all shadow-2xs cursor-pointer"
                         title="Delete row"
                       >
                         <Trash2 className="w-3.5 h-3.5 stroke-[2]" />

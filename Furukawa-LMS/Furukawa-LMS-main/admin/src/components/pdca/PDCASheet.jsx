@@ -1027,7 +1027,7 @@ export default function PDCASheet({
       confirmation = row.responsiblePersonConfirmation.trim();
     }
     if (confirmation === 'Not-Confirmed') confirmation = 'Not - Confirmed';
-    const confirmedBy = (row.confirmedBy || '').trim();
+    let confirmedBy = (row.confirmedBy || '').trim();
     const instruction = (row.instruction || '').trim();
 
     const hasDate = Boolean(row.date?.trim());
@@ -1068,6 +1068,35 @@ export default function PDCASheet({
     const respUnits = usesCheckboxMultiSelects
       ? (Array.isArray(row.respUnits) && row.respUnits.length ? [...new Set(row.respUnits.map(String).filter(Boolean))] : (respUnit ? [respUnit] : []))
       : (respUnit ? [respUnit] : []);
+
+    const candidateNormalizedRow = {
+      ...row,
+      department,
+      departments,
+      unit,
+      units,
+      stdDurationMin,
+      responseDate,
+      respUnit,
+      respUnits,
+      responsiblePersonUnit: respUnit,
+      respDeptsByUnit: row.respDeptsByUnit || {},
+      responsiblePersonDept,
+      actionTaken: row.actionTaken || '',
+      staffEmployee,
+      staffEmployees,
+      staffName,
+      status: status || normStatus || row.status
+    };
+    if (confirmation && getMissingConfirmationMandatoryFields(candidateNormalizedRow).length > 0) {
+      confirmation = '';
+      confirmedBy = '';
+    }
+    const cleanedRespConf = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((row.responsiblePersonConfirmation || '').trim()) && !confirmation
+      ? ''
+      : row.responsiblePersonConfirmation;
+
+    const _unusedObj = {};
 
     return {
       ...row,
@@ -1112,7 +1141,7 @@ export default function PDCASheet({
       staffName,
       staffId,
       employeeId: staffId,
-      responsiblePersonConfirmation: confirmation || row.responsiblePersonConfirmation || staffEmployee || ''
+      responsiblePersonConfirmation: confirmation || cleanedRespConf || staffEmployee || ''
     };
   };
 
@@ -1152,7 +1181,7 @@ export default function PDCASheet({
   const missingRequiredInputs = rows.flatMap((row, rowIndex) => {
     if (!row.date?.trim()) return [];
     const missing = [];
-    if (['Not - Confirmed', 'Not-Confirmed'].includes((row.confirmation || '').trim()) && !row.instruction?.trim()) {
+    if (['Not - Confirmed', 'Not-Confirmed'].includes((row.confirmation || '').trim()) && getMissingConfirmationMandatoryFields(row).length === 0 && !row.instruction?.trim()) {
       missing.push({ type: 'confirmation', rowIndex, key: `confirmation:${rowIndex}` });
     }
     if (false && row.responseDate?.trim() && !hasValidStdDuration(row.stdDurationMin ?? row.stdDuration)) {
@@ -1904,7 +1933,7 @@ export default function PDCASheet({
       if (!isRowStartedForSave(r)) {
         continue;
       }
-      const notConfirmed = ['Not - Confirmed', 'Not-Confirmed'].includes((r.confirmation || '').trim());
+      const notConfirmed = ['Not - Confirmed', 'Not-Confirmed'].includes((r.confirmation || '').trim()) && getMissingConfirmationMandatoryFields(r).length === 0;
       if (notConfirmed && !r.instruction?.trim()) {
         const reasonInput = responsibleConfirmationReasonRefs.current[i];
         reasonInput?.focus();
@@ -1951,7 +1980,7 @@ export default function PDCASheet({
       }
 
       const hasConfirmationSelected = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((r.confirmation || '').trim());
-      if (hasConfirmationSelected) {
+      if (false && hasConfirmationSelected) {
         const missingForConf = getMissingConfirmationMandatoryFields(rowForCheck);
         if (missingForConf.length > 0) {
           setAlertModal({
@@ -1975,7 +2004,7 @@ export default function PDCASheet({
       if (!r.date?.trim() && !r.observation?.trim()) {
         continue;
       }
-      const notConfirmed = ['Not - Confirmed', 'Not-Confirmed'].includes((r.confirmation || '').trim());
+      const notConfirmed = ['Not - Confirmed', 'Not-Confirmed'].includes((r.confirmation || '').trim()) && getMissingConfirmationMandatoryFields(r).length === 0;
       if (notConfirmed && !r.instruction?.trim()) {
         const reasonInput = responsibleConfirmationReasonRefs.current[i];
         reasonInput?.focus();
@@ -2027,7 +2056,7 @@ export default function PDCASheet({
         return;
       }
       const hasConfirmationSelected = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((r.confirmation || '').trim());
-      if (hasConfirmationSelected) {
+      if (false && hasConfirmationSelected) {
         const missingForConf = getMissingConfirmationMandatoryFields(rowForCheck);
         if (missingForConf.length > 0) {
           setAlertModal({
@@ -2071,7 +2100,7 @@ export default function PDCASheet({
         if (!staffVal) missing.push('Staff name');
       }
       const hasConfirmationSelected = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((r.confirmation || '').trim());
-      if (hasConfirmationSelected) {
+      if (false && hasConfirmationSelected) {
         const missingForConf = getMissingConfirmationMandatoryFields(r);
         if (missingForConf.length > 0) {
           setAlertModal({
@@ -2290,7 +2319,7 @@ export default function PDCASheet({
         return;
       }
       const hasConfirmationSelected = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((r.confirmation || '').trim());
-      if (hasConfirmationSelected) {
+      if (false && hasConfirmationSelected) {
         const missingForConf = getMissingConfirmationMandatoryFields(rowForCheck);
         if (missingForConf.length > 0) {
           setAlertModal({
@@ -2352,7 +2381,7 @@ export default function PDCASheet({
         if (!staffVal) missing.push('Staff name');
       }
       const hasConfirmationSelected = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((r.confirmation || '').trim());
-      if (hasConfirmationSelected) {
+      if (false && hasConfirmationSelected) {
         const missingForConf = getMissingConfirmationMandatoryFields(r);
         if (missingForConf.length > 0) {
           setAlertModal({
@@ -3984,7 +4013,7 @@ export default function PDCASheet({
       if (!curr) return prev;
 
       let actualStatus = normalizedStatus;
-      if (!curr.responseDate && normalizedStatus !== 'Not-Started') {
+      if (false && !curr.responseDate && normalizedStatus !== 'Not-Started') {
         actualStatus = 'Not-Started';
         if (typeof showToast === 'function') {
           showToast('Response date is required before updating status.');
@@ -3993,17 +4022,17 @@ export default function PDCASheet({
 
       let nextConfirmation = curr.confirmation;
       let nextConfirmedBy = curr.confirmedBy;
-      if (actualStatus === 'Done') {
+      if (false && actualStatus === 'Done') {
         nextConfirmation = 'Confirmed';
         if (!nextConfirmedBy) {
           nextConfirmedBy = effectiveUser?.fullName || effectiveUser?.name || 'Administrator';
         }
-      } else if (actualStatus === 'In- Progress') {
+      } else if (false && actualStatus === 'In- Progress') {
         nextConfirmation = 'Not - Confirmed';
         if (!nextConfirmedBy) {
           nextConfirmedBy = effectiveUser?.fullName || effectiveUser?.name || 'Administrator';
         }
-      } else if (actualStatus === 'Not-Started') {
+      } else if (false && actualStatus === 'Not-Started') {
         nextConfirmation = '';
         nextConfirmedBy = '';
       }

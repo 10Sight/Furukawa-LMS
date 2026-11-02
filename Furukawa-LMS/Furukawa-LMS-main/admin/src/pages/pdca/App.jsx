@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { MemoryRouter as BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { PDCAProvider } from './context/PDCAContext';
 import MainLayout from './layouts/MainLayout';
@@ -28,10 +28,22 @@ class PDCAErrorBoundary extends React.Component {
 }
 
 export default function App({ onFormViewChange }) {
+  const initialEntries = useMemo(() => {
+    try {
+      const sp = new URLSearchParams(window.location.search).get('sheet');
+      if (sp) return [`/sheet/${encodeURIComponent(decodeURIComponent(sp))}`];
+      const h = window.location.hash;
+      if (h && h.startsWith('#/sheet/')) {
+        return [h.replace(/^#/, '')];
+      }
+    } catch { /* ignore */ }
+    return ['/'];
+  }, []);
+
   return (
     <PDCAErrorBoundary>
     <PDCAProvider>
-    <BrowserRouter>
+    <BrowserRouter initialEntries={initialEntries}>
         <Routes>
           <Route path="/" element={<MainLayout embedded cmsIntegration onFormViewChange={onFormViewChange} />}>
             <Route index element={<DashboardPage />} />

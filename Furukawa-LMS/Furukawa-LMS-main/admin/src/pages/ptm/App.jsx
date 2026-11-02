@@ -251,8 +251,12 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
   }, [filteredListItems, currentPage, itemsPerPage]);
 
   const handleOpenForm = (item) => {
-    if (!selectedUnit) return;
-    const form = item.form || { headerInfo: loadUnitHeaderInfo(selectedUnit || 'Bawal'), ptmRows: loadUnitRows(selectedUnit || 'Bawal') };
+    const targetUnit = item.plant || selectedUnit || 'Bawal';
+    if (targetUnit !== selectedUnit && VALID_UNITS.includes(targetUnit)) {
+      setSelectedUnit(targetUnit);
+      try { sessionStorage.setItem('ptm_selected_unit', targetUnit); } catch { /* ignore */ }
+    }
+    const form = item.form || { headerInfo: loadUnitHeaderInfo(targetUnit), ptmRows: loadUnitRows(targetUnit) };
     setHeaderInfo(form.headerInfo);
     setPtmRows(form.ptmRows);
     formStateRef.current = form;
@@ -260,7 +264,76 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
     setSelectedTopicItem(item);
     setCurrentView('form');
     showToast(`Opening PTM Form for: ${item.topic}`);
+
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({
+        type: 'fme-cms-sheet-opened',
+        page: activeSection || 'ptm',
+        topic: item.topic || item.id,
+        id: item.id
+      }, window.location.origin);
+    }
   };
+
+  const handleBackToList = () => {
+    setCurrentView('list');
+    setSelectedTopicItem(null);
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({
+        type: 'fme-cms-sheet-closed',
+        page: activeSection || 'ptm'
+      }, window.location.origin);
+    }
+  };
+
+  useEffect(() => {
+    const handleParentMessage = (event) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type === 'fme-cms-navigate-to-list') {
+        setCurrentView('list');
+        setSelectedTopicItem(null);
+      } else if (event.data?.type === 'fme-cms-open-sheet') {
+        const topic = event.data.topic;
+        if (topic) {
+          const match = listItems.find(
+            it => String(it.topic || '').trim().toLowerCase() === String(topic).trim().toLowerCase() ||
+                  String(it.id || '').trim().toLowerCase() === String(topic).trim().toLowerCase()
+          );
+          if (match) {
+            handleOpenForm(match);
+          }
+        }
+      }
+    };
+    window.addEventListener('message', handleParentMessage);
+    return () => window.removeEventListener('message', handleParentMessage);
+  }, [listItems, selectedUnit, activeSection]);
+
+  const initialSheetTopic = useMemo(() => {
+    try {
+      const q = new URLSearchParams(window.location.search).get('sheet');
+      if (q) return decodeURIComponent(q);
+      const h = window.location.hash;
+      if (h && h !== '#' && h !== '#/') {
+        return decodeURIComponent(h.replace(/^#\/?(?:sheet\/)?/, ''));
+      }
+    } catch { /* ignore */ }
+    return '';
+  }, []);
+
+  const autoOpenedRef = useRef(false);
+  useEffect(() => {
+    if (autoOpenedRef.current || !initialSheetTopic) return;
+    if (!listItems || listItems.length === 0) return;
+    const match = listItems.find(
+      it => String(it.topic || '').trim().toLowerCase() === initialSheetTopic.trim().toLowerCase() ||
+            String(it.id || '').trim().toLowerCase() === initialSheetTopic.trim().toLowerCase()
+    );
+    if (match) {
+      autoOpenedRef.current = true;
+      handleOpenForm(match);
+    }
+  }, [initialSheetTopic, listItems]);
 
   const handleAddListItem = (newItem) => {
     if (!newItem.topic?.trim()) throw new Error('Please enter a topic.');
@@ -535,7 +608,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
           <TopHeader
             currentView={currentView}
             onExport={handleExportList}
-            onBackToList={() => setCurrentView('list')}
+            onBackToList={handleBackToList}
           />
         )}
 
@@ -649,7 +722,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
 
 
                       <div className="fixed inset-x-0 top-0 z-[60] flex min-h-12 w-full flex-wrap items-center gap-1.5 border-b border-slate-300 bg-white px-4 py-2 shadow-sm">
-                        <button type="button" onClick={() => setCurrentView('list')} className="flex items-center gap-1 rounded-lg bg-slate-100 px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200"><ArrowLeft className="h-3.5 w-3.5"/><span>Back</span></button>
+                        <button type="button" onClick={handleBackToList} className="flex items-center gap-1 rounded-lg bg-slate-100 px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200"><ArrowLeft className="h-3.5 w-3.5"/><span>Back</span></button>
                         <button type="button" onClick={undoFormChange} disabled={historyRef.current.undo.length === 0} className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50" title="Go to the previous form state"><Undo2 className="h-4 w-4"/></button>
                         <button type="button" onClick={redoFormChange} disabled={historyRef.current.redo.length === 0} className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50" title="Go to the next form state"><Redo2 className="h-4 w-4"/></button>
                         <button type="button" onClick={saveFormChanges} className="flex items-center gap-1 rounded-lg bg-[#2563EB] px-2 py-1.5 text-xs font-bold text-white hover:bg-blue-700" title="Save all current form changes"><Save className="h-4 w-4"/><span>Save</span></button>

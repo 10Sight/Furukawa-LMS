@@ -1,17 +1,22 @@
 import { demoModeEnabled } from "../../../../shared/demoData.js";
 import { authSession } from "@/utils/authSession.js";
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import { useSelector } from 'react-redux';
-import { useLocation, useNavigate, useOutletContext } from 'react-router-dom';
+import { useLocation, useNavigate, useParams, useOutletContext } from 'react-router-dom';
 
 const labels = { ptm: 'PTM', pdca: 'PDCA', 'process-audit': 'Process Audit' };
 
 export default function FmeDashboardPage({ page }) {
     const frameRef = useRef(null);
-    const { search } = useLocation();
+    const location = useLocation();
     const navigate = useNavigate();
+    const params = useParams();
     const { isFormView, setIsFormView } = useOutletContext();
     useEffect(() => () => setIsFormView(false), [setIsFormView]);
+
+    const activeSheet = params.sheetTopic
+        ? decodeURIComponent(params.sheetTopic)
+        : (new URLSearchParams(location.search).get('sheet') || '');
 
     const user = useSelector(state => state.auth?.user);
     const departments = (Array.isArray(user?.departments) ? user.departments : []).filter(item => item && typeof item === 'object');
@@ -36,22 +41,52 @@ export default function FmeDashboardPage({ page }) {
         loading: false,
         error: false,
     };
-    const publishUserContext = () => {
+    const publishUserContext = useCallback(() => {
         if (page === 'pdca' && frameRef.current?.contentWindow) {
             frameRef.current.contentWindow.postMessage({ type: 'fme-cms-user-context', ...contextRef.current }, window.location.origin);
         }
-    };
-    useEffect(publishUserContext, [page, user]);
+    }, [page]);
+    useEffect(publishUserContext, [publishUserContext, user]);
 
     const sourceRef = useRef(null);
     if (!sourceRef.current) {
-        const sheet = new URLSearchParams(search).get('sheet');
-        const route = page === 'pdca' && sheet ? `/sheet/${encodeURIComponent(sheet)}` : '/';
-        sourceRef.current = `/cms-dashboard/index.html?page=${page}&_v=${Date.now()}${demoModeEnabled(import.meta.env) ? "&demo=1" : ""}#${route}`;
+        const sheetQuery = activeSheet ? `&sheet=${encodeURIComponent(activeSheet)}` : '';
+        const route = activeSheet ? (page === 'pdca' ? `/sheet/${encodeURIComponent(activeSheet)}` : `/${encodeURIComponent(activeSheet)}`) : '/';
+        sourceRef.current = `/cms-dashboard/index.html?page=${page}${sheetQuery}&_v=${Date.now()}${demoModeEnabled(import.meta.env) ? "&demo=1" : ""}#${route}`;
     }
+
+    // Distinguish between iframe-driven navigation and browser back/forward buttons
+    const internalNavRef = useRef(false);
+
+    // Synchronize browser history navigation (back/forward) with the iframe
+    useEffect(() => {
+        if (internalNavRef.current) {
+            internalNavRef.current = false;
+            return;
+        }
+        if (!frameRef.current?.contentWindow) return;
+
+        if (!activeSheet) {
+            // URL navigated back to /cms/:page (e.g. user clicked browser Back)
+            frameRef.current.contentWindow.postMessage({
+                type: 'fme-cms-navigate-to-list',
+                page
+            }, window.location.origin);
+        } else {
+            // URL changed to a sheet (e.g. user clicked browser Forward)
+            frameRef.current.contentWindow.postMessage({
+                type: 'fme-cms-open-sheet',
+                page,
+                topic: activeSheet
+            }, window.location.origin);
+        }
+    }, [activeSheet, page]);
+
     useEffect(() => {
         const syncRoute = event => {
-            if (event.origin !== window.location.origin || event.source !== frameRef.current?.contentWindow || event.data?.page !== page) return;
+            if (event.origin !== window.location.origin || event.source !== frameRef.current?.contentWindow) return;
+            if (event.data?.page && event.data.page !== page) return;
+
             if (event.data.type === 'fme-cms-user-context-request') {
                 publishUserContext();
                 return;
@@ -60,12 +95,71 @@ export default function FmeDashboardPage({ page }) {
                 setIsFormView(event.data.open === true);
                 return;
             }
-            if (event.data.type !== 'fme-cms-route') return;
-            const match = /^#\/sheet\/([^/?#]+)$/.exec(event.data.hash || '');
-            navigate(`/cms/${page}${match ? `?sheet=${encodeURIComponent(decodeURIComponent(match[1]))}` : ''}`, { replace: true });
+
+            // Sheet opened inside iframe: push new history entry so browser Back button works
+            if (event.data.type === 'fme-cms-sheet-opened' || (event.data.type === 'fme-cms-route' && event.data.topic)) {
+                const topic = event.data.topic || event.data.id;
+                if (topic) {
+                    const targetPath = `/cms/${page}/${encodeURIComponent(topic)}`;
+                    if (location.pathname !== targetPath) {
+                        internalNavRef.current = true;
+                        navigate(targetPath, { replace: false });
+                    }
+                }
+                return;
+            }
+
+            // Sheet closed inside iframe (e.g. Back button inside sheet clicked)
+            if (event.data.type === 'fme-cms-sheet-closed' || (event.data.type === 'fme-cms-route' && !event.data.topic && !event.data.hash)) {
+                const targetPath = `/cms/${page}`;
+                if (location.pathname !== targetPath) {
+                    internalNavRef.current = true;
+                    navigate(targetPath, { replace: false });
+                }
+                return;
+            }
+
+            // Legacy hash route support
+            if (event.data.type === 'fme-cms-route') {
+                const match = /^#\/sheet\/([^/?#]+)$/.exec(event.data.hash || '');
+                if (match) {
+                    const topic = decodeURIComponent(match[1]);
+                    const targetPath = `/cms/${page}/${encodeURIComponent(topic)}`;
+                    if (location.pathname !== targetPath) {
+                        internalNavRef.current = true;
+                        navigate(targetPath, { replace: false });
+                    }
+                } else {
+                    const targetPath = `/cms/${page}`;
+                    if (location.pathname !== targetPath) {
+                        internalNavRef.current = true;
+                        navigate(targetPath, { replace: false });
+                    }
+                }
+            }
         };
         window.addEventListener('message', syncRoute);
         return () => window.removeEventListener('message', syncRoute);
-    }, [navigate, page, setIsFormView]);
-    return <iframe ref={frameRef} src={sourceRef.current} title={labels[page]} onLoad={() => { publishUserContext(); frameRef.current?.contentWindow?.postMessage({ type: 'fme-cms-state-request' }, window.location.origin); }} className={`block w-full border-0 ${isFormView ? '' : 'rounded-lg'}`} style={{ height: isFormView ? '100dvh' : 'calc(100dvh - 10rem)', minHeight: isFormView ? 0 : '32rem' }} />;
+    }, [location.pathname, navigate, page, publishUserContext, setIsFormView]);
+
+    return (
+        <iframe
+            ref={frameRef}
+            src={sourceRef.current}
+            title={labels[page]}
+            onLoad={() => {
+                publishUserContext();
+                frameRef.current?.contentWindow?.postMessage({ type: 'fme-cms-state-request' }, window.location.origin);
+                if (activeSheet) {
+                    frameRef.current?.contentWindow?.postMessage({
+                        type: 'fme-cms-open-sheet',
+                        page,
+                        topic: activeSheet
+                    }, window.location.origin);
+                }
+            }}
+            className={`block w-full border-0 ${isFormView ? '' : 'rounded-lg'}`}
+            style={{ height: isFormView ? '100dvh' : 'calc(100dvh - 10rem)', minHeight: isFormView ? 0 : '32rem' }}
+        />
+    );
 }

@@ -20,7 +20,7 @@ import CreateLpaModal from '../../components/lpa/CreateLpaModal';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import { PDCAProvider } from '../pdca/context/PDCAContext';
 import { getLpaPdcaTopic, saveLpaPdcaSnapshot, extractObservationsFromSheet, createEmptyPdcaRow, getWorksheetScore, getWorksheetScoresList } from './lpaPdcaUtils';
-import { isRecordCreator, isUserInSameDepartmentAsRecord, canEditRecord, resolvePDCASheetRows, getPDCASheetStatusSummary } from '@pages/pdca/data/recordFilters.js';
+import { isRecordCreator, isUserInSameDepartmentAsRecord, canEditRecord, resolvePDCASheetRows, getPDCASheetStatusSummary, getUserPrimaryDepartment } from '@pages/pdca/data/recordFilters.js';
 import LpaTable from '../../components/lpa/LpaTable';
 import LpaGraphSection from '../../components/lpa/LpaGraphSection';
 import { matchesLpaDateRange, normalizeLpaDate } from './lpaDateFilters.js';
@@ -890,6 +890,14 @@ function LpaPageContent({ viewContext }) {
   }, [activeSection, selectedUnit]);
 
   const [isCreatePdcaModalOpen, setIsCreatePdcaModalOpen] = useState(false);
+  useEffect(() => {
+    if (isCreatePdcaModalOpen && effectiveAuthUser) {
+      const primaryDept = getUserPrimaryDepartment(effectiveAuthUser);
+      if (primaryDept) {
+        setNewPdcaForm(prev => ({ ...prev, department: primaryDept }));
+      }
+    }
+  }, [isCreatePdcaModalOpen, effectiveAuthUser]);
   const [newPdcaForm, setNewPdcaForm] = useState({
     title: '',
     date: todayIso,
@@ -943,15 +951,22 @@ function LpaPageContent({ viewContext }) {
       }
     }
 
-    const result = Array.from(map.values());
-    return result.sort((a, b) => {
+    const rawList = Array.from(map.values());
+    // Department-Based Access Control:
+    // Admin has unrestricted access to all LPA PDCA sheets.
+    // Non-admin users only have access to sheets belonging to their department (or sheets they created).
+    const filteredByDept = (isAdmin || !effectiveAuthUser)
+      ? rawList
+      : rawList.filter(sheet => isRecordCreator(sheet, effectiveAuthUser) || isUserInSameDepartmentAsRecord(sheet, effectiveAuthUser));
+
+    return filteredByDept.sort((a, b) => {
       if (a.id === baseSheetId) return -1;
       if (b.id === baseSheetId) return 1;
       const dateA = a.createdAt || a.date || '';
       const dateB = b.createdAt || b.date || '';
       return String(dateB).localeCompare(String(dateA));
     });
-  }, [activeSection, selectedUnit, pdcaDate, backendPdcaSheets, customPdcaSheets, pdcaDeleteRevision]);
+  }, [activeSection, selectedUnit, pdcaDate, backendPdcaSheets, customPdcaSheets, pdcaDeleteRevision, isAdmin, effectiveAuthUser]);
   const visiblePdcaSheets = allPdcaSheets.filter(item => item.isDefault || matchesLpaDateRange(item.date, fromDate, toDate));
 
   const emailPdcaSheets = useMemo(() => allPdcaSheets.map(item => {
@@ -1091,7 +1106,7 @@ function LpaPageContent({ viewContext }) {
       date: newPdcaForm.date || pdcaDate || todayIso,
       plant: targetUnit,
       unit: targetUnit,
-      department: newPdcaForm.department || (activeSection === 'assembly' ? 'Assembly' : 'C&C'),
+      department: (effectiveAuthUser && getUserPrimaryDepartment(effectiveAuthUser)) || newPdcaForm.department || (activeSection === 'assembly' ? 'Assembly' : 'C&C'),
       category: activeSection,
       lpaCategory: activeSection,
       scope: 'Company',

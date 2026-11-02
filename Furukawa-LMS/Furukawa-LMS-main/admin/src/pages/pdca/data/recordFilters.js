@@ -176,9 +176,20 @@ function normalizeDepartmentName(dept) {
   if (typeof dept === 'object') {
     return normalizeDepartmentName(dept.name || dept.department || dept.deptName || '');
   }
-  const trimmed = String(dept).trim();
-  if (!trimmed || trimmed.toLowerCase() === 'cft') return '';
-  return trimmed.toLowerCase();
+  const trimmed = String(dept).trim().toLowerCase();
+  if (!trimmed || trimmed === 'cft') return '';
+  if (trimmed.includes('quality') || trimmed.includes('qa') || trimmed.includes('qc')) return 'quality';
+  if (trimmed === 'c&c' || trimmed === 'cc' || trimmed.includes('c&c') || trimmed.includes('cutting')) return 'c&c';
+  if (trimmed.includes('assembly')) return 'assembly';
+  if (trimmed.includes('maintenance')) return 'maintenance';
+  if (trimmed.includes('production') || trimmed.includes('prod')) return 'production';
+  if (trimmed === 'it' || trimmed.includes('it & edp') || trimmed.includes('information tech')) return 'it';
+  if (trimmed === 'hr' || trimmed.includes('human resource')) return 'hr';
+  if (trimmed === 'pe' || trimmed.includes('process eng')) return 'pe';
+  if (trimmed.includes('safety') || trimmed.includes('ehs')) return 'safety';
+  if (trimmed.includes('store') || trimmed.includes('warehouse')) return 'store';
+  if (trimmed.includes('d&d') || trimmed.includes('design')) return 'd&d';
+  return trimmed;
 }
 
 export function getUserDepartments(user, employeeDatabase = VERIFIED_EMPLOYEE_MASTER) {
@@ -212,6 +223,8 @@ export function getUserDepartments(user, employeeDatabase = VERIFIED_EMPLOYEE_MA
       findEmployeeDepartment({ name: userName, code: userCode }, VERIFIED_EMPLOYEE_MASTER);
     addDept(dbDept);
   }
+
+
 
   return Array.from(depts);
 }
@@ -263,6 +276,16 @@ export function getRecordDepartments(record, employeeDatabase = VERIFIED_EMPLOYE
     const dbDept = findEmployeeDepartment(preparedBy, employeeDatabase) ||
       findEmployeeDepartment(preparedBy, VERIFIED_EMPLOYEE_MASTER);
     addDept(dbDept);
+  }
+
+  if (depts.size === 0) {
+    const idLower = String(record.id || record.recordId || '').toLowerCase();
+    const topicLower = String(record.topic || '').toLowerCase();
+    if (idLower.includes('pdca-lpa-assembly') || topicLower.includes('assembly')) {
+      depts.add('assembly');
+    } else if (idLower.includes('pdca-lpa-cc') || topicLower.includes('c&c')) {
+      depts.add('c&c');
+    }
   }
 
   return Array.from(depts);
@@ -807,4 +830,37 @@ export function clearStoredUnit() {
       sessionStorage.removeItem(PDCA_SELECTED_UNIT_KEY);
     }
   } catch {}
+}
+
+export function getUserPrimaryDepartment(user, employeeDatabase = VERIFIED_EMPLOYEE_MASTER) {
+  if (!user || typeof user !== 'object') return '';
+  const direct = user.deptName ||
+    (typeof user.department === 'string' ? user.department : user.department?.name) ||
+    (Array.isArray(user.departments) && user.departments.length > 0 ? user.departments[0] : '');
+  if (direct && typeof direct === 'string' && direct.trim() && direct.trim().toLowerCase() !== 'cft') {
+    return direct.trim();
+  }
+  const userCode = user.code || user.empId || user.employeeId || user.empCode || user.userName || '';
+  const userName = user.name || user.fullName || '';
+  const dbDept = findEmployeeDepartment({ name: userName, code: userCode }, employeeDatabase) ||
+    findEmployeeDepartment({ name: userName, code: userCode }, VERIFIED_EMPLOYEE_MASTER);
+  if (dbDept) return dbDept;
+  const depts = getUserDepartments(user, employeeDatabase);
+  if (depts.length > 0) {
+    return depts[0].charAt(0).toUpperCase() + depts[0].slice(1);
+  }
+  return '';
+}
+
+export function canAccessRecord(record, currentUser, employeeDatabase = VERIFIED_EMPLOYEE_MASTER) {
+  if (!record) return false;
+  if (!currentUser) return true;
+  const isAdmin = Boolean(
+    currentUser?.isAdmin === true ||
+    currentUser?.isAdmin === 1 ||
+    String(currentUser?.role || '').toUpperCase() === 'ADMIN' ||
+    String(currentUser?.role || '').toUpperCase() === 'SUPERADMIN'
+  );
+  if (isAdmin) return true;
+  return isRecordCreator(record, currentUser) || isUserInSameDepartmentAsRecord(record, currentUser, employeeDatabase);
 }

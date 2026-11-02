@@ -1,4 +1,4 @@
-import { filterPDCARecords, matchesPlant, PDCA_PLANTS, getStoredUnit, resolveCurrentUserId, isRecordCreator } from '../data/recordFilters';
+import { filterPDCARecords, matchesPlant, PDCA_PLANTS, getStoredUnit, resolveCurrentUserId, isRecordCreator, isUserInSameDepartmentAsRecord } from '../data/recordFilters';
 import { createDefaultRows } from '../data/pdcaStore';
 import { readSaved } from '@components/shared/formPersistence';
 import React, { useState, useMemo, useEffect, useRef } from 'react';
@@ -74,6 +74,8 @@ export default function DashboardPage() {
     if (lpaSource?.unit) setSelectedPlant(lpaSource.unit);
   }, [lpaSource?.unit]);
 
+  const isUserAdmin = Boolean(userContext?.user?.role === 'admin' || userContext?.user?.isAdmin || String(userContext?.user?.role || '').toUpperCase() === 'ADMIN' || String(userContext?.user?.role || '').toUpperCase() === 'SUPERADMIN');
+
   const sourceData = useMemo(() => {
     // When accessed from LPA context (lpaSource set), only show records linked to that LPA source.
     // When on the standalone PDCA page (no lpaSource), exclude records that were created by the
@@ -83,18 +85,29 @@ export default function DashboardPage() {
       if (!lpaSource) {
         const id = String(item.id || item.recordId || '');
         if (id.startsWith('PDCA-LPA-')) return false;
-        return true;
+      } else {
+        const matchesLpa = (
+          (!lpaSource.category || item.lpaSource?.category === lpaSource.category) &&
+          (!lpaSource.workbookId || item.lpaSource?.workbookId === lpaSource.workbookId) &&
+          (!lpaSource.worksheet || item.lpaSource?.worksheet === lpaSource.worksheet) &&
+          (!lpaSource.unit || item.lpaSource?.unit === lpaSource.unit) &&
+          (!lpaSource.level || item.lpaSource?.level === lpaSource.level) &&
+          (!lpaSource.date || item.lpaSource?.date === lpaSource.date)
+        );
+        if (!matchesLpa) return false;
       }
-      return (
-        (!lpaSource.category || item.lpaSource?.category === lpaSource.category) &&
-        (!lpaSource.workbookId || item.lpaSource?.workbookId === lpaSource.workbookId) &&
-        (!lpaSource.worksheet || item.lpaSource?.worksheet === lpaSource.worksheet) &&
-        (!lpaSource.unit || item.lpaSource?.unit === lpaSource.unit) &&
-        (!lpaSource.level || item.lpaSource?.level === lpaSource.level) &&
-        (!lpaSource.date || item.lpaSource?.date === lpaSource.date)
-      );
+
+      // Department-Based Access Control:
+      // Admin has unrestricted access to all records.
+      // Non-admin users can only view records of their own department or records they created.
+      if (!isUserAdmin && userContext?.user) {
+        const canAccess = isRecordCreator(item, userContext.user) || isUserInSameDepartmentAsRecord(item, userContext.user);
+        if (!canAccess) return false;
+      }
+
+      return true;
     });
-  }, [data, lpaSource]);
+  }, [data, lpaSource, isUserAdmin, userContext?.user]);
   const openLpaPdca = () => {
     const linked = sourceData[0];
     if (linked) {
@@ -158,8 +171,8 @@ export default function DashboardPage() {
   };
   const handleEditPDCA = (item) => {
     if (!item) return;
-    if (!isRecordCreator(item, userContext?.user)) {
-      showToast('Only the record creator can edit this PDCA record.');
+    if (!isUserAdmin && !isRecordCreator(item, userContext?.user) && !isUserInSameDepartmentAsRecord(item, userContext?.user)) {
+      showToast('Forbidden: Only members of the same department or the creator can edit this record.');
       return;
     }
     setModalMode(item);
@@ -168,7 +181,6 @@ export default function DashboardPage() {
     handleUpdatePDCA(item);
     revealSavedForm(item);
   };
-  const isUserAdmin = Boolean(userContext?.user?.role === 'admin' || userContext?.user?.isAdmin);
   const requestDeletePDCA = id => {
     const item = data.find(record => String(record.id) === String(id));
     if (!item) return;
@@ -358,7 +370,13 @@ export default function DashboardPage() {
           onDownload={handleDownloadPDCASheet}
           onCopy={handleCopy}
           onDelete={requestDeletePDCA}
-          onTopicClick={(topicRow) => navigate(`/sheet/${topicRow.id}`)}
+          onTopicClick={(topicRow) => {
+            if (!isUserAdmin && !isRecordCreator(topicRow, userContext?.user) && !isUserInSameDepartmentAsRecord(topicRow, userContext?.user)) {
+              showToast('Forbidden: Access restricted to members of the same department or the creator.');
+              return;
+            }
+            navigate(`/sheet/${topicRow.id}`);
+          }}
           onOpenAddMember={(item) => setTargetItemForMemberModal(item)}
           onEdit={handleEditPDCA}
         />
@@ -374,7 +392,13 @@ export default function DashboardPage() {
           onDownload={handleDownloadPDCASheet}
           onCopy={handleCopy}
           onDelete={requestDeletePDCA}
-          onTopicClick={(topicRow) => navigate(`/sheet/${topicRow.id}`)}
+          onTopicClick={(topicRow) => {
+            if (!isUserAdmin && !isRecordCreator(topicRow, userContext?.user) && !isUserInSameDepartmentAsRecord(topicRow, userContext?.user)) {
+              showToast('Forbidden: Access restricted to members of the same department or the creator.');
+              return;
+            }
+            navigate(`/sheet/${topicRow.id}`);
+          }}
           onOpenAddMember={(item) => setTargetItemForMemberModal(item)}
           onEdit={handleEditPDCA}
         />

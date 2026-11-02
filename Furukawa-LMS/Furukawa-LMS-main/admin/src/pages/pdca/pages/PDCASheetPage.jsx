@@ -4,7 +4,7 @@ import PDCASheet from '@components/pdca/PDCASheet';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import pdcaApi from '@/services/api/pdcaApi.js';
 
-import { isRecordCreator } from '../data/recordFilters';
+import { isRecordCreator, isUserInSameDepartmentAsRecord } from '../data/recordFilters';
 
 export default function PDCASheetPage() {
   const { id } = useParams();
@@ -36,7 +36,31 @@ export default function PDCASheetPage() {
     }
   }, [activeId, selectedTopic?.id, navigate, location.state]);
 
+  const isUserAdmin = Boolean(userContext?.user?.role === 'admin' || userContext?.user?.isAdmin || String(userContext?.user?.role || '').toUpperCase() === 'ADMIN' || String(userContext?.user?.role || '').toUpperCase() === 'SUPERADMIN');
   const isCreator = selectedTopic ? isRecordCreator(selectedTopic, userContext?.user) : false;
+  const isSameDept = selectedTopic ? isUserInSameDepartmentAsRecord(selectedTopic, userContext?.user) : false;
+  const hasAccess = !selectedTopic || isUserAdmin || isCreator || isSameDept;
+
+  if (selectedTopic && !hasAccess) {
+    return (
+      <div className="w-full max-w-xl mx-auto my-12 p-8 text-center bg-white rounded-2xl shadow-xl border border-slate-200">
+        <h3 className="text-lg font-bold text-slate-800 mb-2">Access Restricted</h3>
+        <p className="text-sm text-slate-600 mb-6">You do not have permission to access this PDCA Sheet. Access is restricted to members of the same department or the creator.</p>
+        <button
+          onClick={() => {
+            if (location.state?.returnTo) {
+              navigate(location.state.returnTo);
+            } else {
+              navigate(-1);
+            }
+          }}
+          className="px-5 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition"
+        >
+          Back to Dashboard
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full min-w-0">

@@ -196,8 +196,8 @@ export function PDCAProvider({ children }) {
   }, [userContext?.user]);
 
   const handleUpdatePDCA = async (updated) => {
-    if (!isRecordCreator(updated, userContext?.user)) {
-      showToast('Forbidden: Only the employee who created this record can edit it.');
+    if (!canEditRecord(updated, userContext?.user)) {
+      showToast('Forbidden: Only members of the same department or the creator can edit this record.');
       return;
     }
     try {

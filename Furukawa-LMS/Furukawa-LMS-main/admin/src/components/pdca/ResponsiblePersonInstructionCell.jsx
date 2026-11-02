@@ -71,7 +71,7 @@ export default function ResponsiblePersonInstructionCell({
   };
 
   const selectTitle = readOnly
-    ? 'Only the sheet creator has access to select Confirmation'
+    ? 'Only the sheet creator or Admin has access to select Confirmation'
     : (isConfirmed
         ? `Confirmed by ${confirmedBy || 'User'}`
         : isNotConfirmed

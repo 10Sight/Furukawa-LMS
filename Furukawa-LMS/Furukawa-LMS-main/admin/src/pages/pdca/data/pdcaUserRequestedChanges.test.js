@@ -462,11 +462,10 @@ test('12. Confirmation Column Rule: Creator-only access and 14 mandatory columns
     assert.equal(canUserSelectConfirmation(completeRow, sheet, creatorUser).allowed, true, 'Sheet creator should be allowed when all 14 mandatory columns are filled');
     assert.equal(canUserEditPDCARow(completeRow, creatorUser, sheet, 'confirmation'), true, 'Sheet creator can edit confirmation column');
 
-    // Non-creator Admin cannot select Confirmation
+    // Admin has full access to select Confirmation
     const adminCheck = canUserSelectConfirmation(completeRow, sheet, nonCreatorAdmin);
-    assert.equal(adminCheck.allowed, false, 'Non-creator Admin must NOT select Confirmation');
-    assert.equal(adminCheck.reason, 'creator_only');
-    assert.equal(canUserEditPDCARow(completeRow, nonCreatorAdmin, sheet, 'confirmation'), false);
+    assert.equal(adminCheck.allowed, true, 'Admin has full access to select Confirmation when mandatory columns are filled');
+    assert.equal(canUserEditPDCARow(completeRow, nonCreatorAdmin, sheet, 'confirmation'), true);
 
     // Responsible Person cannot select Confirmation
     const respCheck = canUserSelectConfirmation(completeRow, sheet, responsibleStaffUser);
@@ -772,6 +771,7 @@ test('18. Department-Based Access Control for PDCA & LPA Observation (PDCA)', ()
   // Admin has unrestricted access to all records across all departments
   assert.equal(canAccessRecord(qualityPdcaRecord, adminUser), true, 'Admin can access Quality sheet');
   assert.equal(canEditRecord(qualityPdcaRecord, adminUser), true, 'Admin can edit Quality sheet');
+  assert.equal(canUserEditPDCARow({ department: 'Quality' }, adminUser, qualityPdcaRecord, 'confirmation'), true, 'Admin can edit confirmation column');
 
   // 3. LPA Observation (PDCA) Access Control
   const qualityLpaPdcaSheet = {

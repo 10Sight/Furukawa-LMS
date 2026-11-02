@@ -581,14 +581,22 @@ export function getMissingConfirmationMandatoryFields(row) {
 }
 
 export function canUserSelectConfirmation(row, recordOrIsCreator, currentUser = null, readOnly = false) {
+  const isAdmin = Boolean(
+    currentUser?.isAdmin ||
+    currentUser?.isAdmin === 1 ||
+    String(currentUser?.role || '').toUpperCase() === 'ADMIN' ||
+    String(currentUser?.role || '').toUpperCase() === 'SUPERADMIN'
+  );
   const isCreator = typeof recordOrIsCreator === 'boolean'
     ? recordOrIsCreator
     : isRecordCreator(recordOrIsCreator, currentUser);
+  const hasAccess = Boolean(isAdmin || isCreator);
   const missingFields = getMissingConfirmationMandatoryFields(row);
-  if (readOnly || !isCreator) {
+  if (readOnly || !hasAccess) {
     return {
       allowed: false,
       isCreator: Boolean(!readOnly && isCreator),
+      isAdmin,
       reason: 'creator_only',
       missingFields
     };
@@ -596,14 +604,16 @@ export function canUserSelectConfirmation(row, recordOrIsCreator, currentUser = 
   if (missingFields.length > 0) {
     return {
       allowed: false,
-      isCreator: true,
+      isCreator: Boolean(isCreator),
+      isAdmin,
       reason: 'missing_mandatory_fields',
       missingFields
     };
   }
   return {
     allowed: true,
-    isCreator: true,
+    isCreator: Boolean(isCreator),
+    isAdmin,
     reason: null,
     missingFields: []
   };
@@ -731,9 +741,6 @@ export function canUserEditPDCARow(row, user, record, targetColumn = null, emplo
     if (targetColumn) return false;
     return { canEditEntireRow: false, canEditActionCols: false };
   }
-  if (targetColumn === 'confirmation' && record) {
-    return isRecordCreator(record, user);
-  }
   const isAdmin = Boolean(
     user?.isAdmin ||
     user?.isAdmin === 1 ||
@@ -743,6 +750,9 @@ export function canUserEditPDCARow(row, user, record, targetColumn = null, emplo
   if (isAdmin) {
     if (targetColumn) return true;
     return { canEditEntireRow: true, canEditActionCols: true };
+  }
+  if (targetColumn === 'confirmation' && record) {
+    return isRecordCreator(record, user);
   }
   if (record && (isRecordCreator(record, user) || isUserInSameDepartmentAsRecord(record, user, employeeDatabase))) {
     if (targetColumn) return true;

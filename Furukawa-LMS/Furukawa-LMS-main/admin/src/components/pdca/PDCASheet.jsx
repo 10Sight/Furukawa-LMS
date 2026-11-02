@@ -51,7 +51,9 @@ import {
   isUserResponsibleForRow,
   isUserInResponsibleDepartment,
   isUserResponsibleForAnyRow,
-  EDITABLE_RESPONSIBLE_COLUMNS
+  EDITABLE_RESPONSIBLE_COLUMNS,
+  getMissingConfirmationMandatoryFields,
+  CONFIRMATION_MANDATORY_COLUMNS
 } from '../../pages/pdca/data/recordFilters.js';
 import {
   parseStaffEmployee,
@@ -256,7 +258,7 @@ const createEmptyRow = (customDefaults = {}) => ({
   respUnit: customDefaults.respUnit || customDefaults.responsiblePersonUnit || '',
   respUnits: Array.isArray(customDefaults.respUnits) ? customDefaults.respUnits : (customDefaults.respUnit || customDefaults.responsiblePersonUnit ? [customDefaults.respUnit || customDefaults.responsiblePersonUnit] : []),
   responsiblePersonUnit: customDefaults.responsiblePersonUnit || customDefaults.respUnit || '',
-  responsiblePersonDept: customDefaults.responsiblePersonDept || customDefaults.department || '',
+  responsiblePersonDept: customDefaults.responsiblePersonDept || '',
   staffEmployee: customDefaults.staffEmployee || '',
   staffEmployees: Array.isArray(customDefaults.staffEmployees) ? customDefaults.staffEmployees : [],
   staffName: customDefaults.staffName || '',
@@ -882,7 +884,7 @@ export default function PDCASheet({
   const canDeleteSheet = Boolean(!readOnly && (hasFullAccess || isCreator || hasPermission('pdca:delete') || hasPermission('pdca:delete_sheet') || hasPermission('lpa:delete')));
   const canAddRow = Boolean(!readOnly && (hasFullAccess || isCreator || hasPermission('pdca:add_row') || hasPermission('pdca:add_rows') || hasPermission('lpa:pdca_add_row')));
   const canDeleteRow = Boolean(!readOnly && (hasFullAccess || isCreator || hasPermission('pdca:delete') || hasPermission('pdca:delete_sheet') || hasPermission('lpa:delete')));
-  const canConfirmDefault = Boolean(!readOnly && (hasFullAccess || isCreator || hasPermission('pdca:confirm') || hasPermission('pdca:confirmation') || hasPermission('lpa:pdca_confirm')));
+  const canConfirmDefault = Boolean(!readOnly && isCreator);
   const canShowRowActions = Boolean(canEditEntireSheet || canAddRow || canDeleteRow);
   const cftAssignedMembers = topic?.assignedMembers || [];
   const defaultAssignedStr = cftAssignedMembers.length > 0
@@ -1953,6 +1955,35 @@ export default function PDCASheet({
         if (!r.observation?.trim()) missing.push('Observation');
         const staffVal = (r.staffName || r.staffEmployee || (Array.isArray(r.staffEmployees) && (r.staffEmployees[0]?.name || r.staffEmployees[0]?.fullName)) || '').trim();
         if (!staffVal) missing.push('Staff name');
+      }
+      const hasConfirmationSelected = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((r.confirmation || '').trim());
+      if (hasConfirmationSelected) {
+        const missingForConf = getMissingConfirmationMandatoryFields(r);
+        if (missingForConf.length > 0) {
+          setAlertModal({
+            isOpen: true,
+            type: 'mandatory',
+            title: 'Mandatory Columns Required for Confirmation',
+            rowNumber: i + 1,
+            missingFields: missingForConf,
+            message: `Row ${i + 1} has Confirmation selected but is missing mandatory columns: ${missingForConf.join(', ')}.`,
+            confirmText: "I'll fill them"
+          });
+          showToast(`Row ${i + 1}: Mandatory column${missingForConf.length > 1 ? 's' : ''} (${missingForConf.join(', ')}) required for Confirmation.`);
+          return false;
+        }
+      }
+      if (isCompleted) {
+        const missing = [];
+        if (!r.date?.trim()) missing.push('Date');
+        if (!r.shift?.trim()) missing.push('Shift');
+        const unitVal = (r.unit || (Array.isArray(r.units) && r.units[0]) || '').trim();
+        if (!unitVal) missing.push('Unit');
+        const deptVal = (r.department || (Array.isArray(r.departments) && r.departments[0]) || '').trim();
+        if (!deptVal) missing.push('Department');
+        if (!r.observation?.trim()) missing.push('Observation');
+        const staffVal = (r.staffName || r.staffEmployee || (Array.isArray(r.staffEmployees) && (r.staffEmployees[0]?.name || r.staffEmployees[0]?.fullName)) || '').trim();
+        if (!staffVal) missing.push('Staff name');
 
         if (missing.length > 0) {
           setAlertModal({
@@ -2156,6 +2187,35 @@ export default function PDCASheet({
         if (!r.date?.trim()) missing.push('Date');
         if (!r.shift?.trim()) missing.push('Shift');
         if (!r.status?.trim()) missing.push('Status');
+        const unitVal = (r.unit || (Array.isArray(r.units) && r.units[0]) || '').trim();
+        if (!unitVal) missing.push('Unit');
+        const deptVal = (r.department || (Array.isArray(r.departments) && r.departments[0]) || '').trim();
+        if (!deptVal) missing.push('Department');
+        if (!r.observation?.trim()) missing.push('Observation');
+        const staffVal = (r.staffName || r.staffEmployee || (Array.isArray(r.staffEmployees) && (r.staffEmployees[0]?.name || r.staffEmployees[0]?.fullName)) || '').trim();
+        if (!staffVal) missing.push('Staff name');
+      }
+      const hasConfirmationSelected = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((r.confirmation || '').trim());
+      if (hasConfirmationSelected) {
+        const missingForConf = getMissingConfirmationMandatoryFields(r);
+        if (missingForConf.length > 0) {
+          setAlertModal({
+            isOpen: true,
+            type: 'mandatory',
+            title: 'Mandatory Columns Required for Confirmation',
+            rowNumber: i + 1,
+            missingFields: missingForConf,
+            message: `Row ${i + 1} has Confirmation selected but is missing mandatory columns: ${missingForConf.join(', ')}.`,
+            confirmText: "I'll fill them"
+          });
+          showToast(`Row ${i + 1}: Mandatory column${missingForConf.length > 1 ? 's' : ''} (${missingForConf.join(', ')}) required for Confirmation.`);
+          return false;
+        }
+      }
+      if (isCompleted) {
+        const missing = [];
+        if (!r.date?.trim()) missing.push('Date');
+        if (!r.shift?.trim()) missing.push('Shift');
         const unitVal = (r.unit || (Array.isArray(r.units) && r.units[0]) || '').trim();
         if (!unitVal) missing.push('Unit');
         const deptVal = (r.department || (Array.isArray(r.departments) && r.departments[0]) || '').trim();
@@ -3663,9 +3723,31 @@ export default function PDCASheet({
   // Section A: Responsible Person Instruction, etc. Confirmation change handler
   const handleConfirmationChange = (rowIndex, value, userName = '') => {
     const targetRow = rows[rowIndex];
-    const canConfirmThisRow = Boolean(!readOnly && (canConfirmDefault || isCreatorOrAdmin || hasEditAccess || (targetRow && isUserResponsibleForRow(targetRow, effectiveUser))));
+    const canConfirmThisRow = Boolean(!readOnly && isCreator);
     if (!canConfirmThisRow) {
-      if (typeof showToast === 'function') showToast('You do not have permission to change confirmation status.');
+      if (typeof showToast === 'function') showToast('Only the sheet creator has access to select Confirmation.');
+      return false;
+    }
+    const isSelectingConfirmation = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((value || '').trim());
+    if (isSelectingConfirmation && targetRow) {
+      const missing = getMissingConfirmationMandatoryFields(targetRow);
+      if (missing.length > 0) {
+        setAlertModal({
+          isOpen: true,
+          type: 'mandatory',
+          title: 'Mandatory Columns Required for Confirmation',
+          rowNumber: rowIndex + 1,
+          missingFields: missing,
+          message: `Row ${rowIndex + 1}: Please fill all mandatory columns before selecting Confirmation (${missing.join(', ')}).`,
+          confirmText: "I'll fill them"
+        });
+        if (typeof showToast === 'function') {
+          showToast(`Row ${rowIndex + 1}: Mandatory column${missing.length > 1 ? 's' : ''} (${missing.join(', ')}) required to select Confirmation.`);
+        }
+        return false;
+      }
+    }
+    if (false) {
       return;
     }
     setRows((prev) => {
@@ -3714,7 +3796,7 @@ export default function PDCASheet({
   // Instruction change handler for Responsible Person Instruction, etc. column
   const handleInstructionChange = (rowIndex, text) => {
     const targetRow = rows[rowIndex];
-    const canConfirmThisRow = Boolean(!readOnly && (canConfirmDefault || isCreatorOrAdmin || hasEditAccess || (targetRow && isUserResponsibleForRow(targetRow, effectiveUser))));
+    const canConfirmThisRow = Boolean(!readOnly && isCreator);
     if (!canConfirmThisRow) {
       if (typeof showToast === 'function') showToast('You do not have permission to change instruction.');
       return;
@@ -6378,7 +6460,7 @@ export default function PDCASheet({
                           reasonRequired={missingRequiredInputs.some((item) => item.type === 'confirmation' && item.rowIndex === idx)}
                           currentUser={effectiveUser} /*
                           readOnly={!canEditEntireRow}
-                          */ readOnly={!(canConfirmDefault || isUserResponsibleForRow(row, effectiveUser))}
+                          */ readOnly={!canConfirmDefault} missingMandatoryFields={getMissingConfirmationMandatoryFields(row)}
                           onConfirmationChange={(val, uName) => handleConfirmationChange(idx, val, uName)}
                           onInstructionChange={(text) => handleInstructionChange(idx, text)}
                           sNo={sNo}

@@ -42,7 +42,8 @@ import { PDCA_DEPARTMENTS, PDCA_STATUS_OPTIONS, normalizePDCAStatus, computePDCA
 import {
   isRecordCreator,
   isUserResponsibleForRow,
-  isUserInResponsibleDepartment
+  isUserInResponsibleDepartment,
+  getMissingConfirmationMandatoryFields
 } from '../../pages/pdca/data/recordFilters.js';
 import { parseStaffEmployee, findEmployeeDepartment, stripEmployeeId, VERIFIED_EMPLOYEE_MASTER } from '../../pages/pdca/data/pdcaEmployees.js';
 import SearchableLineAreaSelect, { getCachedDbSections } from '../pdca/SearchableLineAreaSelect';
@@ -1543,6 +1544,21 @@ export default function LpaPdcaSheet({
   };
 
   const handleConfirmationChange = (rowIndex, value, userName = '') => {
+    const targetRow = rows[rowIndex];
+    if (readOnly || !isCreator) {
+      if (typeof showToast === 'function') showToast('Only the sheet creator has access to select Confirmation.');
+      return false;
+    }
+    const isSelectingConfirmation = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((value || '').trim());
+    if (isSelectingConfirmation && targetRow) {
+      const missing = getMissingConfirmationMandatoryFields(targetRow);
+      if (missing.length > 0) {
+        if (typeof showToast === 'function') {
+          showToast(`Row ${rowIndex + 1}: Mandatory column${missing.length > 1 ? 's' : ''} (${missing.join(', ')}) required to select Confirmation.`);
+        }
+        return false;
+      }
+    }
     setRows((prev) => {
       const updated = [...prev];
       const curr = updated[rowIndex];
@@ -2915,7 +2931,8 @@ export default function LpaPdcaSheet({
                             }}
                             reasonRequired={missingConfirmationReasonIndices.includes(idx)}
                             currentUser={effectiveUser}
-                            readOnly={!canEditEntireRow}
+                            readOnly={!(!readOnly && isCreator)}
+                            missingMandatoryFields={getMissingConfirmationMandatoryFields(row)}
                             onConfirmationChange={(val, uName) => handleConfirmationChange(idx, val, uName)}
                             onInstructionChange={(text) => handleInstructionChange(idx, text)}
                             sNo={sNo}

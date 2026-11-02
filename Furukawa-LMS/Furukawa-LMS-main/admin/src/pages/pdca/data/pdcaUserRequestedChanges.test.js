@@ -387,3 +387,120 @@ test('11. Responsible Department column access, delete restriction, and LPA moda
   assert.equal(initialModalForm.department, 'Assembly', 'Department matches active section');
 });
 
+
+test('12. Confirmation Column Rule: Creator-only access and 14 mandatory columns required before selecting Confirm or Not-Confirm', async () => {
+  const {
+    CONFIRMATION_MANDATORY_COLUMNS,
+    getMissingConfirmationMandatoryFields,
+    canUserSelectConfirmation,
+    canUserEditPDCARow
+  } = await import('./recordFilters.js');
+
+  // Verify the exact 14 mandatory columns list
+  assert.deepEqual(CONFIRMATION_MANDATORY_COLUMNS, [
+    'Date',
+    'Shift',
+    'Status',
+    'Unit',
+    'Department',
+    'Observation',
+    'Root Cause',
+    'Corrective action',
+    'Counter Measure',
+    'Std. Duration in Min',
+    'Response date',
+    'Unit (Responsible Person)',
+    'Department (Responsible Person)',
+    'Staff name (Responsible Person)'
+  ]);
+
+  const creatorUser = { id: 'creator-1', empId: 'EMP001', name: 'Creator User', role: 'user', isAdmin: false };
+  const nonCreatorAdmin = { id: 'admin-99', empId: 'ADM099', name: 'Other Admin', role: 'ADMIN', isAdmin: true };
+  const responsibleStaffUser = { id: 'staff-2', empId: 'EMP002', name: 'Ramesh Sharma', department: 'Quality', role: 'user', isAdmin: false };
+  const otherUser = { id: 'other-3', empId: 'EMP003', name: 'Random Employee', department: 'IT', role: 'user', isAdmin: false };
+
+  const pdcaSheetRecord = {
+    id: 'PDCA-100',
+    topic: 'PDCA Page Sheet',
+    createdById: 'creator-1',
+    createdBy: { id: 'creator-1', code: 'EMP001', name: 'Creator User' }
+  };
+
+  const lpaPdcaSheetRecord = {
+    id: 'PDCA-LPA-ASSEMBLY-Bawal-100',
+    topic: 'Assembly - LPA Observation (PDCA)',
+    createdById: 'creator-1',
+    createdBy: { id: 'creator-1', code: 'EMP001', name: 'Creator User' }
+  };
+
+  const completeRow = {
+    date: '2026-10-28',
+    shift: 'A',
+    status: 'In- Progress',
+    unit: 'Bawal',
+    department: 'Assembly',
+    observation: 'Loose bolt on fixture',
+    rootCause: 'Missing lock washer',
+    actionTaken: 'Added lock washer and retightened',
+    counterMeasure: 'Updated daily checklist and poka-yoke',
+    stdDurationMin: '00:15',
+    responseDate: '2026-10-30',
+    respUnit: 'Bawal',
+    responsiblePersonDept: 'Quality',
+    staffName: 'Ramesh Sharma',
+    staffEmployee: 'Ramesh Sharma (EMP002)',
+    staffEmployees: [{ id: 'staff-2', name: 'Ramesh Sharma', code: 'EMP002', unit: 'Bawal', department: 'Quality' }]
+  };
+
+  // 1. When all 14 mandatory columns are filled:
+  assert.deepEqual(getMissingConfirmationMandatoryFields(completeRow), []);
+
+  // Only sheet creator has access to select Confirmation on PDCA Sheet and LPA Observation (PDCA) Sheet
+  for (const sheet of [pdcaSheetRecord, lpaPdcaSheetRecord]) {
+    assert.equal(canUserSelectConfirmation(completeRow, sheet, creatorUser).allowed, true, 'Sheet creator should be allowed when all 14 mandatory columns are filled');
+    assert.equal(canUserEditPDCARow(completeRow, creatorUser, sheet, 'confirmation'), true, 'Sheet creator can edit confirmation column');
+
+    // Non-creator Admin cannot select Confirmation
+    const adminCheck = canUserSelectConfirmation(completeRow, sheet, nonCreatorAdmin);
+    assert.equal(adminCheck.allowed, false, 'Non-creator Admin must NOT select Confirmation');
+    assert.equal(adminCheck.reason, 'creator_only');
+    assert.equal(canUserEditPDCARow(completeRow, nonCreatorAdmin, sheet, 'confirmation'), false);
+
+    // Responsible Person cannot select Confirmation
+    const respCheck = canUserSelectConfirmation(completeRow, sheet, responsibleStaffUser);
+    assert.equal(respCheck.allowed, false, 'Responsible person must NOT select Confirmation');
+    assert.equal(respCheck.reason, 'creator_only');
+    assert.equal(canUserEditPDCARow(completeRow, responsibleStaffUser, sheet, 'confirmation'), false);
+
+    // Random user cannot select Confirmation
+    assert.equal(canUserSelectConfirmation(completeRow, sheet, otherUser).allowed, false);
+  }
+
+  // 2. Each of the 14 mandatory columns individually blocks Confirmation selection when missing
+  const fieldClears = [
+    { label: 'Date', mutate: r => ({ ...r, date: '' }) },
+    { label: 'Shift', mutate: r => ({ ...r, shift: '' }) },
+    { label: 'Status', mutate: r => ({ ...r, status: '' }) },
+    { label: 'Unit', mutate: r => ({ ...r, unit: '', units: [] }) },
+    { label: 'Department', mutate: r => ({ ...r, department: '', departments: [] }) },
+    { label: 'Observation', mutate: r => ({ ...r, observation: '' }) },
+    { label: 'Root Cause', mutate: r => ({ ...r, rootCause: '' }) },
+    { label: 'Corrective action', mutate: r => ({ ...r, actionTaken: '', correctiveAction: '' }) },
+    { label: 'Counter Measure', mutate: r => ({ ...r, counterMeasure: '' }) },
+    { label: 'Std. Duration in Min', mutate: r => ({ ...r, stdDurationMin: '', stdDuration: '' }) },
+    { label: 'Response date', mutate: r => ({ ...r, responseDate: '' }) },
+    { label: 'Unit (Responsible Person)', mutate: r => ({ ...r, respUnit: '', responsiblePersonUnit: '', respUnits: [], staffEmployees: [{ name: 'Ramesh Sharma', department: 'Quality' }] }) },
+    { label: 'Department (Responsible Person)', mutate: r => ({ ...r, responsiblePersonDept: '', respDept: '', respDeptsByUnit: {}, staffEmployees: [{ name: 'Ramesh Sharma', unit: 'Bawal' }] }) },
+    { label: 'Staff name (Responsible Person)', mutate: r => ({ ...r, staffName: '', staffEmployee: '', staffEmployees: [] }) }
+  ];
+
+  for (const { label, mutate } of fieldClears) {
+    const incompleteRow = mutate(completeRow);
+    const missing = getMissingConfirmationMandatoryFields(incompleteRow);
+    assert.ok(missing.includes(label), `Missing "${label}" must be detected (got: ${missing.join(', ')})`);
+    const result = canUserSelectConfirmation(incompleteRow, pdcaSheetRecord, creatorUser);
+    assert.equal(result.allowed, false, `Creator must NOT be able to select Confirmation when "${label}" is missing`);
+    assert.equal(result.reason, 'missing_mandatory_fields');
+    assert.ok(result.missingFields.includes(label));
+  }
+});

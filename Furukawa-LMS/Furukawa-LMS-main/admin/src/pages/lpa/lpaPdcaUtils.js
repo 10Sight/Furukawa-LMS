@@ -292,6 +292,8 @@ export function getLpaPdcaTopic({ section = 'assembly', unit = 'Bawal', level = 
         section: sec,
         scope: 'Company',
         plant,
+        createdBy: backendSheet.createdBy,
+        createdById: backendSheet.createdById,
         sheet: { ...backendSheet, headerInfo }
       };
     }
@@ -314,6 +316,8 @@ export function getLpaPdcaTopic({ section = 'assembly', unit = 'Bawal', level = 
             section: sec,
             scope: 'Company',
             plant,
+            createdBy: parsed.createdBy,
+            createdById: parsed.createdById,
             sheet: parsed
           };
         }
@@ -341,7 +345,9 @@ export function getLpaPdcaTopic({ section = 'assembly', unit = 'Bawal', level = 
               section: sec,
               scope: 'Company',
               plant,
-              sheet: parsed
+              createdBy: parsed.createdBy,
+            createdById: parsed.createdById,
+            sheet: parsed
             };
           }
         }

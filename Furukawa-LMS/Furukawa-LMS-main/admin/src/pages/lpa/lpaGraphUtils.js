@@ -104,6 +104,27 @@ export function extractAvailableMonths(records = [], now = new Date()) {
   return months;
 }
 
+/** Slot key for a 'YYYY-MM-DD' date at a grouping: 'day' -> 'YYYY-MM-DD', 'month' -> 'YYYY-MM', 'year' -> 'YYYY'. */
+export function periodKey(dateStr, groupBy = 'day') {
+  const len = groupBy === 'year' ? 4 : groupBy === 'month' ? 7 : 10;
+  return String(dateStr || '').slice(0, len);
+}
+
+/**
+ * Axis label for a slot key: '2026-10-20' -> '20 Oct', '2026-10' -> 'October'
+ * (or 'Oct 2025' outside the current year), '2026' -> '2026'.
+ */
+export function formatPeriodLabel(key, now = new Date()) {
+  const str = String(key || '');
+  if (str.length === 4) return str;
+  if (isMonthKey(str)) {
+    const [y, m] = str.split('-');
+    const name = MONTH_NAMES[parseInt(m, 10) - 1] || '';
+    return Number(y) === now.getFullYear() ? name : `${name.slice(0, 3)} ${y}`;
+  }
+  return formatShortDate(str);
+}
+
 /**
  * Formats ISO date 'YYYY-MM-DD' into readable label e.g. '20 Oct'
  */
@@ -126,7 +147,7 @@ export function formatShortDate(dateStr) {
 /**
  * Aggregates LPA records by date and section for charts and analytics.
  */
-export function aggregateSectionData(records, sectionKey, unitFilter, dateRangeFilter, customRange = {}, now = new Date()) {
+export function aggregateSectionData(records, sectionKey, unitFilter, dateRangeFilter, customRange = {}, now = new Date(), groupBy = 'day') {
   const isSectionMatch = (rec) => {
     const sec = String(rec.section || rec.sheets?.[0]?.section || 'assembly').toLowerCase();
     return sec === sectionKey;
@@ -145,6 +166,10 @@ export function aggregateSectionData(records, sectionKey, unitFilter, dateRangeF
     const days = dateRangeFilter === '7d' ? 7 : dateRangeFilter === '14d' ? 14 : 30;
     const cutoffStr = toLocalDateStr(new Date(now.getFullYear(), now.getMonth(), now.getDate() - days));
     filtered = filtered.filter(rec => getRecordDate(rec) >= cutoffStr);
+  } else if (dateRangeFilter === 'year') {
+    // Current calendar year
+    const year = String(now.getFullYear());
+    filtered = filtered.filter(rec => getRecordDate(rec).startsWith(year));
   } else if (dateRangeFilter === 'month' || isMonthKey(dateRangeFilter)) {
     // 'month' = current month; 'YYYY-MM' = that specific month
     const yearMonth = dateRangeFilter === 'month' ? toLocalYearMonth(now) : dateRangeFilter;
@@ -162,12 +187,13 @@ export function aggregateSectionData(records, sectionKey, unitFilter, dateRangeF
   const dateMap = new Map();
 
   filtered.forEach(record => {
-    const rawDate = getRecordDate(record) || toLocalDateStr(now);
+    // Group by day, month or year; `date` holds the slot key ('YYYY-MM-DD' | 'YYYY-MM' | 'YYYY')
+    const rawDate = periodKey(getRecordDate(record) || toLocalDateStr(now), groupBy);
 
     if (!dateMap.has(rawDate)) {
       dateMap.set(rawDate, {
         date: rawDate,
-        formattedDate: formatShortDate(rawDate),
+        formattedDate: formatPeriodLabel(rawDate, now),
         totalSheets: 0,
         // Shift counts
         shiftA: 0,
@@ -353,7 +379,7 @@ export function buildCombinedChartSlots(assemblyDaily = [], ccDaily = [], active
       const day = byDate[sheet].get(date);
       slots.push({
         date,
-        formattedDate: formatShortDate(date),
+        formattedDate: formatPeriodLabel(date),
         sheet,
         sheetLabel: SHEET_META[sheet].label,
         isGroupStart: idx === 0,

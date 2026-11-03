@@ -9,7 +9,8 @@ import {
   buildCombinedTableRows,
   extractAvailableMonths,
   formatYearMonth,
-  toLocalDateStr
+  toLocalDateStr,
+  formatPeriodLabel
 } from './lpaGraphUtils.js';
 
 test('1. formatShortDate correctly formats ISO dates', () => {
@@ -356,4 +357,33 @@ test('16. Shift + level pairs get their own daily score', () => {
   assert.deepEqual(slot.shiftLevelScores, day.shiftLevelScores);
   const [empty] = buildCombinedChartSlots([], [day], 'assembly');
   assert.equal(empty, undefined);
+});
+
+test('17. Monthly and Yearly periods group records into month / year slots', () => {
+  const now = new Date(2026, 10, 3);
+  const records = ['2025-12-30', '2026-01-05', '2026-01-20', '2026-03-02', '2026-11-01'].map(d => dated(d));
+
+  // Monthly: current year only, one slot per month
+  const monthly = aggregateSectionData(records, 'assembly', 'all', 'year', {}, now, 'month').dailyData;
+  assert.deepEqual(monthly.map(d => d.date), ['2026-01', '2026-03', '2026-11']);
+  assert.deepEqual(monthly.map(d => d.formattedDate), ['January', 'March', 'November']);
+  assert.equal(monthly[0].totalSheets, 2);
+
+  // Yearly: all years, one slot per year
+  const yearly = aggregateSectionData(records, 'assembly', 'all', 'all', {}, now, 'year').dailyData;
+  assert.deepEqual(yearly.map(d => d.date), ['2025', '2026']);
+  assert.deepEqual(yearly.map(d => d.totalSheets), [1, 4]);
+
+  // Daily: current month, one slot per day
+  const daily = aggregateSectionData(records, 'assembly', 'all', 'month', {}, now, 'day').dailyData;
+  assert.deepEqual(daily.map(d => d.date), ['2026-11-01']);
+
+  // Custom range + monthly grouping across years
+  const custom = aggregateSectionData(records, 'assembly', 'all', 'custom', { from: '2025-12-01', to: '2026-01-31' }, now, 'month').dailyData;
+  assert.deepEqual(custom.map(d => d.date), ['2025-12', '2026-01']);
+  assert.equal(formatPeriodLabel('2025-12', now), 'Dec 2025');
+
+  // Chart slots keep the period label
+  const slots = buildCombinedChartSlots(monthly, [], 'assembly');
+  assert.equal(slots[0].date, '2026-01');
 });

@@ -1,16 +1,23 @@
 import React, { useMemo, useState } from 'react';
-import { BarChart3, Eye } from 'lucide-react';
 
 import {
   aggregateSectionData,
-  buildCombinedChartSlots,
-  extractAvailableMonths
+  buildCombinedChartSlots
 } from '../../pages/lpa/lpaGraphUtils.js';
 import LpaPerformanceChartCard from './LpaPerformanceChartCard.jsx';
 
 const DEFAULT_TARGET = 85;
-const DEFAULT_DATE_RANGE = '30d';
+const DEFAULT_PERIOD = 'daily';
 const DEFAULT_TAB = 'assembly';
+
+// Period -> default date window and bar grouping.
+// Daily: each day of the current month. Monthly: each month of the current year.
+// Yearly: each year on record. A Custom From / To range replaces the default window.
+const PERIODS = {
+  daily: { range: 'month', groupBy: 'day' },
+  monthly: { range: 'year', groupBy: 'month' },
+  yearly: { range: 'all', groupBy: 'year' }
+};
 const EMPTY_RANGE = { from: '', to: '' };
 const TARGET_STORAGE_KEYS = {
   assembly: 'lpa_target_benchmark_assembly',
@@ -19,29 +26,16 @@ const TARGET_STORAGE_KEYS = {
 
 /**
  * LPA Analytics & Performance Graph shown inline on the LPA page.
- * Uses the page's already-loaded workbooks and its Unit dropdown; visible by default
- * with a Hide / Show toggle.
+ * Uses the page's already-loaded workbooks and its Unit dropdown; always visible.
  */
 export default function LpaGraphSection({ records = [], loading = false, selectedUnit, isAdmin = false }) {
-  const [isVisible, setIsVisible] = useState(true);
-  // '7d' | '14d' | '30d' | 'YYYY-MM' (specific month) | 'all' | 'custom'
-  const [dateRange, setDateRange] = useState(DEFAULT_DATE_RANGE);
+  const [period, setPeriod] = useState(DEFAULT_PERIOD); // 'daily' | 'monthly' | 'yearly'
   const [activeTab, setActiveTab] = useState(DEFAULT_TAB); // 'both' | 'assembly' | 'cc'
-  const [customRange, setCustomRange] = useState(EMPTY_RANGE); // used when dateRange === 'custom'
+  const [customRange, setCustomRange] = useState(EMPTY_RANGE); // optional From / To window
 
-  const monthOptions = useMemo(() => extractAvailableMonths(records), [records]);
-
-  // Picking a preset or month clears the always-visible From / To inputs
-  const handleDateRangeChange = (value) => {
-    setDateRange(value);
-    if (value !== 'custom') setCustomRange(EMPTY_RANGE);
-  };
-
-  // Typing a From / To date switches the Period to Custom straight away
-  const handleCustomRangeChange = (range) => {
-    setCustomRange(range);
-    setDateRange(range.from || range.to ? 'custom' : DEFAULT_DATE_RANGE);
-  };
+  const { range: periodRange, groupBy } = PERIODS[period] || PERIODS[DEFAULT_PERIOD];
+  const hasCustomRange = Boolean(customRange.from || customRange.to);
+  const dateRange = hasCustomRange ? 'custom' : periodRange;
 
   // Separate target benchmark per sheet ({ assembly, cc }), settable by Admin.
   // Falls back to the old shared 'lpa_target_benchmark' value saved before the split.
@@ -76,13 +70,13 @@ export default function LpaGraphSection({ records = [], loading = false, selecte
   const unitLabel = selectedUnit || 'All Units';
 
   const assemblyData = useMemo(
-    () => aggregateSectionData(records, 'assembly', unitFilter, dateRange, customRange),
-    [records, unitFilter, dateRange, customRange]
+    () => aggregateSectionData(records, 'assembly', unitFilter, dateRange, customRange, new Date(), groupBy),
+    [records, unitFilter, dateRange, customRange, groupBy]
   );
 
   const ccData = useMemo(
-    () => aggregateSectionData(records, 'cc', unitFilter, dateRange, customRange),
-    [records, unitFilter, dateRange, customRange]
+    () => aggregateSectionData(records, 'cc', unitFilter, dateRange, customRange, new Date(), groupBy),
+    [records, unitFilter, dateRange, customRange, groupBy]
   );
 
   const slots = useMemo(
@@ -90,37 +84,15 @@ export default function LpaGraphSection({ records = [], loading = false, selecte
     [assemblyData, ccData, activeTab]
   );
 
-
   const totalSheets =
     (activeTab !== 'cc' ? assemblyData.summary.totalSheets : 0) +
     (activeTab !== 'assembly' ? ccData.summary.totalSheets : 0);
 
   const handleResetFilters = () => {
-    setDateRange(DEFAULT_DATE_RANGE);
+    setPeriod(DEFAULT_PERIOD);
     setActiveTab(DEFAULT_TAB);
     setCustomRange(EMPTY_RANGE);
   };
-
-  if (!isVisible) {
-    return (
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white px-4 py-3 shadow-xs">
-        <span className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-          <BarChart3 size={16} className="text-blue-600" />
-          LPA Analytics & Performance Graph
-          <span className="text-xs font-normal text-slate-400">(hidden)</span>
-        </span>
-        <button
-          type="button"
-          onClick={() => setIsVisible(true)}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 cursor-pointer"
-          title="Show graph"
-        >
-          <Eye size={14} />
-          Show Graph
-        </button>
-      </div>
-    );
-  }
 
   if (loading) {
     return (
@@ -137,16 +109,14 @@ export default function LpaGraphSection({ records = [], loading = false, selecte
       activeTab={activeTab}
       onTabChange={setActiveTab}
       unitLabel={unitLabel}
-      dateRange={dateRange}
-      onDateRangeChange={handleDateRangeChange}
-      monthOptions={monthOptions}
+      period={period}
+      onPeriodChange={setPeriod}
       customRange={customRange}
-      onCustomRangeChange={handleCustomRangeChange}
+      onCustomRangeChange={setCustomRange}
       targets={targets}
       onTargetChange={handleTargetChange}
       isAdmin={isAdmin}
       onReset={handleResetFilters}
-      onHide={() => setIsVisible(false)}
     />
   );
 }

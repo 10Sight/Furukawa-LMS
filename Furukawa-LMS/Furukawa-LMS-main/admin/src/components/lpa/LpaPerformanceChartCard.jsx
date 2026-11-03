@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
-import { BarChart3, ChevronDown, EyeOff, FileSpreadsheet, Layers, RotateCcw } from 'lucide-react';
+import { BarChart3, ChevronDown, FileSpreadsheet, Layers, RotateCcw } from 'lucide-react';
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/common/ui/card.jsx';
 import { Button } from '@/components/common/ui/button.jsx';
@@ -9,6 +9,20 @@ import { Input } from '@/components/forms/primitives/input.jsx';
 import { Label } from '@/components/forms/primitives/label.jsx';
 
 import { COLORS, SHEET_META, SHIFT_KEYS, shiftLevelKey } from '../../pages/lpa/lpaGraphUtils.js';
+
+// Period = bar grouping. Default window: Daily -> current month, Monthly -> current
+// year, Yearly -> all years. Custom From / To replaces the default window.
+const PERIOD_OPTIONS = [
+  { key: 'daily', label: 'Daily' },
+  { key: 'monthly', label: 'Monthly' },
+  { key: 'yearly', label: 'Yearly' }
+];
+
+const PERIOD_DESCRIPTIONS = {
+  daily: 'Daily scores',
+  monthly: 'Monthly scores',
+  yearly: 'Yearly scores'
+};
 
 // Card title per sheet view
 const CHART_TITLES = {
@@ -90,17 +104,17 @@ export default function LpaPerformanceChartCard({
   activeTab,
   onTabChange,
   unitLabel,
-  dateRange,
-  onDateRangeChange,
-  monthOptions = [],
+  period = 'daily',
+  onPeriodChange,
   customRange = { from: '', to: '' },
   onCustomRangeChange,
   targets = { assembly: 85, cc: 85 },
   onTargetChange,
   isAdmin,
-  onReset,
-  onHide
+  onReset
 }) {
+  // Target labels drawn as HTML over the chart's right margin: [{ key, text, top }]
+  const [targetLabelTops, setTargetLabelTops] = useState([]);
   const targetFor = (sheet) => targets?.[sheet] ?? 85;
   const activeSheets = activeTab === 'both' ? ['assembly', 'cc'] : [activeTab];
   // One shared line is enough when every visible sheet has the same target
@@ -111,14 +125,6 @@ export default function LpaPerformanceChartCard({
   const isBoth = activeTab === 'both';
   const hasData = slots.length > 0;
 
-  const periodOptions = useMemo(() => [
-    { key: '7d', label: 'Last 7 Days' },
-    { key: '14d', label: 'Last 14 Days' },
-    { key: '30d', label: 'Last 30 Days' },
-    { group: 'Month', options: monthOptions },
-    { key: 'all', label: 'All Recorded Dates' },
-    { key: 'custom', label: 'Custom Date Range' }
-  ], [monthOptions]);
 
   // Shift + level pairs with no audit in the current range are dropped so they don't leave gaps
   const seriesDefs = useMemo(
@@ -166,44 +172,32 @@ export default function LpaPerformanceChartCard({
         : { y };
     });
 
-    // Full-width dashed target line(s). The label sits in a reserved strip to the right
-    // of the plot area (chart.marginRight), level with its line, so it can never overlap
-    // a bar or a bar's value. One line when the visible sheets share a target; otherwise
-    // one line per sheet (Assembly / C&C).
-    const targetLine = (value, text, { dashStyle = 'Dash', nudge = 0 } = {}) => ({
-      value,
-      color: TARGET_LINE_COLOR,
-      dashStyle,
-      width: 2,
-      zIndex: 4,
-      label: {
-        text,
-        align: 'right',
-        textAlign: 'left',
-        verticalAlign: 'middle',
-        x: 8,
-        y: 4 + nudge,
-        clip: false,
-        style: { color: TARGET_LINE_COLOR, fontSize: '13px', fontWeight: '700' }
-      }
-    });
-    let targetLines;
+    // Full-width dashed target line(s): one when the visible sheets share a target,
+    // otherwise one per sheet (Assembly / C&C).
+    // Their labels are NOT Highcharts plot-line labels: when the chart scrolls sideways
+    // (many dates) Highcharts covers the area outside the plot with a mask that the CSS
+    // below paints opaque white, which hid labels drawn in the right margin. Instead the
+    // render event reports each line's pixel height and the labels are drawn as HTML on
+    // top of the chart, in the reserved right margin (chart.marginRight).
+    let targetLabelDefs;
     if (sharedTarget != null) {
-      targetLines = [targetLine(sharedTarget, `Target ${sharedTarget}%`)];
+      targetLabelDefs = [{ key: 'shared', value: sharedTarget, text: `Target ${sharedTarget}%`, dashStyle: 'Dash', nudge: 0 }];
     } else {
       const [high, low] = [...activeSheets].sort((a, b) => targetFor(b) - targetFor(a));
       // Close targets: push the two labels apart vertically so they don't overlap each other
       const tooClose = targetFor(high) - targetFor(low) < 6;
-      targetLines = [
-        targetLine(targetFor(high), `${SHEET_META[high].label} ${targetFor(high)}%`, {
-          nudge: tooClose ? -8 : 0
-        }),
-        targetLine(targetFor(low), `${SHEET_META[low].label} ${targetFor(low)}%`, {
-          dashStyle: 'ShortDash',
-          nudge: tooClose ? 8 : 0
-        })
+      targetLabelDefs = [
+        { key: high, value: targetFor(high), text: `${SHEET_META[high].label} ${targetFor(high)}%`, dashStyle: 'Dash', nudge: tooClose ? -8 : 0 },
+        { key: low, value: targetFor(low), text: `${SHEET_META[low].label} ${targetFor(low)}%`, dashStyle: 'ShortDash', nudge: tooClose ? 8 : 0 }
       ];
     }
+    const targetLines = targetLabelDefs.map(({ value, dashStyle }) => ({
+      value,
+      color: TARGET_LINE_COLOR,
+      dashStyle,
+      width: 2,
+      zIndex: 4
+    }));
 
     return {
       chart: {
@@ -213,6 +207,19 @@ export default function LpaPerformanceChartCard({
         marginRight: TARGET_LABEL_MARGIN,
         style: { fontFamily: 'inherit' },
         animation: { duration: 400 },
+        events: {
+          // Vertical pixel position of each target line, for the HTML labels
+          render() {
+            const axis = this.yAxis?.[0];
+            if (!axis) return;
+            const next = targetLabelDefs.map(d => ({
+              key: d.key,
+              text: d.text,
+              top: Math.round(axis.toPixels(d.value, false)) + d.nudge
+            }));
+            setTargetLabelTops(prev => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+          }
+        },
         ...(needsScroll && {
           scrollablePlotArea: { minWidth: slots.length * slotWidth, scrollPositionX: 1, opacity: 1 }
         })
@@ -328,7 +335,7 @@ export default function LpaPerformanceChartCard({
               </span>
             </CardTitle>
             <CardDescription className="text-xs text-slate-500">
-              Daily scores per shift (written in each bar), coloured by level, with target benchmark.{' '}
+              {PERIOD_DESCRIPTIONS[period] || PERIOD_DESCRIPTIONS.daily} per shift (letter in each bar), coloured by level, with target benchmark.{' '}
               <span className="font-semibold text-red-600">Bars outlined in red are below target.</span>
             </CardDescription>
           </div>
@@ -347,18 +354,6 @@ export default function LpaPerformanceChartCard({
                 {label}
               </Button>
             ))}
-            {onHide && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 px-3 text-xs text-slate-500 hover:text-slate-800"
-                onClick={onHide}
-                title="Hide graph"
-              >
-                <EyeOff className="h-3.5 w-3.5" />
-                Hide Graph
-              </Button>
-            )}
           </div>
         </div>
 
@@ -366,9 +361,9 @@ export default function LpaPerformanceChartCard({
         <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-end justify-between gap-4">
           {/* Left: filters */}
           <div className="flex flex-wrap items-end gap-4">
-            <FilterSelect label="Period" value={dateRange} onChange={onDateRangeChange} options={periodOptions} />
+            <FilterSelect label="Period" value={period} onChange={onPeriodChange} options={PERIOD_OPTIONS} />
 
-            {/* Custom range is always visible; picking a date switches Period to Custom */}
+            {/* Optional custom window; when set it replaces the Period's default window */}
             <div className="flex flex-col gap-1.5">
               <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Custom From</Label>
               <Input
@@ -471,12 +466,29 @@ export default function LpaPerformanceChartCard({
                 opacity: 1 !important;
               }
             `}</style>
-            <HighchartsReact
-              key={`${activeTab}-${slots.length}`}
-              highcharts={Highcharts}
-              options={chartOptions}
-              updateArgs={[true, true, true]}
-            />
+            <div className="relative">
+              <HighchartsReact
+                key={`${activeTab}-${slots.length}`}
+                highcharts={Highcharts}
+                options={chartOptions}
+                updateArgs={[true, true, true]}
+              />
+              {/* Target labels, level with their lines, in the chart's right margin (above the scroll mask) */}
+              <div
+                className="pointer-events-none absolute inset-y-0 right-0 z-10"
+                style={{ width: TARGET_LABEL_MARGIN }}
+              >
+                {targetLabelTops.map(({ key, text, top }) => (
+                  <span
+                    key={key}
+                    className="absolute left-2 -translate-y-1/2 whitespace-nowrap text-[13px] font-bold leading-none"
+                    style={{ top, color: TARGET_LINE_COLOR }}
+                  >
+                    {text}
+                  </span>
+                ))}
+              </div>
+            </div>
           </>
         )}
       </CardContent>

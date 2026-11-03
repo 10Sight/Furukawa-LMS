@@ -1599,7 +1599,7 @@ function LpaPageContent({ viewContext }) {
                 </div>
 
                 <div className="overflow-x-auto rounded-2xl border border-[#ECEFF3] bg-white shadow-[0_2px_8px_rgba(0,0,0,0.03)]">
-                  <table className="w-full text-sm">
+                  <table className="w-full text-sm table-fixed">
                     <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                       <tr>
                         <th className="px-4 py-3 text-left">S.NO.</th>
@@ -1685,7 +1685,7 @@ function LpaPageContent({ viewContext }) {
                                 )}
                               </td>
                               <td className="px-4 py-4 text-slate-700">
-                                <div className="grid grid-cols-2 gap-1.5 min-w-[210px] max-w-[240px]">
+                                <div className="grid grid-cols-2 gap-1.5 w-full">
                                   {(() => {
                                     const resolvedRows = resolvePDCASheetRows(sh, rows.length > 0 ? rows : (sh.isDefault ? (pdcaTopic?.sheet?.rows || []) : []));
                                     const statusSummary = getPDCASheetStatusSummary(resolvedRows.length > 0 ? resolvedRows : rows, pdcaDate);

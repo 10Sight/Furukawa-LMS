@@ -581,42 +581,40 @@ export function getRecordSections(record, employeeDatabase = VERIFIED_EMPLOYEE_M
 }
 
 export function areSectionsMatching(userSecs, recordSecs, userDepts = [], recordDepts = []) {
-  if (userSecs.length === 0 && recordSecs.length === 0) {
-    return true;
-  }
-  const isGenericLpaAssembly = recordSecs.length === 1 && recordSecs[0] === 'assembly';
-  if (isGenericLpaAssembly) {
-    if (userDepts.includes('assembly') || userSecs.includes('assembly')) return true;
-  }
-  const isGenericLpaCc = recordSecs.length === 1 && recordSecs[0] === 'cc';
-  if (isGenericLpaCc) {
-    if (userDepts.includes('c&c') || userSecs.includes('cc')) return true;
-  }
-
+  if (!Array.isArray(userSecs) || !Array.isArray(recordSecs)) return false;
   if (userSecs.length === 0 || recordSecs.length === 0) {
     return false;
   }
-
-  return userSecs.some(us => recordSecs.includes(us));
+  if (userSecs.some(us => recordSecs.includes(us))) {
+    return true;
+  }
+  const isGenericLpaAssembly = recordSecs.includes('assembly');
+  if (isGenericLpaAssembly && (userSecs.includes('assembly') || userDepts.includes('assembly'))) {
+    return true;
+  }
+  const isGenericLpaCc = recordSecs.includes('cc');
+  if (isGenericLpaCc && (userSecs.includes('cc') || userDepts.includes('c&c'))) {
+    return true;
+  }
+  return false;
 }
 
 export function isUserInSameDepartmentAsRecord(record, currentUser, employeeDatabase = VERIFIED_EMPLOYEE_MASTER) {
   if (!record || !currentUser) return false;
   if (isRecordCreator(record, currentUser)) return true;
 
-  // 1. Department match: User and Record MUST be in the same department
+  // 1. Department match: User and Record belong to the same department
   const userDepts = getUserDepartments(currentUser, employeeDatabase);
-  if (userDepts.length === 0) return false;
   const recordDepts = getRecordDepartments(record, employeeDatabase);
-  if (recordDepts.length === 0) return false;
-  const isSameDept = userDepts.some(ud => recordDepts.includes(ud));
-  if (!isSameDept) return false;
+  const isSameDept = userDepts.length > 0 && recordDepts.length > 0 && userDepts.some(ud => recordDepts.includes(ud));
 
-  // 2. Section match: User and Record MUST ALSO be in the same Department Section!
-  // If employees have the same department but different section, access is denied.
+  // 2. Section match: User and Record belong to the same section
   const userSecs = getUserSections(currentUser, employeeDatabase);
   const recordSecs = getRecordSections(record, employeeDatabase);
-  return areSectionsMatching(userSecs, recordSecs, userDepts, recordDepts);
+  const isSameSec = areSectionsMatching(userSecs, recordSecs, userDepts, recordDepts);
+
+  // If same department OR same section (or both), access is granted!
+  return Boolean(isSameDept || isSameSec);
 }
 
 export const isUserInSameDepartmentAndSectionAsRecord = isUserInSameDepartmentAsRecord;

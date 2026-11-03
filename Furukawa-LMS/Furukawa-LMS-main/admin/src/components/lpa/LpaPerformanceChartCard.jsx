@@ -16,17 +16,29 @@ const SHEET_VIEWS = [
   { key: 'cc', label: 'C&C Sheet' }
 ];
 
-const DATE_RANGES = [
-  { key: '7d', label: 'Last 7 Days' },
-  { key: '14d', label: 'Last 14 Days' },
-  { key: '30d', label: 'Last 30 Days' },
-  { key: 'month', label: 'This Month' },
-  { key: 'all', label: 'All Recorded Dates' },
-  { key: 'custom', label: 'Custom Range' }
+const BREAKDOWN_VIEWS = [
+  { key: 'level', label: 'By Level' },
+  { key: 'shift', label: 'By Shift' }
 ];
+
+// Bar order inside each slot; the legend badges follow the same order
+const SERIES_DEFS = {
+  level: [
+    { key: 'level3Score', name: 'Level 3 Score (%)', short: 'Level 3', color: COLORS.level3 },
+    { key: 'level2Score', name: 'Level 2 Score (%)', short: 'Level 2', color: COLORS.level2 },
+    { key: 'level1Score', name: 'Level 1 Score (%)', short: 'Level 1', color: COLORS.level1 }
+  ],
+  shift: [
+    { key: 'shiftAScore', name: 'Shift A (%)', short: 'Shift A', color: COLORS.shiftA },
+    { key: 'shiftBScore', name: 'Shift B (%)', short: 'Shift B', color: COLORS.shiftB },
+    { key: 'shiftCScore', name: 'Shift C (%)', short: 'Shift C', color: COLORS.shiftC },
+    { key: 'shiftGScore', name: 'Shift G (%)', short: 'Shift G', color: COLORS.shiftG }
+  ]
+};
 
 const BELOW_TARGET_COLOR = '#dc2626';
 const VIEWPORT_WIDTH = 800;
+const BAR_SLOT_WIDTH = 58; // room for one bar plus its "100%" label
 
 const escapeHtml = (str) => String(str ?? '')
   .replace(/&/g, '&amp;')
@@ -54,7 +66,13 @@ function FilterSelect({ label, value, onChange, options }) {
           onChange={(e) => onChange(e.target.value)}
           className="h-8 appearance-none rounded-md border border-slate-200 bg-white pl-3 pr-8 text-xs font-medium text-slate-700 shadow-xs focus:border-blue-500 focus:outline-none cursor-pointer hover:bg-slate-50"
         >
-          {options.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+          {options.map(o => (o.group ? (
+            <optgroup key={o.group} label={o.group}>
+              {o.options.map(opt => <option key={opt.key} value={opt.key}>{opt.label}</option>)}
+            </optgroup>
+          ) : (
+            <option key={o.key} value={o.key}>{o.label}</option>
+          )))}
         </select>
         <ChevronDown size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
       </div>
@@ -75,6 +93,9 @@ export default function LpaPerformanceChartCard({
   unitLabel,
   dateRange,
   onDateRangeChange,
+  monthOptions = [],
+  breakdownMode = 'level',
+  onBreakdownModeChange,
   customRange = { from: '', to: '' },
   onCustomRangeChange,
   targetBenchmark,
@@ -84,11 +105,40 @@ export default function LpaPerformanceChartCard({
   onHide
 }) {
   const [isTableExpanded, setIsTableExpanded] = useState(false);
+  const [hiddenSeries, setHiddenSeries] = useState(() => new Set()); // series keys toggled off via the badges
   const isBoth = activeTab === 'both';
+  const isShiftMode = breakdownMode === 'shift';
   const hasData = slots.length > 0;
 
-  // Wide enough that a "100%" label fits above each of the 3 bars
-  const slotWidth = isBoth ? 190 : 170;
+  const periodOptions = useMemo(() => [
+    { key: '7d', label: 'Last 7 Days' },
+    { key: '14d', label: 'Last 14 Days' },
+    { key: '30d', label: 'Last 30 Days' },
+    { group: 'Month', options: monthOptions },
+    { key: 'all', label: 'All Recorded Dates' },
+    { key: 'custom', label: 'Custom Date Range…' }
+  ], [monthOptions]);
+
+  // Shifts with no audit in the current range are dropped so they don't leave gaps
+  const seriesDefs = useMemo(() => {
+    const defs = SERIES_DEFS[breakdownMode] || SERIES_DEFS.level;
+    if (!isShiftMode) return defs;
+    const withData = defs.filter(def => slots.some(s => s[def.key] != null));
+    return withData.length > 0 ? withData : defs;
+  }, [breakdownMode, isShiftMode, slots]);
+
+  const toggleSeries = (key) => {
+    setHiddenSeries(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  // Wide enough that a "100%" label fits above every visible bar in a slot
+  const visibleBarCount = Math.max(1, seriesDefs.filter(def => !hiddenSeries.has(def.key)).length);
+  const slotWidth = Math.max(isBoth ? 190 : 170, visibleBarCount * BAR_SLOT_WIDTH + 20);
   const needsScroll = slots.length * slotWidth > VIEWPORT_WIDTH;
 
   const chartOptions = useMemo(() => {
@@ -108,10 +158,13 @@ export default function LpaPerformanceChartCard({
         .map(value => ({ value, width: 1, dashStyle: 'Dash', color: '#cbd5e1', zIndex: 3 }))
       : [];
 
-    // Bars below the target benchmark are drawn red
-    const levelPoints = (key, color) => slots.map(s => {
+    // Bars below the target keep their series colour (so shifts/levels stay identifiable)
+    // and get a red outline; their data label is red too
+    const seriesPoints = (key) => slots.map(s => {
       const y = s[key];
-      return { y, color: y != null && y < targetBenchmark ? BELOW_TARGET_COLOR : color };
+      return y != null && y < targetBenchmark
+        ? { y, borderColor: BELOW_TARGET_COLOR, borderWidth: 2 }
+        : { y };
     });
 
     return {
@@ -161,13 +214,8 @@ export default function LpaPerformanceChartCard({
           }
         }]
       },
-      legend: {
-        enabled: true,
-        align: 'right',
-        verticalAlign: 'top',
-        layout: 'horizontal',
-        itemStyle: { fontSize: '14px', fontWeight: 'bold', color: '#475569' }
-      },
+      // Series are labelled by the clickable badges in the filter bar instead
+      legend: { enabled: false },
       tooltip: {
         shared: true,
         useHTML: true,
@@ -195,8 +243,11 @@ export default function LpaPerformanceChartCard({
 
           const met = slot.avgScore >= targetBenchmark;
           const tone = scoreTone(slot.avgScore, targetBenchmark);
-          const levelRow = (name, color, val) =>
-            `<div style="display:flex;justify-content:space-between;gap:16px"><span><span style="color:${color}">■</span> ${name}</span><b style="font-family:monospace">${val != null ? `${val}%` : '—'}</b></div>`;
+          const breakdownRow = (def) => {
+            const val = slot[def.key];
+            const valColor = val != null && val < targetBenchmark ? BELOW_TARGET_COLOR : 'inherit';
+            return `<div style="display:flex;justify-content:space-between;gap:16px"><span><span style="color:${def.color}">■</span> ${def.short}</span><b style="font-family:monospace;color:${valColor}">${val != null ? `${val}%` : '—'}</b></div>`;
+          };
 
           return (
             header +
@@ -204,9 +255,7 @@ export default function LpaPerformanceChartCard({
             `<div style="display:flex;justify-content:space-between;gap:16px;margin-bottom:2px"><span style="font-weight:600;color:#334155">Overall Score</span><b style="color:${tone.text}">${slot.avgScore}%</b></div>` +
             `<div style="display:flex;justify-content:space-between;gap:16px;font-size:11px;color:#64748b"><span>Target ${targetBenchmark}%</span><b style="color:${met ? '#059669' : '#e11d48'}">${met ? 'Target Met' : 'Below Target'}</b></div>` +
             `<div style="border-top:1px solid #f1f5f9;margin-top:6px;padding-top:6px;font-size:11px;color:#475569">` +
-            levelRow('Level 3', COLORS.level3, slot.level3Score) +
-            levelRow('Level 2', COLORS.level2, slot.level2Score) +
-            levelRow('Level 1', COLORS.level1, slot.level1Score) +
+            seriesDefs.map(breakdownRow).join('') +
             `</div>` +
             `<div style="margin-top:6px;font-size:11px;color:#64748b">Sheets audited: <b>${slot.totalSheets}</b></div>` +
             `</div>`
@@ -238,18 +287,20 @@ export default function LpaPerformanceChartCard({
         rules: [{
           condition: { maxWidth: 767 },
           chartOptions: {
-            chart: { height: 520 },
-            legend: { align: 'center', itemStyle: { fontSize: '12px' } }
+            chart: { height: 520 }
           }
         }]
       },
-      series: [
-        { type: 'column', name: 'Level 3 Score (%)', color: COLORS.level3, data: levelPoints('level3Score', COLORS.level3) },
-        { type: 'column', name: 'Level 2 Score (%)', color: COLORS.level2, data: levelPoints('level2Score', COLORS.level2) },
-        { type: 'column', name: 'Level 1 Score (%)', color: COLORS.level1, data: levelPoints('level1Score', COLORS.level1) }
-      ]
+      series: seriesDefs.map(def => ({
+        type: 'column',
+        id: def.key,
+        name: def.name,
+        color: def.color,
+        visible: !hiddenSeries.has(def.key),
+        data: seriesPoints(def.key)
+      }))
     };
-  }, [slots, isBoth, needsScroll, slotWidth, targetBenchmark]);
+  }, [slots, isBoth, needsScroll, slotWidth, targetBenchmark, seriesDefs, hiddenSeries]);
 
   return (
     <Card className="rounded-2xl border-slate-200/80 bg-white">
@@ -267,8 +318,10 @@ export default function LpaPerformanceChartCard({
               </span>
             </CardTitle>
             <CardDescription className="text-xs text-slate-500">
-              Daily scores by hierarchy levels (Level 3, Level 2, Level 1) with target benchmark.{' '}
-              <span className="font-semibold text-red-600">Red bars are below target.</span>
+              {isShiftMode
+                ? 'Daily scores by shift (Shift A, B, C, G) with target benchmark.'
+                : 'Daily scores by hierarchy levels (Level 3, Level 2, Level 1) with target benchmark.'}{' '}
+              <span className="font-semibold text-red-600">Bars outlined in red are below target.</span>
             </CardDescription>
           </div>
 
@@ -302,60 +355,104 @@ export default function LpaPerformanceChartCard({
         </div>
 
         {/* Filter bar */}
-        <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-end gap-4">
-          <FilterSelect label="Timeframe" value={dateRange} onChange={onDateRangeChange} options={DATE_RANGES} />
-
-          {dateRange === 'custom' && (
-            <>
-              <div className="flex flex-col gap-1.5">
-                <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">From</Label>
-                <Input
-                  type="date"
-                  value={customRange.from}
-                  max={customRange.to || undefined}
-                  onChange={(e) => onCustomRangeChange?.({ ...customRange, from: e.target.value })}
-                  className="h-8 w-36 text-xs"
-                />
+        <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-end justify-between gap-4">
+          {/* Left: breakdown toggle + filters */}
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Breakdown</Label>
+              <div className="flex gap-1">
+                {BREAKDOWN_VIEWS.map(({ key, label }) => (
+                  <Button
+                    key={key}
+                    variant={breakdownMode === key ? 'default' : 'outline'}
+                    size="sm"
+                    className="h-8 px-3 text-xs"
+                    onClick={() => onBreakdownModeChange?.(key)}
+                  >
+                    {label}
+                  </Button>
+                ))}
               </div>
-              <div className="flex flex-col gap-1.5">
-                <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">To</Label>
-                <Input
-                  type="date"
-                  value={customRange.to}
-                  min={customRange.from || undefined}
-                  onChange={(e) => onCustomRangeChange?.({ ...customRange, to: e.target.value })}
-                  className="h-8 w-36 text-xs"
-                />
-              </div>
-            </>
-          )}
+            </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Target %</Label>
-            {isAdmin ? (
-              <Input
-                type="number"
-                min="1"
-                max="100"
-                value={targetBenchmark}
-                onChange={(e) => onTargetChange(e.target.value)}
-                className="h-8 w-20 text-xs font-bold text-emerald-800"
-                title="Admin: Change Target Line %"
-              />
-            ) : (
-              <span className="h-8 inline-flex items-center text-xs font-bold text-emerald-700">{targetBenchmark}%</span>
+            <FilterSelect label="Period" value={dateRange} onChange={onDateRangeChange} options={periodOptions} />
+
+            {dateRange === 'custom' && (
+              <>
+                <div className="flex flex-col gap-1.5">
+                  <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">From</Label>
+                  <Input
+                    type="date"
+                    value={customRange.from}
+                    max={customRange.to || undefined}
+                    onChange={(e) => onCustomRangeChange?.({ ...customRange, from: e.target.value })}
+                    className="h-8 w-36 text-xs"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">To</Label>
+                  <Input
+                    type="date"
+                    value={customRange.to}
+                    min={customRange.from || undefined}
+                    onChange={(e) => onCustomRangeChange?.({ ...customRange, to: e.target.value })}
+                    className="h-8 w-36 text-xs"
+                  />
+                </div>
+              </>
             )}
+
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Target %</Label>
+              {isAdmin ? (
+                <Input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={targetBenchmark}
+                  onChange={(e) => onTargetChange(e.target.value)}
+                  className="h-8 w-20 text-xs font-bold text-emerald-800"
+                  title="Admin: Change Target Line %"
+                />
+              ) : (
+                <span className="h-8 inline-flex items-center text-xs font-bold text-emerald-700">{targetBenchmark}%</span>
+              )}
+            </div>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-3 text-xs text-slate-500 hover:text-slate-800 self-end"
+              onClick={onReset}
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Reset
+            </Button>
           </div>
 
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 px-3 text-xs text-slate-500 hover:text-slate-800 self-end"
-            onClick={onReset}
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-            Reset
-          </Button>
+          {/* Right: series badges (click to show/hide a series) + target */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pb-1">
+            {seriesDefs.map(def => {
+              const hidden = hiddenSeries.has(def.key);
+              return (
+                <button
+                  key={def.key}
+                  type="button"
+                  onClick={() => toggleSeries(def.key)}
+                  aria-pressed={!hidden}
+                  title={hidden ? `Show ${def.short}` : `Hide ${def.short}`}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs font-semibold transition-opacity cursor-pointer hover:bg-slate-50 ${hidden ? 'opacity-40 line-through text-slate-400' : 'text-slate-700'}`}
+                >
+                  <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: def.color }} />
+                  {def.name}
+                </button>
+              );
+            })}
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 pl-3 border-l border-slate-200">
+              <span className="w-4 border-t-2 border-dashed border-emerald-500" />
+              Target {targetBenchmark}%
+            </span>
+          </div>
         </div>
       </CardHeader>
 
@@ -381,9 +478,10 @@ export default function LpaPerformanceChartCard({
               }
             `}</style>
             <HighchartsReact
-              key={`${activeTab}-${slots.length}`}
+              key={`${activeTab}-${breakdownMode}-${slots.length}`}
               highcharts={Highcharts}
               options={chartOptions}
+              updateArgs={[true, true, true]}
             />
           </>
         )}

@@ -6,7 +6,10 @@ import {
   formatShortDate,
   extractSheetScore,
   buildCombinedChartSlots,
-  buildCombinedTableRows
+  buildCombinedTableRows,
+  extractAvailableMonths,
+  formatYearMonth,
+  toLocalDateStr
 } from './lpaGraphUtils.js';
 
 test('1. formatShortDate correctly formats ISO dates', () => {
@@ -278,4 +281,57 @@ test('11. Custom date range keeps only records within inclusive From/To bounds',
   assert.deepEqual(dates({ from: '2026-10-20', to: '' }), ['2026-10-20', '2026-10-21']);
   assert.deepEqual(dates({ from: '', to: '2026-10-18' }), ['2026-10-18']);
   assert.equal(dates({ from: '', to: '' }).length, 4);
+});
+
+const dated = (auditDate, extra = {}) => ({ id: auditDate, section: 'assembly', unit: 'Bawal', auditDate, ...extra });
+
+test('12. A specific month key keeps only that month', () => {
+  const records = ['2026-09-30', '2026-10-01', '2026-10-31', '2026-11-01'].map(d => dated(d));
+  const dates = aggregateSectionData(records, 'assembly', 'all', '2026-10').dailyData.map(d => d.date);
+  assert.deepEqual(dates, ['2026-10-01', '2026-10-31']);
+});
+
+test('13. Current month and day cutoffs use local time, not UTC', () => {
+  // 1 Nov 2026, 02:00 local: UTC would still be 31 Oct in IST
+  const now = new Date(2026, 10, 1, 2, 0, 0);
+  assert.equal(toLocalDateStr(now), '2026-11-01');
+
+  const records = ['2026-10-25', '2026-10-31', '2026-11-01'].map(d => dated(d));
+  const month = aggregateSectionData(records, 'assembly', 'all', 'month', {}, now).dailyData.map(d => d.date);
+  assert.deepEqual(month, ['2026-11-01']);
+
+  const week = aggregateSectionData(records, 'assembly', 'all', '7d', {}, now).dailyData.map(d => d.date);
+  assert.deepEqual(week, ['2026-10-25', '2026-10-31', '2026-11-01']);
+});
+
+test('14. extractAvailableMonths lists record months plus the current month, newest first', () => {
+  const now = new Date(2026, 10, 3);
+  const months = extractAvailableMonths([dated('2026-09-10'), dated('2026-10-02'), dated('2026-10-20')], now);
+  assert.deepEqual(months, [
+    { key: '2026-11', label: 'November 2026' },
+    { key: '2026-10', label: 'October 2026' },
+    { key: '2026-09', label: 'September 2026' }
+  ]);
+  assert.equal(formatYearMonth('2026-01'), 'January 2026');
+});
+
+test('15. Shift scores are averaged per day; unaudited shifts are null; record.shifts fallback is kept', () => {
+  const sheet = (shift, extra = {}) => ({ name: 's', ...(shift ? { shift } : {}), targetLevel: 'L3', ...extra });
+  const records = [
+    dated('2026-10-20', { sheets: [sheet('A'), sheet('A'), sheet('G')] }),
+    dated('2026-10-20', { shifts: ['B'], sheets: [sheet(null)] })
+  ];
+  const [day] = aggregateSectionData(records, 'assembly', 'all', 'all').dailyData;
+  assert.equal(day.shiftA, 2);
+  assert.equal(day.shiftB, 1);
+  assert.equal(day.shiftG, 1);
+  assert.equal(day.shiftC, 0);
+  assert.equal(typeof day.shiftAScore, 'number');
+  assert.equal(typeof day.shiftBScore, 'number');
+  assert.equal(day.shiftCScore, null);
+
+  const [slot] = buildCombinedChartSlots([day], [], 'assembly');
+  assert.equal(slot.shiftAScore, day.shiftAScore);
+  assert.equal(slot.shiftCScore, null);
+  assert.equal(slot.shiftGScore, day.shiftGScore);
 });

@@ -4,13 +4,15 @@ import { BarChart3, Eye } from 'lucide-react';
 import {
   aggregateSectionData,
   buildCombinedChartSlots,
-  buildCombinedTableRows
+  buildCombinedTableRows,
+  extractAvailableMonths
 } from '../../pages/lpa/lpaGraphUtils.js';
 import LpaPerformanceChartCard from './LpaPerformanceChartCard.jsx';
 
 const DEFAULT_TARGET = 85;
 const DEFAULT_DATE_RANGE = '30d';
 const DEFAULT_TAB = 'assembly';
+const DEFAULT_BREAKDOWN = 'level';
 
 /**
  * LPA Analytics & Performance Graph shown inline on the LPA page.
@@ -19,9 +21,13 @@ const DEFAULT_TAB = 'assembly';
  */
 export default function LpaGraphSection({ records = [], loading = false, selectedUnit, isAdmin = false }) {
   const [isVisible, setIsVisible] = useState(true);
-  const [dateRange, setDateRange] = useState(DEFAULT_DATE_RANGE); // '7d' | '14d' | '30d' | 'month' | 'all'
+  // '7d' | '14d' | '30d' | 'YYYY-MM' (specific month) | 'all' | 'custom'
+  const [dateRange, setDateRange] = useState(DEFAULT_DATE_RANGE);
   const [activeTab, setActiveTab] = useState(DEFAULT_TAB); // 'both' | 'assembly' | 'cc'
   const [customRange, setCustomRange] = useState({ from: '', to: '' }); // used when dateRange === 'custom'
+  const [breakdownMode, setBreakdownMode] = useState(DEFAULT_BREAKDOWN); // 'level' | 'shift'
+
+  const monthOptions = useMemo(() => extractAvailableMonths(records), [records]);
 
   // Target Benchmark line settable by Admin
   const [targetBenchmark, setTargetBenchmark] = useState(() => {
@@ -75,6 +81,7 @@ export default function LpaGraphSection({ records = [], loading = false, selecte
     setDateRange(DEFAULT_DATE_RANGE);
     setActiveTab(DEFAULT_TAB);
     setCustomRange({ from: '', to: '' });
+    setBreakdownMode(DEFAULT_BREAKDOWN);
   };
 
   if (!isVisible) {
@@ -116,6 +123,9 @@ export default function LpaGraphSection({ records = [], loading = false, selecte
       unitLabel={unitLabel}
       dateRange={dateRange}
       onDateRangeChange={setDateRange}
+      monthOptions={monthOptions}
+      breakdownMode={breakdownMode}
+      onBreakdownModeChange={setBreakdownMode}
       customRange={customRange}
       onCustomRangeChange={setCustomRange}
       targetBenchmark={targetBenchmark}

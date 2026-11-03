@@ -37,6 +37,54 @@ export function extractSheetScore(sheet, record) {
   return Math.round(sum / valid.length);
 }
 
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+const pad2 = (n) => String(n).padStart(2, '0');
+
+/** Local-time 'YYYY-MM-DD' (toISOString() is UTC and shifts the day in IST). */
+export function toLocalDateStr(date = new Date()) {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+}
+
+/** Local-time 'YYYY-MM'. */
+export function toLocalYearMonth(date = new Date()) {
+  return toLocalDateStr(date).slice(0, 7);
+}
+
+/** True when a date-range filter value is a specific month key like '2026-10'. */
+export function isMonthKey(value) {
+  return /^\d{4}-\d{2}$/.test(String(value || ''));
+}
+
+/** 'YYYY-MM' -> 'October 2026' */
+export function formatYearMonth(yearMonth) {
+  if (!isMonthKey(yearMonth)) return String(yearMonth || '');
+  const [y, m] = yearMonth.split('-');
+  return `${MONTH_NAMES[parseInt(m, 10) - 1] || ''} ${y}`;
+}
+
+function getRecordDate(rec) {
+  return rec.auditDate || rec.date || (rec.createdAt ? String(rec.createdAt).slice(0, 10) : '');
+}
+
+function averageOrNull(values) {
+  if (!values || values.length === 0) return null;
+  return Math.round(values.reduce((a, b) => a + b, 0) / values.length);
+}
+
+/**
+ * Distinct months present in the records plus the current month, newest first,
+ * as [{ key: 'YYYY-MM', label: 'October 2026' }].
+ */
+export function extractAvailableMonths(records = [], now = new Date()) {
+  const months = new Set([toLocalYearMonth(now)]);
+  (records || []).forEach(rec => {
+    const ym = getRecordDate(rec).slice(0, 7);
+    if (isMonthKey(ym)) months.add(ym);
+  });
+  return [...months].sort().reverse().map(key => ({ key, label: formatYearMonth(key) }));
+}
+
 /**
  * Formats ISO date 'YYYY-MM-DD' into readable label e.g. '20 Oct'
  */
@@ -59,7 +107,7 @@ export function formatShortDate(dateStr) {
 /**
  * Aggregates LPA records by date and section for charts and analytics.
  */
-export function aggregateSectionData(records, sectionKey, unitFilter, dateRangeFilter, customRange = {}) {
+export function aggregateSectionData(records, sectionKey, unitFilter, dateRangeFilter, customRange = {}, now = new Date()) {
   const isSectionMatch = (rec) => {
     const sec = String(rec.section || rec.sheets?.[0]?.section || 'assembly').toLowerCase();
     return sec === sectionKey;
@@ -74,26 +122,19 @@ export function aggregateSectionData(records, sectionKey, unitFilter, dateRangeF
   }
 
   // 3. Filter by date range
-  const now = new Date();
   if (dateRangeFilter === '7d' || dateRangeFilter === '14d' || dateRangeFilter === '30d') {
     const days = dateRangeFilter === '7d' ? 7 : dateRangeFilter === '14d' ? 14 : 30;
-    const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-    const cutoffStr = cutoff.toISOString().slice(0, 10);
-    filtered = filtered.filter(rec => {
-      const d = rec.auditDate || rec.date || (rec.createdAt ? rec.createdAt.slice(0, 10) : '');
-      return d >= cutoffStr;
-    });
-  } else if (dateRangeFilter === 'month') {
-    const currentYearMonth = now.toISOString().slice(0, 7); // 'YYYY-MM'
-    filtered = filtered.filter(rec => {
-      const d = rec.auditDate || rec.date || (rec.createdAt ? rec.createdAt.slice(0, 10) : '');
-      return d.startsWith(currentYearMonth);
-    });
+    const cutoffStr = toLocalDateStr(new Date(now.getFullYear(), now.getMonth(), now.getDate() - days));
+    filtered = filtered.filter(rec => getRecordDate(rec) >= cutoffStr);
+  } else if (dateRangeFilter === 'month' || isMonthKey(dateRangeFilter)) {
+    // 'month' = current month; 'YYYY-MM' = that specific month
+    const yearMonth = dateRangeFilter === 'month' ? toLocalYearMonth(now) : dateRangeFilter;
+    filtered = filtered.filter(rec => getRecordDate(rec).startsWith(yearMonth));
   } else if (dateRangeFilter === 'custom') {
     // Inclusive 'YYYY-MM-DD' bounds; either side may be left open
     const { from, to } = customRange || {};
     filtered = filtered.filter(rec => {
-      const d = rec.auditDate || rec.date || (rec.createdAt ? rec.createdAt.slice(0, 10) : '');
+      const d = getRecordDate(rec);
       return (!from || d >= from) && (!to || d <= to);
     });
   }
@@ -102,7 +143,7 @@ export function aggregateSectionData(records, sectionKey, unitFilter, dateRangeF
   const dateMap = new Map();
 
   filtered.forEach(record => {
-    const rawDate = record.auditDate || record.date || (recCreatedAt(record)) || new Date().toISOString().slice(0, 10);
+    const rawDate = getRecordDate(record) || toLocalDateStr(now);
 
     if (!dateMap.has(rawDate)) {
       dateMap.set(rawDate, {
@@ -133,6 +174,10 @@ export function aggregateSectionData(records, sectionKey, unitFilter, dateRangeF
         level3Scores: [],
         level2Scores: [],
         level1Scores: [],
+        shiftAScores: [],
+        shiftBScores: [],
+        shiftCScores: [],
+        shiftGScores: [],
         sheetsList: []
       });
     }
@@ -149,11 +194,21 @@ export function aggregateSectionData(records, sectionKey, unitFilter, dateRangeF
 
       // Extract shift
       const shift = String(sheet.shift || record.shift || (record.shifts && record.shifts[0]) || 'A').toUpperCase();
-      if (shift === 'A') dayEntry.shiftA += 1;
-      else if (shift === 'B') dayEntry.shiftB += 1;
-      else if (shift === 'C') dayEntry.shiftC += 1;
-      else if (shift === 'G') dayEntry.shiftG += 1;
-      else dayEntry.otherShift += 1;
+      if (shift === 'A') {
+        dayEntry.shiftA += 1;
+        dayEntry.shiftAScores.push(scorePct);
+      } else if (shift === 'B') {
+        dayEntry.shiftB += 1;
+        dayEntry.shiftBScores.push(scorePct);
+      } else if (shift === 'C') {
+        dayEntry.shiftC += 1;
+        dayEntry.shiftCScores.push(scorePct);
+      } else if (shift === 'G') {
+        dayEntry.shiftG += 1;
+        dayEntry.shiftGScores.push(scorePct);
+      } else {
+        dayEntry.otherShift += 1;
+      }
 
       // Extract level
       const level = String(sheet.targetLevel || sheet.level || record.targetLevel || record.level || (record.levels && record.levels[0]) || 'L3').toUpperCase();
@@ -188,32 +243,19 @@ export function aggregateSectionData(records, sectionKey, unitFilter, dateRangeF
     });
   });
 
-  function recCreatedAt(r) {
-    return r.createdAt ? String(r.createdAt).slice(0, 10) : '';
-  }
-
   // Calculate averages and sort chronological
   const dailyData = Array.from(dateMap.values())
     .map(day => {
-      const avg = day.scores.length > 0
-        ? Math.round(day.scores.reduce((a, b) => a + b, 0) / day.scores.length)
-        : 0;
-      const l3Avg = day.level3Scores.length > 0
-        ? Math.round(day.level3Scores.reduce((a, b) => a + b, 0) / day.level3Scores.length)
-        : null;
-      const l2Avg = day.level2Scores.length > 0
-        ? Math.round(day.level2Scores.reduce((a, b) => a + b, 0) / day.level2Scores.length)
-        : null;
-      const l1Avg = day.level1Scores.length > 0
-        ? Math.round(day.level1Scores.reduce((a, b) => a + b, 0) / day.level1Scores.length)
-        : null;
-
       return {
         ...day,
-        avgScore: avg,
-        level3Score: l3Avg,
-        level2Score: l2Avg,
-        level1Score: l1Avg
+        avgScore: averageOrNull(day.scores) ?? 0,
+        level3Score: averageOrNull(day.level3Scores),
+        level2Score: averageOrNull(day.level2Scores),
+        level1Score: averageOrNull(day.level1Scores),
+        shiftAScore: averageOrNull(day.shiftAScores),
+        shiftBScore: averageOrNull(day.shiftBScores),
+        shiftCScore: averageOrNull(day.shiftCScores),
+        shiftGScore: averageOrNull(day.shiftGScores)
       };
     })
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -291,6 +333,10 @@ export function buildCombinedChartSlots(assemblyDaily = [], ccDaily = [], active
         level3Score: day?.level3Score ?? null,
         level2Score: day?.level2Score ?? null,
         level1Score: day?.level1Score ?? null,
+        shiftAScore: day?.shiftAScore ?? null,
+        shiftBScore: day?.shiftBScore ?? null,
+        shiftCScore: day?.shiftCScore ?? null,
+        shiftGScore: day?.shiftGScore ?? null,
         avgScore: day ? day.avgScore : null,
         assemblyAvg: sheet === 'assembly' && day ? day.avgScore : null,
         ccAvg: sheet === 'cc' && day ? day.avgScore : null

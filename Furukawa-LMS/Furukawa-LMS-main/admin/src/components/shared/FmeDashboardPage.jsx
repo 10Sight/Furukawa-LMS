@@ -25,7 +25,10 @@ export default function FmeDashboardPage({ page, viewContext, lpaSource }) {
             department: user?.department?.name || (typeof user?.department === 'string' ? user?.department : '') || user?.deptName || (departments[0]?.name || ''),
             deptName: user?.deptName || user?.department?.name || (typeof user?.department === 'string' ? user?.department : '') || (departments[0]?.name || ''),
             departments: user?.departments || departments,
-            section: section?.name || user?.section?.name || user?.sectionName || '',
+            section: (typeof user?.section === 'string' ? user.section : user?.section?.name) || section?.name || user?.sectionName || '',
+            sectionName: (typeof user?.section === 'string' ? user.section : user?.section?.name) || section?.name || user?.sectionName || '',
+            sectionId: sectionId || user?.sectionId || user?.targetSectionId || section?.id || '',
+            departmentId: user?.departmentId || user?.targetDeptId || (typeof user?.department === 'object' ? user?.department?.id : '') || '',
             isAdmin: Boolean(user?.isAdmin || user?.role === 'ADMIN' || String(user?.role || '').toUpperCase() === 'ADMIN' || String(user?.role || '').toUpperCase() === 'SUPERADMIN')
         },
         section: { id: section?.id || section?._id || sectionId || '', name: section?.name || user?.section?.name || user?.sectionName || user?.sectionId?.name || user?.sections?.[0]?.name || '' },

@@ -894,3 +894,125 @@ test('19. Same Department AND Same Section Access Rule: Colleagues must be in sa
   assert.equal(isUserInSameDepartmentAsRecord(qualityRecord, sameQualitySecUser), true, 'Same Quality section has access');
   assert.equal(isUserInSameDepartmentAsRecord(qualityRecord, sameQualityDeptUser), true, 'Same Quality department colleague has access');
 });
+
+test('20. Same Department AND Same Section Employee Access Verification across PDCA Page & LPA Observation PDCA', () => {
+  const creatorEmployee = {
+    id: 19051,
+    empId: 'ST080014',
+    code: 'ST080014',
+    name: 'Yadvender Yadav',
+    department: 'Quality',
+    departmentId: 1,
+    section: 'Assembly Quality',
+    sectionId: 70,
+    role: 'EMPLOYEE'
+  };
+
+  const sameDeptSameSecColleague = {
+    id: 19052,
+    empId: 'BW051211',
+    code: 'BW051211',
+    name: 'Ramesh Sharma',
+    department: 'Quality',
+    departmentId: 1,
+    section: 'Assembly Quality',
+    sectionId: 70,
+    role: 'EMPLOYEE'
+  };
+
+  const sameDeptDiffSecColleague = {
+    id: 19053,
+    empId: 'BW051212',
+    code: 'BW051212',
+    name: 'Suresh Patel',
+    department: 'Quality',
+    departmentId: 1,
+    section: 'Quality C&C',
+    sectionId: 87,
+    role: 'EMPLOYEE'
+  };
+
+  const sameSecDiffDeptColleague = {
+    id: 19054,
+    empId: 'AS081214',
+    code: 'AS081214',
+    name: 'Ashok Kumar',
+    department: 'Assembly',
+    departmentId: 2,
+    section: 'Assembly Quality',
+    sectionId: 70,
+    role: 'EMPLOYEE'
+  };
+
+  const diffDeptDiffSecUser = {
+    id: 19055,
+    empId: 'GJ071211',
+    code: 'GJ071211',
+    name: 'Karan Patel',
+    department: 'IT',
+    departmentId: 7,
+    section: 'IT',
+    sectionId: 113,
+    role: 'EMPLOYEE'
+  };
+
+  const adminUser = {
+    id: 99999,
+    empId: 'ADMIN01',
+    name: 'System Admin',
+    role: 'ADMIN',
+    isAdmin: true
+  };
+
+  // Case 1: Standard PDCA Record created by creatorEmployee
+  const standardPdcaRecord = {
+    id: 'PDCA-1793621991404',
+    topic: 'Quality Inspection Audit',
+    plant: 'Bawal',
+    department: 'Quality',
+    section: 'Assembly Quality',
+    sectionId: 70,
+    createdBy: creatorEmployee,
+    createdById: String(creatorEmployee.id)
+  };
+
+  assert.equal(isUserInSameDepartmentAsRecord(standardPdcaRecord, creatorEmployee), true, 'Creator has access');
+  assert.equal(isUserInSameDepartmentAsRecord(standardPdcaRecord, sameDeptSameSecColleague), true, 'Same dept + same section colleague has access');
+  assert.equal(isUserInSameDepartmentAsRecord(standardPdcaRecord, sameDeptDiffSecColleague), true, 'Same dept colleague has access');
+  assert.equal(isUserInSameDepartmentAsRecord(standardPdcaRecord, sameSecDiffDeptColleague), true, 'Same section colleague has access');
+  assert.equal(isUserInSameDepartmentAsRecord(standardPdcaRecord, diffDeptDiffSecUser), false, 'Different dept + different section colleague does NOT have access');
+  assert.equal(isUserInSameDepartmentAsRecord(standardPdcaRecord, adminUser), true, 'Admin has full access');
+
+  assert.equal(canEditRecord(standardPdcaRecord, sameDeptSameSecColleague), true);
+  assert.equal(canEditRecord(standardPdcaRecord, sameDeptDiffSecColleague), true);
+  assert.equal(canEditRecord(standardPdcaRecord, sameSecDiffDeptColleague), true);
+  assert.equal(canEditRecord(standardPdcaRecord, diffDeptDiffSecUser), false);
+  assert.equal(canEditRecord(standardPdcaRecord, adminUser), true);
+
+  // Case 2: LPA Observation PDCA Record (under Assembly)
+  const lpaAssemblyPdcaRecord = {
+    id: 'PDCA-LPA-ASSEMBLY-Bawal-1793704111073',
+    topic: 'Assembly - LPA Observation (PDCA)',
+    plant: 'Bawal',
+    department: 'Assembly',
+    section: 'assembly',
+    category: 'assembly',
+    createdBy: creatorEmployee,
+    createdById: String(creatorEmployee.id)
+  };
+
+  assert.equal(isUserInSameDepartmentAsRecord(lpaAssemblyPdcaRecord, creatorEmployee), true, 'Creator has access to LPA PDCA');
+  assert.equal(isUserInSameDepartmentAsRecord(lpaAssemblyPdcaRecord, sameDeptSameSecColleague), true, 'Colleague in same dept as creator has access');
+  assert.equal(isUserInSameDepartmentAsRecord(lpaAssemblyPdcaRecord, sameSecDiffDeptColleague), true, 'Colleague in Assembly section has access');
+  assert.equal(isUserInSameDepartmentAsRecord(lpaAssemblyPdcaRecord, diffDeptDiffSecUser), false, 'IT user does NOT have access to Assembly LPA PDCA');
+  assert.equal(isUserInSameDepartmentAsRecord(lpaAssemblyPdcaRecord, adminUser), true, 'Admin has access to LPA PDCA');
+
+  assert.equal(canEditRecord(lpaAssemblyPdcaRecord, sameDeptSameSecColleague), true);
+  assert.equal(canEditRecord(lpaAssemblyPdcaRecord, sameSecDiffDeptColleague), true);
+  assert.equal(canEditRecord(lpaAssemblyPdcaRecord, diffDeptDiffSecUser), false);
+  assert.equal(canEditRecord(lpaAssemblyPdcaRecord, adminUser), true);
+
+  // Case 3: Verify PDCATable contains isUserInSameDepartmentAsRecord for Edit button
+  const pdcaTableCode = fs.readFileSync(new URL('../../../components/pdca/PDCATable.jsx', import.meta.url), 'utf8');
+  assert.ok(pdcaTableCode.includes('isUserInSameDepartmentAsRecord(row, currentUser)'), 'PDCATable Edit button must check isUserInSameDepartmentAsRecord');
+});

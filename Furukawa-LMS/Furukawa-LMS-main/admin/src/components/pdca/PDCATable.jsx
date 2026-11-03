@@ -1,6 +1,6 @@
 import React from 'react';
 import { Download, Copy, Trash2, Building2, UserPlus, Users, Edit3 } from 'lucide-react';
-import { isRecordCreator, getPDCASheetStatusSummary } from '../../pages/pdca/data/recordFilters.js';
+import { isRecordCreator, isUserInSameDepartmentAsRecord, getPDCASheetStatusSummary } from '../../pages/pdca/data/recordFilters.js';
 
 export default function PDCATable({
   items,
@@ -216,8 +216,8 @@ export default function PDCATable({
                 {/* Actions: Download, Copy, Delete */}
                 <td className="py-3 px-2 whitespace-nowrap text-center">
                   <div className="flex flex-col items-center justify-center gap-1 w-fit mx-auto">
-                    {/* Edit PDCA Record - Only visible to record creator */}
-                    {isRecordCreator(row, currentUser) && (
+                    {/* Edit PDCA Record - Visible to creator, same department/section colleague, or admin */}
+                    {(isRecordCreator(row, currentUser) || isUserInSameDepartmentAsRecord(row, currentUser) || Boolean(currentUser?.role === 'admin' || currentUser?.isAdmin)) && (
                       <button
                         onClick={() => onEdit?.(row)}
                         title="Edit PDCA record"

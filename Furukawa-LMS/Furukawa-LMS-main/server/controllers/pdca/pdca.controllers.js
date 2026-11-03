@@ -192,6 +192,36 @@ export const isUserInSameDepartmentAsRecord = (user, record) => {
 };
 
 // Helper to determine if an authenticated user is assigned as responsible staff in any PDCA row
+
+// Helper to determine if an authenticated user is authorized to view/access a PDCA record
+export const canUserAccessPDCARecord = (user, record) => {
+    if (!record) return false;
+    if (!user) return false;
+
+    // Administrators have unrestricted access to all PDCA sheets across all departments
+    if (user.isAdmin === true || user.isAdmin === 1 || String(user.role || '').toUpperCase() === 'ADMIN' || String(user.role || '').toUpperCase() === 'SUPERADMIN') {
+        return true;
+    }
+
+    // The sheet creator has full access
+    if (isUserCreatorOfRecord(user, record)) {
+        return true;
+    }
+
+    // Any employee belonging to the same department has full access
+    if (isUserInSameDepartmentAsRecord(user, record)) {
+        return true;
+    }
+
+    // Responsible staff assigned to any row in this sheet have access
+    const rows = record.sheet?.rows || record.rows || [];
+    if (isUserResponsibleStaff(user, rows)) {
+        return true;
+    }
+
+    return false;
+};
+
 export const isUserResponsibleStaff = (user, rows) => {
     if (!user || !Array.isArray(rows)) return false;
     const userIds = [user.id, user._id, user.userId].filter(Boolean).map(String);
@@ -256,6 +286,7 @@ export const createPDCARecord = asyncHandler(async (req, res) => {
 
     const recordData = {
         ...req.body,
+        department: req.body?.department || creatorUser.department,
         createdBy: creatorUser,
         createdById: String(user.id || user._id || creatorCode)
     };
@@ -273,6 +304,11 @@ export const createPDCARecord = asyncHandler(async (req, res) => {
 export const getPDCARecords = asyncHandler(async (req, res) => {
     const { plant, scope, search, page, limit } = req.query;
 
+    let user = req.user;
+    if (!user) {
+        try { user = getAuthenticatedUser(req); } catch {}
+    }
+
     const result = await PDCAModel.findAll({
         plant,
         scope,
@@ -282,9 +318,15 @@ export const getPDCARecords = asyncHandler(async (req, res) => {
     });
 
     if (result && Array.isArray(result.records)) {
+        const isAdmin = Boolean(
+            user && (user.isAdmin === true || user.isAdmin === 1 || String(user.role || '').toUpperCase() === 'ADMIN' || String(user.role || '').toUpperCase() === 'SUPERADMIN')
+        );
+
+
+
         result.records = result.records.map(rec => ({
             ...rec,
-            isCreator: req.user ? isUserCreatorOfRecord(req.user, rec) : false
+            isCreator: user ? isUserCreatorOfRecord(user, rec) : false
         }));
     }
 
@@ -303,9 +345,16 @@ export const getPDCARecordById = asyncHandler(async (req, res) => {
         throw new ApiError(`PDCA record with ID ${id} not found`, 404);
     }
 
+    let user = req.user;
+    if (!user) {
+        try { user = getAuthenticatedUser(req); } catch {}
+    }
+
+
+
     const decorated = {
         ...record,
-        isCreator: req.user ? isUserCreatorOfRecord(req.user, record) : false
+        isCreator: user ? isUserCreatorOfRecord(user, record) : false
     };
 
     return res.status(200).json(new ApiResponse(200, decorated, "PDCA record retrieved successfully"));
@@ -324,8 +373,12 @@ export const updatePDCARecord = asyncHandler(async (req, res) => {
         throw new ApiError(`PDCA record with ID ${id} not found`, 404);
     }
 
-    if (!isUserCreatorOfRecord(user, existing)) {
-        throw new ApiError("Forbidden: Only the employee who created this PDCA record can edit it", 403);
+    const isCreator = isUserCreatorOfRecord(user, existing);
+    const isSameDept = isUserInSameDepartmentAsRecord(user, existing);
+    const isAdmin = Boolean(user.isAdmin || user.role === 'ADMIN' || user.role === 'SUPERADMIN');
+
+    if (!isCreator && !isSameDept && !isAdmin) {
+        throw new ApiError("Forbidden: Only the employee who created this PDCA record or members of the same department can edit it", 403);
     }
 
     const actor = user.fullName || user.userName;
@@ -377,6 +430,13 @@ export const getPDCASheet = asyncHandler(async (req, res) => {
     if (!record) {
         throw new ApiError(`PDCA record with ID ${id} not found`, 404);
     }
+
+    let user = req.user;
+    if (!user) {
+        try { user = getAuthenticatedUser(req); } catch {}
+    }
+
+
 
     const sheet = await PDCAModel.getSheet(record.id);
     return res.status(200).json(new ApiResponse(200, sheet, "PDCA sheet retrieved successfully"));

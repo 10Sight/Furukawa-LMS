@@ -896,7 +896,7 @@ export default function PDCASheet({
   const canDeleteSheet = Boolean(!readOnly && (hasFullAccess || isCreator || hasPermission('pdca:delete') || hasPermission('pdca:delete_sheet') || hasPermission('lpa:delete')));
   const canAddRow = Boolean(!readOnly && (hasFullAccess || isCreatorOrSameDept || hasPermission('pdca:add_row') || hasPermission('pdca:add_rows') || hasPermission('lpa:pdca_add_row')));
   const canDeleteRow = Boolean(!readOnly && (hasFullAccess || isCreator || hasPermission('pdca:delete') || hasPermission('pdca:delete_sheet') || hasPermission('lpa:delete')));
-  const canConfirmDefault = Boolean(!readOnly && isCreator);
+  const canConfirmDefault = Boolean(!readOnly && (isAdmin || hasFullAccess || isCreator));
   const canShowRowActions = Boolean(canEditEntireSheet || canAddRow || canDeleteRow);
   const cftAssignedMembers = topic?.assignedMembers || [];
   const defaultAssignedStr = cftAssignedMembers.length > 0
@@ -3935,9 +3935,9 @@ export default function PDCASheet({
   // Section A: Responsible Person Instruction, etc. Confirmation change handler
   const handleConfirmationChange = (rowIndex, value, userName = '') => {
     const targetRow = rows[rowIndex];
-    const canConfirmThisRow = Boolean(!readOnly && isCreator);
+    const canConfirmThisRow = Boolean(!readOnly && (isAdmin || hasFullAccess || isCreator));
     if (!canConfirmThisRow) {
-      if (typeof showToast === 'function') showToast('Only the sheet creator has access to select Confirmation.');
+      if (typeof showToast === 'function') showToast('Only the sheet creator or Admin has access to select Confirmation.');
       return false;
     }
     const isSelectingConfirmation = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((value || '').trim());
@@ -4008,7 +4008,7 @@ export default function PDCASheet({
   // Instruction change handler for Responsible Person Instruction, etc. column
   const handleInstructionChange = (rowIndex, text) => {
     const targetRow = rows[rowIndex];
-    const canConfirmThisRow = Boolean(!readOnly && isCreator);
+    const canConfirmThisRow = Boolean(!readOnly && (isAdmin || hasFullAccess || isCreator));
     if (!canConfirmThisRow) {
       if (typeof showToast === 'function') showToast('You do not have permission to change instruction.');
       return;

@@ -86,6 +86,8 @@ const optionalAuth = async (req, res, next) => {
                                 userName: decoded.userName,
                                 fullName: decoded.fullName || decoded.name || decoded.userName,
                                 email: decoded.email,
+                                department: decoded.department || req.headers['x-user-department'] || '',
+                                departments: decoded.departments || [],
                                 role: decoded.role || "EMPLOYEE",
                                 isAdmin: decoded.role === "ADMIN" || Boolean(decoded.isAdmin)
                             };
@@ -96,6 +98,7 @@ const optionalAuth = async (req, res, next) => {
         }
         // Fallback for iframe embedded views passing user code in headers or query
         if (!req.user) {
+            const userDept = req.headers['x-user-department'] || req.query?.userDepartment;
             const userCode = req.headers['x-user-code'] || req.headers['x-user-name'] || req.query?.userCode;
             const userId = req.headers['x-user-id'] || req.query?.userId;
             if (userCode || userId) {
@@ -122,6 +125,7 @@ const optionalAuth = async (req, res, next) => {
                                 code: normalizedCode || String(userId),
                                 userName: req.headers['x-user-name'] || normalizedCode,
                                 fullName: req.headers['x-user-name'] || normalizedCode,
+                                department: userDept || '',
                                 role: "EMPLOYEE",
                                 isAdmin: false
                             };
@@ -144,6 +148,7 @@ const optionalAuth = async (req, res, next) => {
                         code: normalizedCode,
                         userName: req.headers['x-user-name'] || normalizedCode,
                         fullName: req.headers['x-user-name'] || normalizedCode,
+                        department: userDept || '',
                         role: "EMPLOYEE",
                         isAdmin: false
                     };
@@ -160,7 +165,7 @@ const requirePdca = (perm) => (req, res, next) => {
     if (!req.user) return next();
     if (req.user.role === 'SUPERADMIN' || req.user.isAdmin || req.user.role === 'ADMIN') return next();
     // Allow all employees to read, create, and update PDCA records & sheets (row/creator checks are handled in controllers)
-    if (perm === 'pdca:read' || perm === 'pdca:update' || perm === 'pdca:create') return next();
+    if (perm === 'pdca:read' || perm === 'pdca:update' || perm === 'pdca:create' || perm === 'pdca:delete') return next();
     const perms = req.user.customRole?.permissions || [];
     if (perms.includes(perm) || perms.includes("pdca:manage") || perms.includes("lpa:manage")) return next();
     return res.status(403).json({ success: false, message: `Access denied. Requires '${perm}' permission.` });

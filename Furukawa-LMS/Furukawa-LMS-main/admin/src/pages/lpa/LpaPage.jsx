@@ -20,7 +20,7 @@ import CreateLpaModal from '../../components/lpa/CreateLpaModal';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import { PDCAProvider } from '../pdca/context/PDCAContext';
 import { getLpaPdcaTopic, saveLpaPdcaSnapshot, extractObservationsFromSheet, createEmptyPdcaRow, getWorksheetScore, getWorksheetScoresList } from './lpaPdcaUtils';
-import { isRecordCreator, isUserInSameDepartmentAsRecord, canEditRecord, resolvePDCASheetRows, getPDCASheetStatusSummary } from '@pages/pdca/data/recordFilters.js';
+import { isRecordCreator, isUserInSameDepartmentAsRecord, canEditRecord, resolvePDCASheetRows, getPDCASheetStatusSummary, getUserPrimaryDepartment } from '@pages/pdca/data/recordFilters.js';
 import LpaTable from '../../components/lpa/LpaTable';
 import LpaGraphSection from '../../components/lpa/LpaGraphSection';
 import { matchesLpaDateRange, normalizeLpaDate } from './lpaDateFilters.js';
@@ -890,6 +890,14 @@ function LpaPageContent({ viewContext }) {
   }, [activeSection, selectedUnit]);
 
   const [isCreatePdcaModalOpen, setIsCreatePdcaModalOpen] = useState(false);
+  useEffect(() => {
+    if (isCreatePdcaModalOpen && effectiveAuthUser) {
+      const primaryDept = getUserPrimaryDepartment(effectiveAuthUser);
+      if (primaryDept) {
+        setNewPdcaForm(prev => ({ ...prev, department: primaryDept }));
+      }
+    }
+  }, [isCreatePdcaModalOpen, effectiveAuthUser]);
   const [newPdcaForm, setNewPdcaForm] = useState({
     title: '',
     date: todayIso,
@@ -951,7 +959,7 @@ function LpaPageContent({ viewContext }) {
       const dateB = b.createdAt || b.date || '';
       return String(dateB).localeCompare(String(dateA));
     });
-  }, [activeSection, selectedUnit, pdcaDate, backendPdcaSheets, customPdcaSheets, pdcaDeleteRevision]);
+  }, [activeSection, selectedUnit, pdcaDate, backendPdcaSheets, customPdcaSheets, pdcaDeleteRevision, isAdmin, effectiveAuthUser]);
   const visiblePdcaSheets = allPdcaSheets.filter(item => item.isDefault || matchesLpaDateRange(item.date, fromDate, toDate));
 
   const emailPdcaSheets = useMemo(() => allPdcaSheets.map(item => {
@@ -1091,7 +1099,7 @@ function LpaPageContent({ viewContext }) {
       date: newPdcaForm.date || pdcaDate || todayIso,
       plant: targetUnit,
       unit: targetUnit,
-      department: newPdcaForm.department || (activeSection === 'assembly' ? 'Assembly' : 'C&C'),
+      department: (effectiveAuthUser && getUserPrimaryDepartment(effectiveAuthUser)) || newPdcaForm.department || (activeSection === 'assembly' ? 'Assembly' : 'C&C'),
       category: activeSection,
       lpaCategory: activeSection,
       scope: 'Company',

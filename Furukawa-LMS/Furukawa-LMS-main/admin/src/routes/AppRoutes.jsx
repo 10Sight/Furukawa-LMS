@@ -397,12 +397,19 @@ const AppRoutes = () => {
             } />
             <Route path="abnormal-condition" element={<AbnormalCondition />} />
             <Route path="ptm" element={<FmeDashboardPage key="ptm" page="ptm" />} />
+            <Route path="ptm/:sheetTopic" element={<FmeDashboardPage key="ptm" page="ptm" />} />
             <Route path="pdca" element={
               <RequireAccess allow="pdca:read">
                 <FmeDashboardPage key="pdca" page="pdca" />
               </RequireAccess>
             } />
+            <Route path="pdca/:sheetTopic" element={
+              <RequireAccess allow="pdca:read">
+                <FmeDashboardPage key="pdca" page="pdca" />
+              </RequireAccess>
+            } />
             <Route path="process-audit" element={<FmeDashboardPage key="process-audit" page="process-audit" />} />
+            <Route path="process-audit/:sheetTopic" element={<FmeDashboardPage key="process-audit" page="process-audit" />} />
             <Route path="lpa" element={
               <RequireAccess allow="lpa:read">
                 <LpaPage />

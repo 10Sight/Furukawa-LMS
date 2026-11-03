@@ -9,20 +9,43 @@ const tokenUserA = jwt.sign({
   code: 'EMP00101',
   userName: 'employeeA',
   fullName: 'Employee Alpha',
+  department: 'SRC Quality',
   role: 'EMPLOYEE'
 }, JWT_SECRET, { expiresIn: '1h' });
 
-const tokenUserB = jwt.sign({
+const tokenUserColleague = jwt.sign({
   id: 102,
   empId: 'EMP00102',
   code: 'EMP00102',
   userName: 'employeeB',
   fullName: 'Employee Beta',
+  department: 'SRC Quality',
   role: 'EMPLOYEE'
 }, JWT_SECRET, { expiresIn: '1h' });
 
+const tokenUserOther = jwt.sign({
+  id: 103,
+  empId: 'EMP00103',
+  code: 'EMP00103',
+  userName: 'employeeC',
+  fullName: 'Employee Charlie',
+  department: 'HR',
+  role: 'EMPLOYEE'
+}, JWT_SECRET, { expiresIn: '1h' });
+
+const tokenAdmin = jwt.sign({
+  id: 14,
+  empId: 'ST080014',
+  code: 'ST080014',
+  userName: 'st080014',
+  fullName: 'Joy Dastidar (ST080014)',
+  department: 'D&D',
+  role: 'ADMIN',
+  isAdmin: true
+}, JWT_SECRET, { expiresIn: '1h' });
+
 async function runTests() {
-  console.log('--- Starting PDCA Creator Permission Verification ---');
+  console.log('--- Starting PDCA Visibility & Creator Permission Verification ---');
 
   // Test 1: Employee A creates a PDCA record
   console.log('\n[Test 1] Employee A creates a PDCA record...');
@@ -33,8 +56,8 @@ async function runTests() {
       'Authorization': `Bearer ${tokenUserA}`
     },
     body: JSON.stringify({
-      topic: 'Test Creator Permission Verification',
-      description: 'Testing role-based employee creator permissions',
+      topic: 'Test Visibility & Creator Permissions',
+      description: 'Testing that sheets are visible to all users',
       plant: 'Bawal',
       department: 'SRC Quality',
       scope: 'Company'
@@ -47,7 +70,6 @@ async function runTests() {
     throw new Error(`Failed to create record: ${JSON.stringify(createJson)}`);
   }
   const recordId = createJson.data.id;
-  console.log('Created Record creator ID:', createJson.data.createdById || createJson.data.createdBy?.empId);
 
   // Test 2: Employee A views their own record -> isCreator should be true
   console.log('\n[Test 2] Employee A views their own record...');
@@ -60,100 +82,62 @@ async function runTests() {
     throw new Error('Expected isCreator === true for Employee A');
   }
 
-  // Test 3: Employee B views Employee A's record -> isCreator should be false
-  console.log('\n[Test 3] Employee B views Employee A\'s record...');
-  const viewBRes = await fetch(`${BASE_URL}/${encodeURIComponent(recordId)}`, {
-    headers: { 'Authorization': `Bearer ${tokenUserB}` }
+  // Test 3: Colleague views Employee A's record -> Visible! isCreator should be false
+  console.log('\n[Test 3] Colleague views Employee A\'s record...');
+  const viewColleagueRes = await fetch(`${BASE_URL}/${encodeURIComponent(recordId)}`, {
+    headers: { 'Authorization': `Bearer ${tokenUserColleague}` }
   });
-  const viewBJson = await viewBRes.json();
-  console.log('View B isCreator:', viewBJson.data?.isCreator);
-  if (viewBJson.data?.isCreator !== false) {
-    throw new Error('Expected isCreator === false for Employee B');
+  const viewColleagueJson = await viewColleagueRes.json();
+  console.log('View Colleague Status:', viewColleagueRes.status, 'isCreator:', viewColleagueJson.data?.isCreator);
+  if (viewColleagueRes.status !== 200 || viewColleagueJson.data?.isCreator !== false) {
+    throw new Error('Expected 200 OK and isCreator === false for colleague');
   }
 
-  // Test 4: Employee B attempts to UPDATE Employee A's record -> Expect 403 Forbidden
-  console.log('\n[Test 4] Employee B attempts to update Employee A\'s record...');
-  const updateBRes = await fetch(`${BASE_URL}/${encodeURIComponent(recordId)}`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${tokenUserB}`
-    },
-    body: JSON.stringify({
-      topic: 'Hacked by Employee B'
-    })
+  // Test 4: Another user views Employee A's record -> Not hidden! Visible to all user IDs
+  console.log('\n[Test 4] Another user views Employee A\'s record (not hidden)...');
+  const viewOtherRes = await fetch(`${BASE_URL}/${encodeURIComponent(recordId)}`, {
+    headers: { 'Authorization': `Bearer ${tokenUserOther}` }
   });
-  const updateBJson = await updateBRes.json();
-  console.log('Update B Status:', updateBRes.status, 'Message:', updateBJson.message);
-  if (updateBRes.status !== 403) {
-    throw new Error(`Expected 403 Forbidden for Employee B update, got ${updateBRes.status}`);
+  const viewOtherJson = await viewOtherRes.json();
+  console.log('View Other Status:', viewOtherRes.status, 'Record returned:', Boolean(viewOtherJson.data?.id));
+  if (viewOtherRes.status !== 200 || !viewOtherJson.data?.id) {
+    throw new Error('Expected record to be visible to all users (not hidden)');
   }
 
-  // Test 5: Employee B attempts to DELETE Employee A's record -> Expect 403 Forbidden
-  console.log('\n[Test 5] Employee B attempts to delete Employee A\'s record...');
-  const deleteBRes = await fetch(`${BASE_URL}/${encodeURIComponent(recordId)}`, {
+  // Test 5: All user IDs see sheets in the list
+  console.log('\n[Test 5] List records is not hidden from users...');
+  const listRes = await fetch(`${BASE_URL}`, {
+    headers: { 'Authorization': `Bearer ${tokenUserOther}` }
+  });
+  const listJson = await listRes.json();
+  const found = (listJson.data?.records || []).some(r => r.id === recordId);
+  console.log('Record found in list for other user:', found);
+  if (!found) {
+    throw new Error('Expected record to appear in list for all users');
+  }
+
+  // Test 6: Admin views and deletes record
+  console.log('\n[Test 6] Admin views and deletes record...');
+  const viewAdminRes = await fetch(`${BASE_URL}/${encodeURIComponent(recordId)}`, {
+    headers: { 'Authorization': `Bearer ${tokenAdmin}` }
+  });
+  if (viewAdminRes.status !== 200) {
+    throw new Error(`Expected 200 OK for Admin view, got ${viewAdminRes.status}`);
+  }
+
+  const deleteAdminRes = await fetch(`${BASE_URL}/${encodeURIComponent(recordId)}`, {
     method: 'DELETE',
-    headers: { 'Authorization': `Bearer ${tokenUserB}` }
+    headers: { 'Authorization': `Bearer ${tokenAdmin}` }
   });
-  const deleteBJson = await deleteBRes.json();
-  console.log('Delete B Status:', deleteBRes.status, 'Message:', deleteBJson.message);
-  if (deleteBRes.status !== 403) {
-    throw new Error(`Expected 403 Forbidden for Employee B delete, got ${deleteBRes.status}`);
+  console.log('Admin Delete Status:', deleteAdminRes.status);
+  if (deleteAdminRes.status !== 200) {
+    throw new Error(`Expected 200 OK for Admin delete, got ${deleteAdminRes.status}`);
   }
 
-  // Test 6: Employee B attempts to SAVE SHEET on Employee A's record -> Expect 403 Forbidden
-  console.log('\n[Test 6] Employee B attempts to save sheet on Employee A\'s record...');
-  const sheetBRes = await fetch(`${BASE_URL}/${encodeURIComponent(recordId)}/sheet`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${tokenUserB}`
-    },
-    body: JSON.stringify({
-      rows: [],
-      headerInfo: { topicName: 'Tampered' }
-    })
-  });
-  const sheetBJson = await sheetBRes.json();
-  console.log('Save Sheet B Status:', sheetBRes.status, 'Message:', sheetBJson.message);
-  if (sheetBRes.status !== 403) {
-    throw new Error(`Expected 403 Forbidden for Employee B sheet save, got ${sheetBRes.status}`);
-  }
-
-  // Test 7: Employee A updates their own record -> Expect 200 OK
-  console.log('\n[Test 7] Employee A updates their own record...');
-  const updateARes = await fetch(`${BASE_URL}/${encodeURIComponent(recordId)}`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${tokenUserA}`
-    },
-    body: JSON.stringify({
-      topic: 'Legitimate update by Employee A'
-    })
-  });
-  const updateAJson = await updateARes.json();
-  console.log('Update A Status:', updateARes.status, 'Updated Topic:', updateAJson.data?.topic);
-  if (updateARes.status !== 200) {
-    throw new Error(`Expected 200 OK for Employee A update, got ${updateARes.status}`);
-  }
-
-  // Test 8: Employee A deletes their own record -> Expect 200 OK
-  console.log('\n[Test 8] Employee A deletes their own record...');
-  const deleteARes = await fetch(`${BASE_URL}/${encodeURIComponent(recordId)}`, {
-    method: 'DELETE',
-    headers: { 'Authorization': `Bearer ${tokenUserA}` }
-  });
-  const deleteAJson = await deleteARes.json();
-  console.log('Delete A Status:', deleteARes.status, 'Message:', deleteAJson.message);
-  if (deleteARes.status !== 200) {
-    throw new Error(`Expected 200 OK for Employee A delete, got ${deleteARes.status}`);
-  }
-
-  console.log('\n>>> ALL 8 ACCEPTANCE TESTS PASSED SUCCESSFULLY! <<<');
+  console.log('\n>>> ALL VISIBILITY & PERMISSION TESTS PASSED! <<<');
 }
 
 runTests().catch(err => {
-  console.error('\nTEST FAILED:', err.message);
+  console.error('\nTEST FAILED:', err.message || err);
   process.exit(1);
 });

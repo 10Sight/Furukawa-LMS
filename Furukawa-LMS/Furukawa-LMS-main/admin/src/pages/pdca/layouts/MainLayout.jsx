@@ -24,6 +24,24 @@ export default function MainLayout({ embedded = false, cmsIntegration = false, o
     onFormViewChange?.(isSheetPage);
   }, [isSheetPage, onFormViewChange]);
 
+  React.useEffect(() => {
+    const handleParentMessage = (event) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type === 'fme-cms-navigate-to-list') {
+        if (location.pathname !== '/') {
+          navigate('/', { replace: true });
+        }
+      } else if (event.data?.type === 'fme-cms-open-sheet') {
+        const topic = event.data.topic;
+        if (topic) {
+          navigate(`/sheet/${encodeURIComponent(topic)}`);
+        }
+      }
+    };
+    window.addEventListener('message', handleParentMessage);
+    return () => window.removeEventListener('message', handleParentMessage);
+  }, [location.pathname, navigate]);
+
   const handleExportExcelAll = () => {
     const rows = ['S.No,ID,Topic,Description,Date,Time,Created By,Emp Code,Plant,Department']
       .concat(

@@ -1,6 +1,8 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { EDITABLE_RESPONSIBLE_COLUMNS, isUserInResponsibleDepartment, canUserEditPDCARow, canEditRecord, isUserInSameDepartmentAsRecord, PDCA_SHEET_TABLE_STATUSES, getPDCASheetStatusSummary, SAVE_MANDATORY_COLUMNS, CONFIRMATION_MANDATORY_COLUMNS, isRowStartedForSave, getMissingSaveMandatoryFields, getMissingConfirmationMandatoryFields } from './recordFilters.js';
+import { EDITABLE_RESPONSIBLE_COLUMNS, isUserInResponsibleDepartment, canUserEditPDCARow, canEditRecord, isUserInSameDepartmentAsRecord, canAccessRecord, getUserPrimaryDepartment, PDCA_SHEET_TABLE_STATUSES, getPDCASheetStatusSummary, SAVE_MANDATORY_COLUMNS, CONFIRMATION_MANDATORY_COLUMNS, isRowStartedForSave, getMissingSaveMandatoryFields, getMissingConfirmationMandatoryFields } from './recordFilters.js';
 import { normalizePDCAStatus, getDepartmentsForUnit, UNIT_DEPARTMENT_MAPPING } from './pdcaConstants.js';
 import { createEmptyPdcaRow } from '../../lpa/lpaPdcaUtils.js';
 
@@ -460,11 +462,10 @@ test('12. Confirmation Column Rule: Creator-only access and 14 mandatory columns
     assert.equal(canUserSelectConfirmation(completeRow, sheet, creatorUser).allowed, true, 'Sheet creator should be allowed when all 14 mandatory columns are filled');
     assert.equal(canUserEditPDCARow(completeRow, creatorUser, sheet, 'confirmation'), true, 'Sheet creator can edit confirmation column');
 
-    // Non-creator Admin cannot select Confirmation
+    // Admin has full access to select Confirmation
     const adminCheck = canUserSelectConfirmation(completeRow, sheet, nonCreatorAdmin);
-    assert.equal(adminCheck.allowed, false, 'Non-creator Admin must NOT select Confirmation');
-    assert.equal(adminCheck.reason, 'creator_only');
-    assert.equal(canUserEditPDCARow(completeRow, nonCreatorAdmin, sheet, 'confirmation'), false);
+    assert.equal(adminCheck.allowed, true, 'Admin has full access to select Confirmation when mandatory columns are filled');
+    assert.equal(canUserEditPDCARow(completeRow, nonCreatorAdmin, sheet, 'confirmation'), true);
 
     // Responsible Person cannot select Confirmation
     const respCheck = canUserSelectConfirmation(completeRow, sheet, responsibleStaffUser);
@@ -698,4 +699,58 @@ test('17. Same-department users have full access to edit the whole PDCA Sheet, w
   assert.equal(isUserInSameDepartmentAsRecord(qualitySheetRecord, maintenanceUser), false);
   const diffDeptPerms = canUserEditPDCARow({ ...sampleRow, staffName: 'Other Person' }, maintenanceUser, qualitySheetRecord);
   assert.deepEqual(diffDeptPerms, { canEditEntireRow: false, canEditActionCols: false });
+});
+
+
+test('18. All sheets restored and visible to all user IDs on PDCA & LPA Observation (PDCA)', () => {
+  const qualityCreator = {
+    id: 'user-qa-1',
+    name: 'Deepak Mehta',
+    empId: 'GJ045819',
+    department: 'Quality',
+    role: 'EMPLOYEE'
+  };
+
+  const hrUser = {
+    id: 'user-hr-1',
+    name: 'Priya Nair',
+    empId: 'GJ018442',
+    department: 'HR',
+    role: 'EMPLOYEE'
+  };
+
+  const adminUser = {
+    id: 14,
+    name: 'Joy Dastidar',
+    empId: 'ST080014',
+    department: 'D&D',
+    role: 'ADMIN',
+    isAdmin: true
+  };
+
+  const qualityPdcaRecord = {
+    id: 'PDCA-QA-001',
+    topic: 'Quality Gauge Calibration Audit',
+    department: 'Quality',
+    createdBy: qualityCreator
+  };
+
+  // Admin has full access to select confirmation
+  assert.equal(canUserEditPDCARow({ department: 'Quality' }, adminUser, qualityPdcaRecord, 'confirmation'), true, 'Admin can edit confirmation column');
+  // Creator has access to confirmation
+  assert.equal(canUserEditPDCARow({ department: 'Quality' }, qualityCreator, qualityPdcaRecord, 'confirmation'), true, 'Creator can edit confirmation column');
+  // Other users cannot select confirmation
+  assert.equal(canUserEditPDCARow({ department: 'Quality' }, hrUser, qualityPdcaRecord, 'confirmation'), false, 'Non-creator/non-admin cannot edit confirmation');
+
+  // Verify DashboardPage does not hide sheets from non-admin users
+  const dashboardSrc = fs.readFileSync(path.join('D:/FME Portal/Furukawa-LMS/Furukawa-LMS-main', 'admin/src/pages/pdca/pages/DashboardPage.jsx'), 'utf8');
+  assert.ok(!dashboardSrc.includes('if (!canAccess) return false;'), 'DashboardPage must not filter out sheets from users');
+
+  // Verify LpaPage allPdcaSheets includes all sheets for users
+  const lpaSrc = fs.readFileSync(path.join('D:/FME Portal/Furukawa-LMS/Furukawa-LMS-main', 'admin/src/pages/lpa/LpaPage.jsx'), 'utf8');
+  assert.ok(!lpaSrc.includes('filteredByDept'), 'LpaPage must not filter allPdcaSheets by department');
+
+  // Verify server does not filter records list by department
+  const serverControllerSrc = fs.readFileSync(path.join('D:/FME Portal/Furukawa-LMS/Furukawa-LMS-main', 'server/controllers/pdca/pdca.controllers.js'), 'utf8');
+  assert.ok(!serverControllerSrc.includes('result.records = result.records.filter(rec => canUserAccessPDCARecord'), 'server must not filter getPDCARecords');
 });

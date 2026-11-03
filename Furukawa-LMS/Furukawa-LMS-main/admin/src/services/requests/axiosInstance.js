@@ -32,6 +32,8 @@ axiosInstance.interceptors.request.use(
                 if (code) config.headers['X-User-Code'] = code;
                 if (u.id || u._id) config.headers['X-User-Id'] = u.id || u._id;
                 if (u.name || u.fullName) config.headers['X-User-Name'] = u.name || u.fullName;
+                const dept = u.department?.name || (typeof u.department === 'string' ? u.department : '') || u.deptName || (Array.isArray(u.departments) ? u.departments[0] : '');
+                if (dept) config.headers['X-User-Department'] = dept;
             }
         } catch {}
 

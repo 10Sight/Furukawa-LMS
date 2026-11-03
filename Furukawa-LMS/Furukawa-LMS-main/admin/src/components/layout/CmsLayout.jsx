@@ -57,7 +57,14 @@ export function CmsLayout() {
     const { user, isLoading } = useSelector((state) => state.auth);
     const { theme, darkMode } = useSelector((state) => state.theme);
 
-    useEffect(() => { setIsFormView(false); }, [pathname]);
+    const prevSectionRef = React.useRef(pathname);
+    useEffect(() => {
+        const getBaseSection = (p) => (p || '').split('/').slice(0, 3).join('/');
+        if (getBaseSection(prevSectionRef.current) !== getBaseSection(pathname)) {
+            setIsFormView(false);
+        }
+        prevSectionRef.current = pathname;
+    }, [pathname]);
 
     const tabs = useMemo(() => getSidebarTabs("cms", user, t), [user, t]);
     const [updateAvatar] = useUpdateAvatarMutation();

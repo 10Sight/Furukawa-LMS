@@ -6,7 +6,7 @@ import PDCAMonthlyGraph from './PDCAMonthlyGraph';
  * PDCA status graph shown above the PDCA sheet,
  * with a Hide / Show toggle.
  */
-export default function PDCAGraphSection({ rows = [], allPDCARecords = [], currentDate = '', topic = null }) {
+export default function PDCAGraphSection({ rows = [], currentDate = '', topic = null }) {
   const [isVisible, setIsVisible] = useState(true);
 
   if (!isVisible) {
@@ -33,7 +33,6 @@ export default function PDCAGraphSection({ rows = [], allPDCARecords = [], curre
   return (
     <PDCAMonthlyGraph
       rows={rows}
-      allPDCARecords={allPDCARecords}
       currentDate={currentDate}
       topic={topic}
       onHide={() => setIsVisible(false)}

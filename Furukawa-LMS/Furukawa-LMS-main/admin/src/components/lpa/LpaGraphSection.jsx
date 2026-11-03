@@ -4,7 +4,6 @@ import { BarChart3, Eye } from 'lucide-react';
 import {
   aggregateSectionData,
   buildCombinedChartSlots,
-  buildCombinedTableRows,
   extractAvailableMonths
 } from '../../pages/lpa/lpaGraphUtils.js';
 import LpaPerformanceChartCard from './LpaPerformanceChartCard.jsx';
@@ -91,10 +90,6 @@ export default function LpaGraphSection({ records = [], loading = false, selecte
     [assemblyData, ccData, activeTab]
   );
 
-  const tableRows = useMemo(
-    () => buildCombinedTableRows(assemblyData.dailyData, ccData.dailyData, activeTab),
-    [assemblyData, ccData, activeTab]
-  );
 
   const totalSheets =
     (activeTab !== 'cc' ? assemblyData.summary.totalSheets : 0) +
@@ -138,7 +133,6 @@ export default function LpaGraphSection({ records = [], loading = false, selecte
   return (
     <LpaPerformanceChartCard
       slots={slots}
-      tableRows={tableRows}
       totalSheets={totalSheets}
       activeTab={activeTab}
       onTabChange={setActiveTab}

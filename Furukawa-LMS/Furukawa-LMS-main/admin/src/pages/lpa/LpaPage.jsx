@@ -20,7 +20,7 @@ import CreateLpaModal from '../../components/lpa/CreateLpaModal';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import { PDCAProvider } from '../pdca/context/PDCAContext';
 import { getLpaPdcaTopic, saveLpaPdcaSnapshot, extractObservationsFromSheet, createEmptyPdcaRow, getWorksheetScore, getWorksheetScoresList } from './lpaPdcaUtils';
-import { isRecordCreator, isUserInSameDepartmentAsRecord, canEditRecord, resolvePDCASheetRows, getPDCASheetStatusSummary, getUserPrimaryDepartment } from '@pages/pdca/data/recordFilters.js';
+import { isRecordCreator, isUserInSameDepartmentAsRecord, canEditRecord, resolvePDCASheetRows, getPDCASheetStatusSummary, getUserPrimaryDepartment, getUserPrimarySection } from '@pages/pdca/data/recordFilters.js';
 import LpaTable from '../../components/lpa/LpaTable';
 import LpaGraphSection from '../../components/lpa/LpaGraphSection';
 import { matchesLpaDateRange, normalizeLpaDate } from './lpaDateFilters.js';
@@ -937,6 +937,9 @@ function LpaPageContent({ viewContext }) {
         date: normalizeLpaDate(rec.date) || rec.date || todayIso,
         unit: rec.plant || selectedUnit || 'Bawal',
         department: rec.department || (typeof rec.createdBy === 'object' ? (rec.createdBy?.department || rec.createdBy?.deptName) : '') || (activeSection === 'assembly' ? 'Assembly' : 'C&C'),
+        section: rec.section || (typeof rec.createdBy === 'object' ? (rec.createdBy?.section || rec.createdBy?.sectionName) : ''),
+        sectionName: rec.sectionName || rec.section || (typeof rec.createdBy === 'object' ? (rec.createdBy?.sectionName || rec.createdBy?.section) : ''),
+        sectionId: rec.sectionId || (typeof rec.createdBy === 'object' ? rec.createdBy?.sectionId : ''),
         createdBy: rec.createdBy,
         createdById: rec.createdById,
         createdAt: rec.createdAt,
@@ -1059,7 +1062,9 @@ function LpaPageContent({ viewContext }) {
     setCustomPdcaTopic({
       id: sheetItem.id,
       topic: sheetItem.title,
-      section: activeSection,
+      section: sheetItem.section || (typeof sheetItem.createdBy === 'object' ? (sheetItem.createdBy?.section || sheetItem.createdBy?.sectionName) : '') || activeSection,
+      sectionName: sheetItem.sectionName || sheetItem.section || (typeof sheetItem.createdBy === 'object' ? (sheetItem.createdBy?.sectionName || sheetItem.createdBy?.section) : '') || activeSection,
+      sectionId: sheetItem.sectionId || (typeof sheetItem.createdBy === 'object' ? sheetItem.createdBy?.sectionId : ''),
       scope: 'Company',
       plant: sheetItem.unit || selectedUnit || 'Bawal',
       department: sheetItem.department || sheetData?.department || (typeof sheetItem.createdBy === 'object' ? (sheetItem.createdBy?.department || sheetItem.createdBy?.deptName) : '') || (typeof sheetData?.createdBy === 'object' ? (sheetData?.createdBy?.department || sheetData?.createdBy?.deptName) : '') || (activeSection === 'cc' ? 'C&C' : 'Assembly'),
@@ -1106,6 +1111,15 @@ function LpaPageContent({ viewContext }) {
       (activeSection === 'assembly' ? 'Assembly' : 'C&C');
     const creatorCode = effectiveAuthUser?.empId || effectiveAuthUser?.code || effectiveAuthUser?.employeeId || effectiveAuthUser?.empCode || effectiveAuthUser?.userName || '';
     const creatorName = effectiveAuthUser?.fullName || effectiveAuthUser?.name || effectiveAuthUser?.userName || 'User';
+    const creatorSection =
+      getUserPrimarySection(effectiveAuthUser) ||
+      effectiveAuthUser?.sectionName ||
+      (typeof effectiveAuthUser?.section === 'string' ? effectiveAuthUser.section : effectiveAuthUser?.section?.name) ||
+      (Array.isArray(effectiveAuthUser?.sections) && effectiveAuthUser.sections[0] ? (typeof effectiveAuthUser.sections[0] === 'string' ? effectiveAuthUser.sections[0] : effectiveAuthUser.sections[0]?.name) : '') ||
+      effectiveAuthUser?.subSectionName ||
+      (typeof effectiveAuthUser?.subSection === 'string' ? effectiveAuthUser.subSection : effectiveAuthUser?.subSection?.name) ||
+      '';
+    const creatorSectionId = effectiveAuthUser?.sectionId || effectiveAuthUser?.targetSectionId || (typeof effectiveAuthUser?.section === 'object' ? effectiveAuthUser?.section?.id : '') || '';
 
     const newSheet = {
       id: newId,
@@ -1116,7 +1130,9 @@ function LpaPageContent({ viewContext }) {
       plant: targetUnit,
       unit: targetUnit,
       department: newPdcaForm.department || creatorDept,
-      section: activeSection,
+      section: creatorSection || activeSection,
+      sectionName: creatorSection || activeSection,
+      sectionId: creatorSectionId,
       category: activeSection,
       lpaCategory: activeSection,
       scope: 'Company',
@@ -1130,7 +1146,13 @@ function LpaPageContent({ viewContext }) {
         empId: creatorCode,
         userName: effectiveAuthUser.userName,
         department: newPdcaForm.department || creatorDept,
-        deptName: newPdcaForm.department || creatorDept
+        deptName: newPdcaForm.department || creatorDept,
+        section: creatorSection || activeSection,
+        sectionName: creatorSection || activeSection,
+        sectionId: creatorSectionId,
+        sections: effectiveAuthUser.sections,
+        subSection: effectiveAuthUser.subSection,
+        subSectionName: effectiveAuthUser.subSectionName
       } : {
         id: 'user_anonymous',
         name: 'User',

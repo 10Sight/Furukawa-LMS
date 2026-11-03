@@ -351,10 +351,13 @@ const getServerRecordSections = (record) => {
         }
     }
 
-    if (record.category === 'assembly' || record.lpaCategory === 'assembly' || record.lpaSource?.category === 'assembly' || String(record.id || '').toLowerCase().includes('pdca-lpa-assembly')) {
-        tokens.add('assembly');
-    } else if (record.category === 'cc' || record.lpaCategory === 'cc' || record.lpaSource?.category === 'cc' || String(record.id || '').toLowerCase().includes('pdca-lpa-cc')) {
-        tokens.add('cc');
+    // ONLY fall back to LPA generic category (assembly / cc) if NO explicit section was identified
+    if (tokens.size === 0) {
+        if (record.category === 'assembly' || record.lpaCategory === 'assembly' || record.lpaSource?.category === 'assembly' || String(record.id || '').toLowerCase().includes('pdca-lpa-assembly')) {
+            tokens.add('assembly');
+        } else if (record.category === 'cc' || record.lpaCategory === 'cc' || record.lpaSource?.category === 'cc' || String(record.id || '').toLowerCase().includes('pdca-lpa-cc')) {
+            tokens.add('cc');
+        }
     }
 
     return Array.from(tokens);
@@ -404,15 +407,19 @@ export const isUserInSameDepartmentAsRecord = (user, record) => {
     addUD(user.department);
     addUD(user.departmentName);
     addUD(user.departments);
-    addUD(user.section);
-    addUD(user.sectionName);
-    if (Array.isArray(user.sections)) {
-        user.sections.forEach(s => addUD(s?.name || s?.deptName || s?.department || s));
-    }
     addUD(lookupEmployeeDept(user));
     if (user.empId) addUD(lookupEmployeeDept(user.empId));
     if (user.code) addUD(lookupEmployeeDept(user.code));
     if (user.userName) addUD(lookupEmployeeDept(user.userName));
+
+    // Fallback to section ONLY if no department found
+    if (userDepts.size === 0) {
+        addUD(user.section);
+        addUD(user.sectionName);
+        if (Array.isArray(user.sections)) {
+            user.sections.forEach(s => addUD(s?.name || s?.deptName || s?.department || s));
+        }
+    }
 
     if (userDepts.size === 0) return false;
 
@@ -436,10 +443,6 @@ export const isUserInSameDepartmentAsRecord = (user, record) => {
     addRD(record.department);
     addRD(record.departments);
     addRD(record.sheet?.department);
-    addRD(record.section);
-    addRD(record.sectionName);
-    addRD(record.category);
-    addRD(record.lpaCategory);
 
     const createdBy = record.createdBy || record.sheet?.createdBy;
     if (createdBy) {
@@ -472,6 +475,18 @@ export const isUserInSameDepartmentAsRecord = (user, record) => {
             if (r?.department) addRD(r.department);
             if (r?.departments) addRD(r.departments);
         });
+    }
+
+    // Fallback to section or category ONLY if no department found
+    if (recordDepts.size === 0) {
+        addRD(record.section);
+        addRD(record.sectionName);
+        addRD(record.category);
+        addRD(record.lpaCategory);
+        if (createdBy && typeof createdBy === 'object') {
+            addRD(createdBy.section);
+            addRD(createdBy.sectionName);
+        }
     }
 
     if (recordDepts.size === 0) {

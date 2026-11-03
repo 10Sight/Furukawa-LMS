@@ -1016,3 +1016,63 @@ test('20. Same Department AND Same Section Employee Access Verification across P
   const pdcaTableCode = fs.readFileSync(new URL('../../../components/pdca/PDCATable.jsx', import.meta.url), 'utf8');
   assert.ok(pdcaTableCode.includes('isUserInSameDepartmentAsRecord(row, currentUser)'), 'PDCATable Edit button must check isUserInSameDepartmentAsRecord');
 });
+
+test('21. LPA Observation PDCA Create Button Modal UI: Portaled to document.body and dead-centered in viewport', () => {
+  const lpaPageCode = fs.readFileSync(new URL('../../lpa/LpaPage.jsx', import.meta.url), 'utf8');
+  assert.ok(lpaPageCode.includes("import { createPortal } from 'react-dom';"), 'LpaPage must import createPortal');
+  assert.ok(lpaPageCode.includes('isCreatePdcaModalOpen && ('), 'LpaPage must check isCreatePdcaModalOpen');
+  assert.ok(lpaPageCode.includes('createPortal('), 'LpaPage must portal createPdcaModal to document.body');
+  assert.ok(lpaPageCode.includes('z-[9999] flex items-center justify-center bg-black/50 p-4'), 'Modal must have viewport-centered fixed classes');
+  assert.ok(lpaPageCode.includes('document.body'), 'Modal must target document.body as portal container');
+});
+
+test('22. Confirmation Column Spread & Reason Persistence Rule (ResponsiblePersonInstructionCell)', () => {
+  const cellCode = fs.readFileSync(new URL('../../../components/pdca/ResponsiblePersonInstructionCell.jsx', import.meta.url), 'utf8');
+
+  // Logic checks
+  assert.ok(cellCode.includes('const hasReason = Boolean(instruction && instruction.trim().length > 0);'), 'Must check if instruction has reason');
+  assert.ok(cellCode.includes('const shouldShowPartition = isNotConfirmed || (isConfirmed && hasReason);'), 'Partition must show when Not-Confirmed or (Confirmed and hasReason)');
+  assert.ok(cellCode.includes('{shouldShowPartition && ('), 'Must conditionally render bottom partition');
+  assert.ok(cellCode.includes('border-t border-slate-300'), 'Must render horizontal dividing line between dropdown and reason');
+  assert.ok(cellCode.includes('Reason'), 'Must display Reason label in cell');
+
+  // Behavioral test of the pure logic
+  const shouldPartition = (currentConfirmation, instruction) => {
+    const isConf = currentConfirmation === 'Confirmed' || currentConfirmation === 'Confirm';
+    const isNotConf = currentConfirmation === 'Not - Confirmed' || currentConfirmation === 'Not-Confirmed' || currentConfirmation === 'Not-Confirm';
+    const hasR = Boolean(instruction && String(instruction).trim().length > 0);
+    return isNotConf || (isConf && hasR);
+  };
+
+  // Case 1: Not-Confirmed without reason yet -> partitioned to show Reason field
+  assert.equal(shouldPartition('Not-Confirmed', ''), true, 'Not-Confirmed spreads into 2 parts with Reason field');
+
+  // Case 2: Not-Confirmed with reason -> partitioned
+  assert.equal(shouldPartition('Not-Confirmed', 'Tooling recalibration needed'), true);
+
+  // Case 3: Changed to Confirmed WITH previously filled reason -> partition remains and reason is shown
+  assert.equal(shouldPartition('Confirmed', 'Tooling recalibration needed'), true, 'Confirmed with filled reason retains reason partition');
+
+  // Case 4: Confirmed WITHOUT previously filled reason -> NO partition, single dropdown
+  assert.equal(shouldPartition('Confirmed', ''), false, 'Confirmed without reason has no partition');
+
+  // Case 5: Select... without reason -> NO partition
+  assert.equal(shouldPartition('', ''), false, 'Empty selection has no partition');
+});
+
+test('23. Responsible Person: 4 Columns (Unit, Dept, Staff Name, CFT) Divided in Two Parts for Both Units', () => {
+  const sheetCode = fs.readFileSync(new URL('../../../components/pdca/PDCASheet.jsx', import.meta.url), 'utf8');
+
+  // Responsible Person header spans 4 columns: Unit, Dept, Staff Name, CFT
+  assert.ok(sheetCode.includes('colSpan={4}'), 'Responsible Person header must span 4 columns');
+  assert.ok(sheetCode.includes('Responsible Person'), 'Header must contain Responsible Person');
+
+  // When units.length > 1 (Both units chosen), all 4 columns use divide-y divide-[#CBD5E1]
+  assert.ok(sheetCode.includes('units.length > 1 ? ('), 'CFT must check units.length > 1 for 2-part division');
+  assert.ok(sheetCode.includes('divide-y divide-[#CBD5E1]'), 'All 4 columns must share divide-y divide-[#CBD5E1]');
+
+  // CFT handler supports unitName
+  assert.ok(sheetCode.includes("handleToggleCFTDropdown(idx, e, 'members', unitName)"), 'CFT trigger must support unitName');
+  assert.ok(sheetCode.includes("handleEditCFTTopic(idx, e, unitName)"), 'CFT edit must support unitName');
+  assert.ok(sheetCode.includes("handleDeleteCFT(idx, e, unitName)"), 'CFT delete must support unitName');
+});

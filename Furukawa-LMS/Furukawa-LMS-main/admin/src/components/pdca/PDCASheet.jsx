@@ -2595,8 +2595,11 @@ export default function PDCASheet({
   const selectedRowForCFT = openCFTDropdown ? rows[openCFTDropdown.rowIndex] : null;
   const currentCFTTopicObj = useMemo(() => {
     if (!selectedRowForCFT) return null;
-    const targetId = selectedRowForCFT.cftTopicId;
-    const targetName = (selectedRowForCFT.cftTopic || '').toLowerCase();
+    const unitName = openCFTDropdown?.unitName;
+    const unitCft = (unitName && selectedRowForCFT.cftByUnit?.[unitName]) ||
+      (unitName && selectedRowForCFT.respUnits?.[0] === unitName ? selectedRowForCFT : selectedRowForCFT);
+    const targetId = unitCft?.cftTopicId;
+    const targetName = (unitCft?.cftTopic || '').toLowerCase();
 
     let found = targetId ? cftTopics.find((t) => t.id === targetId) : null;
     if (!found && targetName) {
@@ -2604,16 +2607,16 @@ export default function PDCASheet({
     }
     if (found) return found;
 
-    if (selectedRowForCFT.cftTopic) {
+    if (unitCft?.cftTopic) {
       return {
-        id: selectedRowForCFT.cftTopicId || 'cft_custom',
-        name: selectedRowForCFT.cftTopic,
+        id: unitCft.cftTopicId || 'cft_custom',
+        name: unitCft.cftTopic,
         department: selectedRowForCFT.responsiblePersonDept || selectedRowForCFT.department || '',
-        members: selectedRowForCFT.cftSelectedName
+        members: unitCft.cftSelectedName
           ? [
             {
-              name: selectedRowForCFT.cftSelectedName,
-              code: selectedRowForCFT.cftSelectedCode || '',
+              name: unitCft.cftSelectedName,
+              code: unitCft.cftSelectedCode || '',
               role: 'Member',
               department: selectedRowForCFT.responsiblePersonDept || selectedRowForCFT.department || ''
             }
@@ -2625,7 +2628,7 @@ export default function PDCASheet({
       };
     }
     return null;
-  }, [selectedRowForCFT, cftTopics]);
+  }, [selectedRowForCFT, openCFTDropdown, cftTopics]);
 
   // Close CFT dropdown on outside click or scroll/resize
   useEffect(() => {
@@ -2813,12 +2816,15 @@ export default function PDCASheet({
     return list;
   };
 
-  const handleToggleCFTDropdown = (rowIndex, e, mode = 'auto') => {
+  const handleToggleCFTDropdown = (rowIndex, e, mode = 'auto', unitName = null) => {
     e.stopPropagation();
     const row = rows[rowIndex];
-    const targetMode = mode === 'auto' ? (row?.cftTopic ? 'members' : 'topics') : mode;
+    const unitCft = (unitName && row?.cftByUnit?.[unitName]) ||
+      (unitName && row?.respUnits?.[0] === unitName ? row : row);
+    const targetTopic = unitName ? unitCft?.cftTopic : row?.cftTopic;
+    const targetMode = mode === 'auto' ? (targetTopic ? 'members' : 'topics') : mode;
 
-    if (openCFTDropdown?.rowIndex === rowIndex && openCFTDropdown?.mode === targetMode) {
+    if (openCFTDropdown?.rowIndex === rowIndex && openCFTDropdown?.unitName === unitName && openCFTDropdown?.mode === targetMode) {
       setOpenCFTDropdown(null);
       return;
     }
@@ -2843,6 +2849,7 @@ export default function PDCASheet({
 
     setOpenCFTDropdown({
       rowIndex,
+      unitName,
       mode: targetMode,
       top: topPos,
       left: Math.max(12, leftPos),
@@ -2853,9 +2860,9 @@ export default function PDCASheet({
   // Track async request tokens per row to prevent stale responses from overwriting newer selections
   const cftRequestRef = useRef({});
 
-  const handleSelectTopic = (rowIndex, topicItem) => {
+  const handleSelectTopic = (rowIndex, topicItem, unitName = null) => {
     if (!topicItem || !topicItem.name) {
-      handleDeleteCFT(rowIndex);
+      handleDeleteCFT(rowIndex, null, unitName);
       return;
     }
 
@@ -2877,18 +2884,65 @@ export default function PDCASheet({
         (emp.department && emp.department !== 'CFT' ? emp.department : '') ||
         (topicItem.department && topicItem.department !== 'CFT' ? topicItem.department : '') ||
         '';
-      return { id: emp.id || undefined, name, code, department };
+      return { id: emp.id || undefined, name, code, department, unit: unitName || undefined };
     });
-
-    const formattedStaff = newStaffEmployees
-      .map((e) => (e.code ? `${e.name} (${e.code})` : e.name))
-      .join(', ');
 
     const targetDept = newStaffEmployees[0]?.department || (topicItem.department && topicItem.department !== 'CFT' ? topicItem.department : '') || '';
 
     setRows((prev) => {
       const updated = [...prev];
       const currentRow = updated[rowIndex] || {};
+
+      if (unitName) {
+        const currentCftByUnit = currentRow.cftByUnit || {};
+        const updatedCftByUnit = {
+          ...currentCftByUnit,
+          [unitName]: {
+            cftTopic: topicItem.name,
+            cftTopicId: topicItem.id,
+            cftSelectedType: '',
+            cftSelectedName: '',
+            cftSelectedCode: ''
+          }
+        };
+
+        const prevDeptsByUnit = currentRow.respDeptsByUnit || {};
+        const unitDepts = prevDeptsByUnit[unitName] || [];
+        const nextUnitDepts = (targetDept && !unitDepts.includes(targetDept)) ? [...unitDepts, targetDept] : unitDepts;
+        const updatedDeptsByUnit = {
+          ...prevDeptsByUnit,
+          [unitName]: nextUnitDepts
+        };
+
+        const existingStaff = (currentRow.staffEmployees || []).filter(e => e.unit !== unitName);
+        const mergedStaff = [...existingStaff, ...newStaffEmployees];
+        const formattedStaff = mergedStaff.map(e => e.code ? `${e.name} (${e.code})` : e.name).join(', ');
+        const isPrimary = !currentRow.respUnits || currentRow.respUnits[0] === unitName;
+
+        updated[rowIndex] = {
+          ...currentRow,
+          cftByUnit: updatedCftByUnit,
+          cftTopic: isPrimary ? topicItem.name : (currentRow.cftTopic || topicItem.name),
+          cftTopicId: isPrimary ? topicItem.id : (currentRow.cftTopicId || topicItem.id),
+          cftSelectedType: isPrimary ? '' : currentRow.cftSelectedType,
+          cftSelectedName: isPrimary ? '' : currentRow.cftSelectedName,
+          cftSelectedCode: isPrimary ? '' : currentRow.cftSelectedCode,
+          respDeptsByUnit: updatedDeptsByUnit,
+          department: isPrimary ? targetDept : currentRow.department,
+          responsiblePersonDept: isPrimary ? targetDept : currentRow.responsiblePersonDept,
+          staffEmployees: mergedStaff,
+          staffEmployee: formattedStaff,
+          staffName: mergedStaff[0]?.name || '',
+          staffId: mergedStaff[0]?.code || '',
+          employeeId: mergedStaff[0]?.code || '',
+          responsiblePersonConfirmation: formattedStaff
+        };
+        return updated;
+      }
+
+      const formattedStaff = newStaffEmployees
+        .map((e) => (e.code ? `${e.name} (${e.code})` : e.name))
+        .join(', ');
 
       // Case A & B: Update CFT and dependent Department and Staff Name immediately
       // Remove previously fetched values and do not retain stale data from prior CFT
@@ -2924,7 +2978,9 @@ export default function PDCASheet({
 
         setRows((prev) => {
           const curr = prev[rowIndex];
-          if (!curr || curr.cftTopicId !== topicItem.id) return prev;
+          if (!curr) return prev;
+          const matchingTopicId = unitName ? curr.cftByUnit?.[unitName]?.cftTopicId : curr.cftTopicId;
+          if (matchingTopicId !== topicItem.id) return prev;
 
           const resolvedFresh = freshMembers.map((emp) => {
             const p = parseStaffEmployee(emp.name ? (emp.code ? `${emp.name} (${emp.code})` : emp.name) : emp);
@@ -2936,8 +2992,25 @@ export default function PDCASheet({
               (emp.department && emp.department !== 'CFT' ? emp.department : '') ||
               (topicItem.department && topicItem.department !== 'CFT' ? topicItem.department : '') ||
               '';
-            return { id: emp.id || undefined, name, code, department };
+            return { id: emp.id || undefined, name, code, department, unit: unitName || undefined };
           });
+
+          if (unitName) {
+            const existingStaff = (curr.staffEmployees || []).filter(e => e.unit !== unitName);
+            const mergedStaff = [...existingStaff, ...resolvedFresh];
+            const freshFormatted = mergedStaff
+              .map((e) => (e.code ? `${e.name} (${e.code})` : e.name))
+              .join(', ');
+            return prev.map((r, i) => i !== rowIndex ? r : {
+              ...r,
+              staffEmployees: mergedStaff,
+              staffEmployee: freshFormatted,
+              staffName: mergedStaff[0]?.name || '',
+              staffId: mergedStaff[0]?.code || '',
+              employeeId: mergedStaff[0]?.code || '',
+              responsiblePersonConfirmation: freshFormatted
+            });
+          }
 
           const freshFormatted = resolvedFresh
             .map((e) => (e.code ? `${e.name} (${e.code})` : e.name))
@@ -2965,7 +3038,7 @@ export default function PDCASheet({
     }
   };
 
-  const handleSelectCFTMember = (rowIndex, memberObj, type) => {
+  const handleSelectCFTMember = (rowIndex, memberObj, type, unitName = null) => {
     setRows((prev) => {
       const updated = [...prev];
       const currentRow = updated[rowIndex] || {};
@@ -2984,10 +3057,45 @@ export default function PDCASheet({
         id: memberObj.id || undefined,
         name,
         code,
-        department: dept
+        department: dept,
+        unit: unitName || undefined
       };
 
       const formattedStaff = code ? `${name} (${code})` : name;
+
+      if (unitName) {
+        const currentCftByUnit = currentRow.cftByUnit || {};
+        const updatedCftByUnit = {
+          ...currentCftByUnit,
+          [unitName]: {
+            ...(currentCftByUnit[unitName] || {}),
+            cftSelectedType: type,
+            cftSelectedName: name,
+            cftSelectedCode: code
+          }
+        };
+
+        const existingStaff = (currentRow.staffEmployees || []).filter(e => e.unit !== unitName);
+        const mergedStaff = [...existingStaff, empEntry];
+        const mergedFormatted = mergedStaff.map(e => e.code ? `${e.name} (${e.code})` : e.name).join(', ');
+        const isPrimary = !currentRow.respUnits || currentRow.respUnits[0] === unitName;
+
+        updated[rowIndex] = {
+          ...currentRow,
+          cftByUnit: updatedCftByUnit,
+          cftSelectedType: isPrimary ? type : currentRow.cftSelectedType,
+          cftSelectedName: isPrimary ? name : currentRow.cftSelectedName,
+          cftSelectedCode: isPrimary ? code : currentRow.cftSelectedCode,
+          assignedEmployee: isPrimary ? formattedStaff : currentRow.assignedEmployee,
+          staffEmployees: mergedStaff,
+          staffEmployee: mergedFormatted,
+          staffName: mergedStaff[0]?.name || '',
+          staffId: mergedStaff[0]?.code || '',
+          employeeId: mergedStaff[0]?.code || '',
+          responsiblePersonConfirmation: mergedFormatted
+        };
+        return updated;
+      }
 
       updated[rowIndex] = {
         ...currentRow,
@@ -3009,11 +3117,12 @@ export default function PDCASheet({
     setOpenCFTDropdown(null);
   };
 
-  const handleClearMemberOnly = (rowIndex) => {
+  const handleClearMemberOnly = (rowIndex, unitName = null) => {
     setRows((prev) => {
       const updated = [...prev];
       const currentRow = updated[rowIndex] || {};
-      const topicObj = cftTopics.find((t) => t.id === currentRow.cftTopicId || t.name === currentRow.cftTopic);
+      const unitCft = unitName && currentRow.cftByUnit?.[unitName] ? currentRow.cftByUnit[unitName] : currentRow;
+      const topicObj = cftTopics.find((t) => t.id === unitCft.cftTopicId || t.name === unitCft.cftTopic);
       const candidateList = topicObj ? ((Array.isArray(topicObj.assignedEmployees) && topicObj.assignedEmployees.length > 0)
         ? topicObj.assignedEmployees
         : (Array.isArray(topicObj.members) && topicObj.members.length > 0 ? topicObj.members : [])) : [];
@@ -3025,8 +3134,41 @@ export default function PDCASheet({
         const dbDept = findEmployeeDepartment(`${name} (${code})`, dbEmployees) ||
           findEmployeeDepartment(`${name} (${code})`, VERIFIED_EMPLOYEE_MASTER);
         const department = dbDept || (emp.department && emp.department !== 'CFT' ? emp.department : '') || (topicObj?.department && topicObj?.department !== 'CFT' ? topicObj?.department : '') || '';
-        return { id: emp.id || undefined, name, code, department };
+        return { id: emp.id || undefined, name, code, department, unit: unitName || undefined };
       });
+
+      if (unitName) {
+        const currentCftByUnit = currentRow.cftByUnit || {};
+        const updatedCftByUnit = {
+          ...currentCftByUnit,
+          [unitName]: {
+            ...(currentCftByUnit[unitName] || {}),
+            cftSelectedType: '',
+            cftSelectedName: '',
+            cftSelectedCode: ''
+          }
+        };
+
+        const existingStaff = (currentRow.staffEmployees || []).filter(e => e.unit !== unitName);
+        const mergedStaff = [...existingStaff, ...restoredStaff];
+        const formattedStaff = mergedStaff.map((e) => (e.code ? `${e.name} (${e.code})` : e.name)).join(', ');
+        const isPrimary = !currentRow.respUnits || currentRow.respUnits[0] === unitName;
+
+        updated[rowIndex] = {
+          ...currentRow,
+          cftByUnit: updatedCftByUnit,
+          cftSelectedType: isPrimary ? '' : currentRow.cftSelectedType,
+          cftSelectedName: isPrimary ? '' : currentRow.cftSelectedName,
+          cftSelectedCode: isPrimary ? '' : currentRow.cftSelectedCode,
+          staffEmployees: mergedStaff,
+          staffEmployee: formattedStaff,
+          staffName: mergedStaff[0]?.name || '',
+          staffId: mergedStaff[0]?.code || '',
+          employeeId: mergedStaff[0]?.code || '',
+          responsiblePersonConfirmation: formattedStaff
+        };
+        return updated;
+      }
 
       const formattedStaff = restoredStaff.map((e) => (e.code ? `${e.name} (${e.code})` : e.name)).join(', ');
       const targetDept = restoredStaff[0]?.department || (topicObj?.department && topicObj?.department !== 'CFT' ? topicObj?.department : '') || '';
@@ -3051,12 +3193,12 @@ export default function PDCASheet({
     setOpenCFTDropdown(null);
   };
 
-  const handleEditCFTTopic = (rowIndex, e) => {
+  const handleEditCFTTopic = (rowIndex, e, unitName = null) => {
     e.stopPropagation();
-    handleToggleCFTDropdown(rowIndex, e, 'topics');
+    handleToggleCFTDropdown(rowIndex, e, 'topics', unitName);
   };
 
-  const handleDeleteCFT = (rowIndex, e) => {
+  const handleDeleteCFT = (rowIndex, e, unitName = null) => {
     if (e?.stopPropagation) e.stopPropagation();
     // Cancel in-flight async response
     cftRequestRef.current[rowIndex] = Date.now();
@@ -3064,9 +3206,39 @@ export default function PDCASheet({
     setRows((prev) => {
       const updated = [...prev];
       const currentRow = updated[rowIndex] || {};
+
+      if (unitName) {
+        const currentCftByUnit = { ...(currentRow.cftByUnit || {}) };
+        delete currentCftByUnit[unitName];
+
+        const remainingStaff = (currentRow.staffEmployees || []).filter(e => e.unit !== unitName);
+        const formattedStaff = remainingStaff.map(e => e.code ? `${e.name} (${e.code})` : e.name).join(', ');
+        const isPrimary = !currentRow.respUnits || currentRow.respUnits[0] === unitName;
+        const fallbackTopic = currentCftByUnit[currentRow.respUnits?.[1]]?.cftTopic || '';
+        const fallbackTopicId = currentCftByUnit[currentRow.respUnits?.[1]]?.cftTopicId || '';
+
+        updated[rowIndex] = {
+          ...currentRow,
+          cftByUnit: currentCftByUnit,
+          cftTopic: isPrimary ? fallbackTopic : currentRow.cftTopic,
+          cftTopicId: isPrimary ? fallbackTopicId : currentRow.cftTopicId,
+          cftSelectedType: isPrimary ? '' : currentRow.cftSelectedType,
+          cftSelectedName: isPrimary ? '' : currentRow.cftSelectedName,
+          cftSelectedCode: isPrimary ? '' : currentRow.cftSelectedCode,
+          staffEmployees: remainingStaff,
+          staffEmployee: formattedStaff,
+          staffName: remainingStaff[0]?.name || '',
+          staffId: remainingStaff[0]?.code || '',
+          employeeId: remainingStaff[0]?.code || '',
+          responsiblePersonConfirmation: formattedStaff
+        };
+        return updated;
+      }
+
       // Case C: Clear CFT and clear dependent Department and Staff Name fields
       updated[rowIndex] = {
         ...currentRow,
+        cftByUnit: {},
         cftTopic: '',
         cftTopicId: '',
         cftSelectedType: '',
@@ -6592,74 +6764,164 @@ export default function PDCASheet({
                       })()}
                     </td>
 
-                    {/* 14. CFT (Centered in cell) */}
-                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[95px] min-w-[85px]">
-                      <div className="relative w-full h-full flex items-center justify-center">
-                        {row.cftTopic ? (
-                          <div className="w-full px-1 py-0.5 flex items-center justify-between gap-0.5 group/cft-cell">
-                            {/* Left: Topic Name & Optional Member Name (clickable to open Members dropdown) */}
-                            <button
-                              type="button"
-                              onClick={canEditEntireRow ? (e) => handleToggleCFTDropdown(idx, e, 'members') : undefined}
-                              className={`cft-trigger-btn flex-1 min-w-0 text-left ${canEditEntireRow ? 'cursor-pointer hover:opacity-85' : 'cursor-default'} flex flex-col justify-center py-0.5 transition-opacity`}
-                              title={`CFT Topic: ${row.cftTopic} (Click to view members)`}
-                            >
-                              <span
-                                className="text-[14px] font-semibold truncate max-w-[85px] leading-tight text-blue-900 hover:text-blue-700 transition-colors"
-                                title={row.cftTopic}
+                    {/* 14. CFT (Centered in cell - Subdivided per unit when Both units selected) */}
+                    <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[95px] min-w-[85px]">
+                      {units.length > 1 ? (
+                        <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
+                          {units.map((unitName) => {
+                            const unitDepts = deptsByUnit[unitName] || [];
+                            const flexGrow = Math.max(1, unitDepts.length);
+                            const unitCft = (row.cftByUnit && row.cftByUnit[unitName]) ||
+                              (unitName === units[0] ? {
+                                cftTopic: row.cftTopic,
+                                cftTopicId: row.cftTopicId,
+                                cftSelectedType: row.cftSelectedType,
+                                cftSelectedName: row.cftSelectedName,
+                                cftSelectedCode: row.cftSelectedCode
+                              } : { cftTopic: '', cftTopicId: '', cftSelectedType: '', cftSelectedName: '', cftSelectedCode: '' });
+
+                            const hasTopic = Boolean(unitCft.cftTopic);
+
+                            return (
+                              <div
+                                key={unitName}
+                                style={{ flex: flexGrow }}
+                                className="relative min-h-[30px] flex items-center justify-center p-0.5"
                               >
-                                {row.cftTopic}
-                              </span>
-                              {row.cftSelectedName && (
-                                <div className="flex items-center gap-0.5 mt-0.5">
-                                  <span
-                                    className={`text-[13px] font-medium truncate max-w-[80px] px-0.5 py-0.2 rounded leading-tight ${row.cftSelectedType === 'member'
-                                      ? 'text-blue-700 bg-blue-50 border border-blue-200'
-                                      : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
-                                      }`}
-                                    title={row.cftSelectedName}
+                                {hasTopic ? (
+                                  <div className="w-full px-1 py-0.5 flex items-center justify-between gap-0.5 group/cft-cell">
+                                    <button
+                                      type="button"
+                                      onClick={canEditEntireRow ? (e) => handleToggleCFTDropdown(idx, e, 'members', unitName) : undefined}
+                                      className={`cft-trigger-btn flex-1 min-w-0 text-left ${canEditEntireRow ? 'cursor-pointer hover:opacity-85' : 'cursor-default'} flex flex-col justify-center py-0.5 transition-opacity`}
+                                      title={`${unitName} CFT Topic: ${unitCft.cftTopic} (Click to view members)`}
+                                    >
+                                      <span
+                                        className="text-[14px] font-semibold truncate max-w-[85px] leading-tight text-blue-900 hover:text-blue-700 transition-colors"
+                                        title={unitCft.cftTopic}
+                                      >
+                                        {unitCft.cftTopic}
+                                      </span>
+                                      {unitCft.cftSelectedName && (
+                                        <div className="flex items-center gap-0.5 mt-0.5">
+                                          <span
+                                            className={`text-[13px] font-medium truncate max-w-[80px] px-0.5 py-0.2 rounded leading-tight ${
+                                              unitCft.cftSelectedType === 'member'
+                                                ? 'text-blue-700 bg-blue-50 border border-blue-200'
+                                                : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                                            }`}
+                                            title={unitCft.cftSelectedName}
+                                          >
+                                            {unitCft.cftSelectedName}
+                                          </span>
+                                        </div>
+                                      )}
+                                    </button>
+                                    {canEditEntireRow && (
+                                      <div className="flex items-center gap-0.5 shrink-0 opacity-80 group-hover/cft-cell:opacity-100 transition-opacity">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => handleEditCFTTopic(idx, e, unitName)}
+                                          className="p-0.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                                          title={`Change ${unitName} CFT Topic`}
+                                        >
+                                          <Edit3 className="w-2.5 h-2.5" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => handleDeleteCFT(idx, e, unitName)}
+                                          className="p-0.5 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                          title={`Delete ${unitName} CFT Topic`}
+                                        >
+                                          <Trash2 className="w-2.5 h-2.5" />
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : !canEditEntireRow ? (
+                                  <span className="text-slate-300 text-[10px] select-none">-</span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleToggleCFTDropdown(idx, e, 'topics', unitName)}
+                                    className="cft-trigger-btn w-full py-1.5 flex items-center justify-center text-slate-300 hover:text-blue-600 hover:bg-blue-50/40 transition-colors cursor-pointer group"
+                                    title={`Click to select CFT Topic for ${unitName}`}
                                   >
-                                    {row.cftSelectedName}
-                                  </span>
+                                    <ChevronDown className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity stroke-[2]" />
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="relative w-full h-full p-1 flex items-center justify-center">
+                          {row.cftTopic ? (
+                            <div className="w-full px-1 py-0.5 flex items-center justify-between gap-0.5 group/cft-cell">
+                              {/* Left: Topic Name & Optional Member Name (clickable to open Members dropdown) */}
+                              <button
+                                type="button"
+                                onClick={canEditEntireRow ? (e) => handleToggleCFTDropdown(idx, e, 'members') : undefined}
+                                className={`cft-trigger-btn flex-1 min-w-0 text-left ${canEditEntireRow ? 'cursor-pointer hover:opacity-85' : 'cursor-default'} flex flex-col justify-center py-0.5 transition-opacity`}
+                                title={`CFT Topic: ${row.cftTopic} (Click to view members)`}
+                              >
+                                <span
+                                  className="text-[14px] font-semibold truncate max-w-[85px] leading-tight text-blue-900 hover:text-blue-700 transition-colors"
+                                  title={row.cftTopic}
+                                >
+                                  {row.cftTopic}
+                                </span>
+                                {row.cftSelectedName && (
+                                  <div className="flex items-center gap-0.5 mt-0.5">
+                                    <span
+                                      className={`text-[13px] font-medium truncate max-w-[80px] px-0.5 py-0.2 rounded leading-tight ${row.cftSelectedType === 'member'
+                                        ? 'text-blue-700 bg-blue-50 border border-blue-200'
+                                        : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                                        }`}
+                                      title={row.cftSelectedName}
+                                    >
+                                      {row.cftSelectedName}
+                                    </span>
+                                  </div>
+                                )}
+                              </button>
+
+                              {/* Right: Edit & Delete buttons (Only when creator/admin) */}
+                              {canEditEntireRow && (
+                                <div className="flex items-center gap-0.5 shrink-0 opacity-80 group-hover/cft-cell:opacity-100 transition-opacity">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleEditCFTTopic(idx, e)}
+                                    className="p-0.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                                    title="Change CFT Topic"
+                                  >
+                                    <Edit3 className="w-2.5 h-2.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleDeleteCFT(idx, e)}
+                                    className="p-0.5 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                    title="Delete CFT Topic & Member"
+                                  >
+                                    <Trash2 className="w-2.5 h-2.5" />
+                                  </button>
                                 </div>
                               )}
+                            </div>
+                          ) : !canEditEntireRow ? (
+                            <span className="text-slate-300 text-[10px] select-none">-</span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={(e) => handleToggleCFTDropdown(idx, e, 'topics')}
+                              className="cft-trigger-btn w-full py-1.5 flex items-center justify-center text-slate-300 hover:text-blue-600 hover:bg-blue-50/40 transition-colors cursor-pointer group"
+                              title="Click to select CFT Topic"
+                            >
+                              <ChevronDown className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity stroke-[2]" />
                             </button>
-
-                            {/* Right: Edit & Delete buttons (Only when creator/admin) */}
-                            {canEditEntireRow && (
-                              <div className="flex items-center gap-0.5 shrink-0 opacity-80 group-hover/cft-cell:opacity-100 transition-opacity">
-                                <button
-                                  type="button"
-                                  onClick={(e) => handleEditCFTTopic(idx, e)}
-                                  className="p-0.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
-                                  title="Change CFT Topic"
-                                >
-                                  <Edit3 className="w-2.5 h-2.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => handleDeleteCFT(idx, e)}
-                                  className="p-0.5 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                                  title="Delete CFT Topic & Member"
-                                >
-                                  <Trash2 className="w-2.5 h-2.5" />
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        ) : !canEditEntireRow ? (
-                          <span className="text-slate-300 text-[10px] select-none">-</span>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={(e) => handleToggleCFTDropdown(idx, e, 'topics')}
-                            className="cft-trigger-btn w-full py-1.5 flex items-center justify-center text-slate-300 hover:text-blue-600 hover:bg-blue-50/40 transition-colors cursor-pointer group"
-                            title="Click to select CFT Topic"
-                          >
-                            <ChevronDown className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity stroke-[2]" />
-                          </button>
-                        )}
-                      </div>
+                          )}
+                        </div>
+                      )}
                     </td>
 
                     {/* 15. Responsible Person Instruction, etc. Column: Upside Name, Middle Confirmed/Not-Confirmed dropdown, Downside Mandatory Input */}
@@ -7057,31 +7319,42 @@ export default function PDCASheet({
                   </div>
                 ) : (
                   <>
-                    {/* Clear CFT option when a CFT is currently selected on this row */}
-                    {rows[openCFTDropdown.rowIndex]?.cftTopic && (
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteCFT(openCFTDropdown.rowIndex)}
-                        className="w-full text-left px-2.5 py-1.5 mb-1.5 rounded-lg text-rose-600 hover:bg-rose-50 border border-rose-200 transition-colors flex items-center justify-between text-xs font-semibold cursor-pointer"
-                        title="Clear CFT and dependent Department and Staff Name"
-                      >
-                        <div className="flex items-center gap-2">
-                          <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-                          <span>Clear CFT Selection</span>
-                        </div>
-                      </button>
-                    )}
+                    {/* Clear CFT option when a CFT is currently selected on this row / unit */}
+                    {(() => {
+                      const currentRow = rows[openCFTDropdown.rowIndex];
+                      const unitName = openCFTDropdown.unitName;
+                      const unitCft = (unitName && currentRow?.cftByUnit?.[unitName]) ||
+                        (unitName && currentRow?.respUnits?.[0] === unitName ? currentRow : currentRow);
+                      const activeTopic = unitName ? unitCft?.cftTopic : currentRow?.cftTopic;
+                      if (!activeTopic) return null;
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteCFT(openCFTDropdown.rowIndex, null, openCFTDropdown.unitName)}
+                          className="w-full text-left px-2.5 py-1.5 mb-1.5 rounded-lg text-rose-600 hover:bg-rose-50 border border-rose-200 transition-colors flex items-center justify-between text-xs font-semibold cursor-pointer"
+                          title="Clear CFT and dependent Department and Staff Name"
+                        >
+                          <div className="flex items-center gap-2">
+                            <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                            <span>Clear CFT Selection</span>
+                          </div>
+                        </button>
+                      );
+                    })()}
                     {cftTopics.map((topicItem) => {
                       const currentRow = rows[openCFTDropdown.rowIndex];
+                      const unitName = openCFTDropdown.unitName;
+                      const unitCft = (unitName && currentRow?.cftByUnit?.[unitName]) ||
+                        (unitName && currentRow?.respUnits?.[0] === unitName ? currentRow : currentRow);
                       const isSelected =
-                        currentRow?.cftTopicId === topicItem.id ||
-                        (!currentRow?.cftTopicId && currentRow?.cftTopic === topicItem.name);
+                        unitCft?.cftTopicId === topicItem.id ||
+                        (!unitCft?.cftTopicId && unitCft?.cftTopic === topicItem.name);
 
                       return (
                         <button
                           key={topicItem.id}
                           type="button"
-                          onClick={() => handleSelectTopic(openCFTDropdown.rowIndex, topicItem)}
+                          onClick={() => handleSelectTopic(openCFTDropdown.rowIndex, topicItem, openCFTDropdown.unitName)}
                           className={`w-full text-left px-2.5 py-2 rounded-lg transition-colors flex items-center justify-between cursor-pointer group ${isSelected
                             ? 'bg-blue-50 text-blue-900 font-semibold border border-blue-200'
                             : 'hover:bg-slate-100/80 text-slate-800 border border-transparent'
@@ -7175,7 +7448,7 @@ export default function PDCASheet({
                             key={mIdx}
                             type="button"
                             onClick={() =>
-                              handleSelectCFTMember(openCFTDropdown.rowIndex, member, 'member')
+                              handleSelectCFTMember(openCFTDropdown.rowIndex, member, 'member', openCFTDropdown.unitName)
                             }
                             className={`w-full text-left px-2.5 py-1.5 rounded-md transition-colors flex items-center justify-between cursor-pointer ${isSelected
                               ? 'bg-blue-50 text-blue-900 border border-blue-200 font-medium'
@@ -7225,7 +7498,7 @@ export default function PDCASheet({
                             key={eIdx}
                             type="button"
                             onClick={() =>
-                              handleSelectCFTMember(openCFTDropdown.rowIndex, emp, 'assigned')
+                              handleSelectCFTMember(openCFTDropdown.rowIndex, emp, 'assigned', openCFTDropdown.unitName)
                             }
                             className={`w-full text-left px-2.5 py-1.5 rounded-md transition-colors flex items-center justify-between cursor-pointer ${isSelected
                               ? 'bg-emerald-50 text-emerald-900 border border-emerald-200 font-medium'

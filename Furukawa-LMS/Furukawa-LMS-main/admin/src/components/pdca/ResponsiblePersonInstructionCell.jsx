@@ -10,14 +10,17 @@ import { stripEmployeeId } from '../../pages/pdca/data/pdcaEmployees.js';
  * 2. Middle: Clean dropdown containing strictly "Confirmed" and "Not-Confirmed".
  *    - Blue/slate border for Confirmed / default.
  *    - Light red / rose border for Not-Confirmed.
- * 3. Downside (below dropdown):
+ * 3. Downside (partition below dropdown with dividing line):
  *    - When "Not-Confirmed":
- *      - "* Required" label in red text.
- *      - Textarea with red border and placeholder "Enter reason (required)".
+ *      - Cell spreads into 2 parts separated by a horizontal divider line:
+ *        Dropdown (Not-Confirmed) on top, Divider line, Reason (* Required) on bottom.
  *      - Full support for spaces, text selection, and multi-line typing without character loss.
- *    - When "Confirmed": nothing shown below.
- * 4. Only the PDCA Sheet Creator has access to select the Confirmation dropdown,
- *    and all 14 mandatory columns must be filled before selecting Confirm or Not-Confirm.
+ *    - When user filled a Reason and switches to "Confirmed":
+ *      - The reason filled by user cannot be removed and must remain shown in the cell below the divider line.
+ *    - When "Confirmed" or "Select..." without a filled reason:
+ *      - No partition in the cell; single dropdown is shown.
+ * 4. Only the PDCA Sheet Creator or Admin has access to select the Confirmation dropdown,
+ *    and all mandatory columns must be filled before selecting Confirm or Not-Confirm.
  */
 export default function ResponsiblePersonInstructionCell({
   row,
@@ -52,6 +55,9 @@ export default function ResponsiblePersonInstructionCell({
     : (row.responsiblePersonConfirmation && !isConfirmed && !isNotConfirmed
         ? String(row.responsiblePersonConfirmation)
         : '');
+
+  const hasReason = Boolean(instruction && instruction.trim().length > 0);
+  const shouldShowPartition = isNotConfirmed || (isConfirmed && hasReason);
 
   const selectValue = isConfirmed ? 'Confirmed' : isNotConfirmed ? 'Not-Confirmed' : '';
 
@@ -124,19 +130,24 @@ export default function ResponsiblePersonInstructionCell({
         />
       </div>
 
-      {/* 3. Downside: Mandatory Input when Not-Confirmed */}
-      {isNotConfirmed && (
-        <div className="w-full mt-1.5 flex flex-col items-start">
-          <span className="text-[12px] font-semibold text-red-500 text-left pl-0.5 mb-1 leading-none select-none">
-            * Required
-          </span>
+      {/* 3. Downside: Partition with horizontal divider line and Reason */}
+      {shouldShowPartition && (
+        <div className="w-full mt-2 pt-1 border-t border-slate-300 flex flex-col items-start">
+          <div className="w-full flex items-center justify-between pl-0.5 mb-1 leading-none select-none">
+            <span className={`text-[12px] font-bold ${isNotConfirmed ? 'text-red-500' : 'text-slate-700'}`}>
+              Reason
+            </span>
+            {isNotConfirmed && (
+              <span className="text-[11px] font-semibold text-red-500">* Required</span>
+            )}
+          </div>
           <textarea
             ref={reasonRef}
             rows={2}
             disabled={readOnly}
-            required
-            aria-required="true"
-            data-required-confirmation-reason="true"
+            required={isNotConfirmed}
+            aria-required={isNotConfirmed ? 'true' : undefined}
+            data-required-confirmation-reason={isNotConfirmed ? 'true' : undefined}
             data-required-confirmation-active={reasonRequired ? 'true' : 'false'}
             data-required-action-allowed={reasonRequired && !readOnly ? 'true' : undefined}
             value={instruction}
@@ -145,11 +156,13 @@ export default function ResponsiblePersonInstructionCell({
               // Stop event propagation so table hotkeys/listeners don't hijack spaces or keys
               e.stopPropagation();
             }}
-            placeholder="Enter reason (required)"
+            placeholder={isNotConfirmed ? "Enter reason (required)" : "Reason"}
             className={`w-full text-[14px] p-2 rounded-lg border outline-none leading-relaxed transition-all resize-y select-text ${
-              !instruction.trim()
-                ? 'border-red-400 bg-white text-slate-800 placeholder:text-slate-400 focus:ring-1 focus:ring-red-400'
-                : 'border-red-300 bg-white text-slate-800 focus:border-red-400 focus:ring-1 focus:ring-red-400'
+              isNotConfirmed
+                ? (!instruction.trim()
+                    ? 'border-red-400 bg-white text-slate-800 placeholder:text-slate-400 focus:ring-1 focus:ring-red-400'
+                    : 'border-red-300 bg-white text-slate-800 focus:border-red-400 focus:ring-1 focus:ring-red-400')
+                : 'border-slate-300 bg-slate-50/80 text-slate-800 focus:border-blue-400 focus:bg-white focus:ring-1 focus:ring-blue-400'
             } ${readOnly ? 'cursor-default bg-slate-50' : ''}`}
           />
         </div>

@@ -166,7 +166,20 @@ export default function LpaPerformanceChartCard({
     });
 
     // Different Assembly / C&C targets: draw a short dashed target segment over each slot
-    // at that slot's sheet target instead of one full-width line
+    // at that slot's sheet target instead of one full-width line. Each sheet's last
+    // segment carries its "Target" label above its right end.
+    const lastSlotOfSheet = {};
+    slots.forEach((s, i) => { lastSlotOfSheet[s.sheet] = i; });
+    const targetLabel = (text) => ({
+      enabled: true,
+      format: text,
+      align: 'right',
+      verticalAlign: 'bottom',
+      y: -4,
+      crop: false,
+      overflow: 'allow',
+      style: { color: TARGET_LINE_COLOR, fontSize: '13px', fontWeight: '700', textOutline: '2px white' }
+    });
     const targetSegments = sharedTarget == null
       ? [{
         type: 'line',
@@ -183,7 +196,11 @@ export default function LpaPerformanceChartCard({
         connectNulls: false,
         data: slots.flatMap((s, i) => {
           const t = targetFor(s.sheet);
-          return [{ x: i - 0.45, y: t }, { x: i + 0.45, y: t }, { x: i + 0.45, y: null }];
+          const end = { x: i + 0.45, y: t };
+          if (lastSlotOfSheet[s.sheet] === i) {
+            end.dataLabels = targetLabel(`${SHEET_META[s.sheet].label} Target: ${t}%`);
+          }
+          return [{ x: i - 0.45, y: t }, end, { x: i + 0.45, y: null }];
         })
       }]
       : [];
@@ -227,10 +244,14 @@ export default function LpaPerformanceChartCard({
           dashStyle: 'Dash',
           width: 2,
           zIndex: 4,
+          // Label sits just above the line at its right end
           label: {
             text: `Target: ${sharedTarget}%`,
             align: 'right',
+            verticalAlign: 'top',
+            textAlign: 'right',
             x: -6,
+            y: -6,
             style: { color: TARGET_LINE_COLOR, fontSize: '13px', fontWeight: '700' }
           }
         }]
@@ -262,20 +283,21 @@ export default function LpaPerformanceChartCard({
               },
               style: { fontSize: '13px', fontWeight: '800', textOutline: '2px white' }
             },
-            // Shift name written vertically inside the bar (skipped when the bar is too short)
+            // Shift letter ("A", "B", ...) inside the bottom of the bar, horizontal
             {
               enabled: true,
               inside: true,
               verticalAlign: 'bottom',
-              rotation: -90,
-              y: -6,
+              align: 'center',
+              rotation: 0,
+              y: -4,
               crop: false,
               overflow: 'allow',
               formatter() {
-                if (this.y == null || this.y < 20) return '';
-                return `Shift ${this.series.userOptions.custom?.shift ?? ''}`;
+                if (this.y == null || this.y < 8) return '';
+                return this.series.userOptions.custom?.shift ?? '';
               },
-              style: { color: '#ffffff', fontSize: '11px', fontWeight: '700', textOutline: '1px rgba(15,23,42,0.35)' }
+              style: { color: '#ffffff', fontSize: '12px', fontWeight: '800', textOutline: '1px rgba(15,23,42,0.35)' }
             }
           ]
         }

@@ -6766,7 +6766,10 @@ export default function PDCASheet({
 
                     {/* 14. CFT (Centered in cell - Subdivided per unit when Both units selected) */}
                     <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[95px] min-w-[85px]">
-                      {units.length > 1 ? (
+                      {(() => {
+                        const { units, deptsByUnit } = getResponsiblePersonStructure(row);
+                        if (units.length > 1) {
+                          return (
                         <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
                           {units.map((unitName) => {
                             const unitDepts = deptsByUnit[unitName] || [];
@@ -6854,8 +6857,10 @@ export default function PDCASheet({
                             );
                           })}
                         </div>
-                      ) : (
-                        <div className="relative w-full h-full p-1 flex items-center justify-center">
+                      );
+                    }
+                    return (
+                      <div className="relative w-full h-full p-1 flex items-center justify-center">
                           {row.cftTopic ? (
                             <div className="w-full px-1 py-0.5 flex items-center justify-between gap-0.5 group/cft-cell">
                               {/* Left: Topic Name & Optional Member Name (clickable to open Members dropdown) */}
@@ -6921,7 +6926,8 @@ export default function PDCASheet({
                             </button>
                           )}
                         </div>
-                      )}
+                      );
+                    })()}
                     </td>
 
                     {/* 15. Responsible Person Instruction, etc. Column: Upside Name, Middle Confirmed/Not-Confirmed dropdown, Downside Mandatory Input */}

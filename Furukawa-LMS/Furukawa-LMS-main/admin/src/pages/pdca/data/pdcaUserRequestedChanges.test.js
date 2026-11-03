@@ -1068,7 +1068,7 @@ test('23. Responsible Person: 4 Columns (Unit, Dept, Staff Name, CFT) Divided in
   assert.ok(sheetCode.includes('Responsible Person'), 'Header must contain Responsible Person');
 
   // When units.length > 1 (Both units chosen), all 4 columns use divide-y divide-[#CBD5E1]
-  assert.ok(sheetCode.includes('units.length > 1 ? ('), 'CFT must check units.length > 1 for 2-part division');
+  assert.ok(sheetCode.includes('units.length > 1'), 'CFT must check units.length > 1 for 2-part division');
   assert.ok(sheetCode.includes('divide-y divide-[#CBD5E1]'), 'All 4 columns must share divide-y divide-[#CBD5E1]');
 
   // CFT handler supports unitName

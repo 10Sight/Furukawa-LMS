@@ -10,6 +10,13 @@ import { Label } from '@/components/forms/primitives/label.jsx';
 
 import { COLORS, SHEET_META, SHIFT_KEYS, shiftLevelKey } from '../../pages/lpa/lpaGraphUtils.js';
 
+// Card title per sheet view
+const CHART_TITLES = {
+  both: 'LPA Analytics & Performance Graph',
+  assembly: 'Assembly LPA Trend',
+  cc: 'C&C LPA Trend'
+};
+
 const SHEET_VIEWS = [
   { key: 'both', label: 'Both Sheets' },
   { key: 'assembly', label: 'Assembly Sheet' },
@@ -38,6 +45,7 @@ const PAIR_DEFS = SHIFT_KEYS.flatMap(shift => LEVEL_DEFS.map(({ level, color }) 
 
 const BELOW_TARGET_COLOR = '#dc2626';
 const TARGET_LINE_COLOR = '#374151'; // dark grey
+const TARGET_LABEL_MARGIN = 115; // px right of the plot area, fits "Assembly 100%"
 const VIEWPORT_WIDTH = 800;
 const BAR_SLOT_WIDTH = 58; // room for one bar plus its "100%" label
 
@@ -46,16 +54,7 @@ const escapeHtml = (str) => String(str ?? '')
   .replace(/</g, '&lt;')
   .replace(/>/g, '&gt;');
 
-function scoreTone(score, target) {
-  if (score >= target) return { text: '#059669', pill: 'bg-emerald-50 text-emerald-700 border border-emerald-200' };
-  if (score >= 70) return { text: '#d97706', pill: 'bg-amber-50 text-amber-700 border border-amber-200' };
-  return { text: '#e11d48', pill: 'bg-rose-50 text-rose-700 border border-rose-200' };
-}
 
-const SHEET_PILL = {
-  assembly: 'bg-blue-50 text-blue-700 border border-blue-200',
-  cc: 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-};
 
 function FilterSelect({ label, value, onChange, options }) {
   return (
@@ -87,7 +86,6 @@ function FilterSelect({ label, value, onChange, options }) {
  */
 export default function LpaPerformanceChartCard({
   slots,
-  tableRows,
   totalSheets,
   activeTab,
   onTabChange,
@@ -109,7 +107,6 @@ export default function LpaPerformanceChartCard({
   const sharedTarget = activeSheets.every(s => targetFor(s) === targetFor(activeSheets[0]))
     ? targetFor(activeSheets[0])
     : null;
-  const [isTableExpanded, setIsTableExpanded] = useState(false);
   const [hiddenLevels, setHiddenLevels] = useState(() => new Set()); // levels toggled off via the badges
   const isBoth = activeTab === 'both';
   const hasData = slots.length > 0;
@@ -128,8 +125,6 @@ export default function LpaPerformanceChartCard({
     () => PAIR_DEFS.filter(def => slots.some(s => def.value(s) != null)),
     [slots]
   );
-  // Level badges: only levels that have at least one bar
-  const levelBadges = LEVEL_DEFS.filter(l => seriesDefs.some(def => def.level === l.level));
 
   const toggleLevel = (level) => {
     setHiddenLevels(prev => {
@@ -171,33 +166,51 @@ export default function LpaPerformanceChartCard({
         : { y };
     });
 
-    // Different Assembly / C&C targets: draw a short dashed target segment over each slot
-    // at that slot's sheet target instead of one full-width line
-    const targetSegments = sharedTarget == null
-      ? [{
-        type: 'line',
-        id: 'target-segments',
-        name: 'Target',
-        color: TARGET_LINE_COLOR,
-        dashStyle: 'Dash',
-        lineWidth: 2,
-        zIndex: 4,
-        marker: { enabled: false },
-        enableMouseTracking: false,
-        states: { hover: { enabled: false }, inactive: { enabled: false } },
-        dataLabels: { enabled: false },
-        connectNulls: false,
-        data: slots.flatMap((s, i) => {
-          const t = targetFor(s.sheet);
-          return [{ x: i - 0.45, y: t }, { x: i + 0.45, y: t }, { x: i + 0.45, y: null }];
+    // Full-width dashed target line(s). The label sits in a reserved strip to the right
+    // of the plot area (chart.marginRight), level with its line, so it can never overlap
+    // a bar or a bar's value. One line when the visible sheets share a target; otherwise
+    // one line per sheet (Assembly / C&C).
+    const targetLine = (value, text, { dashStyle = 'Dash', nudge = 0 } = {}) => ({
+      value,
+      color: TARGET_LINE_COLOR,
+      dashStyle,
+      width: 2,
+      zIndex: 4,
+      label: {
+        text,
+        align: 'right',
+        textAlign: 'left',
+        verticalAlign: 'middle',
+        x: 8,
+        y: 4 + nudge,
+        clip: false,
+        style: { color: TARGET_LINE_COLOR, fontSize: '13px', fontWeight: '700' }
+      }
+    });
+    let targetLines;
+    if (sharedTarget != null) {
+      targetLines = [targetLine(sharedTarget, `Target ${sharedTarget}%`)];
+    } else {
+      const [high, low] = [...activeSheets].sort((a, b) => targetFor(b) - targetFor(a));
+      // Close targets: push the two labels apart vertically so they don't overlap each other
+      const tooClose = targetFor(high) - targetFor(low) < 6;
+      targetLines = [
+        targetLine(targetFor(high), `${SHEET_META[high].label} ${targetFor(high)}%`, {
+          nudge: tooClose ? -8 : 0
+        }),
+        targetLine(targetFor(low), `${SHEET_META[low].label} ${targetFor(low)}%`, {
+          dashStyle: 'ShortDash',
+          nudge: tooClose ? 8 : 0
         })
-      }]
-      : [];
+      ];
+    }
 
     return {
       chart: {
         height: 420,
         marginBottom: isBoth ? 105 : 80,
+        // Room right of the plot for the target label(s)
+        marginRight: TARGET_LABEL_MARGIN,
         style: { fontFamily: 'inherit' },
         animation: { duration: 400 },
         ...(needsScroll && {
@@ -227,19 +240,7 @@ export default function LpaPerformanceChartCard({
         title: { text: 'Score %', style: { color: '#94a3b8', fontSize: '14px', fontWeight: 'bold' } },
         labels: { format: '{value}%', style: { fontSize: '14px', fontWeight: 'bold' } },
         gridLineColor: '#f1f5f9',
-        plotLines: sharedTarget == null ? [] : [{
-          value: sharedTarget,
-          color: TARGET_LINE_COLOR,
-          dashStyle: 'Dash',
-          width: 2,
-          zIndex: 4,
-          label: {
-            text: `Target: ${sharedTarget}%`,
-            align: 'right',
-            x: -6,
-            style: { color: TARGET_LINE_COLOR, fontSize: '13px', fontWeight: '700' }
-          }
-        }]
+        plotLines: targetLines
       },
       // Series are labelled by the clickable badges in the filter bar instead
       legend: { enabled: false },
@@ -268,20 +269,21 @@ export default function LpaPerformanceChartCard({
               },
               style: { fontSize: '13px', fontWeight: '800', textOutline: '2px white' }
             },
-            // Shift name written vertically inside the bar (skipped when the bar is too short)
+            // Shift letter ("A", "B", ...) inside the bottom of the bar, horizontal
             {
               enabled: true,
               inside: true,
               verticalAlign: 'bottom',
-              rotation: -90,
-              y: -6,
+              align: 'center',
+              rotation: 0,
+              y: -4,
               crop: false,
               overflow: 'allow',
               formatter() {
-                if (this.y == null || this.y < 20) return '';
-                return `Shift ${this.series.userOptions.custom?.shift ?? ''}`;
+                if (this.y == null || this.y < 10) return '';
+                return this.series.userOptions.custom?.shift ?? '';
               },
-              style: { color: '#ffffff', fontSize: '11px', fontWeight: '700', textOutline: '1px rgba(15,23,42,0.35)' }
+              style: { color: '#ffffff', fontSize: '16px', fontWeight: '800', textOutline: '1px rgba(15,23,42,0.35)' }
             }
           ]
         }
@@ -303,8 +305,7 @@ export default function LpaPerformanceChartCard({
           visible: !hiddenLevels.has(def.level),
           custom: { shift: def.shift },
           data: seriesPoints(def)
-        })),
-        ...targetSegments
+        }))
       ]
     };
     // targetFor only reads `targets`
@@ -318,7 +319,7 @@ export default function LpaPerformanceChartCard({
           <div className="space-y-1">
             <CardTitle className="flex flex-wrap items-center gap-2 text-lg text-slate-800">
               <BarChart3 className="h-5 w-5 text-blue-600" />
-              LPA Analytics & Performance Graph
+              {CHART_TITLES[activeTab] || CHART_TITLES.both}
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
                 {totalSheets} Sheets
               </span>
@@ -423,7 +424,7 @@ export default function LpaPerformanceChartCard({
 
           {/* Right: level colour badges (click to show/hide that level) + target */}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pb-1">
-            {levelBadges.map(def => {
+            {LEVEL_DEFS.map(def => {
               const hidden = hiddenLevels.has(def.level);
               return (
                 <button
@@ -477,73 +478,6 @@ export default function LpaPerformanceChartCard({
               updateArgs={[true, true, true]}
             />
           </>
-        )}
-
-        {/* Collapsible Daily Data Table */}
-        {tableRows.length > 0 && (
-          <div className="mt-4 border-t border-slate-100 pt-3">
-            <button
-              type="button"
-              onClick={() => setIsTableExpanded(!isTableExpanded)}
-              className="flex items-center justify-between w-full text-xs font-semibold text-slate-700 hover:text-blue-600 transition-colors py-1 cursor-pointer"
-            >
-              <span className="flex items-center gap-1.5">
-                <Layers size={14} className="text-slate-400" />
-                Daily Activity Breakdown ({tableRows.length} row{tableRows.length === 1 ? '' : 's'})
-              </span>
-              <span className="flex items-center gap-1 text-slate-500 font-normal">
-                {isTableExpanded ? 'Hide Details' : 'Show Details'}
-                <ChevronDown size={14} className={`transform transition-transform ${isTableExpanded ? 'rotate-180' : ''}`} />
-              </span>
-            </button>
-
-            {isTableExpanded && (
-              <div className="overflow-x-auto mt-2 rounded-xl border border-slate-100">
-                <table className="w-full text-left text-xs text-slate-600">
-                  <thead className="bg-slate-50 font-bold uppercase tracking-wider text-slate-500 text-[10px]">
-                    <tr>
-                      <th className="px-3 py-2.5">Date</th>
-                      {isBoth && <th className="px-3 py-2.5">Sheet</th>}
-                      <th className="px-3 py-2.5 text-center">Total Sheets</th>
-                      <th className="px-3 py-2.5 text-center">Shift A</th>
-                      <th className="px-3 py-2.5 text-center">Shift B</th>
-                      <th className="px-3 py-2.5 text-center">Shift C/G</th>
-                      <th className="px-3 py-2.5 text-center">Level 3</th>
-                      <th className="px-3 py-2.5 text-center">Level 2</th>
-                      <th className="px-3 py-2.5 text-center">Level 1</th>
-                      <th className="px-3 py-2.5 text-right">Avg Score</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {tableRows.map((row) => (
-                      <tr key={`${row.date}-${row.sheet}`} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="px-3 py-2.5 font-medium text-slate-800">{row.date}</td>
-                        {isBoth && (
-                          <td className="px-3 py-2.5">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${SHEET_PILL[row.sheet]}`}>
-                              {row.sheetLabel}
-                            </span>
-                          </td>
-                        )}
-                        <td className="px-3 py-2.5 text-center font-bold text-slate-700">{row.totalSheets}</td>
-                        <td className="px-3 py-2.5 text-center text-blue-600 font-semibold">{row.shiftA || '-'}</td>
-                        <td className="px-3 py-2.5 text-center text-emerald-600 font-semibold">{row.shiftB || '-'}</td>
-                        <td className="px-3 py-2.5 text-center text-purple-600 font-semibold">{(row.shiftC + row.shiftG) || '-'}</td>
-                        <td className="px-3 py-2.5 text-center text-cyan-600 font-medium">{row.level3 || '-'}</td>
-                        <td className="px-3 py-2.5 text-center text-purple-600 font-medium">{row.level2 || '-'}</td>
-                        <td className="px-3 py-2.5 text-center text-pink-600 font-medium">{row.level1 || '-'}</td>
-                        <td className="px-3 py-2.5 text-right">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold ${scoreTone(row.avgScore, targetFor(row.sheet)).pill}`}>
-                            {row.avgScore}%
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
         )}
       </CardContent>
     </Card>

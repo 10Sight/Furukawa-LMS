@@ -262,11 +262,6 @@ function CloneMeetingDialog({ meeting, onOpenChange, onClone, isCloning }) {
 
 const MEETINGS_PAGE_SIZE = 10;
 
-const currentMonthKey = () => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-};
-
 function MeetingsPagination({ page, totalPages, totalItems, onPageChange }) {
     if (totalItems === 0) return null;
     const from = (page - 1) * MEETINGS_PAGE_SIZE + 1;
@@ -397,10 +392,11 @@ function SectionMeetingSpace({ sectionId, departmentId, isLpaEnabled = false }) 
 
     const { data: meetingsData, isLoading: isListLoading } = useGetDailyMorningMeetingsQuery({ sectionId }, { skip: !sectionId });
     const meetings = useMemo(() => meetingsData?.data || [], [meetingsData]);
-    // Month filter (?mmonth=YYYY-MM, or "all") lives in the URL like the rest of
-    // the workspace state; defaults to the current month. Search and page are local.
+    // Every meeting is listed by default. The month (?mmonth=YYYY-MM, kept in the
+    // URL like the rest of the workspace state) and the search box only narrow it
+    // when filled in. Search and page are local.
     const rawMonth = searchParams.get("mmonth");
-    const monthFilter = rawMonth === "all" || /^\d{4}-\d{2}$/.test(rawMonth || "") ? rawMonth : currentMonthKey();
+    const monthFilter = /^\d{4}-\d{2}$/.test(rawMonth || "") ? rawMonth : "";
     const [searchText, setSearchText] = useState("");
     const [page, setPage] = useState(1);
     useEffect(() => { setPage(1); }, [monthFilter, searchText, sectionId]);
@@ -408,7 +404,7 @@ function SectionMeetingSpace({ sectionId, departmentId, isLpaEnabled = false }) 
     const filteredMeetings = useMemo(() => {
         const q = searchText.trim().toLowerCase();
         return meetings.filter((m) => {
-            if (monthFilter !== "all" && !String(m.meetingDate || "").startsWith(monthFilter)) return false;
+            if (monthFilter && !String(m.meetingDate || "").startsWith(monthFilter)) return false;
             if (!q) return true;
             return [m.agenda, m.description, m.createdByName].some((v) => String(v || "").toLowerCase().includes(q));
         });
@@ -614,22 +610,12 @@ function SectionMeetingSpace({ sectionId, departmentId, isLpaEnabled = false }) 
                     <div className="flex items-end gap-3 flex-wrap">
                         <div className="space-y-1">
                             <Label className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Month</Label>
-                            <div className="flex items-center gap-2">
-                                <Input
-                                    type="month"
-                                    className="h-8 w-44 text-sm"
-                                    value={monthFilter === "all" ? "" : monthFilter}
-                                    onChange={(e) => updateParams({ mmonth: e.target.value && e.target.value !== currentMonthKey() ? e.target.value : null })}
-                                    disabled={monthFilter === "all"}
-                                />
-                                <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer select-none">
-                                    <Checkbox
-                                        checked={monthFilter === "all"}
-                                        onCheckedChange={(checked) => updateParams({ mmonth: checked ? "all" : null })}
-                                    />
-                                    All months
-                                </label>
-                            </div>
+                            <Input
+                                type="month"
+                                className="h-8 w-44 text-sm"
+                                value={monthFilter}
+                                onChange={(e) => updateParams({ mmonth: e.target.value || null })}
+                            />
                         </div>
                         <div className="space-y-1 flex-1 min-w-[200px] max-w-sm">
                             <Label className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Search</Label>
@@ -640,6 +626,16 @@ function SectionMeetingSpace({ sectionId, departmentId, isLpaEnabled = false }) 
                                 placeholder="Agenda, description or creator"
                             />
                         </div>
+                        {(monthFilter || searchText) && (
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 cursor-pointer text-slate-600"
+                                onClick={() => { setSearchText(""); updateParams({ mmonth: null }); }}
+                            >
+                                Clear
+                            </Button>
+                        )}
                     </div>
                     <div>
                         <MeetingsTable

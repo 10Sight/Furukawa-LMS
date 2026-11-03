@@ -8,7 +8,7 @@ import { Button } from '@/components/common/ui/button.jsx';
 import { Input } from '@/components/forms/primitives/input.jsx';
 import { Label } from '@/components/forms/primitives/label.jsx';
 
-import { COLORS, SHEET_META } from '../../pages/lpa/lpaGraphUtils.js';
+import { COLORS, SHEET_META, SHIFT_KEYS, LEVEL_KEYS, shiftLevelKey } from '../../pages/lpa/lpaGraphUtils.js';
 
 const SHEET_VIEWS = [
   { key: 'both', label: 'Both Sheets' },
@@ -21,19 +21,32 @@ const BREAKDOWN_VIEWS = [
   { key: 'shift', label: 'By Shift' }
 ];
 
+// Shift hue, darker for higher levels: [L3, L2, L1]
+const SHIFT_LEVEL_SHADES = {
+  A: ['#1d4ed8', '#3b82f6', '#93c5fd'],
+  B: ['#047857', '#10b981', '#6ee7b7'],
+  C: ['#b45309', '#f59e0b', '#fcd34d'],
+  G: ['#6d28d9', '#8b5cf6', '#c4b5fd']
+};
+
 // Bar order inside each slot; the legend badges follow the same order
 const SERIES_DEFS = {
   level: [
-    { key: 'level3Score', name: 'Level 3 Score (%)', short: 'Level 3', color: COLORS.level3 },
-    { key: 'level2Score', name: 'Level 2 Score (%)', short: 'Level 2', color: COLORS.level2 },
-    { key: 'level1Score', name: 'Level 1 Score (%)', short: 'Level 1', color: COLORS.level1 }
-  ],
-  shift: [
-    { key: 'shiftAScore', name: 'Shift A (%)', short: 'Shift A', color: COLORS.shiftA },
-    { key: 'shiftBScore', name: 'Shift B (%)', short: 'Shift B', color: COLORS.shiftB },
-    { key: 'shiftCScore', name: 'Shift C (%)', short: 'Shift C', color: COLORS.shiftC },
-    { key: 'shiftGScore', name: 'Shift G (%)', short: 'Shift G', color: COLORS.shiftG }
-  ]
+    { key: 'level3Score', name: 'Level 3 Score (%)', color: COLORS.level3 },
+    { key: 'level2Score', name: 'Level 2 Score (%)', color: COLORS.level2 },
+    { key: 'level1Score', name: 'Level 1 Score (%)', color: COLORS.level1 }
+  ].map(def => ({ ...def, value: (slot) => slot[def.key] })),
+  // One bar per shift + level pair: Shift A · L3, Shift A · L2, ... Shift G · L1
+  shift: SHIFT_KEYS.flatMap(shift => LEVEL_KEYS.map((level, i) => {
+    const key = shiftLevelKey(shift, level);
+    return {
+      key,
+      name: `Shift ${shift} · ${level} (%)`,
+      tag: `${shift}·${level}`,
+      color: SHIFT_LEVEL_SHADES[shift][i],
+      value: (slot) => slot.shiftLevelScores?.[key] ?? null
+    };
+  }))
 };
 
 const BELOW_TARGET_COLOR = '#dc2626';
@@ -119,13 +132,11 @@ export default function LpaPerformanceChartCard({
     { key: 'custom', label: 'Custom Date Range…' }
   ], [monthOptions]);
 
-  // Shifts with no audit in the current range are dropped so they don't leave gaps
+  // Shift + level pairs with no audit in the current range are dropped so they don't leave gaps
   const seriesDefs = useMemo(() => {
-    const defs = SERIES_DEFS[breakdownMode] || SERIES_DEFS.level;
-    if (!isShiftMode) return defs;
-    const withData = defs.filter(def => slots.some(s => s[def.key] != null));
-    return withData.length > 0 ? withData : defs;
-  }, [breakdownMode, isShiftMode, slots]);
+    if (!isShiftMode) return SERIES_DEFS.level;
+    return SERIES_DEFS.shift.filter(def => slots.some(s => def.value(s) != null));
+  }, [isShiftMode, slots]);
 
   const toggleSeries = (key) => {
     setHiddenSeries(prev => {
@@ -160,8 +171,8 @@ export default function LpaPerformanceChartCard({
 
     // Bars below the target keep their series colour (so shifts/levels stay identifiable)
     // and get a red outline; their data label is red too
-    const seriesPoints = (key) => slots.map(s => {
-      const y = s[key];
+    const seriesPoints = (def) => slots.map(s => {
+      const y = def.value(s);
       return y != null && y < targetBenchmark
         ? { y, borderColor: BELOW_TARGET_COLOR, borderWidth: 2 }
         : { y };
@@ -216,52 +227,7 @@ export default function LpaPerformanceChartCard({
       },
       // Series are labelled by the clickable badges in the filter bar instead
       legend: { enabled: false },
-      tooltip: {
-        shared: true,
-        useHTML: true,
-        outside: true,
-        backgroundColor: 'rgba(255,255,255,0.97)',
-        borderColor: '#e2e8f0',
-        borderRadius: 12,
-        padding: 12,
-        style: { fontSize: '13px' },
-        formatter() {
-          const first = this.points?.[0] ?? this;
-          const idx = first.point?.index ?? first.index;
-          const slot = slots[idx];
-          if (!slot) return false;
-
-          const sheet = SHEET_META[slot.sheet];
-          const header =
-            `<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">` +
-            `<span style="background:${sheet.color}1a;color:${sheet.color};border:1px solid ${sheet.color}55;border-radius:999px;padding:1px 8px;font-weight:700;font-size:11px">${escapeHtml(sheet.fullLabel)}</span>` +
-            `<b style="color:#1e293b">${escapeHtml(slot.formattedDate)}</b></div>`;
-
-          if (slot.isEmpty) {
-            return `${header}<span style="color:#64748b">No audit recorded for ${escapeHtml(sheet.fullLabel)} on this date.</span>`;
-          }
-
-          const met = slot.avgScore >= targetBenchmark;
-          const tone = scoreTone(slot.avgScore, targetBenchmark);
-          const breakdownRow = (def) => {
-            const val = slot[def.key];
-            const valColor = val != null && val < targetBenchmark ? BELOW_TARGET_COLOR : 'inherit';
-            return `<div style="display:flex;justify-content:space-between;gap:16px"><span><span style="color:${def.color}">■</span> ${def.short}</span><b style="font-family:monospace;color:${valColor}">${val != null ? `${val}%` : '—'}</b></div>`;
-          };
-
-          return (
-            header +
-            `<div style="min-width:200px">` +
-            `<div style="display:flex;justify-content:space-between;gap:16px;margin-bottom:2px"><span style="font-weight:600;color:#334155">Overall Score</span><b style="color:${tone.text}">${slot.avgScore}%</b></div>` +
-            `<div style="display:flex;justify-content:space-between;gap:16px;font-size:11px;color:#64748b"><span>Target ${targetBenchmark}%</span><b style="color:${met ? '#059669' : '#e11d48'}">${met ? 'Target Met' : 'Below Target'}</b></div>` +
-            `<div style="border-top:1px solid #f1f5f9;margin-top:6px;padding-top:6px;font-size:11px;color:#475569">` +
-            seriesDefs.map(breakdownRow).join('') +
-            `</div>` +
-            `<div style="margin-top:6px;font-size:11px;color:#64748b">Sheets audited: <b>${slot.totalSheets}</b></div>` +
-            `</div>`
-          );
-        }
-      },
+      tooltip: { enabled: false },
       plotOptions: {
         column: {
           borderRadius: 4,
@@ -277,7 +243,10 @@ export default function LpaPerformanceChartCard({
             formatter() {
               if (this.y == null) return '';
               const color = this.y < targetBenchmark ? BELOW_TARGET_COLOR : '#334155';
-              return `<span style="color:${color}">${this.y}%</span>`;
+              // In By Shift view each bar also names its shift + level, since there is no tooltip
+              const tag = this.series.userOptions.custom?.tag;
+              const tagHtml = tag ? `<br/><span style="color:#64748b;font-size:10px;font-weight:700">${tag}</span>` : '';
+              return `<span style="color:${color}">${this.y}%</span>${tagHtml}`;
             },
             style: { fontSize: '13px', fontWeight: '800', textOutline: '2px white' }
           }
@@ -297,7 +266,8 @@ export default function LpaPerformanceChartCard({
         name: def.name,
         color: def.color,
         visible: !hiddenSeries.has(def.key),
-        data: seriesPoints(def.key)
+        custom: { tag: def.tag },
+        data: seriesPoints(def)
       }))
     };
   }, [slots, isBoth, needsScroll, slotWidth, targetBenchmark, seriesDefs, hiddenSeries]);
@@ -319,7 +289,7 @@ export default function LpaPerformanceChartCard({
             </CardTitle>
             <CardDescription className="text-xs text-slate-500">
               {isShiftMode
-                ? 'Daily scores by shift (Shift A, B, C, G) with target benchmark.'
+                ? 'Daily scores for each shift and level (e.g. A·L3 = Shift A, Level 3) with target benchmark.'
                 : 'Daily scores by hierarchy levels (Level 3, Level 2, Level 1) with target benchmark.'}{' '}
               <span className="font-semibold text-red-600">Bars outlined in red are below target.</span>
             </CardDescription>
@@ -440,7 +410,7 @@ export default function LpaPerformanceChartCard({
                   type="button"
                   onClick={() => toggleSeries(def.key)}
                   aria-pressed={!hidden}
-                  title={hidden ? `Show ${def.short}` : `Hide ${def.short}`}
+                  title={hidden ? `Show ${def.name}` : `Hide ${def.name}`}
                   className={`inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs font-semibold transition-opacity cursor-pointer hover:bg-slate-50 ${hidden ? 'opacity-40 line-through text-slate-400' : 'text-slate-700'}`}
                 >
                   <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: def.color }} />

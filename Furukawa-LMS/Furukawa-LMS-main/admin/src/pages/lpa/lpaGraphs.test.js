@@ -335,3 +335,17 @@ test('15. Shift scores are averaged per day; unaudited shifts are null; record.s
   assert.equal(slot.shiftCScore, null);
   assert.equal(slot.shiftGScore, day.shiftGScore);
 });
+
+test('16. Shift + level pairs get their own daily score', () => {
+  const records = [
+    dated('2026-10-20', { sheets: [{ shift: 'A', targetLevel: 'L3' }, { shift: 'A', targetLevel: 'L2' }, { shift: 'G', targetLevel: 'L1' }] })
+  ];
+  const [day] = aggregateSectionData(records, 'assembly', 'all', 'all').dailyData;
+  assert.deepEqual(Object.keys(day.shiftLevelScores).sort(), ['A_L2', 'A_L3', 'G_L1']);
+  Object.values(day.shiftLevelScores).forEach(v => assert.equal(typeof v, 'number'));
+
+  const [slot] = buildCombinedChartSlots([day], [], 'assembly');
+  assert.deepEqual(slot.shiftLevelScores, day.shiftLevelScores);
+  const [empty] = buildCombinedChartSlots([], [day], 'assembly');
+  assert.equal(empty, undefined);
+});

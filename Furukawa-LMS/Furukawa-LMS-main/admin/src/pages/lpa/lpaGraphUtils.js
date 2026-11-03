@@ -67,6 +67,14 @@ function getRecordDate(rec) {
   return rec.auditDate || rec.date || (rec.createdAt ? String(rec.createdAt).slice(0, 10) : '');
 }
 
+export const SHIFT_KEYS = ['A', 'B', 'C', 'G'];
+export const LEVEL_KEYS = ['L3', 'L2', 'L1'];
+
+/** Key for a shift + level pair in shiftLevelScores, e.g. 'A_L3'. */
+export function shiftLevelKey(shift, level) {
+  return `${shift}_${level}`;
+}
+
 function averageOrNull(values) {
   if (!values || values.length === 0) return null;
   return Math.round(values.reduce((a, b) => a + b, 0) / values.length);
@@ -178,6 +186,7 @@ export function aggregateSectionData(records, sectionKey, unitFilter, dateRangeF
         shiftBScores: [],
         shiftCScores: [],
         shiftGScores: [],
+        shiftLevelScoreLists: {}, // 'A_L3' -> [scores]
         sheetsList: []
       });
     }
@@ -229,6 +238,12 @@ export function aggregateSectionData(records, sectionKey, unitFilter, dateRangeF
         dayEntry[key] += 1;
       }
 
+      // Scores per shift + level pair, for the By Shift chart
+      if (SHIFT_KEYS.includes(shift) && LEVEL_KEYS.includes(level)) {
+        const pairKey = shiftLevelKey(shift, level);
+        (dayEntry.shiftLevelScoreLists[pairKey] ||= []).push(scorePct);
+      }
+
       dayEntry.sheetsList.push({
         id: record.id,
         name: sheet.name || record.name || 'Check Sheet',
@@ -255,7 +270,10 @@ export function aggregateSectionData(records, sectionKey, unitFilter, dateRangeF
         shiftAScore: averageOrNull(day.shiftAScores),
         shiftBScore: averageOrNull(day.shiftBScores),
         shiftCScore: averageOrNull(day.shiftCScores),
-        shiftGScore: averageOrNull(day.shiftGScores)
+        shiftGScore: averageOrNull(day.shiftGScores),
+        shiftLevelScores: Object.fromEntries(
+          Object.entries(day.shiftLevelScoreLists).map(([k, list]) => [k, averageOrNull(list)])
+        )
       };
     })
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -337,6 +355,7 @@ export function buildCombinedChartSlots(assemblyDaily = [], ccDaily = [], active
         shiftBScore: day?.shiftBScore ?? null,
         shiftCScore: day?.shiftCScore ?? null,
         shiftGScore: day?.shiftGScore ?? null,
+        shiftLevelScores: day?.shiftLevelScores ?? {},
         avgScore: day ? day.avgScore : null,
         assemblyAvg: sheet === 'assembly' && day ? day.avgScore : null,
         ccAvg: sheet === 'cc' && day ? day.avgScore : null

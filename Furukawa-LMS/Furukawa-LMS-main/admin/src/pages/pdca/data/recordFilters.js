@@ -202,7 +202,7 @@ export function getUserDepartments(user, employeeDatabase = VERIFIED_EMPLOYEE_MA
       return;
     }
     if (typeof val === 'object') {
-      addDept(val.name || val.department || val.deptName || val.label || '');
+      addDept(val.name || val.department || val.deptName || val.departmentName || val.label || '');
       return;
     }
     String(val).split(/[,;]/).forEach(part => {
@@ -215,6 +215,12 @@ export function getUserDepartments(user, employeeDatabase = VERIFIED_EMPLOYEE_MA
   addDept(user.department);
   addDept(user.departmentName);
   addDept(user.departments);
+  addDept(user.actualDeptName);
+  addDept(user.section);
+  addDept(user.sectionName);
+  if (Array.isArray(user.sections)) {
+    user.sections.forEach(s => addDept(s?.name || s?.deptName || s?.department || s));
+  }
 
   const userName = user.name || user.fullName || '';
   const userCode = user.code || user.empId || user.employeeId || user.empCode || user.userName || '';
@@ -224,7 +230,27 @@ export function getUserDepartments(user, employeeDatabase = VERIFIED_EMPLOYEE_MA
     addDept(dbDept);
   }
 
-
+  // Fallback: check stored user in session or local storage if department was not attached
+  if (depts.size === 0) {
+    try {
+      const raw = (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('user') : null) ||
+                  (typeof localStorage !== 'undefined' ? localStorage.getItem('user') : null);
+      if (raw) {
+        const stored = JSON.parse(raw);
+        if (stored) {
+          addDept(stored.deptName);
+          addDept(stored.department);
+          addDept(stored.departmentName);
+          addDept(stored.departments);
+          addDept(stored.section);
+          addDept(stored.sectionName);
+          if (Array.isArray(stored.sections)) {
+            stored.sections.forEach(s => addDept(s?.name || s?.deptName || s?.department || s));
+          }
+        }
+      }
+    } catch {}
+  }
 
   return Array.from(depts);
 }
@@ -239,7 +265,7 @@ export function getRecordDepartments(record, employeeDatabase = VERIFIED_EMPLOYE
       return;
     }
     if (typeof val === 'object') {
-      addDept(val.name || val.department || val.deptName || val.label || '');
+      addDept(val.name || val.department || val.deptName || val.departmentName || val.label || '');
       return;
     }
     String(val).split(/[,;]/).forEach(part => {
@@ -251,6 +277,10 @@ export function getRecordDepartments(record, employeeDatabase = VERIFIED_EMPLOYE
   addDept(record.department);
   addDept(record.departments);
   addDept(record.sheet?.department);
+  addDept(record.section);
+  addDept(record.sectionName);
+  addDept(record.category);
+  addDept(record.lpaCategory);
 
   const createdBy = record.createdBy || record.sheet?.createdBy;
   if (createdBy && typeof createdBy === 'object') {
@@ -258,6 +288,8 @@ export function getRecordDepartments(record, employeeDatabase = VERIFIED_EMPLOYE
     addDept(createdBy.deptName);
     addDept(createdBy.departmentName);
     addDept(createdBy.departments);
+    addDept(createdBy.section);
+    addDept(createdBy.sectionName);
     const creatorName = createdBy.name || createdBy.fullName || '';
     const creatorCode = createdBy.code || createdBy.empId || createdBy.employeeId || createdBy.empCode || createdBy.userName || '';
     if (creatorName || creatorCode) {
@@ -276,6 +308,15 @@ export function getRecordDepartments(record, employeeDatabase = VERIFIED_EMPLOYE
     const dbDept = findEmployeeDepartment(preparedBy, employeeDatabase) ||
       findEmployeeDepartment(preparedBy, VERIFIED_EMPLOYEE_MASTER);
     addDept(dbDept);
+  }
+
+  // Also extract departments from active rows if available
+  const rows = record.sheet?.rows || record.rows;
+  if (Array.isArray(rows)) {
+    for (const r of rows) {
+      if (r?.department) addDept(r.department);
+      if (r?.departments) addDept(r.departments);
+    }
   }
 
   if (depts.size === 0) {

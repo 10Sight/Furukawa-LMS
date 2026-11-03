@@ -149,41 +149,103 @@ const lookupEmployeeDept = (person) => {
     return '';
 };
 
+export const normalizeServerDepartment = (dept) => {
+    if (!dept) return '';
+    if (typeof dept === 'object') {
+        return normalizeServerDepartment(dept.name || dept.department || dept.deptName || dept.departmentName || dept.label || '');
+    }
+    const trimmed = String(dept).trim().toLowerCase();
+    if (!trimmed || trimmed === 'cft') return '';
+    if (trimmed.includes('quality') || trimmed.includes('qa') || trimmed.includes('qc') || trimmed.includes('src quality')) return 'quality';
+    if (trimmed === 'c&c' || trimmed === 'cc' || trimmed.includes('c&c') || trimmed.includes('cutting')) return 'c&c';
+    if (trimmed.includes('assembly')) return 'assembly';
+    if (trimmed.includes('maintenance')) return 'maintenance';
+    if (trimmed.includes('production') || trimmed.includes('prod')) return 'production';
+    if (trimmed === 'it' || trimmed.includes('it & edp') || trimmed.includes('information tech')) return 'it';
+    if (trimmed === 'hr' || trimmed.includes('human resource')) return 'hr';
+    if (trimmed === 'pe' || trimmed.includes('process eng')) return 'pe';
+    if (trimmed.includes('safety') || trimmed.includes('ehs')) return 'safety';
+    if (trimmed.includes('store') || trimmed.includes('warehouse')) return 'store';
+    if (trimmed.includes('d&d') || trimmed.includes('design')) return 'd&d';
+    return trimmed;
+};
+
 export const isUserInSameDepartmentAsRecord = (user, record) => {
     if (!user || !record) return false;
-    const norm = (v) => {
-        if (!v) return '';
-        if (typeof v === 'object') return norm(v.name || v.department || v.deptName || '');
-        const s = String(v).trim().toLowerCase();
-        return s && s !== 'cft' ? s : '';
-    };
     const userDepts = new Set();
-    [user.deptName, user.department, user.departmentName, ...(Array.isArray(user.departments) ? user.departments : []), lookupEmployeeDept(user)]
-        .forEach(d => {
-            if (!d) return;
-            String(typeof d === 'object' ? (d.name || d.department || '') : d).split(/[,;]/).forEach(part => {
-                const n = norm(part);
-                if (n) userDepts.add(n);
-            });
+    const addUD = (v) => {
+        if (!v) return;
+        if (Array.isArray(v)) { v.forEach(addUD); return; }
+        String(typeof v === 'object' ? (v.name || v.department || v.deptName || '') : v).split(/[,;]/).forEach(part => {
+            const n = normalizeServerDepartment(part);
+            if (n) userDepts.add(n);
         });
+    };
+
+    addUD(user.deptName);
+    addUD(user.department);
+    addUD(user.departmentName);
+    addUD(user.departments);
+    addUD(user.section);
+    addUD(user.sectionName);
+    if (Array.isArray(user.sections)) {
+        user.sections.forEach(s => addUD(s?.name || s?.deptName || s?.department || s));
+    }
+    addUD(lookupEmployeeDept(user));
+
     if (userDepts.size === 0) return false;
 
     const recordDepts = new Set();
-    const createdBy = record.createdBy || record.sheet?.createdBy;
-    [
-        record.department,
-        record.sheet?.department,
-        createdBy?.department,
-        createdBy?.deptName,
-        lookupEmployeeDept(createdBy)
-    ].forEach(d => {
-        if (!d) return;
-        String(typeof d === 'object' ? (d.name || d.department || '') : d).split(/[,;]/).forEach(part => {
-            const n = norm(part);
+    const addRD = (v) => {
+        if (!v) return;
+        if (Array.isArray(v)) { v.forEach(addRD); return; }
+        String(typeof v === 'object' ? (v.name || v.department || v.deptName || '') : v).split(/[,;]/).forEach(part => {
+            const n = normalizeServerDepartment(part);
             if (n) recordDepts.add(n);
         });
-    });
-    if (recordDepts.size === 0) return false;
+    };
+
+    addRD(record.department);
+    addRD(record.departments);
+    addRD(record.sheet?.department);
+    addRD(record.section);
+    addRD(record.sectionName);
+    addRD(record.category);
+    addRD(record.lpaCategory);
+
+    const createdBy = record.createdBy || record.sheet?.createdBy;
+    if (createdBy) {
+        addRD(createdBy.department);
+        addRD(createdBy.deptName);
+        addRD(createdBy.departmentName);
+        addRD(createdBy.departments);
+        addRD(createdBy.section);
+        addRD(createdBy.sectionName);
+        addRD(lookupEmployeeDept(createdBy));
+    }
+
+    const preparedBy = record.sheet?.headerInfo?.preparedBy;
+    if (preparedBy) {
+        addRD(lookupEmployeeDept(preparedBy));
+    }
+
+    const rows = record.sheet?.rows || record.rows;
+    if (Array.isArray(rows)) {
+        rows.forEach(r => {
+            if (r?.department) addRD(r.department);
+            if (r?.departments) addRD(r.departments);
+        });
+    }
+
+    if (recordDepts.size === 0) {
+        const idLower = String(record.id || record.recordId || '').toLowerCase();
+        const topicLower = String(record.topic || '').toLowerCase();
+        if (idLower.includes('pdca-lpa-assembly') || topicLower.includes('assembly')) {
+            recordDepts.add('assembly');
+        } else if (idLower.includes('pdca-lpa-cc') || topicLower.includes('c&c')) {
+            recordDepts.add('c&c');
+        }
+    }
 
     for (const ud of userDepts) {
         if (recordDepts.has(ud)) return true;
@@ -405,8 +467,10 @@ export const deletePDCARecord = asyncHandler(async (req, res) => {
         throw new ApiError(`PDCA record with ID ${id} not found`, 404);
     }
 
-    if (!isUserCreatorOfRecord(user, existing)) {
-        throw new ApiError("Forbidden: Only the employee who created this PDCA record can delete it", 403);
+    const isCreator = isUserCreatorOfRecord(user, existing);
+    const isAdmin = Boolean(user.isAdmin === true || user.isAdmin === 1 || String(user.role || '').toUpperCase() === 'ADMIN' || String(user.role || '').toUpperCase() === 'SUPERADMIN');
+    if (!isCreator && !isAdmin) {
+        throw new ApiError("Forbidden: Only administrators or the employee who created this PDCA record can delete it", 403);
     }
 
     const actor = user.fullName || user.userName;

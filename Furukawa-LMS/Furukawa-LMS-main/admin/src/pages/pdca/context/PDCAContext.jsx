@@ -16,9 +16,11 @@ function getInitialUserContext() {
         const sections = Array.isArray(u.sections) ? u.sections : [];
         const sectionId = u.sectionId?.id || u.sectionId?._id || u.sectionId || u.sections?.[0]?.id || u.sections?.[0]?._id || u.sections?.[0];
         const section = (Array.isArray(sections) ? sections : []).find(item => String(item.id || item._id) === String(sectionId));
+        const userDept = u.department?.name || (typeof u.department === 'string' ? u.department : '') || u.deptName || (departments[0]?.name || '');
         return {
           loading: false,
           user: {
+            ...u,
             id: u.id || u._id || '',
             userId: u.id || u._id || '',
             name: u.fullName || u.name || u.userName || '',
@@ -26,7 +28,12 @@ function getInitialUserContext() {
             empId: u.empId || u.employeeId || u.empCode || u.userName || '',
             userName: u.userName || '',
             email: u.email || '',
-            isAdmin: Boolean(u.isAdmin || u.role === 'ADMIN')
+            role: u.role || 'EMPLOYEE',
+            department: userDept,
+            deptName: userDept,
+            departments: u.departments || departments,
+            section: section?.name || u.section?.name || u.sectionName || '',
+            isAdmin: Boolean(u.isAdmin || u.role === 'ADMIN' || String(u.role || '').toUpperCase() === 'ADMIN' || String(u.role || '').toUpperCase() === 'SUPERADMIN')
           },
           section: {
             id: section?.id || section?._id || sectionId || '',
@@ -77,11 +84,25 @@ export function PDCAProvider({ children }) {
             }
           } catch {}
         }
-        setUserContext(prev => ({
-          ...prev,
-          ...event.data,
-          loading: false
-        }));
+        setUserContext(prev => {
+          const incomingUser = event.data?.user || {};
+          const rawDept = incomingUser.department?.name || (typeof incomingUser.department === 'string' ? incomingUser.department : '') || incomingUser.deptName || prev?.user?.department || '';
+          const mergedUser = {
+            ...prev?.user,
+            ...incomingUser,
+            department: rawDept,
+            deptName: rawDept,
+            departments: incomingUser.departments || prev?.user?.departments || prev?.departments || [],
+            role: incomingUser.role || prev?.user?.role || 'EMPLOYEE',
+            isAdmin: Boolean(incomingUser.isAdmin || incomingUser.role === 'ADMIN' || prev?.user?.isAdmin || String(incomingUser.role || '').toUpperCase() === 'ADMIN')
+          };
+          return {
+            ...prev,
+            ...event.data,
+            user: mergedUser,
+            loading: false
+          };
+        });
       }
     };
     window.addEventListener('message', receive);

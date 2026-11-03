@@ -28,3 +28,7 @@
 [02 Nov, 2026 - 17:49:51:4951] [31merror[39m: [31mMSSQL long-running pool connection failed: Failed to connect to 127.0.0.1:1433 - Could not connect (sequence)[39m
 [02 Nov, 2026 - 17:49:51:4951] [34minfo[39m: [34m[LPA_EMAIL] Provider accepted email user=user-1 recipients=1 messageId=unknown[39m
 [02 Nov, 2026 - 17:49:51:4951] [31merror[39m: [31m[LPA_EMAIL] Provider rejected recipients user=user-1 accepted=1 rejected=1 responseCode=550[39m
+[03 Nov, 2026 - 12:52:54:5254] [31merror[39m: [31mMSSQL Connection Failed: Failed to connect to 127.0.0.1:1433 - Could not connect (sequence)[39m
+[03 Nov, 2026 - 12:52:54:5254] [31merror[39m: [31mMSSQL long-running pool connection failed: Failed to connect to 127.0.0.1:1433 - Could not connect (sequence)[39m
+[03 Nov, 2026 - 12:58:17:5817] [31merror[39m: [31mMSSQL Connection Failed: Failed to connect to 127.0.0.1:1433 - Could not connect (sequence)[39m
+[03 Nov, 2026 - 12:58:17:5817] [31merror[39m: [31mMSSQL long-running pool connection failed: Failed to connect to 127.0.0.1:1433 - Could not connect (sequence)[39m

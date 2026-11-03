@@ -13828,6 +13828,14 @@
       ]
     },
     {
+      "id": 128,
+      "name": "GA",
+      "uniCode": "GA01",
+      "departmentId": 66,
+      "category": "Direct",
+      "lines": []
+    },
+    {
       "id": 113,
       "name": "IT",
       "uniCode": "IT01-1",
@@ -14029,7 +14037,7 @@
     },
     {
       "id": 117,
-      "name": "Quality Office ( Reports) + Kaizen",
+      "name": "Quality Office ( Reports) ",
       "uniCode": "WQ1-6",
       "departmentId": 61,
       "category": "Indirect",

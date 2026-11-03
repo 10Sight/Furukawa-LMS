@@ -294,10 +294,10 @@ export default function LpaPerformanceChartCard({
               crop: false,
               overflow: 'allow',
               formatter() {
-                if (this.y == null || this.y < 8) return '';
+                if (this.y == null || this.y < 10) return '';
                 return this.series.userOptions.custom?.shift ?? '';
               },
-              style: { color: '#ffffff', fontSize: '12px', fontWeight: '800', textOutline: '1px rgba(15,23,42,0.35)' }
+              style: { color: '#ffffff', fontSize: '16px', fontWeight: '800', textOutline: '1px rgba(15,23,42,0.35)' }
             }
           ]
         }

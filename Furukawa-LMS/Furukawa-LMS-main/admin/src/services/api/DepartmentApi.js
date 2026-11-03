@@ -347,10 +347,10 @@ export const departmentApi = createApi({
         }),
 
         updateDailyMorningMeeting: builder.mutation({
-            query: ({ meetingId, agenda, description }) => ({
+            query: ({ meetingId, agenda, description, meetingDate }) => ({
                 url: `/api/daily-morning-meetings/${meetingId}`,
                 method: "PUT",
-                data: { agenda, description }
+                data: { agenda, description, ...(meetingDate ? { meetingDate } : {}) }
             }),
             invalidatesTags: (result, error, { meetingId, sectionId }) => [
                 { type: 'Department', id: `daily-morning-meeting-${meetingId}` },

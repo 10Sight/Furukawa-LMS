@@ -134,7 +134,8 @@ const applyFilters = (ops, f) => {
     if (f.sectionIds?.length) r = r.filter(op => f.sectionIds.includes(String(op.sectionId || op.sectionName)));
     if (f.lineIds?.length) r = r.filter(op => f.lineIds.includes(String(op.lineId || op.lineName)));
     if (f.subSectionIds?.length) r = r.filter(op => f.subSectionIds.includes(String(op.subSectionId || op.subSectionName)));
-    if (f.shifts?.length) r = r.filter(op => f.shifts.includes(String(op.shift || op.shiftName || 'General')));
+    // Shift of the attendance row itself (that day's shift); a row without one is UNASSIGNED
+    if (f.shifts?.length) r = r.filter(op => f.shifts.includes(String(op.shift || UNASSIGNED_SHIFT)));
 
     // Condition 2: Default under-the-hood date range to current date
     const today = new Date().toLocaleDateString('en-CA');
@@ -159,7 +160,10 @@ const applyFiltersNoDate = (ops, f) => {
     if (f.sectionIds?.length) r = r.filter(op => f.sectionIds.includes(String(op.sectionId || op.sectionName)));
     if (f.lineIds?.length) r = r.filter(op => f.lineIds.includes(String(op.lineId || op.lineName)));
     if (f.subSectionIds?.length) r = r.filter(op => f.subSectionIds.includes(String(op.subSectionId || op.subSectionName)));
-    if (f.shifts?.length) r = r.filter(op => f.shifts.includes(String(op.shift || op.shiftName || 'General')));
+    // No shift filter here: this is the Total population (the headcount every figure divides
+    // by). Shift is an attendance attribute, filtered in applyFilters only, so a selected
+    // shift shows its share of the group's Present figure — the shifts add up to the whole —
+    // instead of each shift's own average, which came out the same as the overall figure.
     return r;
 };
 

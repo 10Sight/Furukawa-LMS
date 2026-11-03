@@ -144,11 +144,13 @@ function CreateMeetingDialog({ open, onOpenChange, onCreate, isCreating }) {
 function EditDetailsDialog({ meeting, onOpenChange, onSave, isSaving }) {
     const [agenda, setAgenda] = useState("");
     const [description, setDescription] = useState("");
+    const [meetingDate, setMeetingDate] = useState("");
 
     useEffect(() => {
         if (meeting) {
             setAgenda(meeting.agenda || "");
             setDescription(meeting.description || "");
+            setMeetingDate(meeting.meetingDate || "");
         }
     }, [meeting]);
 
@@ -157,7 +159,11 @@ function EditDetailsDialog({ meeting, onOpenChange, onSave, isSaving }) {
             toast.error("Agenda is required.");
             return;
         }
-        onSave({ agenda: agenda.trim(), description: description.trim() });
+        if (!meetingDate) {
+            toast.error("Date is required.");
+            return;
+        }
+        onSave({ agenda: agenda.trim(), description: description.trim(), meetingDate });
     };
 
     return (
@@ -167,6 +173,10 @@ function EditDetailsDialog({ meeting, onOpenChange, onSave, isSaving }) {
                     <DialogTitle>Edit Meeting Details</DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4">
+                    <div className="space-y-1.5">
+                        <Label>Date *</Label>
+                        <Input type="date" value={meetingDate} onChange={(e) => setMeetingDate(e.target.value)} />
+                    </div>
                     <div className="space-y-1.5">
                         <Label>Agenda *</Label>
                         <Input value={agenda} onChange={(e) => setAgenda(e.target.value)} />
@@ -250,7 +260,30 @@ function CloneMeetingDialog({ meeting, onOpenChange, onClone, isCloning }) {
     );
 }
 
-function MeetingsTable({ meetings, isLoading, onView, onEdit, onDeleteRequest, onCloneRequest, canUpdate, canDelete, canCreate }) {
+const MEETINGS_PAGE_SIZE = 10;
+
+const currentMonthKey = () => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+};
+
+function MeetingsPagination({ page, totalPages, totalItems, onPageChange }) {
+    if (totalItems === 0) return null;
+    const from = (page - 1) * MEETINGS_PAGE_SIZE + 1;
+    const to = Math.min(page * MEETINGS_PAGE_SIZE, totalItems);
+    return (
+        <div className="flex items-center justify-between gap-3 flex-wrap pt-3 text-xs text-slate-500">
+            <span>Showing {from}–{to} of {totalItems}</span>
+            <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" className="h-7 cursor-pointer" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>Previous</Button>
+                <span className="font-medium text-slate-600">Page {page} of {totalPages}</span>
+                <Button variant="outline" size="sm" className="h-7 cursor-pointer" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>Next</Button>
+            </div>
+        </div>
+    );
+}
+
+function MeetingsTable({ meetings, isLoading, onView, onEdit, onDeleteRequest, onCloneRequest, canUpdate, canDelete, canCreate, startIndex = 0, emptyText = "No meetings recorded yet." }) {
     if (isLoading) {
         return (
             <div className="flex items-center justify-center py-10">
@@ -262,7 +295,7 @@ function MeetingsTable({ meetings, isLoading, onView, onEdit, onDeleteRequest, o
         return (
             <div className="flex flex-col items-center justify-center py-10 text-center bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
                 <IconCalendarEvent className="w-8 h-8 text-slate-300 mb-2" />
-                <p className="text-sm text-slate-500">No meetings recorded yet.</p>
+                <p className="text-sm text-slate-500">{emptyText}</p>
             </div>
         );
     }
@@ -283,7 +316,7 @@ function MeetingsTable({ meetings, isLoading, onView, onEdit, onDeleteRequest, o
                 <TableBody>
                     {meetings.map((m, idx) => (
                         <TableRow key={m.id} className="cursor-pointer" onClick={() => onView(m)}>
-                            <TableCell className="text-slate-500">{idx + 1}</TableCell>
+                            <TableCell className="text-slate-500">{startIndex + idx + 1}</TableCell>
                             <TableCell className="font-medium text-slate-800">{m.agenda}</TableCell>
                             <TableCell className="text-slate-500 max-w-xs truncate">{m.description || "—"}</TableCell>
                             <TableCell className="text-slate-600 whitespace-nowrap">{formatMeetingDate(m.meetingDate)}</TableCell>
@@ -335,7 +368,9 @@ function SectionMeetingSpace({ sectionId, departmentId, isLpaEnabled = false }) 
     // URL instead of component state, so a refresh (or a shared link) lands the user
     // back where they were instead of resetting to the section's meeting list.
     const rawTab = searchParams.get("mtab");
-    const activeTab = rawTab === "all" ? "all" : (rawTab === "lpa" && isLpaEnabled ? "lpa" : "month");
+    // "all" was a separate tab before it was folded into the month filter; old
+    // links to it still land on the meetings list.
+    const activeTab = rawTab === "lpa" && isLpaEnabled ? "lpa" : "month";
     // Once opened, the LPA tab stays mounted (hidden) so unsaved LPA edits survive switching sub-tabs.
     const [lpaMounted, setLpaMounted] = useState(false);
     useEffect(() => { if (activeTab === "lpa") setLpaMounted(true); }, [activeTab]);
@@ -362,13 +397,28 @@ function SectionMeetingSpace({ sectionId, departmentId, isLpaEnabled = false }) 
 
     const { data: meetingsData, isLoading: isListLoading } = useGetDailyMorningMeetingsQuery({ sectionId }, { skip: !sectionId });
     const meetings = useMemo(() => meetingsData?.data || [], [meetingsData]);
-    const monthMeetings = useMemo(() => {
-        const now = new Date();
+    // Month filter (?mmonth=YYYY-MM, or "all") lives in the URL like the rest of
+    // the workspace state; defaults to the current month. Search and page are local.
+    const rawMonth = searchParams.get("mmonth");
+    const monthFilter = rawMonth === "all" || /^\d{4}-\d{2}$/.test(rawMonth || "") ? rawMonth : currentMonthKey();
+    const [searchText, setSearchText] = useState("");
+    const [page, setPage] = useState(1);
+    useEffect(() => { setPage(1); }, [monthFilter, searchText, sectionId]);
+
+    const filteredMeetings = useMemo(() => {
+        const q = searchText.trim().toLowerCase();
         return meetings.filter((m) => {
-            const d = new Date(`${m.meetingDate}T00:00:00`);
-            return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+            if (monthFilter !== "all" && !String(m.meetingDate || "").startsWith(monthFilter)) return false;
+            if (!q) return true;
+            return [m.agenda, m.description, m.createdByName].some((v) => String(v || "").toLowerCase().includes(q));
         });
-    }, [meetings]);
+    }, [meetings, monthFilter, searchText]);
+    const totalPages = Math.max(1, Math.ceil(filteredMeetings.length / MEETINGS_PAGE_SIZE));
+    const currentPage = Math.min(page, totalPages);
+    const pagedMeetings = useMemo(
+        () => filteredMeetings.slice((currentPage - 1) * MEETINGS_PAGE_SIZE, currentPage * MEETINGS_PAGE_SIZE),
+        [filteredMeetings, currentPage]
+    );
 
     const { data: meetingDetail, isFetching: isDetailLoading } = useGetDailyMorningMeetingDetailQuery(selectedMeetingId, { skip: !selectedMeetingId });
     const selectedMeeting = meetingDetail?.data;
@@ -418,9 +468,9 @@ function SectionMeetingSpace({ sectionId, departmentId, isLpaEnabled = false }) 
         }
     };
 
-    const handleSaveDetails = async ({ agenda, description }) => {
+    const handleSaveDetails = async ({ agenda, description, meetingDate }) => {
         try {
-            await updateMeeting({ meetingId: editDetailsMeeting.id, sectionId, agenda, description }).unwrap();
+            await updateMeeting({ meetingId: editDetailsMeeting.id, sectionId, agenda, description, meetingDate }).unwrap();
             toast.success("Meeting details updated!");
             setEditDetailsMeeting(null);
         } catch (err) {
@@ -555,14 +605,60 @@ function SectionMeetingSpace({ sectionId, departmentId, isLpaEnabled = false }) 
 
             <Tabs value={activeTab} onValueChange={(val) => updateParams({ mtab: val === "month" ? null : val })} className="w-full">
                 <TabsList className="bg-slate-100/80 p-1 rounded-lg h-auto border border-slate-200/50 w-fit">
-                    <TabsTrigger value="month" className="text-xs font-semibold px-3 py-1.5 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">This Month's Management Information System</TabsTrigger>
+                    <TabsTrigger value="month" className="text-xs font-semibold px-3 py-1.5 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">Management Information System</TabsTrigger>
                     {isLpaEnabled && (
                         <TabsTrigger value="lpa" className="text-xs font-semibold px-3 py-1.5 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">LPA</TabsTrigger>
                     )}
-                    <TabsTrigger value="all" className="text-xs font-semibold px-3 py-1.5 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">All Management Information System</TabsTrigger>
                 </TabsList>
-                <TabsContent value="month" className="mt-3">
-                    <MeetingsTable meetings={monthMeetings} isLoading={isListLoading} onView={openView} onEdit={openEdit} onDeleteRequest={setDeleteTarget} onCloneRequest={setCloneTarget} canUpdate={canUpdate} canDelete={canDelete} canCreate={canCreate} />
+                <TabsContent value="month" className="mt-3 space-y-3">
+                    <div className="flex items-end gap-3 flex-wrap">
+                        <div className="space-y-1">
+                            <Label className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Month</Label>
+                            <div className="flex items-center gap-2">
+                                <Input
+                                    type="month"
+                                    className="h-8 w-44 text-sm"
+                                    value={monthFilter === "all" ? "" : monthFilter}
+                                    onChange={(e) => updateParams({ mmonth: e.target.value && e.target.value !== currentMonthKey() ? e.target.value : null })}
+                                    disabled={monthFilter === "all"}
+                                />
+                                <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer select-none">
+                                    <Checkbox
+                                        checked={monthFilter === "all"}
+                                        onCheckedChange={(checked) => updateParams({ mmonth: checked ? "all" : null })}
+                                    />
+                                    All months
+                                </label>
+                            </div>
+                        </div>
+                        <div className="space-y-1 flex-1 min-w-[200px] max-w-sm">
+                            <Label className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Search</Label>
+                            <Input
+                                className="h-8 text-sm"
+                                value={searchText}
+                                onChange={(e) => setSearchText(e.target.value)}
+                                placeholder="Agenda, description or creator"
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <MeetingsTable
+                            meetings={pagedMeetings}
+                            isLoading={isListLoading}
+                            onView={openView}
+                            onEdit={openEdit}
+                            onDeleteRequest={setDeleteTarget}
+                            onCloneRequest={setCloneTarget}
+                            canUpdate={canUpdate}
+                            canDelete={canDelete}
+                            canCreate={canCreate}
+                            startIndex={(currentPage - 1) * MEETINGS_PAGE_SIZE}
+                            emptyText={meetings.length === 0 ? "No meetings recorded yet." : "No meetings match these filters."}
+                        />
+                        {!isListLoading && (
+                            <MeetingsPagination page={currentPage} totalPages={totalPages} totalItems={filteredMeetings.length} onPageChange={setPage} />
+                        )}
+                    </div>
                 </TabsContent>
                 {isLpaEnabled && lpaMounted && (
                     <TabsContent value="lpa" forceMount className="mt-3 data-[state=inactive]:hidden">
@@ -578,9 +674,6 @@ function SectionMeetingSpace({ sectionId, departmentId, isLpaEnabled = false }) 
                         </div>
                     </TabsContent>
                 )}
-                <TabsContent value="all" className="mt-3">
-                    <MeetingsTable meetings={meetings} isLoading={isListLoading} onView={openView} onEdit={openEdit} onDeleteRequest={setDeleteTarget} onCloneRequest={setCloneTarget} canUpdate={canUpdate} canDelete={canDelete} canCreate={canCreate} />
-                </TabsContent>
             </Tabs>
 
             <CreateMeetingDialog open={createOpen} onOpenChange={setCreateOpen} onCreate={handleCreate} isCreating={isCreating} />
@@ -695,7 +788,7 @@ function AdminConfigPanel({ departmentId, sections, allSectionsLoading }) {
                             Enable LPA Tab
                         </Label>
                         <p className="text-xs text-slate-500 max-w-md">
-                            When enabled, an LPA tab is shown between "This Month's" and "All" meetings in every section of this department.
+                            When enabled, an LPA tab is shown next to the Management Information System tab in every section of this department.
                         </p>
                     </div>
                     <Switch

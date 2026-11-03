@@ -446,9 +446,14 @@ export default function PDCAMonthlyGraph({
 
   // SVG Chart Geometry
   const slotCount = currentDataset.length;
-  const minSlotWidth = viewTimeframe === 'daily' ? 118 : viewTimeframe === 'monthly' ? 124 : 140;
+  const minSlotWidth = viewTimeframe === 'daily' ? 118 : viewTimeframe === 'monthly' ? 124 : 180;
   const padding = { top: 34, right: 25, bottom: 70, left: 52 };
-  const graphWidth = Math.max(880, slotCount * minSlotWidth);
+  // Yearly usually has only a few slots: size it to its content (drawn at natural size,
+  // centered) instead of stretching one or two columns across the whole card.
+  const isCompactChart = viewTimeframe === 'yearly';
+  const graphWidth = isCompactChart
+    ? Math.max(300, slotCount * minSlotWidth)
+    : Math.max(880, slotCount * minSlotWidth);
   const svgWidth = graphWidth + padding.left + padding.right;
   const svgHeight = 415;
   const graphHeight = svgHeight - padding.top - padding.bottom;
@@ -731,11 +736,16 @@ export default function PDCAMonthlyGraph({
               {/* SVG Graph View inside horizontal scroll */}
               <div className="flex-1 min-w-0 flex flex-col">
                 <div ref={scrollContainerRef} className="w-full overflow-x-auto pb-3.5 pt-1 flex-1 flex flex-col justify-end">
-                  <div style={{ minWidth: `${Math.max(680, svgWidth)}px` }} className="flex-1 flex flex-col mb-1.5">
+                  <div
+                    style={isCompactChart ? { width: `${svgWidth}px` } : { minWidth: `${Math.max(680, svgWidth)}px` }}
+                    className={`flex flex-col mb-1.5 ${isCompactChart ? 'mx-auto shrink-0' : 'flex-1'}`}
+                  >
                     <svg
                       viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-                      className="w-full h-auto select-none flex-1"
-                      style={{ minHeight: '395px' }}
+                      width={isCompactChart ? svgWidth : undefined}
+                      height={isCompactChart ? svgHeight : undefined}
+                      className={isCompactChart ? 'select-none' : 'w-full h-auto select-none flex-1'}
+                      style={isCompactChart ? undefined : { minHeight: '395px' }}
                     >
                       <defs>
                         <linearGradient id="totalGrad" x1="0" y1="0" x2="0" y2="1">

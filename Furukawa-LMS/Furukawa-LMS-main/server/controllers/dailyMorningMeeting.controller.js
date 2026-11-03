@@ -460,9 +460,16 @@ export const cloneMeeting = async (req, res) => {
 export const updateMeeting = async (req, res) => {
     try {
         const { id } = req.params;
-        const { agenda, description } = req.body;
+        const { agenda, description, meetingDate } = req.body;
         if (!agenda || !agenda.trim()) {
             return res.status(400).json({ success: false, message: "Agenda is required" });
+        }
+        if (meetingDate !== undefined && meetingDate !== null && meetingDate !== "") {
+            const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(meetingDate));
+            const parsed = match ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : null;
+            if (!parsed || parsed.getFullYear() !== Number(match[1]) || parsed.getMonth() !== Number(match[2]) - 1 || parsed.getDate() !== Number(match[3])) {
+                return res.status(400).json({ success: false, message: "Meeting date must be a valid date (YYYY-MM-DD)" });
+            }
         }
         const existing = await DailyMorningMeeting.findMetaById(id);
         if (!existing) {
@@ -471,7 +478,7 @@ export const updateMeeting = async (req, res) => {
         if (!(await canModifyDailyMeetingSection(req.user, existing.sectionId))) {
             return res.status(403).json({ success: false, message: "You are not assigned to this department/section" });
         }
-        const meeting = await DailyMorningMeeting.updateDetails(id, { agenda: agenda.trim(), description });
+        const meeting = await DailyMorningMeeting.updateDetails(id, { agenda: agenda.trim(), description, meetingDate: meetingDate || null });
         return res.status(200).json({ success: true, message: "Meeting updated successfully", data: formatMeetingRow(meeting) });
     } catch (error) {
         logger.error("Error in updateMeeting:", error);

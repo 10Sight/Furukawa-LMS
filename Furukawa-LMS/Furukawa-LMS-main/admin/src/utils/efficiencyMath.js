@@ -74,8 +74,7 @@ export const countLoggedDays = (attendanceRows, dateFrom, dateTo) => {
 };
 
 // Present attendance rows, limited to operators in the Total population so Present can never
-// exceed Total (the shift filter matches Total on each operator's latest shift but attendance
-// on that day's shift).
+// exceed Total.
 const presentRowsWithin = (opsAll, opsAtt) => {
     const inTotal = new Set(opsAll.map(op => op.userId));
     return opsAtt.filter(op => PRESENT_STATUSES.has(op.logStatus) && inTotal.has(op.userId));

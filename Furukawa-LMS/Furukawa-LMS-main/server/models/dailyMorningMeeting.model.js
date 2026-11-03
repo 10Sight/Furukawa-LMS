@@ -256,11 +256,19 @@ class DailyMorningMeeting {
         return DailyMorningMeeting.findById(insertedId);
     }
 
-    static async updateDetails(id, { agenda, description }) {
-        await executeQuery(
-            "UPDATE daily_morning_meetings SET agenda = ?, description = ?, updatedAt = GETDATE() WHERE id = ?",
-            [agenda, description || null, id]
-        );
+    // `meetingDate` (YYYY-MM-DD) is optional: omitted, the stored date is kept.
+    static async updateDetails(id, { agenda, description, meetingDate }) {
+        if (meetingDate) {
+            await executeQuery(
+                "UPDATE daily_morning_meetings SET agenda = ?, description = ?, meetingDate = ?, updatedAt = GETDATE() WHERE id = ?",
+                [agenda, description || null, meetingDate, id]
+            );
+        } else {
+            await executeQuery(
+                "UPDATE daily_morning_meetings SET agenda = ?, description = ?, updatedAt = GETDATE() WHERE id = ?",
+                [agenda, description || null, id]
+            );
+        }
         return DailyMorningMeeting.findMetaById(id);
     }
 

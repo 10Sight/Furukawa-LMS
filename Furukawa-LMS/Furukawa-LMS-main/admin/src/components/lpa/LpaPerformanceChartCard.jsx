@@ -45,6 +45,7 @@ const PAIR_DEFS = SHIFT_KEYS.flatMap(shift => LEVEL_DEFS.map(({ level, color }) 
 
 const BELOW_TARGET_COLOR = '#dc2626';
 const TARGET_LINE_COLOR = '#374151'; // dark grey
+const TARGET_LABEL_MARGIN = 115; // px right of the plot area, fits "Assembly 100%"
 const VIEWPORT_WIDTH = 800;
 const BAR_SLOT_WIDTH = 58; // room for one bar plus its "100%" label
 
@@ -165,50 +166,51 @@ export default function LpaPerformanceChartCard({
         : { y };
     });
 
-    // Different Assembly / C&C targets: draw a short dashed target segment over each slot
-    // at that slot's sheet target instead of one full-width line. Each sheet's last
-    // segment carries its "Target" label above its right end.
-    const lastSlotOfSheet = {};
-    slots.forEach((s, i) => { lastSlotOfSheet[s.sheet] = i; });
-    const targetLabel = (text) => ({
-      enabled: true,
-      format: text,
-      align: 'right',
-      verticalAlign: 'bottom',
-      y: -4,
-      crop: false,
-      overflow: 'allow',
-      style: { color: TARGET_LINE_COLOR, fontSize: '13px', fontWeight: '700', textOutline: '2px white' }
+    // Full-width dashed target line(s). The label sits in a reserved strip to the right
+    // of the plot area (chart.marginRight), level with its line, so it can never overlap
+    // a bar or a bar's value. One line when the visible sheets share a target; otherwise
+    // one line per sheet (Assembly / C&C).
+    const targetLine = (value, text, { dashStyle = 'Dash', nudge = 0 } = {}) => ({
+      value,
+      color: TARGET_LINE_COLOR,
+      dashStyle,
+      width: 2,
+      zIndex: 4,
+      label: {
+        text,
+        align: 'right',
+        textAlign: 'left',
+        verticalAlign: 'middle',
+        x: 8,
+        y: 4 + nudge,
+        clip: false,
+        style: { color: TARGET_LINE_COLOR, fontSize: '13px', fontWeight: '700' }
+      }
     });
-    const targetSegments = sharedTarget == null
-      ? [{
-        type: 'line',
-        id: 'target-segments',
-        name: 'Target',
-        color: TARGET_LINE_COLOR,
-        dashStyle: 'Dash',
-        lineWidth: 2,
-        zIndex: 4,
-        marker: { enabled: false },
-        enableMouseTracking: false,
-        states: { hover: { enabled: false }, inactive: { enabled: false } },
-        dataLabels: { enabled: false },
-        connectNulls: false,
-        data: slots.flatMap((s, i) => {
-          const t = targetFor(s.sheet);
-          const end = { x: i + 0.45, y: t };
-          if (lastSlotOfSheet[s.sheet] === i) {
-            end.dataLabels = targetLabel(`${SHEET_META[s.sheet].label} Target: ${t}%`);
-          }
-          return [{ x: i - 0.45, y: t }, end, { x: i + 0.45, y: null }];
+    let targetLines;
+    if (sharedTarget != null) {
+      targetLines = [targetLine(sharedTarget, `Target ${sharedTarget}%`)];
+    } else {
+      const [high, low] = [...activeSheets].sort((a, b) => targetFor(b) - targetFor(a));
+      // Close targets: push the two labels apart vertically so they don't overlap each other
+      const tooClose = targetFor(high) - targetFor(low) < 6;
+      targetLines = [
+        targetLine(targetFor(high), `${SHEET_META[high].label} ${targetFor(high)}%`, {
+          nudge: tooClose ? -8 : 0
+        }),
+        targetLine(targetFor(low), `${SHEET_META[low].label} ${targetFor(low)}%`, {
+          dashStyle: 'ShortDash',
+          nudge: tooClose ? 8 : 0
         })
-      }]
-      : [];
+      ];
+    }
 
     return {
       chart: {
         height: 420,
         marginBottom: isBoth ? 105 : 80,
+        // Room right of the plot for the target label(s)
+        marginRight: TARGET_LABEL_MARGIN,
         style: { fontFamily: 'inherit' },
         animation: { duration: 400 },
         ...(needsScroll && {
@@ -238,23 +240,7 @@ export default function LpaPerformanceChartCard({
         title: { text: 'Score %', style: { color: '#94a3b8', fontSize: '14px', fontWeight: 'bold' } },
         labels: { format: '{value}%', style: { fontSize: '14px', fontWeight: 'bold' } },
         gridLineColor: '#f1f5f9',
-        plotLines: sharedTarget == null ? [] : [{
-          value: sharedTarget,
-          color: TARGET_LINE_COLOR,
-          dashStyle: 'Dash',
-          width: 2,
-          zIndex: 4,
-          // Label sits just above the line at its right end
-          label: {
-            text: `Target: ${sharedTarget}%`,
-            align: 'right',
-            verticalAlign: 'top',
-            textAlign: 'right',
-            x: -6,
-            y: -6,
-            style: { color: TARGET_LINE_COLOR, fontSize: '13px', fontWeight: '700' }
-          }
-        }]
+        plotLines: targetLines
       },
       // Series are labelled by the clickable badges in the filter bar instead
       legend: { enabled: false },
@@ -319,8 +305,7 @@ export default function LpaPerformanceChartCard({
           visible: !hiddenLevels.has(def.level),
           custom: { shift: def.shift },
           data: seriesPoints(def)
-        })),
-        ...targetSegments
+        }))
       ]
     };
     // targetFor only reads `targets`

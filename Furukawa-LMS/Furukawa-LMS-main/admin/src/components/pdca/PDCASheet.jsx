@@ -4908,9 +4908,9 @@ export default function PDCASheet({
   );
 
   return (
-    <div className="pdca-form-root w-full min-w-0 flex-1 flex flex-col min-h-0 space-y-2 animate-in fade-in duration-150 overflow-x-hidden overflow-y-auto">
+    <div className="pdca-form-root w-full min-w-0 flex-1 flex flex-col min-h-0 space-y-2 animate-in fade-in duration-150 overflow-hidden">
       {/* Control Bar: Back Button, Save, Calendar Date, Excel Export, Search & Add Row */}
-      <div className="sticky top-0 z-30 w-full min-w-0 bg-white rounded-xl border border-[#D5DCE5] shadow-[0_1px_3px_rgba(0,0,0,0.03)] overflow-hidden">
+      <div className="sticky top-0 shrink-0 z-30 w-full min-w-0 bg-white rounded-xl border border-[#D5DCE5] shadow-[0_1px_3px_rgba(0,0,0,0.03)] overflow-hidden">
         {/* Control Toolbar */}
         <div className="px-4 py-2 flex flex-wrap items-center justify-between gap-2.5 text-xs bg-white">
           <div className="flex flex-wrap items-center gap-2 text-slate-500 font-medium">
@@ -5046,6 +5046,8 @@ export default function PDCASheet({
         </div>
       </div>
 
+      {/* Scrollable body: graph + sheet scroll under the fixed toolbar */}
+      <div className="w-full min-w-0 flex-1 min-h-0 flex flex-col gap-2 overflow-x-hidden overflow-y-auto">
       {/* Monthly PDCA Status Analytics Graph */}
       <PDCAGraphSection
         rows={rows}
@@ -6739,6 +6741,7 @@ export default function PDCASheet({
             </button>
           )}
         </div>
+      </div>
       </div>
 
       {/* Image Preview Lightbox Modal */}

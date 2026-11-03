@@ -316,12 +316,12 @@ export default function LpaPdcaTableView({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[960px]">
+            <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-[#F1F3F5] bg-[#FAFAFC]">
                   <th className="py-3 px-4 pl-6 text-[11px] font-bold text-slate-500 uppercase tracking-wider w-14">S.No</th>
                   <th className="py-3 px-4 text-[11px] font-bold text-slate-500 uppercase tracking-wider min-w-[200px]">Topic</th>
-                  <th className="py-3 px-4 text-[11px] font-bold text-slate-500 uppercase tracking-wider min-w-[200px]">Description</th>
+                  <th className="py-3 px-2 text-[11px] font-bold text-slate-500 uppercase tracking-wider max-w-[130px] xl:max-w-[160px]">Description</th>
                   <th className="py-3 px-4 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Department</th>
                   <th className="py-3 px-4 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Line/Area</th>
                   <th className="py-3 px-4 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Date</th>
@@ -358,13 +358,12 @@ export default function LpaPdcaTableView({
                           >
                             {row.topic}
                           </button>
-                          <span className="text-[10px] font-mono text-slate-400">{row.id}</span>
                         </div>
                       </td>
 
                       {/* Description */}
-                      <td className="py-3.5 px-4 min-w-[200px] max-w-[280px]">
-                        <p className="text-slate-600 line-clamp-2 leading-relaxed">
+                      <td className="py-3 px-2 max-w-[130px] xl:max-w-[160px]">
+                        <p className="text-slate-600 line-clamp-2 leading-snug break-words" title={row.description || ''}>
                           {row.description || '—'}
                         </p>
                       </td>
@@ -429,7 +428,7 @@ export default function LpaPdcaTableView({
 
                       {/* Actions: Edit, Download, Copy, Delete */}
                       <td className="py-3.5 px-4 whitespace-nowrap text-center">
-                        <div className="flex items-center justify-center gap-1">
+                        <div className="flex flex-col items-center justify-center gap-1 w-fit mx-auto">
                           {/* Edit Button */}
                           <button
                             type="button"

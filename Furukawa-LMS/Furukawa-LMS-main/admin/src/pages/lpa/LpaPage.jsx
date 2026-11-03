@@ -1577,7 +1577,7 @@ function LpaPageContent({ viewContext }) {
                 </div>
 
                 <div className="overflow-x-auto rounded-2xl border border-[#ECEFF3] bg-white shadow-[0_2px_8px_rgba(0,0,0,0.03)]">
-                  <table className="w-full min-w-[820px] text-sm">
+                  <table className="w-full text-sm">
                     <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                       <tr>
                         <th className="px-4 py-3 text-left">S.NO.</th>
@@ -1586,7 +1586,7 @@ function LpaPageContent({ viewContext }) {
                         <th className="px-4 py-3 text-left">department</th>
                         <th className="px-4 py-3 text-left">Observations</th>
                         <th className="px-4 py-3 text-left">Status</th>
-                        <th className="px-4 py-3 text-right">Actions</th>
+                        <th className="px-3 py-3 text-center">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -1693,24 +1693,24 @@ function LpaPageContent({ viewContext }) {
                                   Active
                                 </span>
                               </td>
-                              <td className="px-4 py-4 text-right">
-                                <div className="inline-flex items-center gap-1.5 justify-end">
+                              <td className="px-3 py-3 text-center whitespace-nowrap">
+                                <div className="flex flex-col items-center justify-center gap-1 w-fit mx-auto">
                                   <button
                                     type="button"
                                     onClick={() => handleOpenSpecificPdcaSheet(sh)}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-600 bg-blue-600 text-white hover:bg-blue-700 text-xs font-semibold cursor-pointer transition-colors shadow-xs"
+                                    className="inline-flex items-center justify-center gap-1 px-2.5 py-1 rounded-lg border border-blue-600 bg-blue-600 text-white hover:bg-blue-700 text-xs font-semibold cursor-pointer transition-colors shadow-xs w-full"
                                     title="Open PDCA Sheet"
                                   >
-                                    <Eye size={14} /> Open
+                                    <Eye size={13} /> Open
                                   </button>
                                   {canDeletePdcaSheet(sh) && (
                                     <button
                                       type="button"
                                       onClick={() => handleDeletePdcaSheet(sh)}
-                                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold cursor-pointer transition-colors"
+                                      className="inline-flex items-center justify-center gap-1 px-2 py-0.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 text-[11px] font-semibold cursor-pointer transition-colors w-full"
                                       title="Delete PDCA Sheet"
                                     >
-                                      <Trash2 size={13} />
+                                      <Trash2 size={12} /> Delete
                                     </button>
                                   )}
                                 </div>

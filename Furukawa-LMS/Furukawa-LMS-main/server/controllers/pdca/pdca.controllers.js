@@ -351,33 +351,33 @@ const getServerRecordSections = (record) => {
         }
     }
 
-    if (record.category === 'assembly' || record.lpaCategory === 'assembly' || record.lpaSource?.category === 'assembly' || String(record.id || '').toLowerCase().includes('pdca-lpa-assembly')) {
-        tokens.add('assembly');
-    } else if (record.category === 'cc' || record.lpaCategory === 'cc' || record.lpaSource?.category === 'cc' || String(record.id || '').toLowerCase().includes('pdca-lpa-cc')) {
-        tokens.add('cc');
+    // ONLY fall back to LPA generic category (assembly / cc) if NO explicit section was identified
+    if (tokens.size === 0) {
+        if (record.category === 'assembly' || record.lpaCategory === 'assembly' || record.lpaSource?.category === 'assembly' || String(record.id || '').toLowerCase().includes('pdca-lpa-assembly')) {
+            tokens.add('assembly');
+        } else if (record.category === 'cc' || record.lpaCategory === 'cc' || record.lpaSource?.category === 'cc' || String(record.id || '').toLowerCase().includes('pdca-lpa-cc')) {
+            tokens.add('cc');
+        }
     }
 
     return Array.from(tokens);
 };
 
 const areServerSectionsMatching = (userSecs, recordSecs, userDepts = [], recordDepts = []) => {
-    if (userSecs.length === 0 && recordSecs.length === 0) {
-        return true;
-    }
-    const isGenericLpaAssembly = recordSecs.length === 1 && recordSecs[0] === 'assembly';
-    if (isGenericLpaAssembly) {
-        if (userDepts.includes('assembly') || userSecs.includes('assembly')) return true;
-    }
-    const isGenericLpaCc = recordSecs.length === 1 && recordSecs[0] === 'cc';
-    if (isGenericLpaCc) {
-        if (userDepts.includes('c&c') || userSecs.includes('cc')) return true;
-    }
-
+    if (!Array.isArray(userSecs) || !Array.isArray(recordSecs)) return false;
     if (userSecs.length === 0 || recordSecs.length === 0) {
         return false;
     }
-
-    return userSecs.some(us => recordSecs.includes(us));
+    if (userSecs.some(us => recordSecs.includes(us))) return true;
+    const isGenericLpaAssembly = recordSecs.includes('assembly');
+    if (isGenericLpaAssembly && (userSecs.includes('assembly') || userDepts.includes('assembly'))) {
+        return true;
+    }
+    const isGenericLpaCc = recordSecs.includes('cc');
+    if (isGenericLpaCc && (userSecs.includes('cc') || userDepts.includes('c&c'))) {
+        return true;
+    }
+    return false;
 };
 
 export const isUserInSameDepartmentAsRecord = (user, record) => {
@@ -404,17 +404,19 @@ export const isUserInSameDepartmentAsRecord = (user, record) => {
     addUD(user.department);
     addUD(user.departmentName);
     addUD(user.departments);
-    addUD(user.section);
-    addUD(user.sectionName);
-    if (Array.isArray(user.sections)) {
-        user.sections.forEach(s => addUD(s?.name || s?.deptName || s?.department || s));
-    }
     addUD(lookupEmployeeDept(user));
     if (user.empId) addUD(lookupEmployeeDept(user.empId));
     if (user.code) addUD(lookupEmployeeDept(user.code));
     if (user.userName) addUD(lookupEmployeeDept(user.userName));
 
-    if (userDepts.size === 0) return false;
+    // Fallback to section ONLY if no department found
+    if (userDepts.size === 0) {
+        addUD(user.section);
+        addUD(user.sectionName);
+        if (Array.isArray(user.sections)) {
+            user.sections.forEach(s => addUD(s?.name || s?.deptName || s?.department || s));
+        }
+    }
 
     const recordDepts = new Set();
     const addRD = (v) => {
@@ -436,10 +438,6 @@ export const isUserInSameDepartmentAsRecord = (user, record) => {
     addRD(record.department);
     addRD(record.departments);
     addRD(record.sheet?.department);
-    addRD(record.section);
-    addRD(record.sectionName);
-    addRD(record.category);
-    addRD(record.lpaCategory);
 
     const createdBy = record.createdBy || record.sheet?.createdBy;
     if (createdBy) {
@@ -474,6 +472,18 @@ export const isUserInSameDepartmentAsRecord = (user, record) => {
         });
     }
 
+    // Fallback to section or category ONLY if no department found
+    if (recordDepts.size === 0) {
+        addRD(record.section);
+        addRD(record.sectionName);
+        addRD(record.category);
+        addRD(record.lpaCategory);
+        if (createdBy && typeof createdBy === 'object') {
+            addRD(createdBy.section);
+            addRD(createdBy.sectionName);
+        }
+    }
+
     if (recordDepts.size === 0) {
         const idLower = String(record.id || record.recordId || '').toLowerCase();
         const topicLower = String(record.topic || '').toLowerCase();
@@ -484,7 +494,7 @@ export const isUserInSameDepartmentAsRecord = (user, record) => {
         }
     }
 
-    // 1. Department match: User and Record MUST belong to the same department
+    // 1. Department match: User and Record belong to the same department
     let deptMatch = false;
     for (const ud of userDepts) {
         if (recordDepts.has(ud)) {
@@ -492,13 +502,14 @@ export const isUserInSameDepartmentAsRecord = (user, record) => {
             break;
         }
     }
-    if (!deptMatch) return false;
 
-    // 2. Section match: User and Record MUST ALSO belong to the same Department Section!
-    // If employees have the same department but different section, access is denied.
+    // 2. Section match: User and Record belong to the same Department Section
     const userSecs = getServerUserSections(user);
     const recordSecs = getServerRecordSections(record);
-    return areServerSectionsMatching(userSecs, recordSecs, Array.from(userDepts), Array.from(recordDepts));
+    const secMatch = areServerSectionsMatching(userSecs, recordSecs, Array.from(userDepts), Array.from(recordDepts));
+
+    // Same department OR same section (or both) grants access
+    return Boolean(deptMatch || secMatch);
 };
 
 export const isUserInSameDepartmentAndSectionAsRecord = isUserInSameDepartmentAsRecord;

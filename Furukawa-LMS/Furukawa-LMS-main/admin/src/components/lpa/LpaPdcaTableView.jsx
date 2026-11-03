@@ -316,7 +316,7 @@ export default function LpaPdcaTableView({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+            <table className="w-full text-left border-collapse table-fixed">
               <thead>
                 <tr className="border-b border-[#F1F3F5] bg-[#FAFAFC]">
                   <th className="py-3 px-4 pl-6 text-[11px] font-bold text-slate-500 uppercase tracking-wider w-14">S.No</th>
@@ -341,14 +341,14 @@ export default function LpaPdcaTableView({
                   return (
                     <tr key={row.id || idx} className="hover:bg-[#F9FAFD] transition-colors group">
                       {/* S.No */}
-                      <td className="py-3.5 pl-6 pr-4 whitespace-nowrap">
+                      <td className="py-3 px-1 text-center whitespace-nowrap">
                         <span className="w-6 h-6 rounded-full bg-slate-100 text-slate-600 text-[11px] font-bold flex items-center justify-center">
                           {sNo}
                         </span>
                       </td>
 
                       {/* Topic (Clickable Blue Text to open PDCA form) */}
-                      <td className="py-3.5 px-4 min-w-[200px] max-w-[260px]">
+                      <td className="py-3 px-2 min-w-0">
                         <div className="flex flex-col items-start gap-0.5">
                           <button
                             type="button"
@@ -362,7 +362,7 @@ export default function LpaPdcaTableView({
                       </td>
 
                       {/* Description */}
-                      <td className="py-3 px-2 max-w-[130px] xl:max-w-[160px]">
+                      <td className="py-3 px-2 min-w-0">
                         <p className="text-slate-600 line-clamp-2 leading-snug break-words" title={row.description || ''}>
                           {row.description || '—'}
                         </p>
@@ -427,7 +427,7 @@ export default function LpaPdcaTableView({
                       </td>
 
                       {/* Actions: Edit, Download, Copy, Delete */}
-                      <td className="py-3.5 px-4 whitespace-nowrap text-center">
+                      <td className="py-2.5 px-1 whitespace-nowrap text-center">
                         <div className="flex flex-col items-center justify-center gap-1 w-fit mx-auto">
                           {/* Edit Button */}
                           <button

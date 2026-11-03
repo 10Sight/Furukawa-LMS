@@ -217,11 +217,6 @@ export function getUserDepartments(user, employeeDatabase = VERIFIED_EMPLOYEE_MA
   addDept(user.departmentName);
   addDept(user.departments);
   addDept(user.actualDeptName);
-  addDept(user.section);
-  addDept(user.sectionName);
-  if (Array.isArray(user.sections)) {
-    user.sections.forEach(s => addDept(s?.name || s?.deptName || s?.department || s));
-  }
 
   const userName = user.name || user.fullName || '';
   const userCode = user.code || user.empId || user.employeeId || user.empCode || user.userName || '';
@@ -232,6 +227,15 @@ export function getUserDepartments(user, employeeDatabase = VERIFIED_EMPLOYEE_MA
       (userCode ? findEmployeeDepartment(userCode, employeeDatabase) : null) ||
       (userCode ? findEmployeeDepartment(userCode, VERIFIED_EMPLOYEE_MASTER) : null);
     addDept(dbDept);
+  }
+
+  // Fallback: check section only if no explicit department was attached
+  if (depts.size === 0) {
+    addDept(user.section);
+    addDept(user.sectionName);
+    if (Array.isArray(user.sections)) {
+      user.sections.forEach(s => addDept(s?.name || s?.deptName || s?.department || s));
+    }
   }
 
   // Fallback: check stored user in session or local storage if department was not attached
@@ -281,10 +285,6 @@ export function getRecordDepartments(record, employeeDatabase = VERIFIED_EMPLOYE
   addDept(record.department);
   addDept(record.departments);
   addDept(record.sheet?.department);
-  addDept(record.section);
-  addDept(record.sectionName);
-  addDept(record.category);
-  addDept(record.lpaCategory);
 
   const createdBy = record.createdBy || record.sheet?.createdBy;
   if (createdBy && typeof createdBy === 'object') {
@@ -330,6 +330,18 @@ export function getRecordDepartments(record, employeeDatabase = VERIFIED_EMPLOYE
     for (const r of rows) {
       if (r?.department) addDept(r.department);
       if (r?.departments) addDept(r.departments);
+    }
+  }
+
+  // Fallback to section or category ONLY if no department found
+  if (depts.size === 0) {
+    addDept(record.section);
+    addDept(record.sectionName);
+    addDept(record.category);
+    addDept(record.lpaCategory);
+    if (createdBy && typeof createdBy === 'object') {
+      addDept(createdBy.section);
+      addDept(createdBy.sectionName);
     }
   }
 
@@ -556,52 +568,53 @@ export function getRecordSections(record, employeeDatabase = VERIFIED_EMPLOYEE_M
     }
   }
 
-  if (record.category === 'assembly' || record.lpaCategory === 'assembly' || record.lpaSource?.category === 'assembly' || String(record.id || '').toLowerCase().includes('pdca-lpa-assembly')) {
-    add('assembly');
-  } else if (record.category === 'cc' || record.lpaCategory === 'cc' || record.lpaSource?.category === 'cc' || String(record.id || '').toLowerCase().includes('pdca-lpa-cc')) {
-    add('cc');
+  // ONLY fall back to LPA generic category (assembly / cc) if NO explicit section was identified
+  if (tokens.size === 0) {
+    if (record.category === 'assembly' || record.lpaCategory === 'assembly' || record.lpaSource?.category === 'assembly' || String(record.id || '').toLowerCase().includes('pdca-lpa-assembly')) {
+      add('assembly');
+    } else if (record.category === 'cc' || record.lpaCategory === 'cc' || record.lpaSource?.category === 'cc' || String(record.id || '').toLowerCase().includes('pdca-lpa-cc')) {
+      add('cc');
+    }
   }
 
   return Array.from(tokens);
 }
 
 export function areSectionsMatching(userSecs, recordSecs, userDepts = [], recordDepts = []) {
-  if (userSecs.length === 0 && recordSecs.length === 0) {
-    return true;
-  }
-  const isGenericLpaAssembly = recordSecs.length === 1 && recordSecs[0] === 'assembly';
-  if (isGenericLpaAssembly) {
-    if (userDepts.includes('assembly') || userSecs.includes('assembly')) return true;
-  }
-  const isGenericLpaCc = recordSecs.length === 1 && recordSecs[0] === 'cc';
-  if (isGenericLpaCc) {
-    if (userDepts.includes('c&c') || userSecs.includes('cc')) return true;
-  }
-
+  if (!Array.isArray(userSecs) || !Array.isArray(recordSecs)) return false;
   if (userSecs.length === 0 || recordSecs.length === 0) {
     return false;
   }
-
-  return userSecs.some(us => recordSecs.includes(us));
+  if (userSecs.some(us => recordSecs.includes(us))) {
+    return true;
+  }
+  const isGenericLpaAssembly = recordSecs.includes('assembly');
+  if (isGenericLpaAssembly && (userSecs.includes('assembly') || userDepts.includes('assembly'))) {
+    return true;
+  }
+  const isGenericLpaCc = recordSecs.includes('cc');
+  if (isGenericLpaCc && (userSecs.includes('cc') || userDepts.includes('c&c'))) {
+    return true;
+  }
+  return false;
 }
 
 export function isUserInSameDepartmentAsRecord(record, currentUser, employeeDatabase = VERIFIED_EMPLOYEE_MASTER) {
   if (!record || !currentUser) return false;
   if (isRecordCreator(record, currentUser)) return true;
 
-  // 1. Department match: User and Record MUST be in the same department
+  // 1. Department match: User and Record belong to the same department
   const userDepts = getUserDepartments(currentUser, employeeDatabase);
-  if (userDepts.length === 0) return false;
   const recordDepts = getRecordDepartments(record, employeeDatabase);
-  if (recordDepts.length === 0) return false;
-  const isSameDept = userDepts.some(ud => recordDepts.includes(ud));
-  if (!isSameDept) return false;
+  const isSameDept = userDepts.length > 0 && recordDepts.length > 0 && userDepts.some(ud => recordDepts.includes(ud));
 
-  // 2. Section match: User and Record MUST ALSO be in the same Department Section!
-  // If employees have the same department but different section, access is denied.
+  // 2. Section match: User and Record belong to the same section
   const userSecs = getUserSections(currentUser, employeeDatabase);
   const recordSecs = getRecordSections(record, employeeDatabase);
-  return areSectionsMatching(userSecs, recordSecs, userDepts, recordDepts);
+  const isSameSec = areSectionsMatching(userSecs, recordSecs, userDepts, recordDepts);
+
+  // If same department OR same section (or both), access is granted!
+  return Boolean(isSameDept || isSameSec);
 }
 
 export const isUserInSameDepartmentAndSectionAsRecord = isUserInSameDepartmentAsRecord;
@@ -1146,6 +1159,39 @@ export function clearStoredUnit() {
       sessionStorage.removeItem(PDCA_SELECTED_UNIT_KEY);
     }
   } catch {}
+}
+
+export function getUserPrimarySection(user, employeeDatabase = VERIFIED_EMPLOYEE_MASTER) {
+  if (!user || typeof user !== 'object') return '';
+  const direct = user.sectionName ||
+    (typeof user.section === 'string' ? user.section : user.section?.name) ||
+    (Array.isArray(user.sections) && user.sections.length > 0 ? (typeof user.sections[0] === 'string' ? user.sections[0] : user.sections[0]?.name) : '') ||
+    user.subSectionName ||
+    (typeof user.subSection === 'string' ? user.subSection : user.subSection?.name) ||
+    '';
+  if (direct && typeof direct === 'string' && direct.trim()) {
+    return direct.trim();
+  }
+  const userCode = user.code || user.empId || user.employeeId || user.empCode || user.userName || '';
+  const userName = user.name || user.fullName || '';
+  const userId = user.id || user._id || user.userId || '';
+  const db = Array.isArray(employeeDatabase) && employeeDatabase.length > 0 ? employeeDatabase : VERIFIED_EMPLOYEE_MASTER;
+  if (userCode || userName || userId) {
+    const matched = db.find(e => {
+      const eCode = String(e.code || e.empId || e.employeeId || e.userName || e.id || '').trim().toUpperCase();
+      const eName = String(e.name || e.fullName || '').trim().toLowerCase();
+      if (userCode && eCode && eCode === String(userCode).trim().toUpperCase()) return true;
+      if (userId && String(e.id || e._id || '').trim() === String(userId).trim()) return true;
+      if (userName && eName && eName === String(userName).trim().toLowerCase()) return true;
+      return false;
+    });
+    if (matched) {
+      const sec = matched.sectionName || (typeof matched.section === 'string' ? matched.section : matched.section?.name) ||
+        (Array.isArray(matched.sections) && matched.sections[0] ? (typeof matched.sections[0] === 'string' ? matched.sections[0] : matched.sections[0]?.name) : '');
+      if (sec && typeof sec === 'string' && sec.trim()) return sec.trim();
+    }
+  }
+  return '';
 }
 
 export function getUserPrimaryDepartment(user, employeeDatabase = VERIFIED_EMPLOYEE_MASTER) {

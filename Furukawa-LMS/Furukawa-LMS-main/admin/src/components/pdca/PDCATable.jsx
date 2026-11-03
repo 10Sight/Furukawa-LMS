@@ -61,7 +61,7 @@ export default function PDCATable({
   return (
     <div className="w-full min-w-0 bg-white rounded-2xl border border-[#ECEFF3] shadow-[0_2px_8px_rgba(0,0,0,0.03)] overflow-hidden">
       <div className="w-full overflow-x-auto">
-        <table className="w-full text-left border-collapse">
+        <table className="w-full text-left border-collapse table-fixed">
 
           {/* Table Header */}
           <thead>
@@ -96,7 +96,7 @@ export default function PDCATable({
                 </td>
 
                 {/* Topic - Clicking opens PDCA Sheet */}
-                <td className="py-3 px-2.5 min-w-[140px] max-w-[200px]">
+                <td className="py-3 px-2 min-w-0">
                   <div className="flex flex-col gap-0.5 items-start min-w-0">
                     <button
                       type="button"
@@ -110,7 +110,7 @@ export default function PDCATable({
                 </td>
 
                 {/* Description */}
-                <td className="py-3 px-2.5 max-w-[130px] xl:max-w-[160px]">
+                <td className="py-3 px-2 min-w-0">
                   <p className="text-xs text-slate-600 leading-snug line-clamp-2 break-words" title={row.description}>
                     {row.description}
                   </p>
@@ -151,7 +151,7 @@ export default function PDCATable({
 
                 {/* Assigned Employees - displayed after Created By for CFT */}
                 {isCFTTab && (
-                  <td className="py-4 px-4 min-w-[180px]">
+                  <td className="py-3 px-2 min-w-0">
                     {row.assignedMembers && row.assignedMembers.length > 0 ? (
                       <div 
                         onClick={() => { if (isRecordCreator(row, currentUser)) onOpenAddMember?.(row); }}
@@ -187,11 +187,11 @@ export default function PDCATable({
                 )}
 
                 {/* Status: In-progress, Done, Delay, Not-Started */}
-                <td className="py-4 px-4">
+                <td className="py-3 px-2 min-w-0">
                   {(() => {
                     const statusSummary = getPDCASheetStatusSummary(row);
                     return (
-                      <div className="grid grid-cols-2 gap-1 min-w-[160px] max-w-[185px]">
+                      <div className="grid grid-cols-2 gap-1 w-full">
                         <span className="inline-flex items-center justify-between gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap">
                           <span>In-progress</span>
                           <span className="px-1 py-0.2 rounded bg-amber-100/80 text-amber-900 font-bold text-[9px] leading-none">{statusSummary.inProgress}</span>

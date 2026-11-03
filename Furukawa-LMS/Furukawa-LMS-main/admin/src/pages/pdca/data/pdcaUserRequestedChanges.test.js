@@ -539,7 +539,8 @@ test('15. PDCA Sheets Table Status column (In-progress, Done, Delay, Not-Started
   // Verify CreateLpaModal portals to document.body and centers in the viewport
   const modalPaths = [
     path.resolve(process.cwd(), 'src/components/lpa/CreateLpaModal.jsx'),
-    path.resolve(process.cwd(), 'admin/src/components/lpa/CreateLpaModal.jsx')
+    path.resolve(process.cwd(), 'admin/src/components/lpa/CreateLpaModal.jsx'),
+    path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/lpa/CreateLpaModal.jsx')
   ];
   const modalPath = modalPaths.find(p => fs.existsSync(p)) || modalPaths[0];
   const modalContent = fs.readFileSync(modalPath, 'utf8');
@@ -844,17 +845,17 @@ test('19. Same Department AND Same Section Access Rule: Colleagues must be in sa
   const sameSecPerms = canUserEditPDCARow(sampleRow, sameDeptSameSecColleague, assemblyPdcaRecord);
   assert.deepEqual(sameSecPerms, { canEditEntireRow: true, canEditActionCols: true }, 'Same dept + same section colleague has full row editing');
 
-  // D. Same Department but DIFFERENT Section Colleague CANNOT access (access is DENIED)
-  assert.equal(isUserInSameDepartmentAsRecord(assemblyPdcaRecord, sameDeptDiffSecColleague), false, 'Same dept but diff section colleague must NOT have access');
-  assert.equal(canEditRecord(assemblyPdcaRecord, sameDeptDiffSecColleague), false, 'Same dept but diff section colleague must NOT edit record');
+  // D. Same Department Colleague HAS access
+  assert.equal(isUserInSameDepartmentAsRecord(assemblyPdcaRecord, sameDeptDiffSecColleague), true, 'Same dept colleague has access');
+  assert.equal(canEditRecord(assemblyPdcaRecord, sameDeptDiffSecColleague), true, 'Same dept colleague can edit record');
   const diffSecPerms = canUserEditPDCARow(sampleRow, sameDeptDiffSecColleague, assemblyPdcaRecord);
-  assert.deepEqual(diffSecPerms, { canEditEntireRow: false, canEditActionCols: false }, 'Same dept but diff section colleague cannot edit row');
+  assert.deepEqual(diffSecPerms, { canEditEntireRow: true, canEditActionCols: true }, 'Same dept colleague has full row editing');
 
-  // E. Different Department Colleague CANNOT access (access is DENIED)
-  assert.equal(isUserInSameDepartmentAsRecord(assemblyPdcaRecord, diffDeptUser), false, 'Different dept colleague must NOT have access');
-  assert.equal(canEditRecord(assemblyPdcaRecord, diffDeptUser), false, 'Different dept colleague must NOT edit record');
+  // E. Different Department AND Different Section Colleague CANNOT access (access is DENIED)
+  assert.equal(isUserInSameDepartmentAsRecord(assemblyPdcaRecord, diffDeptUser), false, 'Different dept and diff sec colleague must NOT have access');
+  assert.equal(canEditRecord(assemblyPdcaRecord, diffDeptUser), false, 'Different dept and diff sec colleague must NOT edit record');
 
-  // F. Quality department: Assembly Quality (id: 70) vs Quality C&C (id: 87)
+  // F. Quality department: Same department colleagues have access
   const qualityRecord = {
     id: 'PDCA-QA-ASM-01',
     topic: 'Assembly Quality PDCA',
@@ -880,7 +881,7 @@ test('19. Same Department AND Same Section Access Rule: Colleagues must be in sa
     role: 'EMPLOYEE'
   };
 
-  const diffQualitySecUser = {
+  const sameQualityDeptUser = {
     id: 'u-qa-03',
     code: 'GJ045819',
     name: 'Deepak Mehta',
@@ -891,5 +892,5 @@ test('19. Same Department AND Same Section Access Rule: Colleagues must be in sa
   };
 
   assert.equal(isUserInSameDepartmentAsRecord(qualityRecord, sameQualitySecUser), true, 'Same Quality section has access');
-  assert.equal(isUserInSameDepartmentAsRecord(qualityRecord, diffQualitySecUser), false, 'Different Quality section does NOT have access');
+  assert.equal(isUserInSameDepartmentAsRecord(qualityRecord, sameQualityDeptUser), true, 'Same Quality department colleague has access');
 });

@@ -59,7 +59,7 @@ export function formatShortDate(dateStr) {
 /**
  * Aggregates LPA records by date and section for charts and analytics.
  */
-export function aggregateSectionData(records, sectionKey, unitFilter, dateRangeFilter) {
+export function aggregateSectionData(records, sectionKey, unitFilter, dateRangeFilter, customRange = {}) {
   const isSectionMatch = (rec) => {
     const sec = String(rec.section || rec.sheets?.[0]?.section || 'assembly').toLowerCase();
     return sec === sectionKey;
@@ -88,6 +88,13 @@ export function aggregateSectionData(records, sectionKey, unitFilter, dateRangeF
     filtered = filtered.filter(rec => {
       const d = rec.auditDate || rec.date || (rec.createdAt ? rec.createdAt.slice(0, 10) : '');
       return d.startsWith(currentYearMonth);
+    });
+  } else if (dateRangeFilter === 'custom') {
+    // Inclusive 'YYYY-MM-DD' bounds; either side may be left open
+    const { from, to } = customRange || {};
+    filtered = filtered.filter(rec => {
+      const d = rec.auditDate || rec.date || (rec.createdAt ? rec.createdAt.slice(0, 10) : '');
+      return (!from || d >= from) && (!to || d <= to);
     });
   }
 

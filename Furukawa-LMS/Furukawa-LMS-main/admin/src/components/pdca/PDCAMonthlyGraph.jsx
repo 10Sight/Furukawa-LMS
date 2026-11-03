@@ -73,7 +73,7 @@ function FilterButtons({ label, value, onChange, options }) {
  *  - If a series has no data (count is 0) on a given day/month, the bar line for that
  *    series will NOT be drawn. Only series with data (> 0) are rendered in the graph.
  *  - Default view is Daily breakdown for the selected month/year.
- *  - Supports Grouped Bars, Stacked Bars, and Trend Lines.
+ *  - Grouped bars per date/month, with a hover tooltip and dashed dividers.
  *  - Scope toggling (This Sheet vs All PDCA Sheets).
  */
 export default function PDCAMonthlyGraph({
@@ -84,7 +84,6 @@ export default function PDCAMonthlyGraph({
   onHide
 }) {
   const [viewTimeframe, setViewTimeframe] = useState('daily'); // 'daily' | 'monthly'
-  const [chartType, setChartType] = useState('stacked'); // default to 'stacked' (single candle per date)
   const [dataScope, setDataScope] = useState('sheet'); // 'sheet' | 'all'
   const [hoveredIndex, setHoveredIndex] = useState(null);
   const [showCumulativeSection, setShowCumulativeSection] = useState(true);
@@ -377,29 +376,20 @@ export default function PDCAMonthlyGraph({
   const maxChartValue = useMemo(() => {
     let max = 0;
     currentDataset.forEach(item => {
-      if (chartType === 'stacked') {
-        let stackTotal = 0;
-        if (visibleSeries.inProgress) stackTotal += item.inProgress;
-        if (visibleSeries.done) stackTotal += item.done;
-        if (visibleSeries.delay) stackTotal += item.delay;
-        if (visibleSeries.notStarted) stackTotal += item.notStarted;
-        if (stackTotal > max) max = stackTotal;
-      } else {
-        if (visibleSeries.inProgress && item.inProgress > max) max = item.inProgress;
-        if (visibleSeries.done && item.done > max) max = item.done;
-        if (visibleSeries.delay && item.delay > max) max = item.delay;
-        if (visibleSeries.notStarted && item.notStarted > max) max = item.notStarted;
-      }
+      if (visibleSeries.inProgress && item.inProgress > max) max = item.inProgress;
+      if (visibleSeries.done && item.done > max) max = item.done;
+      if (visibleSeries.delay && item.delay > max) max = item.delay;
+      if (visibleSeries.notStarted && item.notStarted > max) max = item.notStarted;
     });
     // Ensure at least 4 for pleasant grid spacing
     if (max <= 4) return 5;
     // Round up to nearest multiple of 5
     return Math.ceil(max / 5) * 5;
-  }, [currentDataset, chartType, visibleSeries]);
+  }, [currentDataset, visibleSeries]);
 
   // SVG Chart Geometry
   const slotCount = currentDataset.length;
-  const minSlotWidth = viewTimeframe === 'daily' ? 72 : 84;
+  const minSlotWidth = viewTimeframe === 'daily' ? 104 : 112;
   const padding = { top: 30, right: 25, bottom: 60, left: 45 };
   const graphWidth = Math.max(880, slotCount * minSlotWidth);
   const svgWidth = graphWidth + padding.left + padding.right;
@@ -499,16 +489,6 @@ export default function PDCAMonthlyGraph({
             options={[
               { key: 'sheet', label: 'This Sheet', title: 'Show observations for this sheet only' },
               { key: 'all', label: 'All Sheets', title: 'Show observations across all PDCA forms in system' }
-            ]}
-          />
-          <FilterButtons
-            label="Chart Type"
-            value={chartType}
-            onChange={setChartType}
-            options={[
-              { key: 'stacked', label: 'Single Candle', title: 'Single candle per date showing In-Progress, Done, Delay, Not-Started' },
-              { key: 'grouped', label: 'Bars', title: 'Grouped bar chart' },
-              { key: 'line', label: 'Lines', title: 'Line trend chart' }
             ]}
           />
           <Button
@@ -813,10 +793,10 @@ export default function PDCAMonthlyGraph({
 
                     // Dynamic bar sizing based on number of active bars
                     const barCount = activeBarsForSlot.length;
-                    const maxBarGroupW = slotWidth * 0.82;
-                    const barGap = 3;
+                    const maxBarGroupW = slotWidth * 0.84;
+                    const barGap = 4;
                     const calculatedBarW = barCount > 0
-                      ? Math.min(18, Math.max(5, (maxBarGroupW - (barCount - 1) * barGap) / barCount))
+                      ? Math.min(30, Math.max(8, (maxBarGroupW - (barCount - 1) * barGap) / barCount))
                       : 0;
                     const totalBarsW = barCount > 0 ? barCount * calculatedBarW + (barCount - 1) * barGap : 0;
                     const barStartX = xCenter - totalBarsW / 2;
@@ -861,8 +841,19 @@ export default function PDCAMonthlyGraph({
                           className="transition-colors duration-100"
                         />
 
-                        {/* Chart Render: Grouped Bars */}
-                        {chartType === 'grouped' && barCount > 0 && (
+                        {/* Dashed divider after each date/month */}
+                        <line
+                          x1={colX + slotWidth}
+                          y1={padding.top}
+                          x2={colX + slotWidth}
+                          y2={padding.top + graphHeight}
+                          stroke="#CBD5E1"
+                          strokeWidth="1"
+                          strokeDasharray="4 4"
+                        />
+
+                        {/* Grouped Bars */}
+                        {barCount > 0 && (
                           <g>
                             {activeBarsForSlot.map((b, bIdx) => {
                               const bx = barStartX + bIdx * (calculatedBarW + barGap);
@@ -877,65 +868,21 @@ export default function PDCAMonthlyGraph({
                                     width={calculatedBarW}
                                     height={bh}
                                     fill={b.grad}
-                                    rx="2.5"
+                                    rx="3"
                                     className="transition-all duration-200 hover:brightness-110"
                                   />
                                   {/* Value label above bar */}
                                   <text
                                     x={bx + calculatedBarW / 2}
-                                    y={by - 3}
+                                    y={by - 5}
                                     textAnchor="middle"
-                                    className={`text-[11px] font-bold ${b.textClass} font-mono`}
+                                    className={`text-[14px] font-bold ${b.textClass} font-mono`}
                                   >
                                     {b.val}
                                   </text>
                                 </g>
                               );
                             })}
-                          </g>
-                        )}
-
-                        {/* Chart Render: Stacked Bars (Single Candle) */}
-                        {chartType === 'stacked' && barCount > 0 && (
-                          <g>
-                            {(() => {
-                              const stackW = Math.min(26, Math.max(16, slotWidth * 0.6));
-                              const baseY = padding.top + graphHeight;
-                              let accumulatedH = 0;
-
-                              return (
-                                <g>
-                                  {activeBarsForSlot.map((b) => {
-                                    const segmentH = graphHeight - (getY(b.val) - padding.top);
-                                    const sy = baseY - accumulatedH - segmentH;
-                                    accumulatedH += segmentH;
-
-                                    return (
-                                      <rect
-                                        key={b.key}
-                                        x={xCenter - stackW / 2}
-                                        y={sy}
-                                        width={stackW}
-                                        height={segmentH}
-                                        fill={b.grad}
-                                        rx={accumulatedH >= graphHeight - 4 ? 3 : 0}
-                                      />
-                                    );
-                                  })}
-                                  {/* Stack Total */}
-                                  <text
-                                    x={xCenter}
-                                    y={baseY - accumulatedH - 4}
-                                    textAnchor="middle"
-                                    className={`text-[12px] font-bold font-mono ${
-                                      item.isPastMonthCumulative ? 'fill-indigo-700 font-extrabold' : 'fill-slate-700'
-                                    }`}
-                                  >
-                                    {item.total}
-                                  </text>
-                                </g>
-                              );
-                            })()}
                           </g>
                         )}
 
@@ -996,120 +943,56 @@ export default function PDCAMonthlyGraph({
                     );
                   })}
 
-                  {/* Chart Render: Trend Lines (Only plotted if category has > 0 data) */}
-                  {chartType === 'line' && (
-                    <g>
-                      {/* In-Progress Line */}
-                      {visibleSeries.inProgress && kpis.inProgress > 0 && (
-                        <g>
-                          <polyline
-                            fill="none"
-                            stroke="#F59E0B"
-                            strokeWidth="2.2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            points={currentDataset
-                              .map((m, i) => `${getXCenter(i)},${getY(m.inProgress)}`)
-                              .join(' ')}
-                          />
-                          {currentDataset.map((m, i) => m.inProgress > 0 && (
-                            <circle
-                              key={`ip-${i}`}
-                              cx={getXCenter(i)}
-                              cy={getY(m.inProgress)}
-                              r={hoveredIndex === i ? 4.5 : 3}
-                              fill="#FFFFFF"
-                              stroke="#D97706"
-                              strokeWidth="2"
-                            />
-                          ))}
-                        </g>
-                      )}
+                  {/* Hover Tooltip */}
+                  {hoveredIndex !== null && currentDataset[hoveredIndex] && (() => {
+                    const item = currentDataset[hoveredIndex];
+                    const tipW = 180;
+                    const tipH = 128;
+                    const colX = padding.left + hoveredIndex * slotWidth;
+                    const rightX = colX + slotWidth + 8;
+                    const tipX = rightX + tipW > svgWidth - padding.right ? colX - tipW - 8 : rightX;
+                    const tipY = padding.top + 4;
+                    const title = item.isPastMonthCumulative
+                      ? item.fullDateStr
+                      : viewTimeframe === 'daily'
+                      ? `${fullMonthNames[selectedMonth]} ${item.day}, ${selectedYear}`
+                      : `${item.fullName} ${selectedYear}`;
+                    const lines = [
+                      { label: 'In-Progress', val: item.inProgress, color: '#F59E0B' },
+                      { label: 'Done', val: item.done, color: '#10B981' },
+                      { label: 'Delay', val: item.delay, color: '#EF4444' },
+                      { label: 'Not-Started', val: item.notStarted, color: '#3B82F6' }
+                    ];
 
-                      {/* Done Line */}
-                      {visibleSeries.done && kpis.done > 0 && (
-                        <g>
-                          <polyline
-                            fill="none"
-                            stroke="#10B981"
-                            strokeWidth="2.2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            points={currentDataset
-                              .map((m, i) => `${getXCenter(i)},${getY(m.done)}`)
-                              .join(' ')}
-                          />
-                          {currentDataset.map((m, i) => m.done > 0 && (
-                            <circle
-                              key={`done-${i}`}
-                              cx={getXCenter(i)}
-                              cy={getY(m.done)}
-                              r={hoveredIndex === i ? 4.5 : 3}
-                              fill="#FFFFFF"
-                              stroke="#059669"
-                              strokeWidth="2"
-                            />
-                          ))}
-                        </g>
-                      )}
-
-                      {/* Delay Line (Only drawn if Delay has data!) */}
-                      {visibleSeries.delay && kpis.delay > 0 && (
-                        <g>
-                          <polyline
-                            fill="none"
-                            stroke="#EF4444"
-                            strokeWidth="2.5"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeDasharray="4 3"
-                            points={currentDataset
-                              .map((m, i) => `${getXCenter(i)},${getY(m.delay)}`)
-                              .join(' ')}
-                          />
-                          {currentDataset.map((m, i) => m.delay > 0 && (
-                            <circle
-                              key={`delay-${i}`}
-                              cx={getXCenter(i)}
-                              cy={getY(m.delay)}
-                              r={hoveredIndex === i ? 5 : 3.5}
-                              fill="#FFFFFF"
-                              stroke="#DC2626"
-                              strokeWidth="2"
-                            />
-                          ))}
-                        </g>
-                      )}
-
-                      {/* Not-Started Line */}
-                      {visibleSeries.notStarted && kpis.notStarted > 0 && (
-                        <g>
-                          <polyline
-                            fill="none"
-                            stroke="#3B82F6"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeDasharray="2 2"
-                            points={currentDataset
-                              .map((m, i) => `${getXCenter(i)},${getY(m.notStarted)}`)
-                              .join(' ')}
-                          />
-                          {currentDataset.map((m, i) => m.notStarted > 0 && (
-                            <circle
-                              key={`ns-${i}`}
-                              cx={getXCenter(i)}
-                              cy={getY(m.notStarted)}
-                              r={hoveredIndex === i ? 4.5 : 3}
-                              fill="#FFFFFF"
-                              stroke="#2563EB"
-                              strokeWidth="2"
-                            />
-                          ))}
-                        </g>
-                      )}
-                    </g>
-                  )}
+                    return (
+                      <g pointerEvents="none">
+                        <rect
+                          x={tipX}
+                          y={tipY}
+                          width={tipW}
+                          height={tipH}
+                          rx="8"
+                          fill="#FFFFFF"
+                          stroke="#CBD5E1"
+                          style={{ filter: 'drop-shadow(0 4px 6px rgba(15, 23, 42, 0.12))' }}
+                        />
+                        <text x={tipX + 12} y={tipY + 22} className="text-[13px] font-bold fill-slate-800">
+                          {title}
+                        </text>
+                        {lines.map((l, i) => (
+                          <g key={l.label}>
+                            <circle cx={tipX + 16} cy={tipY + 44 + i * 19} r="4.5" fill={l.color} />
+                            <text x={tipX + 28} y={tipY + 48 + i * 19} className="text-[13px] font-medium fill-slate-600">
+                              {l.label}
+                            </text>
+                            <text x={tipX + tipW - 12} y={tipY + 48 + i * 19} textAnchor="end" className="text-[13px] font-bold font-mono fill-slate-800">
+                              {l.val}
+                            </text>
+                          </g>
+                        ))}
+                      </g>
+                    );
+                  })()}
                 </svg>
               </div>
             </div>

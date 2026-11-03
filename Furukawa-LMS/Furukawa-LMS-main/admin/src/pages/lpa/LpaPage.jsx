@@ -869,6 +869,12 @@ function LpaPageContent({ viewContext }) {
     });
   }, [customPdcaTopic, activeSection, selectedUnit, pdcaDate, records, backendPdcaSheets, pdcaSaveVersion]);
 
+  // PDCA sheet follows the same edit rights as the LPA record it was opened from
+  const canEditPdcaSheet = useMemo(() => {
+    if (isAdmin || hasPermission('lpa:manage') || hasPermission('lpa:update')) return true;
+    return canEditRecord(pdcaTopic, effectiveAuthUser);
+  }, [isAdmin, hasPermission, pdcaTopic, effectiveAuthUser]);
+
   // Custom PDCA Sheets created by Admin (isolated per section & plant)
   const [customPdcaSheets, setCustomPdcaSheets] = useState(() => {
     try {
@@ -1311,7 +1317,7 @@ function LpaPageContent({ viewContext }) {
           onDateChange={setPdcaDate}
           currentUser={effectiveAuthUser}
           isAdmin={isAdmin}
-          isCreator={isRecordCreator(pdcaTopic, effectiveAuthUser)}
+          isCreator={canEditPdcaSheet}
           emailPdcaSheets={[{
             id: pdcaTopic.id,
             title: pdcaTopic.topic,

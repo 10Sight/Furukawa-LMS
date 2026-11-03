@@ -754,3 +754,142 @@ test('18. All sheets restored and visible to all user IDs on PDCA & LPA Observat
   const serverControllerSrc = fs.readFileSync(path.join('D:/FME Portal/Furukawa-LMS/Furukawa-LMS-main', 'server/controllers/pdca/pdca.controllers.js'), 'utf8');
   assert.ok(!serverControllerSrc.includes('result.records = result.records.filter(rec => canUserAccessPDCARecord'), 'server must not filter getPDCARecords');
 });
+
+
+test('19. Same Department AND Same Section Access Rule: Colleagues must be in same department and same section to access PDCA sheet', () => {
+  // 1. Creator in Assembly department, Assembly Production section
+  const creator = {
+    id: 'u-asm-creator',
+    code: 'BW041920',
+    name: 'Rahul Sharma',
+    department: 'Assembly',
+    section: 'Assembly Production',
+    sectionId: 74,
+    role: 'EMPLOYEE'
+  };
+
+  // 2. Colleague in Same Department ('Assembly') AND Same Section ('Assembly Production', id: 74)
+  const sameDeptSameSecColleague = {
+    id: 'u-asm-same-sec',
+    code: 'BW041921',
+    name: 'Sunil Sharma',
+    department: 'Assembly',
+    section: 'Assembly Production',
+    sectionId: 74,
+    role: 'EMPLOYEE'
+  };
+
+  // 3. Colleague in Same Department ('Assembly') but DIFFERENT Section ('AIRBAG SUB-ASSEMBLY', id: 78)
+  const sameDeptDiffSecColleague = {
+    id: 'u-asm-diff-sec',
+    code: 'BW041922',
+    name: 'Vikas Verma',
+    department: 'Assembly',
+    section: 'AIRBAG SUB-ASSEMBLY',
+    sectionId: 78,
+    role: 'EMPLOYEE'
+  };
+
+  // 4. Colleague in DIFFERENT Department ('Maintenance'), section ('Maintenance', id: 111)
+  const diffDeptUser = {
+    id: 'u-maint-01',
+    code: 'BW081290',
+    name: 'Rajesh Kumar',
+    department: 'Maintenance',
+    section: 'Maintenance',
+    sectionId: 111,
+    role: 'EMPLOYEE'
+  };
+
+  // 5. Admin user
+  const adminUser = {
+    id: 14,
+    code: 'ST080014',
+    name: 'Joy Dastidar',
+    department: 'D&D',
+    role: 'ADMIN',
+    isAdmin: true
+  };
+
+  // The created PDCA record
+  const assemblyPdcaRecord = {
+    id: 'PDCA-ASM-PROD-001',
+    topic: 'Assembly Production Line Audit',
+    department: 'Assembly',
+    section: 'Assembly Production',
+    sectionId: 74,
+    createdBy: creator,
+    createdById: creator.id
+  };
+
+  const sampleRow = {
+    date: '2026-11-03',
+    shift: 'A',
+    status: 'In- Progress',
+    unit: 'Bawal',
+    department: 'Assembly',
+    observation: 'Torque tightening verification'
+  };
+
+  // A. Creator always has access
+  assert.equal(isUserInSameDepartmentAsRecord(assemblyPdcaRecord, creator), true, 'Creator has access');
+  assert.equal(canEditRecord(assemblyPdcaRecord, creator), true, 'Creator can edit record');
+
+  // B. Admin always has full access
+  assert.equal(canEditRecord(assemblyPdcaRecord, adminUser), true, 'Admin can edit record');
+
+  // C. Same Department + Same Section Colleague HAS access
+  assert.equal(isUserInSameDepartmentAsRecord(assemblyPdcaRecord, sameDeptSameSecColleague), true, 'Same dept + same section colleague has access');
+  assert.equal(canEditRecord(assemblyPdcaRecord, sameDeptSameSecColleague), true, 'Same dept + same section colleague can edit record');
+  const sameSecPerms = canUserEditPDCARow(sampleRow, sameDeptSameSecColleague, assemblyPdcaRecord);
+  assert.deepEqual(sameSecPerms, { canEditEntireRow: true, canEditActionCols: true }, 'Same dept + same section colleague has full row editing');
+
+  // D. Same Department but DIFFERENT Section Colleague CANNOT access (access is DENIED)
+  assert.equal(isUserInSameDepartmentAsRecord(assemblyPdcaRecord, sameDeptDiffSecColleague), false, 'Same dept but diff section colleague must NOT have access');
+  assert.equal(canEditRecord(assemblyPdcaRecord, sameDeptDiffSecColleague), false, 'Same dept but diff section colleague must NOT edit record');
+  const diffSecPerms = canUserEditPDCARow(sampleRow, sameDeptDiffSecColleague, assemblyPdcaRecord);
+  assert.deepEqual(diffSecPerms, { canEditEntireRow: false, canEditActionCols: false }, 'Same dept but diff section colleague cannot edit row');
+
+  // E. Different Department Colleague CANNOT access (access is DENIED)
+  assert.equal(isUserInSameDepartmentAsRecord(assemblyPdcaRecord, diffDeptUser), false, 'Different dept colleague must NOT have access');
+  assert.equal(canEditRecord(assemblyPdcaRecord, diffDeptUser), false, 'Different dept colleague must NOT edit record');
+
+  // F. Quality department: Assembly Quality (id: 70) vs Quality C&C (id: 87)
+  const qualityRecord = {
+    id: 'PDCA-QA-ASM-01',
+    topic: 'Assembly Quality PDCA',
+    department: 'Quality',
+    section: 'Assembly Quality',
+    sectionId: 70,
+    createdBy: {
+      id: 'u-qa-01',
+      code: 'BW051211',
+      name: 'Ramesh Sharma',
+      department: 'Quality',
+      section: 'Assembly Quality'
+    }
+  };
+
+  const sameQualitySecUser = {
+    id: 'u-qa-02',
+    code: 'BW051212',
+    name: 'Suresh Patel',
+    department: 'Quality',
+    section: 'Assembly Quality',
+    sectionId: 70,
+    role: 'EMPLOYEE'
+  };
+
+  const diffQualitySecUser = {
+    id: 'u-qa-03',
+    code: 'GJ045819',
+    name: 'Deepak Mehta',
+    department: 'Quality',
+    section: 'Quality C&C',
+    sectionId: 87,
+    role: 'EMPLOYEE'
+  };
+
+  assert.equal(isUserInSameDepartmentAsRecord(qualityRecord, sameQualitySecUser), true, 'Same Quality section has access');
+  assert.equal(isUserInSameDepartmentAsRecord(qualityRecord, diffQualitySecUser), false, 'Different Quality section does NOT have access');
+});

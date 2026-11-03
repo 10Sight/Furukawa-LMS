@@ -20,3 +20,5 @@
 [03 Nov, 2026 - 12:52:54:5254] [31merror[39m: [31mMSSQL long-running pool connection failed: Failed to connect to 127.0.0.1:1433 - Could not connect (sequence)[39m
 [03 Nov, 2026 - 12:58:17:5817] [31merror[39m: [31mMSSQL Connection Failed: Failed to connect to 127.0.0.1:1433 - Could not connect (sequence)[39m
 [03 Nov, 2026 - 12:58:17:5817] [31merror[39m: [31mMSSQL long-running pool connection failed: Failed to connect to 127.0.0.1:1433 - Could not connect (sequence)[39m
+[03 Nov, 2026 - 15:28:57:2857] [31merror[39m: [31mMSSQL Connection Failed: Failed to connect to 127.0.0.1:1433 - Could not connect (sequence)[39m
+[03 Nov, 2026 - 15:28:57:2857] [31merror[39m: [31mMSSQL long-running pool connection failed: Failed to connect to 127.0.0.1:1433 - Could not connect (sequence)[39m

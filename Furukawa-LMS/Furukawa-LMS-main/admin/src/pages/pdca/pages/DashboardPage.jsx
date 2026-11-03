@@ -166,7 +166,7 @@ export default function DashboardPage() {
   const handleEditPDCA = (item) => {
     if (!item) return;
     if (!isUserAdmin && !isRecordCreator(item, userContext?.user) && !isUserInSameDepartmentAsRecord(item, userContext?.user)) {
-      showToast('Forbidden: Only members of the same department or the creator can edit this record.');
+      showToast('Forbidden: Only members of the same department and section or the creator can edit this record.');
       return;
     }
     setModalMode(item);

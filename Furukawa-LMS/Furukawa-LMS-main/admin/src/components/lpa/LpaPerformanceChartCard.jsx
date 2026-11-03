@@ -111,12 +111,18 @@ export default function LpaPerformanceChartCard({
   onBreakdownModeChange,
   customRange = { from: '', to: '' },
   onCustomRangeChange,
-  targetBenchmark,
+  targets = { assembly: 85, cc: 85 },
   onTargetChange,
   isAdmin,
   onReset,
   onHide
 }) {
+  const targetFor = (sheet) => targets?.[sheet] ?? 85;
+  const activeSheets = activeTab === 'both' ? ['assembly', 'cc'] : [activeTab];
+  // One shared line is enough when every visible sheet has the same target
+  const sharedTarget = activeSheets.every(s => targetFor(s) === targetFor(activeSheets[0]))
+    ? targetFor(activeSheets[0])
+    : null;
   const [isTableExpanded, setIsTableExpanded] = useState(false);
   const [hiddenSeries, setHiddenSeries] = useState(() => new Set()); // series keys toggled off via the badges
   const isBoth = activeTab === 'both';
@@ -173,14 +179,37 @@ export default function LpaPerformanceChartCard({
     // and get a red outline; their data label is red too
     const seriesPoints = (def) => slots.map(s => {
       const y = def.value(s);
-      return y != null && y < targetBenchmark
+      return y != null && y < targetFor(s.sheet)
         ? { y, borderColor: BELOW_TARGET_COLOR, borderWidth: 2 }
         : { y };
     });
 
+    // Different Assembly / C&C targets: draw a short dashed target segment over each slot
+    // at that slot's sheet target instead of one full-width line
+    const targetSegments = sharedTarget == null
+      ? [{
+        type: 'line',
+        id: 'target-segments',
+        name: 'Target',
+        color: COLORS.benchmark,
+        dashStyle: 'Dash',
+        lineWidth: 2,
+        zIndex: 4,
+        marker: { enabled: false },
+        enableMouseTracking: false,
+        states: { hover: { enabled: false }, inactive: { enabled: false } },
+        dataLabels: { enabled: false },
+        connectNulls: false,
+        data: slots.flatMap((s, i) => {
+          const t = targetFor(s.sheet);
+          return [{ x: i - 0.45, y: t }, { x: i + 0.45, y: t }, { x: i + 0.45, y: null }];
+        })
+      }]
+      : [];
+
     return {
       chart: {
-        height: 560,
+        height: 420,
         marginBottom: isBoth ? 105 : 80,
         style: { fontFamily: 'inherit' },
         animation: { duration: 400 },
@@ -211,14 +240,14 @@ export default function LpaPerformanceChartCard({
         title: { text: 'Score %', style: { color: '#94a3b8', fontSize: '14px', fontWeight: 'bold' } },
         labels: { format: '{value}%', style: { fontSize: '14px', fontWeight: 'bold' } },
         gridLineColor: '#f1f5f9',
-        plotLines: [{
-          value: targetBenchmark,
+        plotLines: sharedTarget == null ? [] : [{
+          value: sharedTarget,
           color: COLORS.benchmark,
           dashStyle: 'Dash',
           width: 2,
           zIndex: 4,
           label: {
-            text: `Target: ${targetBenchmark}%`,
+            text: `Target: ${sharedTarget}%`,
             align: 'right',
             x: -6,
             style: { color: '#059669', fontSize: '13px', fontWeight: '700' }
@@ -235,6 +264,8 @@ export default function LpaPerformanceChartCard({
           pointPadding: 0.08,
           groupPadding: 0.18,
           maxPointWidth: 42,
+          // Centre the bars that have data in their date slot (skips null levels/shifts)
+          centerInCategory: true,
           dataLabels: {
             enabled: true,
             inside: false,
@@ -242,7 +273,8 @@ export default function LpaPerformanceChartCard({
             overflow: 'allow',
             formatter() {
               if (this.y == null) return '';
-              const color = this.y < targetBenchmark ? BELOW_TARGET_COLOR : '#334155';
+              const slotTarget = targetFor(slots[this.point.index]?.sheet);
+              const color = this.y < slotTarget ? BELOW_TARGET_COLOR : '#334155';
               // In By Shift view each bar also names its shift + level, since there is no tooltip
               const tag = this.series.userOptions.custom?.tag;
               const tagHtml = tag ? `<br/><span style="color:#64748b;font-size:10px;font-weight:700">${tag}</span>` : '';
@@ -256,21 +288,26 @@ export default function LpaPerformanceChartCard({
         rules: [{
           condition: { maxWidth: 767 },
           chartOptions: {
-            chart: { height: 520 }
+            chart: { height: 400 }
           }
         }]
       },
-      series: seriesDefs.map(def => ({
-        type: 'column',
-        id: def.key,
-        name: def.name,
-        color: def.color,
-        visible: !hiddenSeries.has(def.key),
-        custom: { tag: def.tag },
-        data: seriesPoints(def)
-      }))
+      series: [
+        ...seriesDefs.map(def => ({
+          type: 'column',
+          id: def.key,
+          name: def.name,
+          color: def.color,
+          visible: !hiddenSeries.has(def.key),
+          custom: { tag: def.tag },
+          data: seriesPoints(def)
+        })),
+        ...targetSegments
+      ]
     };
-  }, [slots, isBoth, needsScroll, slotWidth, targetBenchmark, seriesDefs, hiddenSeries]);
+    // targetFor only reads `targets`
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slots, isBoth, needsScroll, slotWidth, targets, sharedTarget, seriesDefs, hiddenSeries]);
 
   return (
     <Card className="rounded-2xl border-slate-200/80 bg-white">
@@ -372,22 +409,26 @@ export default function LpaPerformanceChartCard({
               </>
             )}
 
-            <div className="flex flex-col gap-1.5">
-              <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Target %</Label>
-              {isAdmin ? (
-                <Input
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={targetBenchmark}
-                  onChange={(e) => onTargetChange(e.target.value)}
-                  className="h-8 w-20 text-xs font-bold text-emerald-800"
-                  title="Admin: Change Target Line %"
-                />
-              ) : (
-                <span className="h-8 inline-flex items-center text-xs font-bold text-emerald-700">{targetBenchmark}%</span>
-              )}
-            </div>
+            {activeSheets.map(sheet => (
+              <div key={sheet} className="flex flex-col gap-1.5">
+                <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
+                  {SHEET_META[sheet].label} Target %
+                </Label>
+                {isAdmin ? (
+                  <Input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={targetFor(sheet)}
+                    onChange={(e) => onTargetChange(sheet, e.target.value)}
+                    className="h-8 w-20 text-xs font-bold text-emerald-800"
+                    title={`Admin: Change ${SHEET_META[sheet].fullLabel} target %`}
+                  />
+                ) : (
+                  <span className="h-8 inline-flex items-center text-xs font-bold text-emerald-700">{targetFor(sheet)}%</span>
+                )}
+              </div>
+            ))}
 
             <Button
               variant="ghost"
@@ -420,7 +461,9 @@ export default function LpaPerformanceChartCard({
             })}
             <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 pl-3 border-l border-slate-200">
               <span className="w-4 border-t-2 border-dashed border-emerald-500" />
-              Target {targetBenchmark}%
+              {sharedTarget != null
+                ? `Target ${sharedTarget}%`
+                : activeSheets.map(s => `${SHEET_META[s].label} ${targetFor(s)}%`).join(' · ')}
             </span>
           </div>
         </div>
@@ -510,7 +553,7 @@ export default function LpaPerformanceChartCard({
                         <td className="px-3 py-2.5 text-center text-purple-600 font-medium">{row.level2 || '-'}</td>
                         <td className="px-3 py-2.5 text-center text-pink-600 font-medium">{row.level1 || '-'}</td>
                         <td className="px-3 py-2.5 text-right">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold ${scoreTone(row.avgScore, targetBenchmark).pill}`}>
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold ${scoreTone(row.avgScore, targetFor(row.sheet)).pill}`}>
                             {row.avgScore}%
                           </span>
                         </td>

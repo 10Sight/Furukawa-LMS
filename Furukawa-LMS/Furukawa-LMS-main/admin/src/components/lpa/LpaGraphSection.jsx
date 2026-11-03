@@ -13,6 +13,10 @@ const DEFAULT_TARGET = 85;
 const DEFAULT_DATE_RANGE = '30d';
 const DEFAULT_TAB = 'assembly';
 const DEFAULT_BREAKDOWN = 'level';
+const TARGET_STORAGE_KEYS = {
+  assembly: 'lpa_target_benchmark_assembly',
+  cc: 'lpa_target_benchmark_cc'
+};
 
 /**
  * LPA Analytics & Performance Graph shown inline on the LPA page.
@@ -29,21 +33,29 @@ export default function LpaGraphSection({ records = [], loading = false, selecte
 
   const monthOptions = useMemo(() => extractAvailableMonths(records), [records]);
 
-  // Target Benchmark line settable by Admin
-  const [targetBenchmark, setTargetBenchmark] = useState(() => {
-    try {
-      const saved = localStorage.getItem('lpa_target_benchmark');
-      return saved ? Number(saved) : DEFAULT_TARGET;
-    } catch {
-      return DEFAULT_TARGET;
-    }
+  // Separate target benchmark per sheet ({ assembly, cc }), settable by Admin.
+  // Falls back to the old shared 'lpa_target_benchmark' value saved before the split.
+  const [targets, setTargets] = useState(() => {
+    const read = (key) => {
+      try {
+        const saved = Number(localStorage.getItem(key));
+        return saved >= 1 && saved <= 100 ? saved : null;
+      } catch {
+        return null;
+      }
+    };
+    const legacy = read('lpa_target_benchmark') ?? DEFAULT_TARGET;
+    return {
+      assembly: read(TARGET_STORAGE_KEYS.assembly) ?? legacy,
+      cc: read(TARGET_STORAGE_KEYS.cc) ?? legacy
+    };
   });
 
-  const handleTargetBenchmarkChange = (val) => {
+  const handleTargetChange = (sheet, val) => {
     const num = Math.max(1, Math.min(100, Number(val) || DEFAULT_TARGET));
-    setTargetBenchmark(num);
+    setTargets(prev => ({ ...prev, [sheet]: num }));
     try {
-      localStorage.setItem('lpa_target_benchmark', String(num));
+      localStorage.setItem(TARGET_STORAGE_KEYS[sheet], String(num));
     } catch (err) {
       console.error(err);
     }
@@ -128,8 +140,8 @@ export default function LpaGraphSection({ records = [], loading = false, selecte
       onBreakdownModeChange={setBreakdownMode}
       customRange={customRange}
       onCustomRangeChange={setCustomRange}
-      targetBenchmark={targetBenchmark}
-      onTargetChange={handleTargetBenchmarkChange}
+      targets={targets}
+      onTargetChange={handleTargetChange}
       isAdmin={isAdmin}
       onReset={handleResetFilters}
       onHide={() => setIsVisible(false)}

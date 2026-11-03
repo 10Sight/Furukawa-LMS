@@ -25,16 +25,22 @@ export default function FmeDashboardPage({ page }) {
     const section = (Array.isArray(sections) ? sections : []).find(item => String(item.id || item._id) === String(sectionId));
     const contextRef = useRef(null);
     const authToken = authSession.getItem('token') || sessionStorage.getItem('token') || '';
+    const userDept = user?.department?.name || (typeof user?.department === 'string' ? user?.department : '') || user?.deptName || (departments[0]?.name || '');
     contextRef.current = {
         lpaSource: null,
         token: authToken,
         user: {
+            ...user,
             id: user?.id || user?._id || '',
             name: user?.fullName || user?.name || '',
             code: user?.employeeId || user?.empId || user?.empCode || user?.userName || '',
             email: user?.email || '',
             role: user?.role || 'EMPLOYEE',
-            isAdmin: Boolean(user?.isAdmin || user?.role === 'ADMIN')
+            department: userDept,
+            deptName: userDept,
+            departments: user?.departments || departments,
+            section: section?.name || user?.section?.name || user?.sectionName || '',
+            isAdmin: Boolean(user?.isAdmin || user?.role === 'ADMIN' || String(user?.role || '').toUpperCase() === 'ADMIN' || String(user?.role || '').toUpperCase() === 'SUPERADMIN')
         },
         section: { id: section?.id || section?._id || sectionId || '', name: section?.name || user?.section?.name || user?.sectionName || user?.sectionId?.name || user?.sections?.[0]?.name || '' },
         departments: departments.map(item => ({ id: item.id || item._id, name: item.name })),

@@ -15,7 +15,19 @@ export default function FmeDashboardPage({ page, viewContext, lpaSource }) {
     const contextRef = useRef(null);
     contextRef.current = {
         lpaSource: lpaSource || null,
-        user: { name: user?.fullName || user?.name || '', code: user?.employeeId || user?.empId || user?.empCode || user?.userName || '', email: user?.email || '' },
+        user: {
+            ...user,
+            id: user?.id || user?._id || '',
+            name: user?.fullName || user?.name || '',
+            code: user?.employeeId || user?.empId || user?.empCode || user?.userName || '',
+            email: user?.email || '',
+            role: user?.role || 'EMPLOYEE',
+            department: user?.department?.name || (typeof user?.department === 'string' ? user?.department : '') || user?.deptName || (departments[0]?.name || ''),
+            deptName: user?.deptName || user?.department?.name || (typeof user?.department === 'string' ? user?.department : '') || (departments[0]?.name || ''),
+            departments: user?.departments || departments,
+            section: section?.name || user?.section?.name || user?.sectionName || '',
+            isAdmin: Boolean(user?.isAdmin || user?.role === 'ADMIN' || String(user?.role || '').toUpperCase() === 'ADMIN' || String(user?.role || '').toUpperCase() === 'SUPERADMIN')
+        },
         section: { id: section?.id || section?._id || sectionId || '', name: section?.name || user?.section?.name || user?.sectionName || user?.sectionId?.name || user?.sections?.[0]?.name || '' },
         departments: departments.map(item => ({ id: item.id || item._id, name: item.name })),
         loading: false,

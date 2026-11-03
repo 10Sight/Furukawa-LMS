@@ -202,7 +202,7 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
           description: formData.description,
           plant: targetPlant,
           scope,
-          department: formData.department,
+          department: formData.department || creatorDepartment || '',
           section: sectionVal,
           sectionId: formData.sectionId || userContext.section?.id || '',
           lpaSource: userContext.lpaSource ? { ...userContext.lpaSource } : undefined,

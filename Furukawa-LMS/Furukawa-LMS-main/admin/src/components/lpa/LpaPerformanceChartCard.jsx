@@ -8,7 +8,7 @@ import { Button } from '@/components/common/ui/button.jsx';
 import { Input } from '@/components/forms/primitives/input.jsx';
 import { Label } from '@/components/forms/primitives/label.jsx';
 
-import { COLORS, SHEET_META, SHIFT_KEYS, LEVEL_KEYS, shiftLevelKey } from '../../pages/lpa/lpaGraphUtils.js';
+import { COLORS, SHEET_META, SHIFT_KEYS, shiftLevelKey } from '../../pages/lpa/lpaGraphUtils.js';
 
 const SHEET_VIEWS = [
   { key: 'both', label: 'Both Sheets' },
@@ -16,40 +16,28 @@ const SHEET_VIEWS = [
   { key: 'cc', label: 'C&C Sheet' }
 ];
 
-const BREAKDOWN_VIEWS = [
-  { key: 'level', label: 'By Level' },
-  { key: 'shift', label: 'By Shift' }
+// Bar colour = level; the shift is written inside each bar. Badge order = bar order.
+const LEVEL_DEFS = [
+  { level: 'L3', name: 'Level 3 Score (%)', color: COLORS.level3 },
+  { level: 'L2', name: 'Level 2 Score (%)', color: COLORS.level2 },
+  { level: 'L1', name: 'Level 1 Score (%)', color: COLORS.level1 }
 ];
 
-// Shift hue, darker for higher levels: [L3, L2, L1]
-const SHIFT_LEVEL_SHADES = {
-  A: ['#1d4ed8', '#3b82f6', '#93c5fd'],
-  B: ['#047857', '#10b981', '#6ee7b7'],
-  C: ['#b45309', '#f59e0b', '#fcd34d'],
-  G: ['#6d28d9', '#8b5cf6', '#c4b5fd']
-};
-
-// Bar order inside each slot; the legend badges follow the same order
-const SERIES_DEFS = {
-  level: [
-    { key: 'level3Score', name: 'Level 3 Score (%)', color: COLORS.level3 },
-    { key: 'level2Score', name: 'Level 2 Score (%)', color: COLORS.level2 },
-    { key: 'level1Score', name: 'Level 1 Score (%)', color: COLORS.level1 }
-  ].map(def => ({ ...def, value: (slot) => slot[def.key] })),
-  // One bar per shift + level pair: Shift A · L3, Shift A · L2, ... Shift G · L1
-  shift: SHIFT_KEYS.flatMap(shift => LEVEL_KEYS.map((level, i) => {
-    const key = shiftLevelKey(shift, level);
-    return {
-      key,
-      name: `Shift ${shift} · ${level} (%)`,
-      tag: `${shift}·${level}`,
-      color: SHIFT_LEVEL_SHADES[shift][i],
-      value: (slot) => slot.shiftLevelScores?.[key] ?? null
-    };
-  }))
-};
+// One bar per shift + level pair, grouped by shift: A·L3, A·L2, A·L1, B·L3, ...
+const PAIR_DEFS = SHIFT_KEYS.flatMap(shift => LEVEL_DEFS.map(({ level, color }) => {
+  const key = shiftLevelKey(shift, level);
+  return {
+    key,
+    shift,
+    level,
+    name: `Shift ${shift} · Level ${level.slice(1)}`,
+    color,
+    value: (slot) => slot.shiftLevelScores?.[key] ?? null
+  };
+}));
 
 const BELOW_TARGET_COLOR = '#dc2626';
+const TARGET_LINE_COLOR = '#374151'; // dark grey
 const VIEWPORT_WIDTH = 800;
 const BAR_SLOT_WIDTH = 58; // room for one bar plus its "100%" label
 
@@ -107,8 +95,6 @@ export default function LpaPerformanceChartCard({
   dateRange,
   onDateRangeChange,
   monthOptions = [],
-  breakdownMode = 'level',
-  onBreakdownModeChange,
   customRange = { from: '', to: '' },
   onCustomRangeChange,
   targets = { assembly: 85, cc: 85 },
@@ -124,9 +110,8 @@ export default function LpaPerformanceChartCard({
     ? targetFor(activeSheets[0])
     : null;
   const [isTableExpanded, setIsTableExpanded] = useState(false);
-  const [hiddenSeries, setHiddenSeries] = useState(() => new Set()); // series keys toggled off via the badges
+  const [hiddenLevels, setHiddenLevels] = useState(() => new Set()); // levels toggled off via the badges
   const isBoth = activeTab === 'both';
-  const isShiftMode = breakdownMode === 'shift';
   const hasData = slots.length > 0;
 
   const periodOptions = useMemo(() => [
@@ -135,26 +120,28 @@ export default function LpaPerformanceChartCard({
     { key: '30d', label: 'Last 30 Days' },
     { group: 'Month', options: monthOptions },
     { key: 'all', label: 'All Recorded Dates' },
-    { key: 'custom', label: 'Custom Date Range…' }
+    { key: 'custom', label: 'Custom Date Range' }
   ], [monthOptions]);
 
   // Shift + level pairs with no audit in the current range are dropped so they don't leave gaps
-  const seriesDefs = useMemo(() => {
-    if (!isShiftMode) return SERIES_DEFS.level;
-    return SERIES_DEFS.shift.filter(def => slots.some(s => def.value(s) != null));
-  }, [isShiftMode, slots]);
+  const seriesDefs = useMemo(
+    () => PAIR_DEFS.filter(def => slots.some(s => def.value(s) != null)),
+    [slots]
+  );
+  // Level badges: only levels that have at least one bar
+  const levelBadges = LEVEL_DEFS.filter(l => seriesDefs.some(def => def.level === l.level));
 
-  const toggleSeries = (key) => {
-    setHiddenSeries(prev => {
+  const toggleLevel = (level) => {
+    setHiddenLevels(prev => {
       const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+      if (next.has(level)) next.delete(level);
+      else next.add(level);
       return next;
     });
   };
 
   // Wide enough that a "100%" label fits above every visible bar in a slot
-  const visibleBarCount = Math.max(1, seriesDefs.filter(def => !hiddenSeries.has(def.key)).length);
+  const visibleBarCount = Math.max(1, seriesDefs.filter(def => !hiddenLevels.has(def.level)).length);
   const slotWidth = Math.max(isBoth ? 190 : 170, visibleBarCount * BAR_SLOT_WIDTH + 20);
   const needsScroll = slots.length * slotWidth > VIEWPORT_WIDTH;
 
@@ -191,7 +178,7 @@ export default function LpaPerformanceChartCard({
         type: 'line',
         id: 'target-segments',
         name: 'Target',
-        color: COLORS.benchmark,
+        color: TARGET_LINE_COLOR,
         dashStyle: 'Dash',
         lineWidth: 2,
         zIndex: 4,
@@ -242,7 +229,7 @@ export default function LpaPerformanceChartCard({
         gridLineColor: '#f1f5f9',
         plotLines: sharedTarget == null ? [] : [{
           value: sharedTarget,
-          color: COLORS.benchmark,
+          color: TARGET_LINE_COLOR,
           dashStyle: 'Dash',
           width: 2,
           zIndex: 4,
@@ -250,7 +237,7 @@ export default function LpaPerformanceChartCard({
             text: `Target: ${sharedTarget}%`,
             align: 'right',
             x: -6,
-            style: { color: '#059669', fontSize: '13px', fontWeight: '700' }
+            style: { color: TARGET_LINE_COLOR, fontSize: '13px', fontWeight: '700' }
           }
         }]
       },
@@ -266,22 +253,37 @@ export default function LpaPerformanceChartCard({
           maxPointWidth: 42,
           // Centre the bars that have data in their date slot (skips null levels/shifts)
           centerInCategory: true,
-          dataLabels: {
-            enabled: true,
-            inside: false,
-            crop: false,
-            overflow: 'allow',
-            formatter() {
-              if (this.y == null) return '';
-              const slotTarget = targetFor(slots[this.point.index]?.sheet);
-              const color = this.y < slotTarget ? BELOW_TARGET_COLOR : '#334155';
-              // In By Shift view each bar also names its shift + level, since there is no tooltip
-              const tag = this.series.userOptions.custom?.tag;
-              const tagHtml = tag ? `<br/><span style="color:#64748b;font-size:10px;font-weight:700">${tag}</span>` : '';
-              return `<span style="color:${color}">${this.y}%</span>${tagHtml}`;
+          dataLabels: [
+            // Score above the bar (red when below that sheet's target)
+            {
+              enabled: true,
+              inside: false,
+              crop: false,
+              overflow: 'allow',
+              formatter() {
+                if (this.y == null) return '';
+                const slotTarget = targetFor(slots[this.point.index]?.sheet);
+                const color = this.y < slotTarget ? BELOW_TARGET_COLOR : '#334155';
+                return `<span style="color:${color}">${this.y}%</span>`;
+              },
+              style: { fontSize: '13px', fontWeight: '800', textOutline: '2px white' }
             },
-            style: { fontSize: '13px', fontWeight: '800', textOutline: '2px white' }
-          }
+            // Shift name written vertically inside the bar (skipped when the bar is too short)
+            {
+              enabled: true,
+              inside: true,
+              verticalAlign: 'bottom',
+              rotation: -90,
+              y: -6,
+              crop: false,
+              overflow: 'allow',
+              formatter() {
+                if (this.y == null || this.y < 20) return '';
+                return `Shift ${this.series.userOptions.custom?.shift ?? ''}`;
+              },
+              style: { color: '#ffffff', fontSize: '11px', fontWeight: '700', textOutline: '1px rgba(15,23,42,0.35)' }
+            }
+          ]
         }
       },
       responsive: {
@@ -298,8 +300,8 @@ export default function LpaPerformanceChartCard({
           id: def.key,
           name: def.name,
           color: def.color,
-          visible: !hiddenSeries.has(def.key),
-          custom: { tag: def.tag },
+          visible: !hiddenLevels.has(def.level),
+          custom: { shift: def.shift },
           data: seriesPoints(def)
         })),
         ...targetSegments
@@ -307,7 +309,7 @@ export default function LpaPerformanceChartCard({
     };
     // targetFor only reads `targets`
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slots, isBoth, needsScroll, slotWidth, targets, sharedTarget, seriesDefs, hiddenSeries]);
+  }, [slots, isBoth, needsScroll, slotWidth, targets, sharedTarget, seriesDefs, hiddenLevels]);
 
   return (
     <Card className="rounded-2xl border-slate-200/80 bg-white">
@@ -325,9 +327,7 @@ export default function LpaPerformanceChartCard({
               </span>
             </CardTitle>
             <CardDescription className="text-xs text-slate-500">
-              {isShiftMode
-                ? 'Daily scores for each shift and level (e.g. A·L3 = Shift A, Level 3) with target benchmark.'
-                : 'Daily scores by hierarchy levels (Level 3, Level 2, Level 1) with target benchmark.'}{' '}
+              Daily scores per shift (written in each bar), coloured by level, with target benchmark.{' '}
               <span className="font-semibold text-red-600">Bars outlined in red are below target.</span>
             </CardDescription>
           </div>
@@ -363,51 +363,31 @@ export default function LpaPerformanceChartCard({
 
         {/* Filter bar */}
         <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-end justify-between gap-4">
-          {/* Left: breakdown toggle + filters */}
+          {/* Left: filters */}
           <div className="flex flex-wrap items-end gap-4">
-            <div className="flex flex-col gap-1.5">
-              <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Breakdown</Label>
-              <div className="flex gap-1">
-                {BREAKDOWN_VIEWS.map(({ key, label }) => (
-                  <Button
-                    key={key}
-                    variant={breakdownMode === key ? 'default' : 'outline'}
-                    size="sm"
-                    className="h-8 px-3 text-xs"
-                    onClick={() => onBreakdownModeChange?.(key)}
-                  >
-                    {label}
-                  </Button>
-                ))}
-              </div>
-            </div>
-
             <FilterSelect label="Period" value={dateRange} onChange={onDateRangeChange} options={periodOptions} />
 
-            {dateRange === 'custom' && (
-              <>
-                <div className="flex flex-col gap-1.5">
-                  <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">From</Label>
-                  <Input
-                    type="date"
-                    value={customRange.from}
-                    max={customRange.to || undefined}
-                    onChange={(e) => onCustomRangeChange?.({ ...customRange, from: e.target.value })}
-                    className="h-8 w-36 text-xs"
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">To</Label>
-                  <Input
-                    type="date"
-                    value={customRange.to}
-                    min={customRange.from || undefined}
-                    onChange={(e) => onCustomRangeChange?.({ ...customRange, to: e.target.value })}
-                    className="h-8 w-36 text-xs"
-                  />
-                </div>
-              </>
-            )}
+            {/* Custom range is always visible; picking a date switches Period to Custom */}
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Custom From</Label>
+              <Input
+                type="date"
+                value={customRange.from}
+                max={customRange.to || undefined}
+                onChange={(e) => onCustomRangeChange?.({ ...customRange, from: e.target.value })}
+                className="h-8 w-36 text-xs"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Custom To</Label>
+              <Input
+                type="date"
+                value={customRange.to}
+                min={customRange.from || undefined}
+                onChange={(e) => onCustomRangeChange?.({ ...customRange, to: e.target.value })}
+                className="h-8 w-36 text-xs"
+              />
+            </div>
 
             {activeSheets.map(sheet => (
               <div key={sheet} className="flex flex-col gap-1.5">
@@ -421,11 +401,11 @@ export default function LpaPerformanceChartCard({
                     max="100"
                     value={targetFor(sheet)}
                     onChange={(e) => onTargetChange(sheet, e.target.value)}
-                    className="h-8 w-20 text-xs font-bold text-emerald-800"
+                    className="h-8 w-20 text-xs font-bold text-gray-800"
                     title={`Admin: Change ${SHEET_META[sheet].fullLabel} target %`}
                   />
                 ) : (
-                  <span className="h-8 inline-flex items-center text-xs font-bold text-emerald-700">{targetFor(sheet)}%</span>
+                  <span className="h-8 inline-flex items-center text-xs font-bold text-gray-700">{targetFor(sheet)}%</span>
                 )}
               </div>
             ))}
@@ -441,15 +421,15 @@ export default function LpaPerformanceChartCard({
             </Button>
           </div>
 
-          {/* Right: series badges (click to show/hide a series) + target */}
+          {/* Right: level colour badges (click to show/hide that level) + target */}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pb-1">
-            {seriesDefs.map(def => {
-              const hidden = hiddenSeries.has(def.key);
+            {levelBadges.map(def => {
+              const hidden = hiddenLevels.has(def.level);
               return (
                 <button
-                  key={def.key}
+                  key={def.level}
                   type="button"
-                  onClick={() => toggleSeries(def.key)}
+                  onClick={() => toggleLevel(def.level)}
                   aria-pressed={!hidden}
                   title={hidden ? `Show ${def.name}` : `Hide ${def.name}`}
                   className={`inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs font-semibold transition-opacity cursor-pointer hover:bg-slate-50 ${hidden ? 'opacity-40 line-through text-slate-400' : 'text-slate-700'}`}
@@ -459,8 +439,8 @@ export default function LpaPerformanceChartCard({
                 </button>
               );
             })}
-            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 pl-3 border-l border-slate-200">
-              <span className="w-4 border-t-2 border-dashed border-emerald-500" />
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-700 pl-3 border-l border-slate-200">
+              <span className="w-4 border-t-2 border-dashed border-gray-700" />
               {sharedTarget != null
                 ? `Target ${sharedTarget}%`
                 : activeSheets.map(s => `${SHEET_META[s].label} ${targetFor(s)}%`).join(' · ')}
@@ -491,7 +471,7 @@ export default function LpaPerformanceChartCard({
               }
             `}</style>
             <HighchartsReact
-              key={`${activeTab}-${breakdownMode}-${slots.length}`}
+              key={`${activeTab}-${slots.length}`}
               highcharts={Highcharts}
               options={chartOptions}
               updateArgs={[true, true, true]}

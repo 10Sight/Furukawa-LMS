@@ -81,16 +81,27 @@ function averageOrNull(values) {
 }
 
 /**
- * Distinct months present in the records plus the current month, newest first,
- * as [{ key: 'YYYY-MM', label: 'October 2026' }].
+ * Every month from January of the earliest year (earliest record year, at least
+ * the previous year) up to the current month, newest first, so any month can be
+ * picked even if it has no audits. Shape: [{ key: 'YYYY-MM', label: 'October 2026' }].
  */
 export function extractAvailableMonths(records = [], now = new Date()) {
-  const months = new Set([toLocalYearMonth(now)]);
+  const currentYear = now.getFullYear();
+  let startYear = currentYear - 1;
   (records || []).forEach(rec => {
     const ym = getRecordDate(rec).slice(0, 7);
-    if (isMonthKey(ym)) months.add(ym);
+    if (isMonthKey(ym)) startYear = Math.min(startYear, Number(ym.slice(0, 4)));
   });
-  return [...months].sort().reverse().map(key => ({ key, label: formatYearMonth(key) }));
+
+  const months = [];
+  for (let y = currentYear; y >= startYear; y -= 1) {
+    const lastMonth = y === currentYear ? now.getMonth() + 1 : 12;
+    for (let m = lastMonth; m >= 1; m -= 1) {
+      const key = `${y}-${pad2(m)}`;
+      months.push({ key, label: formatYearMonth(key) });
+    }
+  }
+  return months;
 }
 
 /**

@@ -304,14 +304,22 @@ test('13. Current month and day cutoffs use local time, not UTC', () => {
   assert.deepEqual(week, ['2026-10-25', '2026-10-31', '2026-11-01']);
 });
 
-test('14. extractAvailableMonths lists record months plus the current month, newest first', () => {
+test('14. extractAvailableMonths lists every month back to January of the earliest year, newest first', () => {
   const now = new Date(2026, 10, 3);
-  const months = extractAvailableMonths([dated('2026-09-10'), dated('2026-10-02'), dated('2026-10-20')], now);
-  assert.deepEqual(months, [
-    { key: '2026-11', label: 'November 2026' },
-    { key: '2026-10', label: 'October 2026' },
-    { key: '2026-09', label: 'September 2026' }
-  ]);
+
+  // No old records: current month back to January of the previous year (11 + 12 months)
+  const recent = extractAvailableMonths([dated('2026-10-02')], now);
+  assert.equal(recent.length, 23);
+  assert.deepEqual(recent[0], { key: '2026-11', label: 'November 2026' });
+  assert.equal(recent[1].key, '2026-10');
+  assert.equal(recent[2].key, '2026-09'); // included even with no audits
+  assert.deepEqual(recent[recent.length - 1], { key: '2025-01', label: 'January 2025' });
+
+  // Older records extend the list back to January of their year
+  const older = extractAvailableMonths([dated('2023-06-15')], now);
+  assert.equal(older[older.length - 1].key, '2023-01');
+  assert.equal(older.length, 11 + 12 * 3);
+
   assert.equal(formatYearMonth('2026-01'), 'January 2026');
 });
 

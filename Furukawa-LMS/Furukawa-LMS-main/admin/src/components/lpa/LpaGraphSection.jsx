@@ -12,7 +12,7 @@ import LpaPerformanceChartCard from './LpaPerformanceChartCard.jsx';
 const DEFAULT_TARGET = 85;
 const DEFAULT_DATE_RANGE = '30d';
 const DEFAULT_TAB = 'assembly';
-const DEFAULT_BREAKDOWN = 'level';
+const EMPTY_RANGE = { from: '', to: '' };
 const TARGET_STORAGE_KEYS = {
   assembly: 'lpa_target_benchmark_assembly',
   cc: 'lpa_target_benchmark_cc'
@@ -28,10 +28,21 @@ export default function LpaGraphSection({ records = [], loading = false, selecte
   // '7d' | '14d' | '30d' | 'YYYY-MM' (specific month) | 'all' | 'custom'
   const [dateRange, setDateRange] = useState(DEFAULT_DATE_RANGE);
   const [activeTab, setActiveTab] = useState(DEFAULT_TAB); // 'both' | 'assembly' | 'cc'
-  const [customRange, setCustomRange] = useState({ from: '', to: '' }); // used when dateRange === 'custom'
-  const [breakdownMode, setBreakdownMode] = useState(DEFAULT_BREAKDOWN); // 'level' | 'shift'
+  const [customRange, setCustomRange] = useState(EMPTY_RANGE); // used when dateRange === 'custom'
 
   const monthOptions = useMemo(() => extractAvailableMonths(records), [records]);
+
+  // Picking a preset or month clears the always-visible From / To inputs
+  const handleDateRangeChange = (value) => {
+    setDateRange(value);
+    if (value !== 'custom') setCustomRange(EMPTY_RANGE);
+  };
+
+  // Typing a From / To date switches the Period to Custom straight away
+  const handleCustomRangeChange = (range) => {
+    setCustomRange(range);
+    setDateRange(range.from || range.to ? 'custom' : DEFAULT_DATE_RANGE);
+  };
 
   // Separate target benchmark per sheet ({ assembly, cc }), settable by Admin.
   // Falls back to the old shared 'lpa_target_benchmark' value saved before the split.
@@ -92,8 +103,7 @@ export default function LpaGraphSection({ records = [], loading = false, selecte
   const handleResetFilters = () => {
     setDateRange(DEFAULT_DATE_RANGE);
     setActiveTab(DEFAULT_TAB);
-    setCustomRange({ from: '', to: '' });
-    setBreakdownMode(DEFAULT_BREAKDOWN);
+    setCustomRange(EMPTY_RANGE);
   };
 
   if (!isVisible) {
@@ -134,12 +144,10 @@ export default function LpaGraphSection({ records = [], loading = false, selecte
       onTabChange={setActiveTab}
       unitLabel={unitLabel}
       dateRange={dateRange}
-      onDateRangeChange={setDateRange}
+      onDateRangeChange={handleDateRangeChange}
       monthOptions={monthOptions}
-      breakdownMode={breakdownMode}
-      onBreakdownModeChange={setBreakdownMode}
       customRange={customRange}
-      onCustomRangeChange={setCustomRange}
+      onCustomRangeChange={handleCustomRangeChange}
       targets={targets}
       onTargetChange={handleTargetChange}
       isAdmin={isAdmin}

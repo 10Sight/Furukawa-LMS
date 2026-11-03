@@ -24,6 +24,7 @@ import { isRecordCreator, isUserInSameDepartmentAsRecord, canEditRecord, resolve
 import LpaTable from '../../components/lpa/LpaTable';
 import LpaGraphSection from '../../components/lpa/LpaGraphSection';
 import { matchesLpaDateRange, normalizeLpaDate } from './lpaDateFilters.js';
+import { PDCA_DEPARTMENTS } from '@pages/pdca/data/pdcaConstants.js';
 
 const SECTIONS = [{ id: 'assembly', label: 'Assembly' }, { id: 'cc', label: 'C&C' }];
 const UNITS = ['Bawal', 'Gujrat'];
@@ -67,20 +68,21 @@ const isLpaRecordForSection = (rec, section, unit) => {
   const topicLower = String(rec.topic || '').toLowerCase();
   const catLower = String(rec.category || rec.lpaCategory || '').toLowerCase();
   const deptLower = String(rec.department || '').toLowerCase();
+  const recSec = String(rec.section || '').toLowerCase();
 
-  const isLpa = idLower.includes('lpa') || topicLower.includes('lpa') || catLower.includes('lpa') || rec.lpaSource != null;
+  const isLpa = idLower.includes('lpa') || topicLower.includes('lpa') || catLower.includes('lpa') || rec.lpaSource != null || recSec.includes('lpa');
   if (!isLpa && !idLower.startsWith('pdca-lpa-')) return false;
 
   if (sec === 'assembly') {
     if (idLower.includes('-cc-') || catLower === 'cc' || (topicLower.includes('c&c') && !topicLower.includes('assembly'))) {
       return false;
     }
-    return idLower.includes('assembly') || topicLower.includes('assembly') || catLower.includes('assembly') || deptLower.includes('assembly');
+    return idLower.includes('assembly') || topicLower.includes('assembly') || catLower.includes('assembly') || deptLower.includes('assembly') || recSec.includes('assembly');
   } else {
     if (idLower.includes('-assembly-') || catLower === 'assembly' || (topicLower.includes('assembly') && !topicLower.includes('c&c'))) {
       return false;
     }
-    return idLower.includes('-cc-') || topicLower.includes('c&c') || topicLower.includes('cc') || catLower.includes('cc') || deptLower.includes('c&c') || deptLower.includes('cc');
+    return idLower.includes('-cc-') || topicLower.includes('c&c') || topicLower.includes('cc') || catLower.includes('cc') || deptLower.includes('c&c') || deptLower.includes('cc') || recSec.includes('cc');
   }
 };
 
@@ -934,7 +936,7 @@ function LpaPageContent({ viewContext }) {
         title: rec.topic || `${activeSection === 'assembly' ? 'Assembly' : 'C&C'} - LPA Observation (PDCA)`,
         date: normalizeLpaDate(rec.date) || rec.date || todayIso,
         unit: rec.plant || selectedUnit || 'Bawal',
-        department: rec.department || (activeSection === 'assembly' ? 'Assembly' : 'C&C'),
+        department: rec.department || (typeof rec.createdBy === 'object' ? (rec.createdBy?.department || rec.createdBy?.deptName) : '') || (activeSection === 'assembly' ? 'Assembly' : 'C&C'),
         createdBy: rec.createdBy,
         createdById: rec.createdById,
         createdAt: rec.createdAt,
@@ -1060,7 +1062,7 @@ function LpaPageContent({ viewContext }) {
       section: activeSection,
       scope: 'Company',
       plant: sheetItem.unit || selectedUnit || 'Bawal',
-      department: sheetItem.department || sheetData?.department || (activeSection === 'cc' ? 'C&C' : 'Assembly'),
+      department: sheetItem.department || sheetData?.department || (typeof sheetItem.createdBy === 'object' ? (sheetItem.createdBy?.department || sheetItem.createdBy?.deptName) : '') || (typeof sheetData?.createdBy === 'object' ? (sheetData?.createdBy?.department || sheetData?.createdBy?.deptName) : '') || (activeSection === 'cc' ? 'C&C' : 'Assembly'),
       createdBy: sheetItem.createdBy || sheetData?.createdBy,
       createdById: sheetItem.createdById || sheetData?.createdById,
       sheet: sheetData
@@ -1097,6 +1099,14 @@ function LpaPageContent({ viewContext }) {
     e.preventDefault();
     const targetUnit = newPdcaForm.unit || selectedUnit || 'Bawal';
     const newId = `PDCA-LPA-${activeSection.toUpperCase()}-${targetUnit}-${Date.now()}`;
+    const creatorDept = (effectiveAuthUser && getUserPrimaryDepartment(effectiveAuthUser)) ||
+      (typeof effectiveAuthUser?.department === 'string' ? effectiveAuthUser.department : effectiveAuthUser?.department?.name) ||
+      effectiveAuthUser?.deptName ||
+      newPdcaForm.department ||
+      (activeSection === 'assembly' ? 'Assembly' : 'C&C');
+    const creatorCode = effectiveAuthUser?.empId || effectiveAuthUser?.code || effectiveAuthUser?.employeeId || effectiveAuthUser?.empCode || effectiveAuthUser?.userName || '';
+    const creatorName = effectiveAuthUser?.fullName || effectiveAuthUser?.name || effectiveAuthUser?.userName || 'User';
+
     const newSheet = {
       id: newId,
       recordId: newId,
@@ -1105,23 +1115,28 @@ function LpaPageContent({ viewContext }) {
       date: newPdcaForm.date || pdcaDate || todayIso,
       plant: targetUnit,
       unit: targetUnit,
-      department: (effectiveAuthUser && getUserPrimaryDepartment(effectiveAuthUser)) || newPdcaForm.department || (activeSection === 'assembly' ? 'Assembly' : 'C&C'),
+      department: newPdcaForm.department || creatorDept,
+      section: activeSection,
       category: activeSection,
       lpaCategory: activeSection,
       scope: 'Company',
       createdAt: new Date().toISOString(),
       createdBy: effectiveAuthUser ? {
         id: effectiveAuthUser.id || effectiveAuthUser._id,
-        name: effectiveAuthUser.name || effectiveAuthUser.userName,
-        code: effectiveAuthUser.code || effectiveAuthUser.empCode,
+        userId: effectiveAuthUser.id || effectiveAuthUser._id,
+        name: creatorName,
+        fullName: creatorName,
+        code: creatorCode,
+        empId: creatorCode,
         userName: effectiveAuthUser.userName,
-        department: effectiveAuthUser?.department?.name || (typeof effectiveAuthUser?.department === 'string' ? effectiveAuthUser.department : '') || effectiveAuthUser?.deptName || newPdcaForm.department || (activeSection === 'assembly' ? 'Assembly' : 'C&C')
+        department: newPdcaForm.department || creatorDept,
+        deptName: newPdcaForm.department || creatorDept
       } : {
         id: 'user_anonymous',
         name: 'User',
         userName: 'user'
       },
-      createdById: effectiveAuthUser?.id || effectiveAuthUser?._id || 'user_anonymous'
+      createdById: String(effectiveAuthUser?.id || effectiveAuthUser?._id || creatorCode || 'user_anonymous')
     };
 
     const initialTopic = getLpaPdcaTopic({
@@ -1139,7 +1154,7 @@ function LpaPageContent({ viewContext }) {
       headerInfo: {
         ...(initialTopic.sheet?.headerInfo || {}),
         topicName: newSheet.title,
-        preparedBy: effectiveAuthUser?.name || effectiveAuthUser?.userName || ''
+        preparedBy: effectiveAuthUser?.fullName || effectiveAuthUser?.name || effectiveAuthUser?.userName || ''
       },
       createdBy: newSheet.createdBy,
       createdById: newSheet.createdById
@@ -1540,11 +1555,15 @@ function LpaPageContent({ viewContext }) {
                     <button
                       type="button"
                       onClick={() => {
+                        const userDept = (effectiveAuthUser && getUserPrimaryDepartment(effectiveAuthUser)) ||
+                          (typeof effectiveAuthUser?.department === 'string' ? effectiveAuthUser.department : effectiveAuthUser?.department?.name) ||
+                          effectiveAuthUser?.deptName ||
+                          (activeSection === 'assembly' ? 'Assembly' : 'C&C');
                         setNewPdcaForm({
                           title: '',
                           date: pdcaDate || todayIso,
                           unit: selectedUnit || 'Bawal',
-                          department: activeSection === 'assembly' ? 'Assembly' : 'C&C'
+                          department: userDept
                         });
                         setIsCreatePdcaModalOpen(true);
                       }}
@@ -1930,14 +1949,15 @@ function LpaPageContent({ viewContext }) {
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Department</label>
-                <input
-                  type="text"
-                  readOnly
-                  disabled
+                <select
                   value={newPdcaForm.department}
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-slate-100 text-slate-500 cursor-not-allowed select-none focus:outline-none"
-                  title="Department is locked based on the active section"
-                />
+                  onChange={e => setNewPdcaForm(prev => ({ ...prev, department: e.target.value }))}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none cursor-pointer"
+                >
+                  {PDCA_DEPARTMENTS.map(d => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
               </div>
               <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
                 <button

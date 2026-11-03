@@ -4,7 +4,7 @@ import PDCASheet from '@components/pdca/PDCASheet';
 import { usePDCA } from '@hooks/pdca/usePDCA.js';
 import pdcaApi from '@/services/api/pdcaApi.js';
 
-import { isRecordCreator, isUserInSameDepartmentAsRecord } from '../data/recordFilters';
+import { isRecordCreator, isUserInSameDepartmentAsRecord, canEditRecord } from '../data/recordFilters';
 
 export default function PDCASheetPage() {
   const { id } = useParams();
@@ -56,6 +56,7 @@ export default function PDCASheetPage() {
     };
   }, [selectedTopic?.id, selectedTopic?.topic]);
 
+  const canEdit = selectedTopic ? canEditRecord(selectedTopic, userContext?.user) : false;
   const isCreator = selectedTopic ? isRecordCreator(selectedTopic, userContext?.user) : false;
 
   return (
@@ -63,7 +64,7 @@ export default function PDCASheetPage() {
       <PDCASheet
         key={selectedTopic?.id || id}
         topic={selectedTopic || (id ? { id, topic: 'PDCA Audit Sheet' } : null)}
-        isCreator={isCreator}
+        isCreator={canEdit}
         currentUser={userContext?.user}
         onBack={() => {
           window.parent?.postMessage?.({

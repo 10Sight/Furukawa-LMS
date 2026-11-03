@@ -1,6 +1,6 @@
 import { loadPDCA, commitPDCA, addPDCA, updatePDCA, PDCA_STORAGE_KEY, createDefaultRows } from '../data/pdcaStore';
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { getStoredUnit, saveStoredUnit, resolveCurrentUserId, PDCA_PLANTS, isRecordCreator } from '../data/recordFilters';
+import { getStoredUnit, saveStoredUnit, resolveCurrentUserId, PDCA_PLANTS, isRecordCreator, canEditRecord, getUserPrimaryDepartment } from '../data/recordFilters';
 import pdcaApi from '@/services/api/pdcaApi.js';
 
 export const PDCAContext = createContext(null);
@@ -16,7 +16,7 @@ function getInitialUserContext() {
         const sections = Array.isArray(u.sections) ? u.sections : [];
         const sectionId = u.sectionId?.id || u.sectionId?._id || u.sectionId || u.sections?.[0]?.id || u.sections?.[0]?._id || u.sections?.[0];
         const section = (Array.isArray(sections) ? sections : []).find(item => String(item.id || item._id) === String(sectionId));
-        const userDept = u.department?.name || (typeof u.department === 'string' ? u.department : '') || u.deptName || (departments[0]?.name || '');
+        const userDept = getUserPrimaryDepartment(u) || (typeof u.department === 'string' ? u.department : u.department?.name) || u.deptName || (departments[0]?.name || '');
         return {
           loading: false,
           user: {
@@ -86,7 +86,7 @@ export function PDCAProvider({ children }) {
         }
         setUserContext(prev => {
           const incomingUser = event.data?.user || {};
-          const rawDept = incomingUser.department?.name || (typeof incomingUser.department === 'string' ? incomingUser.department : '') || incomingUser.deptName || prev?.user?.department || '';
+          const rawDept = getUserPrimaryDepartment(incomingUser) || (typeof incomingUser.department === 'string' ? incomingUser.department : incomingUser.department?.name) || incomingUser.deptName || prev?.user?.department || '';
           const mergedUser = {
             ...prev?.user,
             ...incomingUser,

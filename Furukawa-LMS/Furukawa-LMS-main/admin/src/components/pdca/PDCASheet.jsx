@@ -895,8 +895,8 @@ export default function PDCASheet({
   const canCreateSheet = Boolean(!readOnly && (hasFullAccess || hasPermission('pdca:create') || hasPermission('pdca:create_sheet') || hasPermission('lpa:create')));
   const canDeleteSheet = Boolean(!readOnly && (hasFullAccess || isCreator || hasPermission('pdca:delete') || hasPermission('pdca:delete_sheet') || hasPermission('lpa:delete')));
   const canAddRow = Boolean(!readOnly && (hasFullAccess || isCreatorOrSameDept || hasPermission('pdca:add_row') || hasPermission('pdca:add_rows') || hasPermission('lpa:pdca_add_row')));
-  const canDeleteRow = Boolean(!readOnly && (hasFullAccess || isCreator || hasPermission('pdca:delete') || hasPermission('pdca:delete_sheet') || hasPermission('lpa:delete')));
-  const canConfirmDefault = Boolean(!readOnly && (isAdmin || hasFullAccess || isCreator));
+  const canDeleteRow = Boolean(!readOnly && (hasFullAccess || isCreator || isCreatorOrSameDept || hasPermission('pdca:delete') || hasPermission('pdca:delete_sheet') || hasPermission('lpa:delete')));
+  const canConfirmDefault = Boolean(!readOnly && (isAdmin || hasFullAccess || isCreator || isCreatorOrSameDept));
   const canShowRowActions = Boolean(canEditEntireSheet || canAddRow || canDeleteRow);
   const cftAssignedMembers = topic?.assignedMembers || [];
   const defaultAssignedStr = cftAssignedMembers.length > 0

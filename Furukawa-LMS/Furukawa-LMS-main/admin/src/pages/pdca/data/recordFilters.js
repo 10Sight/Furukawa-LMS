@@ -224,9 +224,12 @@ export function getUserDepartments(user, employeeDatabase = VERIFIED_EMPLOYEE_MA
 
   const userName = user.name || user.fullName || '';
   const userCode = user.code || user.empId || user.employeeId || user.empCode || user.userName || '';
-  if (userName || userCode) {
-    const dbDept = findEmployeeDepartment({ name: userName, code: userCode }, employeeDatabase) ||
-      findEmployeeDepartment({ name: userName, code: userCode }, VERIFIED_EMPLOYEE_MASTER);
+  const userId = user.id || user._id || user.userId || '';
+  if (userName || userCode || userId) {
+    const dbDept = findEmployeeDepartment({ name: userName, code: userCode || String(userId) }, employeeDatabase) ||
+      findEmployeeDepartment({ name: userName, code: userCode || String(userId) }, VERIFIED_EMPLOYEE_MASTER) ||
+      (userCode ? findEmployeeDepartment(userCode, employeeDatabase) : null) ||
+      (userCode ? findEmployeeDepartment(userCode, VERIFIED_EMPLOYEE_MASTER) : null);
     addDept(dbDept);
   }
 
@@ -292,14 +295,24 @@ export function getRecordDepartments(record, employeeDatabase = VERIFIED_EMPLOYE
     addDept(createdBy.sectionName);
     const creatorName = createdBy.name || createdBy.fullName || '';
     const creatorCode = createdBy.code || createdBy.empId || createdBy.employeeId || createdBy.empCode || createdBy.userName || '';
-    if (creatorName || creatorCode) {
-      const dbDept = findEmployeeDepartment({ name: creatorName, code: creatorCode }, employeeDatabase) ||
-        findEmployeeDepartment({ name: creatorName, code: creatorCode }, VERIFIED_EMPLOYEE_MASTER);
+    const creatorId = createdBy.id || createdBy._id || createdBy.userId || '';
+    if (creatorName || creatorCode || creatorId) {
+      const dbDept = findEmployeeDepartment({ name: creatorName, code: creatorCode || String(creatorId) }, employeeDatabase) ||
+        findEmployeeDepartment({ name: creatorName, code: creatorCode || String(creatorId) }, VERIFIED_EMPLOYEE_MASTER) ||
+        (creatorCode ? findEmployeeDepartment(creatorCode, employeeDatabase) : null) ||
+        (creatorCode ? findEmployeeDepartment(creatorCode, VERIFIED_EMPLOYEE_MASTER) : null);
       addDept(dbDept);
     }
   } else if (typeof createdBy === 'string' && createdBy.trim()) {
     const dbDept = findEmployeeDepartment(createdBy, employeeDatabase) ||
       findEmployeeDepartment(createdBy, VERIFIED_EMPLOYEE_MASTER);
+    addDept(dbDept);
+  }
+
+  const createdById = record.createdById || record.sheet?.createdById;
+  if (createdById) {
+    const dbDept = findEmployeeDepartment(createdById, employeeDatabase) ||
+      findEmployeeDepartment(createdById, VERIFIED_EMPLOYEE_MASTER);
     addDept(dbDept);
   }
 
@@ -334,6 +347,7 @@ export function getRecordDepartments(record, employeeDatabase = VERIFIED_EMPLOYE
 
 export function isUserInSameDepartmentAsRecord(record, currentUser, employeeDatabase = VERIFIED_EMPLOYEE_MASTER) {
   if (!record || !currentUser) return false;
+  if (isRecordCreator(record, currentUser)) return true;
   const userDepts = getUserDepartments(currentUser, employeeDatabase);
   if (userDepts.length === 0) return false;
   const recordDepts = getRecordDepartments(record, employeeDatabase);
@@ -887,7 +901,7 @@ export function getUserPrimaryDepartment(user, employeeDatabase = VERIFIED_EMPLO
   if (!user || typeof user !== 'object') return '';
   const direct = user.deptName ||
     (typeof user.department === 'string' ? user.department : user.department?.name) ||
-    (Array.isArray(user.departments) && user.departments.length > 0 ? user.departments[0] : '');
+    (Array.isArray(user.departments) && user.departments.length > 0 ? (typeof user.departments[0] === 'string' ? user.departments[0] : user.departments[0]?.name) : '');
   if (direct && typeof direct === 'string' && direct.trim() && direct.trim().toLowerCase() !== 'cft') {
     return direct.trim();
   }

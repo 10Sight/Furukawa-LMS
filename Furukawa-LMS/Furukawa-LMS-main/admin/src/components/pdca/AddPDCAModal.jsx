@@ -7,6 +7,7 @@ import { X, Layers, Check, ChevronDown, AlignLeft, Calendar } from 'lucide-react
 
 import { PDCA_DEPARTMENTS } from '../../pages/pdca/data/pdcaConstants.js';
 import { findEmployeeDepartment } from '../../pages/pdca/data/pdcaEmployees.js';
+import { getUserPrimaryDepartment } from '../../pages/pdca/data/recordFilters.js';
 import { createDefaultRows } from '../../pages/pdca/data/pdcaStore.js';
 import CascadingLineAreaSelect from './CascadingLineAreaSelect';
 import { safeRandomUUID } from '../../utils/uuid.js';
@@ -153,8 +154,8 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
       const creatorName = (isEditMode ? formData.createdBy : activeUser?.name) || 'USER';
       const creatorCode = (isEditMode ? formData.employeeId : activeUser?.code) || '';
       const creatorEmail = activeUser?.email || editData?.createdBy?.email || (creatorCode ? `${creatorCode.toLowerCase()}@fme-minda.co.in` : '');
-      const creatorDepartment = activeUser?.department?.name ||
-        (typeof activeUser?.department === 'string' ? activeUser.department : '') ||
+      const creatorDepartment = (activeUser && getUserPrimaryDepartment(activeUser)) ||
+        (typeof activeUser?.department === 'string' ? activeUser.department : activeUser?.department?.name) ||
         activeUser?.deptName ||
         findEmployeeDepartment({ name: creatorName, code: creatorCode }) ||
         editData?.createdBy?.department ||
@@ -209,13 +210,19 @@ export default function AddPDCAModal({ isOpen, onClose, onAdd, editData, onUpdat
           date: dateStr,
           time: timeStr,
           createdBy: {
+            id: activeUser?.id || activeUser?._id || activeUser?.userId,
+            userId: activeUser?.id || activeUser?._id || activeUser?.userId,
             name: creatorName.toUpperCase(),
+            fullName: creatorName,
             code: creatorCode,
+            empId: creatorCode,
             email: creatorEmail,
             department: creatorDepartment,
+            deptName: creatorDepartment,
             avatarBg: randomAvatarBg,
             initials: getInitials(creatorName || 'NA'),
           },
+          createdById: String(activeUser?.id || activeUser?._id || activeUser?.userId || creatorCode || ''),
           isSelf: scope === 'Self PDCA',
           sheet: {
             headerInfo: {

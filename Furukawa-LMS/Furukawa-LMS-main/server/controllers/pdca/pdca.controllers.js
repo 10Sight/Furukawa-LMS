@@ -136,7 +136,17 @@ const SERVER_EMPLOYEE_DEPT_LOOKUP = [
 
 const lookupEmployeeDept = (person) => {
     if (!person) return '';
-    const code = String(person.code || person.empId || person.employeeId || person.userName || '').trim().toUpperCase();
+    if (typeof person === 'string') {
+        const trimmed = person.trim();
+        const code = trimmed.toUpperCase();
+        const name = trimmed.replace(/\s*\([^)]*\)/g, '').trim().toLowerCase();
+        const byCode = SERVER_EMPLOYEE_DEPT_LOOKUP.find(e => e.code.toUpperCase() === code);
+        if (byCode) return byCode.department;
+        const byName = SERVER_EMPLOYEE_DEPT_LOOKUP.find(e => e.name.toLowerCase() === name);
+        if (byName) return byName.department;
+        return '';
+    }
+    const code = String(person.code || person.empId || person.employeeId || person.userName || person.id || '').trim().toUpperCase();
     const name = String(person.fullName || person.name || '').replace(/\s*\([^)]*\)/g, '').trim().toLowerCase();
     if (code) {
         const byCode = SERVER_EMPLOYEE_DEPT_LOOKUP.find(e => e.code.toUpperCase() === code);
@@ -172,11 +182,19 @@ export const normalizeServerDepartment = (dept) => {
 
 export const isUserInSameDepartmentAsRecord = (user, record) => {
     if (!user || !record) return false;
+    if (isUserCreatorOfRecord(user, record)) return true;
     const userDepts = new Set();
     const addUD = (v) => {
         if (!v) return;
         if (Array.isArray(v)) { v.forEach(addUD); return; }
-        String(typeof v === 'object' ? (v.name || v.department || v.deptName || '') : v).split(/[,;]/).forEach(part => {
+        if (typeof v === 'object') {
+            addUD(v.name);
+            addUD(v.department);
+            addUD(v.deptName);
+            addUD(v.departmentName);
+            return;
+        }
+        String(v).split(/[,;]/).forEach(part => {
             const n = normalizeServerDepartment(part);
             if (n) userDepts.add(n);
         });
@@ -192,6 +210,9 @@ export const isUserInSameDepartmentAsRecord = (user, record) => {
         user.sections.forEach(s => addUD(s?.name || s?.deptName || s?.department || s));
     }
     addUD(lookupEmployeeDept(user));
+    if (user.empId) addUD(lookupEmployeeDept(user.empId));
+    if (user.code) addUD(lookupEmployeeDept(user.code));
+    if (user.userName) addUD(lookupEmployeeDept(user.userName));
 
     if (userDepts.size === 0) return false;
 
@@ -199,7 +220,14 @@ export const isUserInSameDepartmentAsRecord = (user, record) => {
     const addRD = (v) => {
         if (!v) return;
         if (Array.isArray(v)) { v.forEach(addRD); return; }
-        String(typeof v === 'object' ? (v.name || v.department || v.deptName || '') : v).split(/[,;]/).forEach(part => {
+        if (typeof v === 'object') {
+            addRD(v.name);
+            addRD(v.department);
+            addRD(v.deptName);
+            addRD(v.departmentName);
+            return;
+        }
+        String(v).split(/[,;]/).forEach(part => {
             const n = normalizeServerDepartment(part);
             if (n) recordDepts.add(n);
         });
@@ -215,13 +243,22 @@ export const isUserInSameDepartmentAsRecord = (user, record) => {
 
     const createdBy = record.createdBy || record.sheet?.createdBy;
     if (createdBy) {
-        addRD(createdBy.department);
-        addRD(createdBy.deptName);
-        addRD(createdBy.departmentName);
-        addRD(createdBy.departments);
-        addRD(createdBy.section);
-        addRD(createdBy.sectionName);
-        addRD(lookupEmployeeDept(createdBy));
+        if (typeof createdBy === 'object') {
+            addRD(createdBy.department);
+            addRD(createdBy.deptName);
+            addRD(createdBy.departmentName);
+            addRD(createdBy.departments);
+            addRD(createdBy.section);
+            addRD(createdBy.sectionName);
+            addRD(lookupEmployeeDept(createdBy));
+        } else if (typeof createdBy === 'string') {
+            addRD(lookupEmployeeDept(createdBy));
+        }
+    }
+
+    const createdById = record.createdById || record.sheet?.createdById;
+    if (createdById) {
+        addRD(lookupEmployeeDept(createdById));
     }
 
     const preparedBy = record.sheet?.headerInfo?.preparedBy;

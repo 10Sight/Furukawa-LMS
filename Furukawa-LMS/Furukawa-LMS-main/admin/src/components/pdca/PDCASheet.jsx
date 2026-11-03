@@ -1233,6 +1233,28 @@ export default function PDCASheet({
     return new Date().toISOString().split('T')[0];
   });
 
+  // Scroll chaining: when wheeling down over the sheet table, scroll the outer body
+  // (graph + sheet) first until the graph has scrolled out, and only then let the
+  // table scroll. Wheeling up scrolls the table back to its top first, then the
+  // body (native chaining already does that).
+  const bodyScrollRef = useRef(null);
+  const [sheetScrollEl, setSheetScrollEl] = useState(null);
+  useEffect(() => {
+    if (!sheetScrollEl) return undefined;
+    const handleWheel = (e) => {
+      if (e.ctrlKey || e.shiftKey || e.deltaY <= 0 || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+      const body = bodyScrollRef.current;
+      if (!body) return;
+      const bodyRemaining = body.scrollHeight - body.clientHeight - body.scrollTop;
+      if (bodyRemaining <= 1) return; // graph already scrolled out — let the table scroll
+      e.preventDefault();
+      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? body.clientHeight : 1;
+      body.scrollTop += e.deltaY * unit;
+    };
+    sheetScrollEl.addEventListener('wheel', handleWheel, { passive: false });
+    return () => sheetScrollEl.removeEventListener('wheel', handleWheel);
+  }, [sheetScrollEl]);
+
   // Baseline snapshot ref to detect unsaved edits during the current editing session
   const initialSnapshotRef = useRef(serializeSheet(initialRows, initialHeaderInfo));
   const initialStateRef = useRef({
@@ -5047,17 +5069,16 @@ export default function PDCASheet({
       </div>
 
       {/* Scrollable body: graph + sheet scroll under the fixed toolbar */}
-      <div className="w-full min-w-0 flex-1 min-h-0 flex flex-col gap-2 overflow-x-hidden overflow-y-auto">
+      <div ref={bodyScrollRef} className="w-full min-w-0 flex-1 min-h-0 flex flex-col gap-2 overflow-x-hidden overflow-y-auto">
       {/* Monthly PDCA Status Analytics Graph */}
       <PDCAGraphSection
         rows={rows}
-        allPDCARecords={data}
         currentDate={formDate}
         topic={topic}
       />
 
       {/* Spreadsheet Matrix Table Grid */}
-      <div className="w-full min-w-0 flex-auto shrink-0 min-h-[320px] bg-white border border-[#B0BEC5] shadow-xs overflow-auto max-h-[calc(100vh-62px)]">
+      <div ref={setSheetScrollEl} className="w-full min-w-0 flex-auto shrink-0 min-h-[320px] bg-white border border-[#B0BEC5] shadow-xs overflow-auto max-h-[calc(100vh-62px)]">
         <table className="w-full min-w-max text-left table-fixed border-separate border-spacing-0 border-t border-l border-[#B0BEC5] text-[11px]">
           <colgroup>
             <col style={{ width: `${dateColWidth}px`, minWidth: `${dateColWidth}px` }} />

@@ -1923,7 +1923,6 @@ export default function LpaPdcaSheet({
       {showMonthlyGraph && (
         <PDCAMonthlyGraph
           rows={rows}
-          allPDCARecords={data}
           currentDate={formDate}
           topic={topic}
           onToggleCollapse={() => setShowMonthlyGraph(false)}

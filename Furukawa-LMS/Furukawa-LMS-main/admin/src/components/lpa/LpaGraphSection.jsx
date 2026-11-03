@@ -21,6 +21,7 @@ export default function LpaGraphSection({ records = [], loading = false, selecte
   const [isVisible, setIsVisible] = useState(true);
   const [dateRange, setDateRange] = useState(DEFAULT_DATE_RANGE); // '7d' | '14d' | '30d' | 'month' | 'all'
   const [activeTab, setActiveTab] = useState(DEFAULT_TAB); // 'both' | 'assembly' | 'cc'
+  const [customRange, setCustomRange] = useState({ from: '', to: '' }); // used when dateRange === 'custom'
 
   // Target Benchmark line settable by Admin
   const [targetBenchmark, setTargetBenchmark] = useState(() => {
@@ -47,13 +48,13 @@ export default function LpaGraphSection({ records = [], loading = false, selecte
   const unitLabel = selectedUnit || 'All Units';
 
   const assemblyData = useMemo(
-    () => aggregateSectionData(records, 'assembly', unitFilter, dateRange),
-    [records, unitFilter, dateRange]
+    () => aggregateSectionData(records, 'assembly', unitFilter, dateRange, customRange),
+    [records, unitFilter, dateRange, customRange]
   );
 
   const ccData = useMemo(
-    () => aggregateSectionData(records, 'cc', unitFilter, dateRange),
-    [records, unitFilter, dateRange]
+    () => aggregateSectionData(records, 'cc', unitFilter, dateRange, customRange),
+    [records, unitFilter, dateRange, customRange]
   );
 
   const slots = useMemo(
@@ -73,6 +74,7 @@ export default function LpaGraphSection({ records = [], loading = false, selecte
   const handleResetFilters = () => {
     setDateRange(DEFAULT_DATE_RANGE);
     setActiveTab(DEFAULT_TAB);
+    setCustomRange({ from: '', to: '' });
   };
 
   if (!isVisible) {
@@ -114,6 +116,8 @@ export default function LpaGraphSection({ records = [], loading = false, selecte
       unitLabel={unitLabel}
       dateRange={dateRange}
       onDateRangeChange={setDateRange}
+      customRange={customRange}
+      onCustomRangeChange={setCustomRange}
       targetBenchmark={targetBenchmark}
       onTargetChange={handleTargetBenchmarkChange}
       isAdmin={isAdmin}

@@ -21,9 +21,11 @@ const DATE_RANGES = [
   { key: '14d', label: 'Last 14 Days' },
   { key: '30d', label: 'Last 30 Days' },
   { key: 'month', label: 'This Month' },
-  { key: 'all', label: 'All Recorded Dates' }
+  { key: 'all', label: 'All Recorded Dates' },
+  { key: 'custom', label: 'Custom Range' }
 ];
 
+const BELOW_TARGET_COLOR = '#dc2626';
 const VIEWPORT_WIDTH = 800;
 
 const escapeHtml = (str) => String(str ?? '')
@@ -73,6 +75,8 @@ export default function LpaPerformanceChartCard({
   unitLabel,
   dateRange,
   onDateRangeChange,
+  customRange = { from: '', to: '' },
+  onCustomRangeChange,
   targetBenchmark,
   onTargetChange,
   isAdmin,
@@ -84,15 +88,15 @@ export default function LpaPerformanceChartCard({
   const hasData = slots.length > 0;
 
   // Wide enough that a "100%" label fits above each of the 3 bars
-  const slotWidth = isBoth ? 140 : 130;
+  const slotWidth = isBoth ? 190 : 170;
   const needsScroll = slots.length * slotWidth > VIEWPORT_WIDTH;
 
   const chartOptions = useMemo(() => {
     const categories = slots.map(slot => {
-      const dateHtml = `<span style="color:#64748b;font-size:12px;font-weight:800;display:inline-block;margin-top:4px;${slot.isGroupStart ? '' : 'visibility:hidden'}">${escapeHtml(slot.formattedDate)}</span>`;
-      const emptyHtml = slot.isEmpty ? '<br/><span style="color:#94a3b8;font-size:10px;font-weight:600">No audit</span>' : '';
-      if (!isBoth) return `<span style="color:#64748b;font-size:12px;font-weight:800">${escapeHtml(slot.formattedDate)}</span>${emptyHtml}`;
-      const sheetHtml = `<span style="color:${SHEET_META[slot.sheet].color};font-size:12px;font-weight:800">${escapeHtml(slot.sheetLabel)}</span>`;
+      const dateHtml = `<span style="color:#64748b;font-size:14px;font-weight:800;display:inline-block;margin-top:4px;${slot.isGroupStart ? '' : 'visibility:hidden'}">${escapeHtml(slot.formattedDate)}</span>`;
+      const emptyHtml = slot.isEmpty ? '<br/><span style="color:#94a3b8;font-size:12px;font-weight:600">No audit</span>' : '';
+      if (!isBoth) return `<span style="color:#64748b;font-size:14px;font-weight:800">${escapeHtml(slot.formattedDate)}</span>${emptyHtml}`;
+      const sheetHtml = `<span style="color:${SHEET_META[slot.sheet].color};font-size:14px;font-weight:800">${escapeHtml(slot.sheetLabel)}</span>`;
       return `${sheetHtml}<br/>${dateHtml}${emptyHtml}`;
     });
 
@@ -104,10 +108,16 @@ export default function LpaPerformanceChartCard({
         .map(value => ({ value, width: 1, dashStyle: 'Dash', color: '#cbd5e1', zIndex: 3 }))
       : [];
 
+    // Bars below the target benchmark are drawn red
+    const levelPoints = (key, color) => slots.map(s => {
+      const y = s[key];
+      return { y, color: y != null && y < targetBenchmark ? BELOW_TARGET_COLOR : color };
+    });
+
     return {
       chart: {
-        height: 440,
-        marginBottom: isBoth ? 95 : 70,
+        height: 560,
+        marginBottom: isBoth ? 105 : 80,
         style: { fontFamily: 'inherit' },
         animation: { duration: 400 },
         ...(needsScroll && {
@@ -134,8 +144,8 @@ export default function LpaPerformanceChartCard({
         min: 0,
         max: 105,
         tickPositions: [0, 20, 40, 60, 80, 100],
-        title: { text: 'Score %', style: { color: '#94a3b8', fontSize: '12px', fontWeight: 'bold' } },
-        labels: { format: '{value}%', style: { fontSize: '12px', fontWeight: 'bold' } },
+        title: { text: 'Score %', style: { color: '#94a3b8', fontSize: '14px', fontWeight: 'bold' } },
+        labels: { format: '{value}%', style: { fontSize: '14px', fontWeight: 'bold' } },
         gridLineColor: '#f1f5f9',
         plotLines: [{
           value: targetBenchmark,
@@ -147,7 +157,7 @@ export default function LpaPerformanceChartCard({
             text: `Target: ${targetBenchmark}%`,
             align: 'right',
             x: -6,
-            style: { color: '#059669', fontSize: '11px', fontWeight: '700' }
+            style: { color: '#059669', fontSize: '13px', fontWeight: '700' }
           }
         }]
       },
@@ -156,7 +166,7 @@ export default function LpaPerformanceChartCard({
         align: 'right',
         verticalAlign: 'top',
         layout: 'horizontal',
-        itemStyle: { fontSize: '12px', fontWeight: 'bold', color: '#475569' }
+        itemStyle: { fontSize: '14px', fontWeight: 'bold', color: '#475569' }
       },
       tooltip: {
         shared: true,
@@ -166,7 +176,7 @@ export default function LpaPerformanceChartCard({
         borderColor: '#e2e8f0',
         borderRadius: 12,
         padding: 12,
-        style: { fontSize: '12px' },
+        style: { fontSize: '13px' },
         formatter() {
           const first = this.points?.[0] ?? this;
           const idx = first.point?.index ?? first.index;
@@ -209,14 +219,18 @@ export default function LpaPerformanceChartCard({
           borderWidth: 0,
           pointPadding: 0.08,
           groupPadding: 0.18,
-          maxPointWidth: 28,
+          maxPointWidth: 42,
           dataLabels: {
             enabled: true,
             inside: false,
             crop: false,
             overflow: 'allow',
-            formatter() { return this.y != null ? `${this.y}%` : ''; },
-            style: { fontSize: '10px', fontWeight: '800', color: '#334155', textOutline: '2px white' }
+            formatter() {
+              if (this.y == null) return '';
+              const color = this.y < targetBenchmark ? BELOW_TARGET_COLOR : '#334155';
+              return `<span style="color:${color}">${this.y}%</span>`;
+            },
+            style: { fontSize: '13px', fontWeight: '800', textOutline: '2px white' }
           }
         }
       },
@@ -224,15 +238,15 @@ export default function LpaPerformanceChartCard({
         rules: [{
           condition: { maxWidth: 767 },
           chartOptions: {
-            chart: { height: 460 },
-            legend: { align: 'center', itemStyle: { fontSize: '11px' } }
+            chart: { height: 520 },
+            legend: { align: 'center', itemStyle: { fontSize: '12px' } }
           }
         }]
       },
       series: [
-        { type: 'column', name: 'Level 3 Score (%)', color: COLORS.level3, data: slots.map(s => s.level3Score) },
-        { type: 'column', name: 'Level 2 Score (%)', color: COLORS.level2, data: slots.map(s => s.level2Score) },
-        { type: 'column', name: 'Level 1 Score (%)', color: COLORS.level1, data: slots.map(s => s.level1Score) }
+        { type: 'column', name: 'Level 3 Score (%)', color: COLORS.level3, data: levelPoints('level3Score', COLORS.level3) },
+        { type: 'column', name: 'Level 2 Score (%)', color: COLORS.level2, data: levelPoints('level2Score', COLORS.level2) },
+        { type: 'column', name: 'Level 1 Score (%)', color: COLORS.level1, data: levelPoints('level1Score', COLORS.level1) }
       ]
     };
   }, [slots, isBoth, needsScroll, slotWidth, targetBenchmark]);
@@ -253,7 +267,8 @@ export default function LpaPerformanceChartCard({
               </span>
             </CardTitle>
             <CardDescription className="text-xs text-slate-500">
-              Daily scores by hierarchy levels (Level 3, Level 2, Level 1) with target benchmark
+              Daily scores by hierarchy levels (Level 3, Level 2, Level 1) with target benchmark.{' '}
+              <span className="font-semibold text-red-600">Red bars are below target.</span>
             </CardDescription>
           </div>
 
@@ -289,6 +304,31 @@ export default function LpaPerformanceChartCard({
         {/* Filter bar */}
         <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-end gap-4">
           <FilterSelect label="Timeframe" value={dateRange} onChange={onDateRangeChange} options={DATE_RANGES} />
+
+          {dateRange === 'custom' && (
+            <>
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">From</Label>
+                <Input
+                  type="date"
+                  value={customRange.from}
+                  max={customRange.to || undefined}
+                  onChange={(e) => onCustomRangeChange?.({ ...customRange, from: e.target.value })}
+                  className="h-8 w-36 text-xs"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">To</Label>
+                <Input
+                  type="date"
+                  value={customRange.to}
+                  min={customRange.from || undefined}
+                  onChange={(e) => onCustomRangeChange?.({ ...customRange, to: e.target.value })}
+                  className="h-8 w-36 text-xs"
+                />
+              </div>
+            </>
+          )}
 
           <div className="flex flex-col gap-1.5">
             <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Target %</Label>

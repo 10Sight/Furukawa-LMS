@@ -266,3 +266,16 @@ test('10. buildCombinedTableRows sorts newest first, Assembly before C&C, skips 
   const ccOnly = buildCombinedTableRows([day('2026-10-19', 80)], [day('2026-10-20', 60)], 'cc');
   assert.deepEqual(ccOnly.map(r => r.sheet), ['cc']);
 });
+
+test('11. Custom date range keeps only records within inclusive From/To bounds', () => {
+  const records = ['2026-10-18', '2026-10-19', '2026-10-20', '2026-10-21'].map((auditDate, i) => ({
+    id: `rec-${i}`, section: 'assembly', unit: 'Bawal', auditDate
+  }));
+
+  const dates = (range) => aggregateSectionData(records, 'assembly', 'all', 'custom', range).dailyData.map(d => d.date);
+
+  assert.deepEqual(dates({ from: '2026-10-19', to: '2026-10-20' }), ['2026-10-19', '2026-10-20']);
+  assert.deepEqual(dates({ from: '2026-10-20', to: '' }), ['2026-10-20', '2026-10-21']);
+  assert.deepEqual(dates({ from: '', to: '2026-10-18' }), ['2026-10-18']);
+  assert.equal(dates({ from: '', to: '' }).length, 4);
+});

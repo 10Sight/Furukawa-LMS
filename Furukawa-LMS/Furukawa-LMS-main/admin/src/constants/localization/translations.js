@@ -69,6 +69,7 @@ export const translations = {
     "nav.handoverSheet": "Hand Over Sheet",
     "nav.dailyProductionReport": "DPR Report",
     "nav.abnormalCondition": "Abnormal Condition",
+    "nav.suggestionChecksheet": "Suggestion Checksheet",
     "nav.dailyMeeting": "Management Information System",
     "nav.dprManage": "DPR Setup",
     "nav.mentors": "Mentors",

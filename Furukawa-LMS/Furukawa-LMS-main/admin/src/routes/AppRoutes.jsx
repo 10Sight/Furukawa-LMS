@@ -17,6 +17,7 @@ const LandingPage = lazy(() => import("../pages/home/LandingPage.jsx"));
 const DashboardLayout = lazy(() => import("../components/layout/DashboardLayout.jsx"));
 const FmeDashboardPage = lazy(() => import("../pages/cms/FmeDashboardPage.jsx"));
 const LpaPage = lazy(() => import("../pages/lpa/LpaPage.jsx"));
+const SuggestionChecksheetPage = lazy(() => import("../pages/suggestion-checksheet/SuggestionChecksheetPage.jsx"));
 const CmsLayout = lazy(() => import("../components/layout/CmsLayout.jsx").then(m => ({ default: m.CmsLayout })));
 const CustomRoleLayout = lazy(() => import("../components/layout/CustomRoleLayout.jsx").then(m => ({ default: m.CustomRoleLayout })));
 const DailyMeetingLayout = lazy(() => import("../components/layout/DailyMeetingLayout.jsx").then(m => ({ default: m.DailyMeetingLayout })));
@@ -416,6 +417,7 @@ const AppRoutes = () => {
                 <LpaPage />
               </RequireAccess>
             } />
+            <Route path="suggestion-checksheet" element={<SuggestionChecksheetPage />} />
           </Route>
 
           {/* Daily Meeting Layout Routes */}

@@ -8,6 +8,7 @@ import { poolPromise, mssql as sql } from "../db/connectDB.js";
 import { getEligibleUserSql } from "../utils/userEligibility.js";
 import { formatLocalDate } from "../utils/istDate.util.js";
 import { prepareManpowerUser, isUserActiveForManpowerDate, getManpowerInactiveReason } from "../utils/manpowerLifecycle.js";
+import { queueRecompute } from "../services/dailyHrMeetingSnapshot.service.js";
 
 
 // export const uploadAttendance = async (req, res, next) => {
@@ -1076,6 +1077,10 @@ export const uploadAttendance = async (req, res, next) => {
         logger.info(
             `Upload complete for ${attendanceDate}: ${matchedRowsSaved} matched, ${unmappedRowsSaved} unmapped. Existing date data was fully replaced.`
         );
+
+        // Refresh the stored Daily HR Meeting figures for this date in the background. Never fails
+        // or delays the upload; a failed refresh is retried by the nightly catch-up job.
+        queueRecompute([attendanceDate], { source: "UPLOAD", userId: req.user?.id ?? null });
 
         return res.status(200).json({
             success: true,

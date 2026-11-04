@@ -26,6 +26,7 @@ const Daily5MRecording = lazy(() => import("../pages/production/daily-5m/Daily5M
 const Daily5MDashboard = lazy(() => import("../pages/production/daily-5m/Daily5MDashboard.jsx"));
 const DailyMeeting = lazy(() => import("../pages/meetings/DailyMeeting.jsx"));
 const MisPortalHub = lazy(() => import("../pages/meetings/MisPortalHub.jsx"));
+const DailyHrMeeting = lazy(() => import("../pages/meetings/DailyHrMeeting.jsx"));
 const MonthlyMeetingReport = lazy(() => import("../pages/meetings/MonthlyMeetingReport.jsx"));
 const DashboardHome = lazy(() => import("../pages/dashboard/admin/DashboardHome.jsx"));
 const AssemblyDashboard = lazy(() => import("../pages/dashboard/admin/AssemblyDashboard.jsx"));
@@ -427,6 +428,7 @@ const AppRoutes = () => {
             }
           >
             <Route index element={<MisPortalHub />} />
+            <Route path="hr-meeting" element={<DailyHrMeeting />} />
             <Route path="morning-meeting" element={<DailyMeeting />} />
             <Route path="monthly-report" element={<MonthlyMeetingReport />} />
           </Route>
@@ -602,6 +604,7 @@ const AppRoutes = () => {
             <Route path="handover-sheet" element={<HandoverSheetPage />} />
             <Route path="abnormal-condition" element={<AbnormalCondition />} />
             <Route path="daily-meeting" element={<MisPortalHub />} />
+            <Route path="daily-meeting/hr-meeting" element={<DailyHrMeeting />} />
             <Route path="daily-meeting/morning-meeting" element={<DailyMeeting />} />
             <Route path="daily-meeting/monthly-report" element={<MonthlyMeetingReport />} />
             <Route path="pdca" element={

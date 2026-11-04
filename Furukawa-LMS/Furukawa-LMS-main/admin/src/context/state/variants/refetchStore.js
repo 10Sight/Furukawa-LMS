@@ -45,6 +45,7 @@ import { EvaluationTestApi } from "../../../services/api/EvaluationTestApi.js";
 import { contractorApi } from "../../../services/api/ContractorApi.js";
 import { leftRequestApi } from "../../../services/api/LeftRequestApi.js";
 import { monthlyMeetingReportApi } from "../../../services/api/MonthlyMeetingReportApi.js";
+import { dailyHrMeetingApi } from "../../../services/api/DailyHrMeetingApi.js";
 
 
 
@@ -99,6 +100,7 @@ const store = configureStore({
         [contractorApi.reducerPath]: contractorApi.reducer,
         [leftRequestApi.reducerPath]: leftRequestApi.reducer,
         [monthlyMeetingReportApi.reducerPath]: monthlyMeetingReportApi.reducer,
+        [dailyHrMeetingApi.reducerPath]: dailyHrMeetingApi.reducer,
     },
     middleware: (getDefaultMiddleware) =>
         getDefaultMiddleware({ serializableCheck: { isSerializable } }).concat(
@@ -138,6 +140,7 @@ const store = configureStore({
             contractorApi.middleware,
             leftRequestApi.middleware,
             monthlyMeetingReportApi.middleware,
+            dailyHrMeetingApi.middleware,
         ),
 });
 

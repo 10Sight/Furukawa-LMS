@@ -14,6 +14,11 @@ import {
     prepareManpowerUser,
     isUserActiveForManpowerDate,
 } from "../utils/manpowerLifecycle.js";
+import {
+    getRequirementApprovalSql,
+    buildAttendanceUserIndex,
+    isCountedPresentAttendance,
+} from "../utils/manpowerPresence.js";
 import logger from "../logger/winston.logger.js";
 
 
@@ -1473,26 +1478,8 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         params.push(...cleanValues);
     };
 
-    const approvalCondition = `
-        AND (
-            (
-                ISNULL(r.is_active, 0) = 1
-                AND LOWER(LTRIM(RTRIM(ISNULL(r.approvalStatus, 'approved')))) IN (
-                    'approved',
-                    'system_approved',
-                    'system approved',
-                    'system-approved',
-                    'systemapproved'
-                )
-            )
-            OR LOWER(LTRIM(RTRIM(ISNULL(r.approvalStatus, '')))) IN (
-                'system_approved',
-                'system approved',
-                'system-approved',
-                'systemapproved'
-            )
-        )
-    `;
+    // Shared with the Daily HR Meeting report (utils/manpowerPresence.js).
+    const approvalCondition = getRequirementApprovalSql("r");
 
     if (shouldComputeRequirement) {
     try {
@@ -2097,22 +2084,8 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         // If that shared population is unavailable, the exact original SQL remains below
         // as a safe fallback.
         if (Array.isArray(eligibleManpowerRowsForRejoining)) {
-            const attendanceUserById = new Map(
-                eligibleManpowerRowsForRejoining
-                    .map((userRow) => {
-                        const userId = Number(userRow?.id);
-                        if (!Number.isInteger(userId) || userId <= 0) return null;
-
-                        return [
-                            userId,
-                            {
-                                empIdKey: String(userRow?.empId || '').trim().toUpperCase(),
-                                prepared: prepareManpowerUser(userRow),
-                            },
-                        ];
-                    })
-                    .filter(Boolean)
-            );
+            // Shared with the Daily HR Meeting report (utils/manpowerPresence.js).
+            const attendanceUserById = buildAttendanceUserIndex(eligibleManpowerRowsForRejoining);
 
             let attendanceRowsSql = `
                 SELECT
@@ -2172,17 +2145,9 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
                     bucket.absentUsers.add(userId);
                 }
 
-                // Preserve original PRESENT rule exactly:
+                // Preserve original PRESENT rule exactly (shared with the Daily HR Meeting report):
                 // P/PRESENT + payCode=empId + employee lifecycle active on attendance date.
-                if (!['P', 'PRESENT'].includes(attendanceStatus)) continue;
-
-                const userInfo = attendanceUserById.get(userId);
-                if (!userInfo) continue;
-
-                const payCodeKey = String(row?.payCode || '').trim().toUpperCase();
-                if (!payCodeKey || payCodeKey !== userInfo.empIdKey) continue;
-
-                if (!isUserActiveForManpowerDate(userInfo.prepared, fullDate)) continue;
+                if (!isCountedPresentAttendance(row, attendanceUserById.get(userId), fullDate)) continue;
 
                 bucket.mappedPresentUsers.add(userId);
             }

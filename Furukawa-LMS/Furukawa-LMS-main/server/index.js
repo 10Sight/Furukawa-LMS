@@ -61,6 +61,7 @@ import dailyMorningMeetingRoutes from "./routes/dailyMorningMeeting.routes.js";
 import monthlyReportFolderRoutes from "./routes/monthlyReportFolder.routes.js";
 import monthlyReportRecordRoutes from "./routes/monthlyReportRecord.routes.js";
 import monthlyReportConfigRoutes from "./routes/monthlyReportConfig.routes.js";
+import dailyManpowerReportRoutes from "./routes/dailyManpowerReport.routes.js";
 import OnJobTraining from "./models/onJobTraining.model.js"; // Initialize table
 import User from "./models/auth.model.js";
 import timelineScheduler from "./services/timelineScheduler.js";
@@ -76,6 +77,7 @@ import DojoStageHistory from "./models/dojoStagHistory.model.js";
 import dojoStageHistoryScheduler from "./services/dojoStageHistoryScheduler.js";
 import sheetStorageMaintenance from "./services/sheetStorageMaintenance.js";
 import auditRetentionScheduler from "./services/auditRetentionScheduler.js";
+import dailyHrMeetingScheduler from "./services/dailyHrMeetingScheduler.js";
 import operatorObservanceRoutes from "./routes/operatorObservance.routes.js";
 import daily5MRoutes from "./routes/daily5M.routes.js";
 import dailyProductionReportRoutes from "./routes/dailyProductionReport.routes.js";
@@ -366,6 +368,7 @@ app.use("/api/daily-morning-meetings", dailyMorningMeetingRoutes);
 app.use("/api/monthly-report-folders", monthlyReportFolderRoutes);
 app.use("/api/monthly-report-records", monthlyReportRecordRoutes);
 app.use("/api/monthly-report-configs", monthlyReportConfigRoutes);
+app.use("/api/v1/daily-manpower-report", dailyManpowerReportRoutes);
 app.use("/api/report-clubs", reportClubRoutes);
 app.use("/api/mentee-feedback", menteeFeedbackRoutes);
 app.use("/api/learning-comparisons", learningComparisonRoutes);
@@ -603,6 +606,10 @@ const startServer = async () => {
                 await import("./models/designationShutter.model.js").then(m => m.default.init());
                 await DojoStageHistory.init();
                 await LpaRecord.init().catch(err => logger.error("LPA table init error:", err));
+                // Daily HR Meeting (Daily Manpower Report) tables
+                await import("./models/dailyManpowerConfig.model.js").then(m => m.default.init()).catch(err => logger.error("Daily HR Meeting config table init error:", err));
+                await import("./models/dailyManpowerManualEntry.model.js").then(m => m.default.init()).catch(err => logger.error("Daily HR Meeting manual entry table init error:", err));
+                await import("./models/dailyHrMeetingDaily.model.js").then(m => m.default.init()).catch(err => logger.error("Daily HR Meeting daily table init error:", err));
 
                 // Initialize Schedulers only after every table/migration init above has completed, so
                 // their cron ticks can never race a still-running migration for locks on the same tables.
@@ -618,6 +625,7 @@ const startServer = async () => {
                 dojoStageHistoryScheduler.init();
                 sheetStorageMaintenance.init();
                 auditRetentionScheduler.init();
+                dailyHrMeetingScheduler.init();
 
                 // Deliberately no historical backfill here. dojo_stage_history should only ever hold
                 // snapshots that were actually captured on (or very near) the date they're for — via
@@ -643,6 +651,7 @@ const startServer = async () => {
             headcountReportScheduler.stop();
             sheetStorageMaintenance.stop();
             auditRetentionScheduler.stop();
+            dailyHrMeetingScheduler.stop();
             process.exit(0);
         });
 
@@ -657,6 +666,7 @@ const startServer = async () => {
             headcountReportScheduler.stop();
             sheetStorageMaintenance.stop();
             auditRetentionScheduler.stop();
+            dailyHrMeetingScheduler.stop();
             process.exit(0);
         });
 

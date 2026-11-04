@@ -115,6 +115,10 @@ const SYSTEM_PERMISSIONS = {
   DAILY_5M_SELECT_PAST_DATE: "daily5m:select_past_date",
   DAILY_5M_EDIT_APPROVED_DATE: "daily5m:edit_approved_date",
 
+  // Daily HR Meeting (Daily Manpower Report)
+  HR_MEETING_READ: "hr_meeting:read",
+  HR_MEETING_UPDATE: "hr_meeting:update",
+
   // Daily Meeting Management
   DAILY_MEETING_READ: "daily_meeting:read",
   DAILY_MEETING_CREATE: "daily_meeting:create",
@@ -503,6 +507,7 @@ const ASSIGNABLE_PORTALS = [
     description: "Management Information System",
     pages: [
       { key: "daily-meeting", name: "MIS Portal Home", description: "The MIS Portal tile on the main menu and its workspace chooser" },
+      { key: "mis-hr-meeting", name: "Daily HR Meeting", description: "Daily Manpower Report: department-wise present headcount, overtime and gap against requirement", requires: SYSTEM_PERMISSIONS.HR_MEETING_READ },
       { key: "mis-morning-meeting", name: "Daily Morning Meeting", description: "Section-wise standup spreadsheets and charts", requires: SYSTEM_PERMISSIONS.DAILY_MEETING_READ },
       { key: "mis-monthly-report", name: "Monthly Meeting Report", description: "Monthly report folders and presentations", requires: SYSTEM_PERMISSIONS.MONTHLY_REPORT_READ }
     ]
@@ -647,6 +652,10 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.DAILY_5M_DELETE, name: "Delete Daily 5M", description: "Permanently delete daily 5M recording records" },
         { id: SYSTEM_PERMISSIONS.DAILY_5M_SELECT_PAST_DATE, name: "Select Past Date", description: "Allows selecting dates before today in daily 5M row entries and session creation (backdating). Requires Update Daily 5M" },
         { id: SYSTEM_PERMISSIONS.DAILY_5M_EDIT_APPROVED_DATE, name: "Edit Approved Date", description: "Edit the Date column of a daily 5M row after it has been approved (a remark is required). Requires Update Daily 5M" }
+      ],
+      "MIS Portal - Daily HR Meeting": [
+        { id: SYSTEM_PERMISSIONS.HR_MEETING_READ, name: "View Daily HR Meeting", description: "View the Daily Manpower Report (present headcount, overtime and gap per department) and export it to Excel" },
+        { id: SYSTEM_PERMISSIONS.HR_MEETING_UPDATE, name: "Edit Daily HR Meeting", description: "Configure report sections, map attendance departments, enter Training figures and recalculate a month. Requires View Daily HR Meeting" }
       ],
       "MIS Portal - Daily Morning Meeting": [
         { id: SYSTEM_PERMISSIONS.DAILY_MEETING_READ, name: "View Daily Meetings", description: "View daily standup meetings and spreadsheet contents across all departments and sections" },

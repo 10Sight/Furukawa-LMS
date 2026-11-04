@@ -3,9 +3,10 @@ import { MAN_MACHINE_INTERLINK_URL } from "../../components/man-machine-interlin
 
 // The MIS Portal ("daily-meeting" layout) and the pages inside it.
 export const MIS_PORTAL_KEY = "daily-meeting";
+export const MIS_HR_MEETING_KEY = "mis-hr-meeting";
 export const MIS_MORNING_MEETING_KEY = "mis-morning-meeting";
 export const MIS_MONTHLY_REPORT_KEY = "mis-monthly-report";
-const MIS_PAGE_KEYS = [MIS_MORNING_MEETING_KEY, MIS_MONTHLY_REPORT_KEY];
+const MIS_PAGE_KEYS = [MIS_HR_MEETING_KEY, MIS_MORNING_MEETING_KEY, MIS_MONTHLY_REPORT_KEY];
 
 // The efficiency charts used to live on the admin Dashboard.
 export const MANPOWER_EFFICIENCY_KEY = "manpower-efficiency";
@@ -399,6 +400,7 @@ export const PAGE_REGISTRY = [
 
     // MIS Portal layout
     { key: MIS_PORTAL_KEY, label: "Management Information System", labelKey: "nav.dailyMeeting", layout: "daily-meeting", link: "/daily-meeting", icon: "IconCalendar" },
+    { key: MIS_HR_MEETING_KEY, label: "Daily HR Meeting", labelKey: "misPortal.dailyHrMeetingTitle", layout: "daily-meeting", link: "/daily-meeting/hr-meeting", icon: "IconUsers" },
     { key: MIS_MORNING_MEETING_KEY, label: "Daily Morning Meeting", labelKey: "misPortal.dailyMorningMeetingTitle", layout: "daily-meeting", link: "/daily-meeting/morning-meeting", icon: "IconCalendar" },
     { key: MIS_MONTHLY_REPORT_KEY, label: "Monthly Meeting Report", labelKey: "misPortal.monthlyMeetingReportTitle", layout: "daily-meeting", link: "/daily-meeting/monthly-report", icon: "IconFileText" },
 

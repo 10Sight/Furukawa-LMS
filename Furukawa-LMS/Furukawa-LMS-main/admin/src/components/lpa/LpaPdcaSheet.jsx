@@ -2520,14 +2520,14 @@ export default function LpaPdcaSheet({
                                   </span>
                                 </div>
                               ) : (
-                                <div className="relative w-full h-full min-h-[90px] flex items-center justify-center p-0 m-0 overflow-hidden group/imgcell">
+                                <div className="relative w-full h-full min-h-[90px] flex items-center justify-center p-1.5 m-0 overflow-hidden group/imgcell">
                                   <img
                                     src={row.imageBefore}
                                     alt="Before"
-                                    className="w-full h-full object-cover block m-0 p-0 transition-transform duration-200 group-hover/imgcell:scale-105"
-                                    style={{ minHeight: '90px', maxHeight: '240px' }}
+                                    className="w-full h-full object-cover block m-0 p-0 rounded-md transition-transform duration-200 group-hover/imgcell:scale-105"
+                                    style={{ minHeight: '85px', maxHeight: '240px' }}
                                   />
-                                  <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover/imgcell:opacity-100 flex items-center justify-center transition-opacity duration-150 pointer-events-none">
+                                  <div className="absolute inset-1.5 bg-slate-900/40 opacity-0 group-hover/imgcell:opacity-100 flex items-center justify-center transition-opacity duration-150 pointer-events-none rounded-md">
                                     <span className="flex items-center gap-1.5 bg-black/75 backdrop-blur-xs px-2.5 py-1 rounded-md text-[11px] font-semibold text-white shadow-md">
                                       <Eye className="w-3.5 h-3.5" />
                                       <span>View</span>
@@ -2654,7 +2654,7 @@ export default function LpaPdcaSheet({
                                 </span>
                               </div>
                             ) : (
-                              <div className="relative w-full h-full min-h-[90px] flex items-center justify-center p-0 m-0 overflow-hidden group/imgcell">
+                              <div className="relative w-full h-full min-h-[90px] flex items-center justify-center p-1.5 m-0 overflow-hidden group/imgcell">
                                 <img
                                   src={row.imageAfter}
                                   alt="After"
@@ -2664,8 +2664,8 @@ export default function LpaPdcaSheet({
                                     preview: row.imageAfter,
                                     fileType: 'image'
                                   })}
-                                  className="w-full h-full object-cover cursor-pointer block m-0 p-0 transition-transform duration-200 group-hover/imgcell:scale-105"
-                                  style={{ minHeight: '90px', maxHeight: '240px' }}
+                                  className="w-full h-full object-cover cursor-pointer block m-0 p-0 rounded-md transition-transform duration-200 group-hover/imgcell:scale-105"
+                                  style={{ minHeight: '85px', maxHeight: '240px' }}
                                 />
                                 <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover/imgcell:opacity-100 flex items-center justify-center transition-opacity duration-150 pointer-events-none">
                                   <span className="flex items-center gap-1.5 bg-black/75 backdrop-blur-xs px-2.5 py-1 rounded-md text-[11px] font-semibold text-white shadow-md">

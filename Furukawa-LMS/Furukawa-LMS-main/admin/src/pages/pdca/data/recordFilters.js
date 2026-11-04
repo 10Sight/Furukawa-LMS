@@ -585,15 +585,33 @@ export function areSectionsMatching(userSecs, recordSecs, userDepts = [], record
   if (userSecs.length === 0 || recordSecs.length === 0) {
     return false;
   }
+  // 1. Direct equality (e.g. 'assembly' === 'assembly', 'id:70' === 'id:70')
   if (userSecs.some(us => recordSecs.includes(us))) {
     return true;
   }
-  const isGenericLpaAssembly = recordSecs.includes('assembly');
-  if (isGenericLpaAssembly && (userSecs.includes('assembly') || userDepts.includes('assembly'))) {
+  // 2. Substring matching for section tokens
+  for (const us of userSecs) {
+    if (!us || us.startsWith('id:')) continue;
+    for (const rs of recordSecs) {
+      if (!rs || rs.startsWith('id:')) continue;
+      if (us === rs) return true;
+      if (us.length >= 3 && rs.length >= 3) {
+        if (us.includes(rs) || rs.includes(us)) return true;
+      }
+    }
+  }
+  // 3. Generic LPA Assembly section match
+  const isAssemblyRecordSec = recordSecs.some(rs => rs === 'assembly' || (typeof rs === 'string' && rs.includes('assembly')));
+  const isAssemblyUserSec = userSecs.some(us => us === 'assembly' || (typeof us === 'string' && us.includes('assembly')));
+  const isAssemblyUserDept = userDepts.includes('assembly');
+  if (isAssemblyRecordSec && (isAssemblyUserSec || isAssemblyUserDept)) {
     return true;
   }
-  const isGenericLpaCc = recordSecs.includes('cc');
-  if (isGenericLpaCc && (userSecs.includes('cc') || userDepts.includes('c&c'))) {
+  // 4. Generic LPA CC section match
+  const isCcRecordSec = recordSecs.some(rs => rs === 'cc' || (typeof rs === 'string' && (rs.includes('cc') || rs.includes('crimping') || rs.includes('candc') || rs.includes('cutting'))));
+  const isCcUserSec = userSecs.some(us => us === 'cc' || (typeof us === 'string' && (us.includes('cc') || us.includes('crimping') || us.includes('candc') || us.includes('cutting'))));
+  const isCcUserDept = userDepts.includes('c&c');
+  if (isCcRecordSec && (isCcUserSec || isCcUserDept)) {
     return true;
   }
   return false;
@@ -602,6 +620,16 @@ export function areSectionsMatching(userSecs, recordSecs, userDepts = [], record
 export function isUserInSameDepartmentAsRecord(record, currentUser, employeeDatabase = VERIFIED_EMPLOYEE_MASTER) {
   if (!record || !currentUser) return false;
   if (isRecordCreator(record, currentUser)) return true;
+
+  // Administrators have full unrestricted access across all sheets
+  if (
+    currentUser.isAdmin === true ||
+    currentUser.isAdmin === 1 ||
+    String(currentUser.role || '').toUpperCase() === 'ADMIN' ||
+    String(currentUser.role || '').toUpperCase() === 'SUPERADMIN'
+  ) {
+    return true;
+  }
 
   // 1. Department match: User and Record belong to the same department
   const userDepts = getUserDepartments(currentUser, employeeDatabase);
@@ -613,8 +641,25 @@ export function isUserInSameDepartmentAsRecord(record, currentUser, employeeData
   const recordSecs = getRecordSections(record, employeeDatabase);
   const isSameSec = areSectionsMatching(userSecs, recordSecs, userDepts, recordDepts);
 
-  // If same department OR same section (or both), access is granted!
-  return Boolean(isSameDept || isSameSec);
+  if (isSameDept || isSameSec) {
+    return true;
+  }
+
+  // 3. Direct Colleague-to-Creator match:
+  // If the record was created by a colleague in the same department OR same section, grant access
+  const creator = record.createdBy || record.sheet?.createdBy;
+  if (creator && typeof creator === 'object') {
+    const creatorDepts = getUserDepartments(creator, employeeDatabase);
+    if (userDepts.length > 0 && creatorDepts.length > 0 && userDepts.some(ud => creatorDepts.includes(ud))) {
+      return true;
+    }
+    const creatorSecs = getUserSections(creator, employeeDatabase);
+    if (areSectionsMatching(userSecs, creatorSecs, userDepts, creatorDepts)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 export const isUserInSameDepartmentAndSectionAsRecord = isUserInSameDepartmentAsRecord;
@@ -760,6 +805,12 @@ export function getMissingSaveMandatoryFields(row) {
   const staffNameVal = String(row.staffName || row.staffEmployee || staffFromList[0] || '').trim();
   if (!staffNameVal) {
     missing.push('Staff Name');
+  }
+
+  // 8. Std. Duration in min (Mandatory if Response Date is selected)
+  const hasResponseDate = Boolean(String(row.responseDate || '').trim());
+  if (hasResponseDate && !hasValidStdDuration(row.stdDurationMin ?? row.stdDuration)) {
+    missing.push('Std. Duration in min');
   }
 
   return missing;

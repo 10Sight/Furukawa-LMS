@@ -368,21 +368,49 @@ const areServerSectionsMatching = (userSecs, recordSecs, userDepts = [], recordD
     if (userSecs.length === 0 || recordSecs.length === 0) {
         return false;
     }
+    // 1. Direct equality
     if (userSecs.some(us => recordSecs.includes(us))) return true;
-    const isGenericLpaAssembly = recordSecs.includes('assembly');
-    if (isGenericLpaAssembly && (userSecs.includes('assembly') || userDepts.includes('assembly'))) {
+
+    // 2. Substring matching for section tokens
+    for (const us of userSecs) {
+        if (!us || us.startsWith('id:')) continue;
+        for (const rs of recordSecs) {
+            if (!rs || rs.startsWith('id:')) continue;
+            if (us === rs) return true;
+            if (us.length >= 3 && rs.length >= 3) {
+                if (us.includes(rs) || rs.includes(us)) return true;
+            }
+        }
+    }
+
+    // 3. Generic LPA Assembly section match
+    const isAssemblyRecordSec = recordSecs.some(rs => rs === 'assembly' || (typeof rs === 'string' && rs.includes('assembly')));
+    const isAssemblyUserSec = userSecs.some(us => us === 'assembly' || (typeof us === 'string' && us.includes('assembly')));
+    const isAssemblyUserDept = userDepts.includes('assembly');
+    if (isAssemblyRecordSec && (isAssemblyUserSec || isAssemblyUserDept)) {
         return true;
     }
-    const isGenericLpaCc = recordSecs.includes('cc');
-    if (isGenericLpaCc && (userSecs.includes('cc') || userDepts.includes('c&c'))) {
+
+    // 4. Generic LPA CC section match
+    const isCcRecordSec = recordSecs.some(rs => rs === 'cc' || (typeof rs === 'string' && (rs.includes('cc') || rs.includes('crimping') || rs.includes('candc') || rs.includes('cutting'))));
+    const isCcUserSec = userSecs.some(us => us === 'cc' || (typeof us === 'string' && (us.includes('cc') || us.includes('crimping') || us.includes('candc') || us.includes('cutting'))));
+    const isCcUserDept = userDepts.includes('c&c');
+    if (isCcRecordSec && (isCcUserSec || isCcUserDept)) {
         return true;
     }
+
     return false;
 };
 
 export const isUserInSameDepartmentAsRecord = (user, record) => {
     if (!user || !record) return false;
     if (isUserCreatorOfRecord(user, record)) return true;
+
+    // Administrators have full unrestricted access across all sheets
+    if (user.isAdmin === true || user.isAdmin === 1 || String(user.role || '').toUpperCase() === 'ADMIN' || String(user.role || '').toUpperCase() === 'SUPERADMIN') {
+        return true;
+    }
+
     const userDepts = new Set();
     const addUD = (v) => {
         if (!v) return;
@@ -392,6 +420,8 @@ export const isUserInSameDepartmentAsRecord = (user, record) => {
             addUD(v.department);
             addUD(v.deptName);
             addUD(v.departmentName);
+            addUD(v.category);
+            if (v.id !== undefined && v.id !== null) addUD(`id:${v.id}`);
             return;
         }
         String(v).split(/[,;]/).forEach(part => {
@@ -404,17 +434,44 @@ export const isUserInSameDepartmentAsRecord = (user, record) => {
     addUD(user.department);
     addUD(user.departmentName);
     addUD(user.departments);
+    if (user.departmentId !== undefined && user.departmentId !== null) {
+        addUD(`id:${user.departmentId}`);
+        addUD(user.departmentId);
+    }
+    if (user.deptId !== undefined && user.deptId !== null) {
+        addUD(`id:${user.deptId}`);
+        addUD(user.deptId);
+    }
+    if (user.targetDeptId !== undefined && user.targetDeptId !== null) {
+        addUD(`id:${user.targetDeptId}`);
+        addUD(user.targetDeptId);
+    }
     addUD(lookupEmployeeDept(user));
     if (user.empId) addUD(lookupEmployeeDept(user.empId));
     if (user.code) addUD(lookupEmployeeDept(user.code));
     if (user.userName) addUD(lookupEmployeeDept(user.userName));
 
-    // Fallback to section ONLY if no department found
-    if (userDepts.size === 0) {
-        addUD(user.section);
-        addUD(user.sectionName);
-        if (Array.isArray(user.sections)) {
-            user.sections.forEach(s => addUD(s?.name || s?.deptName || s?.department || s));
+    // Derive department from user's section if known
+    const uSecList = [user.section, user.sectionName, user.sectionId, user.targetSectionId];
+    if (Array.isArray(user.sections)) {
+        user.sections.forEach(s => uSecList.push(s));
+    }
+    for (const s of uSecList) {
+        if (!s) continue;
+        let sObj = null;
+        if (typeof s === 'object') {
+            if (s.category) addUD(s.category);
+            if (s.department) addUD(s.department);
+            if (s.name) sObj = SERVER_SECTION_MASTER.find(m => cleanServerSectionString(m.name) === cleanServerSectionString(s.name));
+            if (!sObj && s.id) sObj = SERVER_SECTION_MASTER.find(m => Number(m.id) === Number(s.id));
+        } else if (/^\d+$/.test(String(s).trim())) {
+            sObj = SERVER_SECTION_MASTER.find(m => Number(m.id) === Number(s));
+        } else {
+            const cleaned = cleanServerSectionString(s);
+            sObj = SERVER_SECTION_MASTER.find(m => cleanServerSectionString(m.name) === cleaned || (m.uniCode && cleanServerSectionString(m.uniCode) === cleaned));
+        }
+        if (sObj && sObj.category) {
+            addUD(sObj.category);
         }
     }
 
@@ -427,6 +484,8 @@ export const isUserInSameDepartmentAsRecord = (user, record) => {
             addRD(v.department);
             addRD(v.deptName);
             addRD(v.departmentName);
+            addRD(v.category);
+            if (v.id !== undefined && v.id !== null) addRD(`id:${v.id}`);
             return;
         }
         String(v).split(/[,;]/).forEach(part => {
@@ -437,15 +496,67 @@ export const isUserInSameDepartmentAsRecord = (user, record) => {
 
     addRD(record.department);
     addRD(record.departments);
-    addRD(record.sheet?.department);
+    addRD(record.dept);
+    addRD(record.deptName);
+    addRD(record.departmentName);
+    if (record.departmentId !== undefined && record.departmentId !== null) {
+        addRD(`id:${record.departmentId}`);
+        addRD(record.departmentId);
+    }
+    if (record.deptId !== undefined && record.deptId !== null) {
+        addRD(`id:${record.deptId}`);
+        addRD(record.deptId);
+    }
+    if (record.targetDeptId !== undefined && record.targetDeptId !== null) {
+        addRD(`id:${record.targetDeptId}`);
+        addRD(record.targetDeptId);
+    }
+
+    if (record.sheet && typeof record.sheet === 'object') {
+        addRD(record.sheet.department);
+        addRD(record.sheet.dept);
+        addRD(record.sheet.deptName);
+        addRD(record.sheet.departmentName);
+        if (record.sheet.departmentId) addRD(`id:${record.sheet.departmentId}`);
+        if (record.sheet.headerInfo && typeof record.sheet.headerInfo === 'object') {
+            addRD(record.sheet.headerInfo.department);
+            addRD(record.sheet.headerInfo.deptName);
+            addRD(record.sheet.headerInfo.departmentName);
+            if (record.sheet.headerInfo.departmentId) addRD(`id:${record.sheet.headerInfo.departmentId}`);
+        }
+    }
+
+    // Derive department from record's section if known in section master
+    const rSecList = [record.section, record.sectionName, record.sectionId, record.sheet?.section, record.sheet?.sectionName, record.sheet?.sectionId];
+    for (const s of rSecList) {
+        if (!s) continue;
+        let sObj = null;
+        if (typeof s === 'object') {
+            if (s.category) addRD(s.category);
+            if (s.department) addRD(s.department);
+            if (s.name) sObj = SERVER_SECTION_MASTER.find(m => cleanServerSectionString(m.name) === cleanServerSectionString(s.name));
+            if (!sObj && s.id) sObj = SERVER_SECTION_MASTER.find(m => Number(m.id) === Number(s.id));
+        } else if (/^\d+$/.test(String(s).trim())) {
+            sObj = SERVER_SECTION_MASTER.find(m => Number(m.id) === Number(s));
+        } else {
+            const cleaned = cleanServerSectionString(s);
+            sObj = SERVER_SECTION_MASTER.find(m => cleanServerSectionString(m.name) === cleaned || (m.uniCode && cleanServerSectionString(m.uniCode) === cleaned));
+        }
+        if (sObj && sObj.category) {
+            addRD(sObj.category);
+        }
+    }
 
     const createdBy = record.createdBy || record.sheet?.createdBy;
     if (createdBy) {
         if (typeof createdBy === 'object') {
             addRD(createdBy.department);
+            addRD(createdBy.dept);
             addRD(createdBy.deptName);
             addRD(createdBy.departmentName);
             addRD(createdBy.departments);
+            if (createdBy.departmentId) addRD(`id:${createdBy.departmentId}`);
+            if (createdBy.deptId) addRD(`id:${createdBy.deptId}`);
             addRD(createdBy.section);
             addRD(createdBy.sectionName);
             addRD(lookupEmployeeDept(createdBy));
@@ -508,8 +619,41 @@ export const isUserInSameDepartmentAsRecord = (user, record) => {
     const recordSecs = getServerRecordSections(record);
     const secMatch = areServerSectionsMatching(userSecs, recordSecs, Array.from(userDepts), Array.from(recordDepts));
 
-    // Same department OR same section (or both) grants access
-    return Boolean(deptMatch || secMatch);
+    if (deptMatch || secMatch) {
+        return true;
+    }
+
+    // 3. Direct Colleague-to-Creator match:
+    if (createdBy && typeof createdBy === 'object') {
+        const creatorDepts = new Set();
+        const addCD = (v) => {
+            if (!v) return;
+            if (Array.isArray(v)) { v.forEach(addCD); return; }
+            if (typeof v === 'object') {
+                addCD(v.name); addCD(v.department); addCD(v.deptName); addCD(v.category);
+                return;
+            }
+            String(v).split(/[,;]/).forEach(part => {
+                const n = normalizeServerDepartment(part);
+                if (n) creatorDepts.add(n);
+            });
+        };
+        addCD(createdBy.department);
+        addCD(createdBy.dept);
+        addCD(createdBy.deptName);
+        addCD(createdBy.departmentName);
+        addCD(createdBy.departments);
+        addCD(lookupEmployeeDept(createdBy));
+        for (const ud of userDepts) {
+            if (creatorDepts.has(ud)) return true;
+        }
+        const creatorSecs = getServerUserSections(createdBy);
+        if (areServerSectionsMatching(userSecs, creatorSecs, Array.from(userDepts), Array.from(creatorDepts))) {
+            return true;
+        }
+    }
+
+    return false;
 };
 
 export const isUserInSameDepartmentAndSectionAsRecord = isUserInSameDepartmentAsRecord;

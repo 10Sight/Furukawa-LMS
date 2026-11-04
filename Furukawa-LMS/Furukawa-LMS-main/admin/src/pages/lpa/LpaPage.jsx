@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx';
 import { useOutletContext, useNavigate, useLocation } from 'react-router-dom';
 import { useSelector } from 'react-redux';
@@ -1925,7 +1926,12 @@ function LpaPageContent({ viewContext }) {
 
       {/* Create New PDCA Sheet Modal - Available to all users */}
       {isCreatePdcaModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
+        typeof document !== 'undefined' && document.body
+          ? createPortal(
+              <div
+                style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, width: '100vw', height: '100vh' }}
+                className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs"
+              >
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
               <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
@@ -1998,7 +2004,9 @@ function LpaPageContent({ viewContext }) {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
+      ) : null
       )}
       <SendMailModal
         isOpen={isSendMailOpen}

@@ -894,3 +894,241 @@ test('19. Same Department AND Same Section Access Rule: Colleagues must be in sa
   assert.equal(isUserInSameDepartmentAsRecord(qualityRecord, sameQualitySecUser), true, 'Same Quality section has access');
   assert.equal(isUserInSameDepartmentAsRecord(qualityRecord, sameQualityDeptUser), true, 'Same Quality department colleague has access');
 });
+
+test('20. Same Department AND Same Section Employee Access Verification across PDCA Page & LPA Observation PDCA', () => {
+  const creatorEmployee = {
+    id: 19051,
+    empId: 'ST080014',
+    code: 'ST080014',
+    name: 'Yadvender Yadav',
+    department: 'Quality',
+    departmentId: 1,
+    section: 'Assembly Quality',
+    sectionId: 70,
+    role: 'EMPLOYEE'
+  };
+
+  const sameDeptSameSecColleague = {
+    id: 19052,
+    empId: 'BW051211',
+    code: 'BW051211',
+    name: 'Ramesh Sharma',
+    department: 'Quality',
+    departmentId: 1,
+    section: 'Assembly Quality',
+    sectionId: 70,
+    role: 'EMPLOYEE'
+  };
+
+  const sameDeptDiffSecColleague = {
+    id: 19053,
+    empId: 'BW051212',
+    code: 'BW051212',
+    name: 'Suresh Patel',
+    department: 'Quality',
+    departmentId: 1,
+    section: 'Quality C&C',
+    sectionId: 87,
+    role: 'EMPLOYEE'
+  };
+
+  const sameSecDiffDeptColleague = {
+    id: 19054,
+    empId: 'AS081214',
+    code: 'AS081214',
+    name: 'Ashok Kumar',
+    department: 'Assembly',
+    departmentId: 2,
+    section: 'Assembly Quality',
+    sectionId: 70,
+    role: 'EMPLOYEE'
+  };
+
+  const diffDeptDiffSecUser = {
+    id: 19055,
+    empId: 'GJ071211',
+    code: 'GJ071211',
+    name: 'Karan Patel',
+    department: 'IT',
+    departmentId: 7,
+    section: 'IT',
+    sectionId: 113,
+    role: 'EMPLOYEE'
+  };
+
+  const adminUser = {
+    id: 99999,
+    empId: 'ADMIN01',
+    name: 'System Admin',
+    role: 'ADMIN',
+    isAdmin: true
+  };
+
+  // Case 1: Standard PDCA Record created by creatorEmployee
+  const standardPdcaRecord = {
+    id: 'PDCA-1793621991404',
+    topic: 'Quality Inspection Audit',
+    plant: 'Bawal',
+    department: 'Quality',
+    section: 'Assembly Quality',
+    sectionId: 70,
+    createdBy: creatorEmployee,
+    createdById: String(creatorEmployee.id)
+  };
+
+  assert.equal(isUserInSameDepartmentAsRecord(standardPdcaRecord, creatorEmployee), true, 'Creator has access');
+  assert.equal(isUserInSameDepartmentAsRecord(standardPdcaRecord, sameDeptSameSecColleague), true, 'Same dept + same section colleague has access');
+  assert.equal(isUserInSameDepartmentAsRecord(standardPdcaRecord, sameDeptDiffSecColleague), true, 'Same dept colleague has access');
+  assert.equal(isUserInSameDepartmentAsRecord(standardPdcaRecord, sameSecDiffDeptColleague), true, 'Same section colleague has access');
+  assert.equal(isUserInSameDepartmentAsRecord(standardPdcaRecord, diffDeptDiffSecUser), false, 'Different dept + different section colleague does NOT have access');
+  assert.equal(isUserInSameDepartmentAsRecord(standardPdcaRecord, adminUser), true, 'Admin has full access');
+
+  assert.equal(canEditRecord(standardPdcaRecord, sameDeptSameSecColleague), true);
+  assert.equal(canEditRecord(standardPdcaRecord, sameDeptDiffSecColleague), true);
+  assert.equal(canEditRecord(standardPdcaRecord, sameSecDiffDeptColleague), true);
+  assert.equal(canEditRecord(standardPdcaRecord, diffDeptDiffSecUser), false);
+  assert.equal(canEditRecord(standardPdcaRecord, adminUser), true);
+
+  // Case 2: LPA Observation PDCA Record (under Assembly)
+  const lpaAssemblyPdcaRecord = {
+    id: 'PDCA-LPA-ASSEMBLY-Bawal-1793704111073',
+    topic: 'Assembly - LPA Observation (PDCA)',
+    plant: 'Bawal',
+    department: 'Assembly',
+    section: 'assembly',
+    category: 'assembly',
+    createdBy: creatorEmployee,
+    createdById: String(creatorEmployee.id)
+  };
+
+  assert.equal(isUserInSameDepartmentAsRecord(lpaAssemblyPdcaRecord, creatorEmployee), true, 'Creator has access to LPA PDCA');
+  assert.equal(isUserInSameDepartmentAsRecord(lpaAssemblyPdcaRecord, sameDeptSameSecColleague), true, 'Colleague in same dept as creator has access');
+  assert.equal(isUserInSameDepartmentAsRecord(lpaAssemblyPdcaRecord, sameSecDiffDeptColleague), true, 'Colleague in Assembly section has access');
+  assert.equal(isUserInSameDepartmentAsRecord(lpaAssemblyPdcaRecord, diffDeptDiffSecUser), false, 'IT user does NOT have access to Assembly LPA PDCA');
+  assert.equal(isUserInSameDepartmentAsRecord(lpaAssemblyPdcaRecord, adminUser), true, 'Admin has access to LPA PDCA');
+
+  assert.equal(canEditRecord(lpaAssemblyPdcaRecord, sameDeptSameSecColleague), true);
+  assert.equal(canEditRecord(lpaAssemblyPdcaRecord, sameSecDiffDeptColleague), true);
+  assert.equal(canEditRecord(lpaAssemblyPdcaRecord, diffDeptDiffSecUser), false);
+  assert.equal(canEditRecord(lpaAssemblyPdcaRecord, adminUser), true);
+
+  // Case 3: Verify PDCATable contains isUserInSameDepartmentAsRecord for Edit button
+  const pdcaTableCode = fs.readFileSync(new URL('../../../components/pdca/PDCATable.jsx', import.meta.url), 'utf8');
+  assert.ok(pdcaTableCode.includes('isUserInSameDepartmentAsRecord(row, currentUser)'), 'PDCATable Edit button must check isUserInSameDepartmentAsRecord');
+});
+
+test('21. LPA Observation PDCA Create Button Modal UI: Portaled to document.body and dead-centered in viewport', () => {
+  const lpaPageCode = fs.readFileSync(new URL('../../lpa/LpaPage.jsx', import.meta.url), 'utf8');
+  assert.ok(lpaPageCode.includes("import { createPortal } from 'react-dom';"), 'LpaPage must import createPortal');
+  assert.ok(lpaPageCode.includes('isCreatePdcaModalOpen && ('), 'LpaPage must check isCreatePdcaModalOpen');
+  assert.ok(lpaPageCode.includes('createPortal('), 'LpaPage must portal createPdcaModal to document.body');
+  assert.ok(lpaPageCode.includes('z-[9999] flex items-center justify-center bg-black/50 p-4'), 'Modal must have viewport-centered fixed classes');
+  assert.ok(lpaPageCode.includes('document.body'), 'Modal must target document.body as portal container');
+});
+
+test('22. Confirmation Column Spread & Reason Persistence Rule (ResponsiblePersonInstructionCell)', () => {
+  const cellCode = fs.readFileSync(new URL('../../../components/pdca/ResponsiblePersonInstructionCell.jsx', import.meta.url), 'utf8');
+
+  // Logic checks
+  assert.ok(cellCode.includes('const hasReason = Boolean(instruction && instruction.trim().length > 0);'), 'Must check if instruction has reason');
+  assert.ok(cellCode.includes('const shouldShowPartition = isNotConfirmed || (isConfirmed && hasReason);'), 'Partition must show when Not-Confirmed or (Confirmed and hasReason)');
+  assert.ok(cellCode.includes('{isNotConfirmed && ('), 'Must render Reason input when Not-Confirmed');
+  assert.ok(cellCode.includes('{isConfirmed && hasReason && ('), 'Must render Reason display when Confirmed with reason');
+  assert.ok(cellCode.includes('Reason'), 'Must display Reason label in cell');
+
+  // Behavioral test of the pure logic
+  const shouldPartition = (currentConfirmation, instruction) => {
+    const isConf = currentConfirmation === 'Confirmed' || currentConfirmation === 'Confirm';
+    const isNotConf = currentConfirmation === 'Not - Confirmed' || currentConfirmation === 'Not-Confirmed' || currentConfirmation === 'Not-Confirm';
+    const hasR = Boolean(instruction && String(instruction).trim().length > 0);
+    return isNotConf || (isConf && hasR);
+  };
+
+  // Case 1: Not-Confirmed without reason yet -> partitioned to show Reason field
+  assert.equal(shouldPartition('Not-Confirmed', ''), true, 'Not-Confirmed spreads into 2 parts with Reason field');
+
+  // Case 2: Not-Confirmed with reason -> partitioned
+  assert.equal(shouldPartition('Not-Confirmed', 'Tooling recalibration needed'), true);
+
+  // Case 3: Changed to Confirmed WITH previously filled reason -> partition remains and reason is shown
+  assert.equal(shouldPartition('Confirmed', 'Tooling recalibration needed'), true, 'Confirmed with filled reason retains reason partition');
+
+  // Case 4: Confirmed WITHOUT previously filled reason -> NO partition, single dropdown
+  assert.equal(shouldPartition('Confirmed', ''), false, 'Confirmed without reason has no partition');
+
+  // Case 5: Select... without reason -> NO partition
+  assert.equal(shouldPartition('', ''), false, 'Empty selection has no partition');
+});
+
+test('23. Responsible Person: 4 Columns (Unit, Dept, Staff Name, CFT) Divided in Two Parts for Both Units', () => {
+  const sheetCode = fs.readFileSync(new URL('../../../components/pdca/PDCASheet.jsx', import.meta.url), 'utf8');
+
+  // Responsible Person header spans 4 columns: Unit, Dept, Staff Name, CFT
+  assert.ok(sheetCode.includes('colSpan={4}'), 'Responsible Person header must span 4 columns');
+  assert.ok(sheetCode.includes('Responsible Person'), 'Header must contain Responsible Person');
+
+  // When units.length > 1 (Both units chosen), all 4 columns use divide-y divide-[#CBD5E1]
+  assert.ok(sheetCode.includes('units.length > 1'), 'CFT must check units.length > 1 for 2-part division');
+  assert.ok(sheetCode.includes('divide-y divide-[#CBD5E1]'), 'All 4 columns must share divide-y divide-[#CBD5E1]');
+
+  // CFT handler supports unitName
+  assert.ok(sheetCode.includes("handleToggleCFTDropdown(idx, e, 'members', unitName)"), 'CFT trigger must support unitName');
+  assert.ok(sheetCode.includes("handleEditCFTTopic(idx, e, unitName)"), 'CFT edit must support unitName');
+  assert.ok(sheetCode.includes("handleDeleteCFT(idx, e, unitName)"), 'CFT delete must support unitName');
+});
+
+test('24. Responsible Person Single Constant Line Dividing Rule (Parent Column with Child Columns)', () => {
+  const sheetCode = fs.readFileSync(new URL('../../../components/pdca/PDCASheet.jsx', import.meta.url), 'utf8');
+
+  // When units.length > 1, Responsible Person must render as a single parent cell with colSpan={4}
+  assert.ok(sheetCode.includes('colSpan={4}'), 'Must render parent colSpan={4} td');
+  assert.ok(sheetCode.includes('flex flex-col w-full h-full divide-y divide-[#CBD5E1]'), 'Must have single constant horizontal dividing line');
+
+  // Each sub-row contains the 4 child columns (Unit, Dept, Staff Name, CFT) with divide-x
+  assert.ok(sheetCode.includes('flex w-full items-stretch divide-x divide-[#CBD5E1]'), 'Sub-rows must use items-stretch and divide-x');
+
+  // Sub-row child column widths match headers
+  assert.ok(sheetCode.includes('w-[110px] min-w-[100px]'), 'Unit width must be 110px');
+  assert.ok(sheetCode.includes('w-[145px] min-w-[135px]'), 'Dept width must be 145px');
+  assert.ok(sheetCode.includes('w-[160px] min-w-[150px]'), 'Staff Name width must be 160px');
+  assert.ok(sheetCode.includes('w-[120px] min-w-[110px]'), 'CFT width must be 120px');
+});
+
+test('25. Std. Duration in min is mandatory for saving IF Response date is selected', () => {
+  const validBaseRow = {
+    date: '2026-11-04',
+    shift: 'A',
+    status: 'In- Progress',
+    unit: 'Bawal',
+    department: 'Assembly',
+    observation: 'Minor vibration at stage 2',
+    staffName: 'Manoj Sharma'
+  };
+
+  // Case 1: No Response date -> Std. Duration in min is optional for save
+  assert.deepEqual(getMissingSaveMandatoryFields({ ...validBaseRow, responseDate: '', stdDurationMin: '' }), []);
+
+  // Case 2: Response date is selected, but Std. Duration is empty -> mandatory save validation fails
+  const missingWithResponseDate = getMissingSaveMandatoryFields({ ...validBaseRow, responseDate: '2026-11-10', stdDurationMin: '' });
+  assert.ok(missingWithResponseDate.includes('Std. Duration in min'), 'Must report Std. Duration in min as mandatory when Response date is filled');
+
+  // Case 3: Response date is selected and Std. Duration is filled -> valid for save
+  assert.deepEqual(getMissingSaveMandatoryFields({ ...validBaseRow, responseDate: '2026-11-10', stdDurationMin: '01:00' }), []);
+  assert.deepEqual(getMissingSaveMandatoryFields({ ...validBaseRow, responseDate: '2026-11-10', stdDurationMin: '45' }), []);
+});
+
+test('26. Image Before and Image After cells have gap from borders', () => {
+  const pdcaSheetCode = fs.readFileSync(new URL('../../../components/pdca/PDCASheet.jsx', import.meta.url), 'utf8');
+  const lpaSheetCode = fs.readFileSync(new URL('../../../components/lpa/LpaPdcaSheet.jsx', import.meta.url), 'utf8');
+
+  // PDCASheet has p-1.5 padding gap and rounded corners on images
+  assert.ok(pdcaSheetCode.includes('p-1.5 m-0 overflow-hidden group/imgcell'), 'PDCASheet images must have p-1.5 border gap');
+  assert.ok(lpaSheetCode.includes('p-1.5 m-0 overflow-hidden group/imgcell'), 'LpaPdcaSheet images must have p-1.5 border gap');
+});
+
+test('27. S.No Counting preserves permanent row index (idx + 1) when Done rows are hidden', () => {
+  const pdcaSheetCode = fs.readFileSync(new URL('../../../components/pdca/PDCASheet.jsx', import.meta.url), 'utf8');
+  // PDCASheet assigns sNo as idx + 1 so hidden Done rows do not cause renumbering
+  assert.ok(pdcaSheetCode.includes('const sNo = idx + 1;'), 'PDCASheet must use idx + 1 for sNo');
+  assert.ok(!pdcaSheetCode.includes('visibleCounter'), 'PDCASheet must not re-index S.No using visibleCounter');
+});

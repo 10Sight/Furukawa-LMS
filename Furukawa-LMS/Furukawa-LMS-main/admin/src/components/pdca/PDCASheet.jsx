@@ -6841,16 +6841,14 @@ export default function PDCASheet({
                                       </div>
                                     )}
                                   </div>
-                                ) : !canEditEntireRow ? (
-                                  <span className="text-slate-300 text-[10px] select-none">-</span>
                                 ) : (
                                   <button
                                     type="button"
-                                    onClick={(e) => handleToggleCFTDropdown(idx, e, 'topics', unitName)}
-                                    className="cft-trigger-btn w-full py-1.5 flex items-center justify-center text-slate-300 hover:text-blue-600 hover:bg-blue-50/40 transition-colors cursor-pointer group"
-                                    title={`Click to select CFT Topic for ${unitName}`}
+                                    onClick={canEditEntireRow ? (e) => handleToggleCFTDropdown(idx, e, 'topics', unitName) : undefined}
+                                    className={`cft-trigger-btn w-full h-full min-h-[30px] flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/40 transition-colors ${canEditEntireRow ? 'cursor-pointer' : 'cursor-default'}`}
+                                    title={canEditEntireRow ? `Click to select CFT Topic for ${unitName}` : undefined}
                                   >
-                                    <ChevronDown className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity stroke-[2]" />
+                                    <span className="text-[14px] font-medium">-</span>
                                   </button>
                                 )}
                               </div>
@@ -6913,16 +6911,14 @@ export default function PDCASheet({
                                 </div>
                               )}
                             </div>
-                          ) : !canEditEntireRow ? (
-                            <span className="text-slate-300 text-[10px] select-none">-</span>
                           ) : (
                             <button
                               type="button"
-                              onClick={(e) => handleToggleCFTDropdown(idx, e, 'topics')}
-                              className="cft-trigger-btn w-full py-1.5 flex items-center justify-center text-slate-300 hover:text-blue-600 hover:bg-blue-50/40 transition-colors cursor-pointer group"
-                              title="Click to select CFT Topic"
+                              onClick={canEditEntireRow ? (e) => handleToggleCFTDropdown(idx, e, 'topics') : undefined}
+                              className={`cft-trigger-btn w-full h-full min-h-[30px] flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/40 transition-colors ${canEditEntireRow ? 'cursor-pointer' : 'cursor-default'}`}
+                              title={canEditEntireRow ? 'Click to select CFT Topic' : undefined}
                             >
-                              <ChevronDown className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity stroke-[2]" />
+                              <span className="text-[14px] font-medium">-</span>
                             </button>
                           )}
                         </div>

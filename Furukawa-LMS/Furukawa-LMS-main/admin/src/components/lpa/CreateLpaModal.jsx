@@ -453,6 +453,7 @@ export default function CreateLpaModal({
 
   const modalContent = (
     <div
+      style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-200"
       role="dialog"
       aria-modal="true"

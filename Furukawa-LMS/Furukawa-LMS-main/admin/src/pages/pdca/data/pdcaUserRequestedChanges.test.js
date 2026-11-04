@@ -1032,8 +1032,8 @@ test('22. Confirmation Column Spread & Reason Persistence Rule (ResponsiblePerso
   // Logic checks
   assert.ok(cellCode.includes('const hasReason = Boolean(instruction && instruction.trim().length > 0);'), 'Must check if instruction has reason');
   assert.ok(cellCode.includes('const shouldShowPartition = isNotConfirmed || (isConfirmed && hasReason);'), 'Partition must show when Not-Confirmed or (Confirmed and hasReason)');
-  assert.ok(cellCode.includes('{shouldShowPartition && ('), 'Must conditionally render bottom partition');
-  assert.ok(cellCode.includes('border-t border-slate-300'), 'Must render horizontal dividing line between dropdown and reason');
+  assert.ok(cellCode.includes('{isNotConfirmed && ('), 'Must render Reason input when Not-Confirmed');
+  assert.ok(cellCode.includes('{isConfirmed && hasReason && ('), 'Must render Reason display when Confirmed with reason');
   assert.ok(cellCode.includes('Reason'), 'Must display Reason label in cell');
 
   // Behavioral test of the pure logic

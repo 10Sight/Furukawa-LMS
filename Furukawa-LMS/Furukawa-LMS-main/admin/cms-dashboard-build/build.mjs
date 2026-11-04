@@ -39,8 +39,8 @@ await build({
     ...tailwindConfig,
     content: [
       path.join(buildRoot, 'index.html'),
-      ...['lpa', 'pdca', 'ptm', 'process-audit'].map(module => path.join(adminRoot, `src/pages/${module}/**/*.{js,jsx}`)),
-      ...['lpa', 'pdca', 'ptm', 'process-audit', 'shared'].map(module => path.join(adminRoot, `src/components/${module}/**/*.{js,jsx}`)),
+      ...['lpa', 'pdca', 'ptm', 'process-audit', 'suggestion-checksheet'].map(module => path.join(adminRoot, `src/pages/${module}/**/*.{js,jsx}`)),
+      ...['lpa', 'pdca', 'ptm', 'process-audit', 'shared', 'suggestion-checksheet'].map(module => path.join(adminRoot, `src/components/${module}/**/*.{js,jsx}`)),
       path.join(adminRoot, 'src/pages/integrationMain.jsx'),
     ],
   }), autoprefixer()] } },

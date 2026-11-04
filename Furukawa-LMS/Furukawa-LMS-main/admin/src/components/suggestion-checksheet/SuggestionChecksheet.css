@@ -1,0 +1,225 @@
+/* Suggestion Checksheet Scoped Styles */
+
+.suggestion-checksheet-root {
+  --sc-primary-blue: #1677ff;
+  --sc-primary-blue-hover: #0958d9;
+  --sc-bg-page: #f8fafc;
+  --sc-border-color: #eaecf0;
+  --sc-text-primary: #1e293b;
+  --sc-text-muted: #64748b;
+  
+  width: 100%;
+  min-height: 100%;
+  color: var(--sc-text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  box-sizing: border-box;
+}
+
+.suggestion-checksheet-root *,
+.suggestion-checksheet-root *::before,
+.suggestion-checksheet-root *::after {
+  box-sizing: border-box;
+}
+
+/* Unit Dropdown Custom styling */
+.suggestion-checksheet-root .unit-dropdown-btn {
+  background-color: #ffffff;
+  border: 1px solid #d0d5dd;
+  border-radius: 20px;
+  padding: 7px 18px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #344054;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.suggestion-checksheet-root .unit-dropdown-btn:hover {
+  background-color: #f8fafc;
+  border-color: #98a2b3;
+}
+
+.suggestion-checksheet-root .unit-dropdown-menu {
+  border-radius: 14px;
+  border: 1px solid #e4e7ec;
+  box-shadow: 0 12px 24px -4px rgba(16, 24, 40, 0.12), 0 4px 8px -2px rgba(16, 24, 40, 0.06);
+  padding: 10px 8px;
+  min-width: 160px;
+}
+
+.suggestion-checksheet-root .unit-dropdown-header {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: #98a2b3;
+  padding: 6px 12px;
+  text-transform: uppercase;
+}
+
+.suggestion-checksheet-root .unit-dropdown-item {
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.88rem;
+  color: #344054;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.suggestion-checksheet-root .unit-dropdown-item:hover,
+.suggestion-checksheet-root .unit-dropdown-item.active {
+  background-color: #f2f4f7;
+  color: #101828;
+  font-weight: 500;
+}
+
+/* Custom Search Input */
+.suggestion-checksheet-root .custom-search-input {
+  border: 1px solid #d0d5dd;
+  border-radius: 12px;
+  padding: 8px 16px 8px 38px;
+  font-size: 0.9rem;
+  background-color: #ffffff;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+.suggestion-checksheet-root .custom-search-input:focus {
+  border-color: #1677ff;
+  box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.15);
+  outline: none;
+}
+
+.suggestion-checksheet-root .main-view-card {
+  background-color: #ffffff;
+  border: 1px solid #eaecf0;
+  border-radius: 18px;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.05);
+  min-height: 480px;
+  display: flex;
+  flex-direction: column;
+}
+
+.suggestion-checksheet-root .empty-state-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 24px;
+  text-align: center;
+}
+
+.suggestion-checksheet-root .building-illustration-icon {
+  width: 68px;
+  height: 68px;
+  color: #94a3b8;
+  margin-bottom: 20px;
+  opacity: 0.85;
+}
+
+.suggestion-checksheet-root .empty-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 8px;
+}
+
+.suggestion-checksheet-root .empty-subtitle {
+  font-size: 0.92rem;
+  color: #64748b;
+  max-width: 480px;
+  line-height: 1.5;
+  margin: 0 auto;
+}
+
+/* Action Buttons */
+.suggestion-checksheet-root .btn-export-excel {
+  background-color: #ffffff;
+  border: 1px solid #d0d5dd;
+  color: #344054;
+  border-radius: 10px;
+  padding: 7px 16px;
+  font-size: 0.88rem;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+  cursor: pointer;
+}
+
+.suggestion-checksheet-root .btn-export-excel:hover {
+  background-color: #f8fafc;
+  border-color: #98a2b3;
+  color: #101828;
+}
+
+.suggestion-checksheet-root .btn-add-primary {
+  background-color: #1677ff;
+  border: 1px solid #1677ff;
+  color: #ffffff;
+  border-radius: 10px;
+  padding: 7px 18px;
+  font-size: 0.88rem;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 2px 6px rgba(22, 119, 255, 0.25);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.suggestion-checksheet-root .btn-add-primary:hover {
+  background-color: #0958d9;
+  border-color: #0958d9;
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+/* Excel Sheet Cell & Input Blocks */
+.suggestion-checksheet-root .excel-cell-input {
+  width: 100%;
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 0.98rem;
+  color: #000000;
+  background-color: transparent;
+  outline: none;
+  border: 1px solid transparent;
+  padding: 2px 6px;
+  line-height: 1.35;
+  transition: all 0.1s ease;
+}
+
+.suggestion-checksheet-root .excel-cell-input:focus {
+  border: 2px solid #217346 !important;
+  background-color: #ffffff !important;
+  box-shadow: 0 0 0 1px #217346;
+  z-index: 10;
+  position: relative;
+  outline: none;
+}
+
+.suggestion-checksheet-root .excel-cell-input::placeholder {
+  color: #94a3b8;
+  font-style: italic;
+  font-size: 0.9rem;
+}
+
+/* Print Rules for Checksheet */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  .checksheet-print-area {
+    box-shadow: none !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    border: 2px solid #000000 !important;
+  }
+}
+

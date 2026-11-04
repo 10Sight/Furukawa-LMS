@@ -396,6 +396,7 @@ export const PAGE_REGISTRY = [
     { key: "cms-pdca", label: "PDCA", layout: "cms", link: "/cms/pdca", icon: "IconRepeat" },
     { key: "cms-process-audit", label: "Process Audit", layout: "cms", link: "/cms/process-audit", icon: "IconCircleCheck" },
     { key: "cms-lpa", label: "LPA", layout: "cms", link: "/cms/lpa", icon: "IconTable" },
+    { key: "cms-suggestion-checksheet", label: "Suggestion Checksheet", labelKey: "nav.suggestionChecksheet", layout: "cms", link: "/cms/suggestion-checksheet", icon: "IconClipboardCheck" },
     { key: "cms-man-machine-interlink", label: "Man-Machine Interlink", layout: "cms", link: MAN_MACHINE_INTERLINK_URL, icon: "IconSettings", newTab: true },
 
     // MIS Portal layout

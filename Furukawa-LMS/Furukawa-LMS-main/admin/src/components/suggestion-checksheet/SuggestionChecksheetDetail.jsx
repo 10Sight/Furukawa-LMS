@@ -3,42 +3,33 @@ import { ArrowLeft, CheckCircle2, Printer, Lock, Check } from 'lucide-react';
 import fmeLogo from './assets/suggestionChecksheetLogo.png';
 
 export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
-  const defaultProbText =
-    item?.problemText ||
-    item?.description ||
-    'Current manual torque tightening on chassis bolts has occasional variation. Operators verify torque using mechanical click-type wrench, leading to human fatigue and lack of real-time digital record logging.';
-
-  const defaultSuggText =
-    item?.suggestionText ||
-    'Implement automated wireless pneumatic torque verification checklist integration. Set auto-cutoff when target torque (45 Nm ± 2 Nm) is reached and push confirmation signal to PLC line interlock before conveyor indexing.';
-
   const [formData, setFormData] = useState({
     date: item?.date || new Date().toISOString().slice(0, 10),
-    department: item?.department || 'Production',
-    section: item?.section || 'Main Assembly',
-    lineArea: item?.lineArea || item?.employeeCode || 'Assembly Line 1',
+    department: item?.department || '',
+    section: item?.section || '',
+    lineArea: item?.lineArea || item?.employeeCode || '',
     employeeName: item?.submittedBy || '',
-    categoryP: item?.category === 'Productivity',
-    categoryQ: item?.category === 'Quality' || !item?.category,
-    categoryC: item?.category === 'Cost Reduction' || item?.category === 'Cost',
-    categoryD: item?.category === 'Delivery',
-    categoryM: item?.category === 'Maintenance' || item?.category === 'Morale',
-    categoryS: item?.category === 'Safety',
-    category5S: item?.category === '5S' || item?.category === "5'S",
-    problemText: defaultProbText,
-    suggestionText: defaultSuggText,
-    rejectedAccepted: item?.status === 'Rejected' ? 'REJECTED' : 'ACCEPTED',
+    categoryP: !!item?.categoryP || item?.category === 'Productivity',
+    categoryQ: !!item?.categoryQ || item?.category === 'Quality',
+    categoryC: !!item?.categoryC || item?.category === 'Cost Reduction' || item?.category === 'Cost',
+    categoryD: !!item?.categoryD || item?.category === 'Delivery',
+    categoryM: !!item?.categoryM || item?.category === 'Maintenance' || item?.category === 'Morale',
+    categoryS: !!item?.categoryS || item?.category === 'Safety',
+    category5S: !!item?.category5S || item?.category === '5S' || item?.category === "5'S",
+    problemText: item?.problemText !== undefined ? item.problemText : (item?.description || ''),
+    suggestionText: item?.suggestionText || '',
+    rejectedAccepted: item?.rejectedAccepted || (item?.status === 'Rejected' ? 'REJECTED' : item?.status === 'Approved' ? 'ACCEPTED' : ''),
     reasonIfRejected:
       item?.reasonIfRejected ||
       (Array.isArray(item?.reasonLines) ? item.reasonLines.filter(Boolean).join(' ') : '') ||
       '',
-    targetDate: item?.targetDate || '2026-11-15',
-    dateOfImplementation: item?.dateOfImplementation || '2026-11-10',
-    lineLeaderSign1: item?.lineLeaderSign1 || 'R. K. Verma',
-    lineLeaderSign2: item?.lineLeaderSign2 || 'R. K. Verma',
-    approvalDate: item?.approvalDate || '2026-11-02',
-    costSaving: item?.costSaving || '₹ 1,20,000 / Year',
-    benefitDetails: item?.benefitStatusDetails || 'Quality audit verified zero warranty slips',
+    targetDate: item?.targetDate || '',
+    dateOfImplementation: item?.dateOfImplementation || '',
+    lineLeaderSign1: item?.lineLeaderSign1 || '',
+    lineLeaderSign2: item?.lineLeaderSign2 || '',
+    approvalDate: item?.approvalDate || '',
+    costSaving: item?.costSaving || '',
+    benefitDetails: item?.benefitStatusDetails || item?.benefitDetails || '',
   });
 
   const [activeCellId, setActiveCellId] = useState(null);
@@ -387,7 +378,7 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
                     className="w-full text-center font-bold border-0 bg-transparent text-base cursor-pointer focus:outline-none"
                     style={{
                       fontFamily: "'Times New Roman', Times, serif",
-                      color: formData.rejectedAccepted === 'ACCEPTED' ? '#15803d' : '#b91c1c',
+                      color: formData.rejectedAccepted === 'ACCEPTED' ? '#15803d' : formData.rejectedAccepted === 'REJECTED' ? '#b91c1c' : '#64748b',
                       backgroundColor: activeCellId === 'decision' ? '#f0fdf4' : 'transparent',
                     }}
                     value={formData.rejectedAccepted}
@@ -395,6 +386,7 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
                     onFocus={() => setActiveCellId('decision')}
                     onBlur={() => setActiveCellId(null)}
                   >
+                    <option value="">-- Select Decision --</option>
                     <option value="ACCEPTED">ACCEPTED</option>
                     <option value="REJECTED">REJECTED</option>
                   </select>

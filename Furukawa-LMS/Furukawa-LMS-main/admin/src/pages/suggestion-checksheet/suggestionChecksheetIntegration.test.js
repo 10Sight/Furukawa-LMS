@@ -82,4 +82,30 @@ test('7. Unit dropdown in SuggestionChecksheetList has robust outside-click hand
   );
 });
 
+test('8. Newly created sheets are initialized blank without hardcoded dummy texts', () => {
+  const detailFile = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetDetail.jsx', import.meta.url), 'utf8');
+  assert.ok(
+    !detailFile.includes("Current manual torque tightening"),
+    'Detail format must not hardcode dummy problem torque text'
+  );
+  assert.ok(
+    !detailFile.includes("R. K. Verma"),
+    'Detail format must not hardcode dummy line leader sign'
+  );
+  assert.ok(
+    detailFile.includes("problemText: item?.problemText !== undefined ? item.problemText : (item?.description || '')"),
+    'Detail format must use clean blank/item fallback for problemText'
+  );
+  assert.ok(
+    detailFile.includes("suggestionText: item?.suggestionText || ''"),
+    'Detail format must use clean blank/item fallback for suggestionText'
+  );
+
+  const addModalFile = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetAddModal.jsx', import.meta.url), 'utf8');
+  assert.ok(
+    addModalFile.includes('isBlank: true'),
+    'Add modal must mark new record as blank'
+  );
+});
+
 

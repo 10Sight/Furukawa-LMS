@@ -81,6 +81,9 @@ export default function SuggestionChecksheetList({
     if (!selectedUnit) {
       setSelectedUnit(newRecord.unit);
     }
+    if (onOpenChecksheet) {
+      onOpenChecksheet(newRecord);
+    }
   };
 
   const handleDeleteRecord = (id, e) => {

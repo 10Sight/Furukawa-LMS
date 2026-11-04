@@ -3,13 +3,13 @@ import { X, FilePlus } from 'lucide-react';
 
 export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, defaultUnit = 'Bawal' }) {
   const [formData, setFormData] = useState({
-    unit: defaultUnit || 'Bawal',
-    department: 'Production',
-    section: 'Main Assembly',
-    lineArea: 'Assembly Line 1',
+    unit: defaultUnit && defaultUnit !== 'All Units' ? defaultUnit : 'Bawal',
+    department: '',
+    section: '',
+    lineArea: '',
     title: '',
     description: '',
-    category: 'Safety',
+    category: '',
     submittedBy: '',
     priority: 'Medium',
   });
@@ -18,56 +18,48 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!formData.title.trim()) {
-      alert('Please enter a suggestion title');
-      return;
-    }
-    if (!formData.submittedBy.trim()) {
-      alert('Please enter employee name / ID');
-      return;
-    }
-    if (!formData.department.trim()) {
-      alert('Please enter or select a department');
-      return;
-    }
-    if (!formData.section.trim()) {
-      alert('Please enter a section');
-      return;
-    }
-    if (!formData.lineArea.trim()) {
-      alert('Please enter line / area');
-      return;
-    }
 
+    const generatedId = `SC-${(formData.unit || 'BWL').substring(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
     const newRecord = {
-      id: `SC-${formData.unit.substring(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`,
+      id: generatedId,
       date: new Date().toISOString().split('T')[0],
-      unit: formData.unit,
-      department: formData.department,
-      section: formData.section,
-      lineArea: formData.lineArea,
-      title: formData.title,
-      description: formData.description || 'No additional details provided.',
-      problemText: formData.description || '',
+      unit: formData.unit || 'Bawal',
+      department: formData.department.trim(),
+      section: formData.section.trim(),
+      lineArea: formData.lineArea.trim(),
+      title: formData.title.trim() || `Blank Suggestion Sheet (${generatedId})`,
+      description: formData.description.trim(),
+      problemText: formData.description.trim(),
       suggestionText: '',
-      category: formData.category,
-      submittedBy: formData.submittedBy,
-      employeeCode: formData.lineArea,
-      status: 'Under Review',
-      priority: formData.priority,
+      category: formData.category || '',
+      submittedBy: formData.submittedBy.trim(),
+      employeeCode: formData.lineArea.trim(),
+      status: 'Pending',
+      priority: formData.priority || 'Medium',
+      isBlank: true,
+      rejectedAccepted: '',
+      reasonIfRejected: '',
+      targetDate: '',
+      dateOfImplementation: '',
+      lineLeaderSign1: '',
+      lineLeaderSign2: '',
+      approvalDate: '',
+      costSaving: '',
+      benefitDetails: '',
+      benefitStatusDetails: '',
     };
 
     onAdd(newRecord);
     onClose();
-    // Reset form
+    // Reset form to blank
     setFormData({
-      unit: defaultUnit || 'Bawal',
-      department: 'Production',
-      section: 'Main Assembly',
-      lineArea: 'Assembly Line 1',
+      unit: defaultUnit && defaultUnit !== 'All Units' ? defaultUnit : 'Bawal',
+      department: '',
+      section: '',
+      lineArea: '',
       title: '',
       description: '',
-      category: 'Safety',
+      category: '',
       submittedBy: '',
       priority: 'Medium',
     });
@@ -119,12 +111,13 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
             </div>
 
             <div>
-              <label className="block text-slate-700 font-semibold mb-1">Category *</label>
+              <label className="block text-slate-700 font-semibold mb-1">Category</label>
               <select
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
                 value={formData.category}
                 onChange={(e) => setFormData({ ...formData, category: e.target.value })}
               >
+                <option value="">-- Blank / Select Category --</option>
                 <option value="Safety">Safety (S)</option>
                 <option value="Quality">Quality (Q)</option>
                 <option value="Productivity">Productivity (P)</option>
@@ -138,50 +131,46 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
-              <label className="block text-slate-700 font-semibold mb-1">Department *</label>
+              <label className="block text-slate-700 font-semibold mb-1">Department</label>
               <input
                 type="text"
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                placeholder="e.g. Production"
+                placeholder="e.g. Production (or leave blank)"
                 value={formData.department}
                 onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                required
               />
             </div>
             <div>
-              <label className="block text-slate-700 font-semibold mb-1">Section *</label>
+              <label className="block text-slate-700 font-semibold mb-1">Section</label>
               <input
                 type="text"
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                placeholder="e.g. Main Assembly"
+                placeholder="e.g. Main Assembly (or leave blank)"
                 value={formData.section}
                 onChange={(e) => setFormData({ ...formData, section: e.target.value })}
-                required
               />
             </div>
             <div>
-              <label className="block text-slate-700 font-semibold mb-1">Line / Area *</label>
+              <label className="block text-slate-700 font-semibold mb-1">Line / Area</label>
               <input
                 type="text"
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                placeholder="e.g. Assembly Line 1"
+                placeholder="e.g. Assembly Line 1 (or leave blank)"
                 value={formData.lineArea}
                 onChange={(e) => setFormData({ ...formData, lineArea: e.target.value })}
-                required
               />
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-slate-700 font-semibold mb-1">Employee Name / ID *</label>
+              <label className="block text-slate-700 font-semibold mb-1">Employee Name / ID</label>
               <input
                 type="text"
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                placeholder="e.g. Vikas Sharma (BWL-4821)"
+                placeholder="e.g. Vikas Sharma (or leave blank)"
                 value={formData.submittedBy}
                 onChange={(e) => setFormData({ ...formData, submittedBy: e.target.value })}
-                required
               />
             </div>
             <div>
@@ -200,14 +189,13 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
           </div>
 
           <div>
-            <label className="block text-slate-700 font-semibold mb-1">Suggestion Title *</label>
+            <label className="block text-slate-700 font-semibold mb-1">Suggestion Title</label>
             <input
               type="text"
               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-              placeholder="Brief summary of the suggestion"
+              placeholder="Brief summary of the suggestion (or leave blank)"
               value={formData.title}
               onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-              required
             />
           </div>
 

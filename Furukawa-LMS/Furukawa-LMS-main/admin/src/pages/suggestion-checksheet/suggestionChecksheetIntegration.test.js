@@ -136,5 +136,40 @@ test('10. Second row of checksheet format displays selected Unit', () => {
   );
 });
 
+test('11. Add modal connects to DB with cascading Department -> Section -> Line and Employee dropdown', () => {
+  const addModalFile = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetAddModal.jsx', import.meta.url), 'utf8');
+  assert.ok(addModalFile.includes('useGetAllDepartmentsQuery'), 'Must use Department API from DB');
+  assert.ok(addModalFile.includes('useGetSectionsByDepartmentQuery'), 'Must cascade Sections by Department');
+  assert.ok(addModalFile.includes('useGetLinesBySectionQuery'), 'Must cascade Lines by Section');
+  assert.ok(addModalFile.includes('useGetAllUsersQuery'), 'Must fetch users/employees from DB');
+  assert.ok(addModalFile.includes('formData.department'), 'State must track selected department');
+});
 
+test('12. Backend API routes and persistent storage exist for Suggestion Checksheet', () => {
+  const routesPath = new URL('../../../../server/routes/suggestionChecksheet/suggestionChecksheet.routes.js', import.meta.url);
+  const controllerPath = new URL('../../../../server/controllers/suggestionChecksheet/suggestionChecksheet.controller.js', import.meta.url);
+  const modelPath = new URL('../../../../server/models/suggestionChecksheet/suggestionChecksheet.model.js', import.meta.url);
+  const dbPath = new URL('../../../../server/db/suggestionChecksheet/suggestionChecksheetDb.js', import.meta.url);
 
+  assert.ok(fs.existsSync(routesPath), 'Routes file must exist');
+  assert.ok(fs.existsSync(controllerPath), 'Controller file must exist');
+  assert.ok(fs.existsSync(modelPath), 'Model file must exist');
+  assert.ok(fs.existsSync(dbPath), 'DB store file must exist');
+});
+
+test('13. Accepted/Rejected freezing logic and auto-fill line leader sign', () => {
+  const detailFile = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetDetail.jsx', import.meta.url), 'utf8');
+  assert.ok(detailFile.includes("const isAccepted = formData.rejectedAccepted === 'ACCEPTED'"), 'Tracks isAccepted');
+  assert.ok(detailFile.includes("const isRejected = formData.rejectedAccepted === 'REJECTED'"), 'Tracks isRejected');
+  assert.ok(detailFile.includes('disabled={isAccepted}'), 'Reason if Rejected disabled when Accepted');
+  assert.ok(detailFile.includes('disabled={isRejected}'), 'Implementation Status disabled when Rejected');
+  assert.ok(detailFile.includes('handleDateOfImplementationChange'), 'Date of Implementation handler present');
+  assert.ok(detailFile.includes('lineLeaderSign2: val ?'), 'Auto-fills sign 2 on Date of Implementation');
+});
+
+test('14. Mandatory validation rules and calendar inputs in Detail sheet', () => {
+  const detailFile = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetDetail.jsx', import.meta.url), 'utf8');
+  assert.ok(detailFile.includes('Implementation Status Target Date is mandatory when Suggestion is Accepted'), 'Target date mandatory validation');
+  assert.ok(detailFile.includes('Reason if Rejected is mandatory when Suggestion is Rejected'), 'Reason mandatory validation');
+  assert.ok(detailFile.includes('type="date"'), 'Contains native calendar date inputs');
+});

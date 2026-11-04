@@ -94,6 +94,7 @@ import abnormalConditionRoutes from "./routes/abnormalCondition.routes.js";
 import contractorRoutes from "./routes/contractor.routes.js";
 import revisionRecordRoutes from "./routes/revisionRecord.routes.js";
 import pdcaRoutes from "./routes/pdca/pdca.routes.js";
+import suggestionChecksheetRoutes from "./routes/suggestionChecksheet/suggestionChecksheet.routes.js";
 import lpaRoutes from "./routes/lpa/lpa.routes.js";
 import PDCAModel from "./models/pdca/pdca.model.js";
 import LpaRecord from "./models/lpa/lpaRecord.model.js";
@@ -379,6 +380,8 @@ app.use("/api/contractors", contractorRoutes);
 app.use("/api/revision-records", revisionRecordRoutes);
 app.use("/api/v1/pdca", pdcaRoutes);
 app.use("/api/pdca", pdcaRoutes);
+app.use("/api/v1/suggestion-checksheet", suggestionChecksheetRoutes);
+app.use("/api/suggestion-checksheet", suggestionChecksheetRoutes);
 app.use("/api/v1/lpa", lpaRoutes);
 app.use("/api/lpa", lpaRoutes);
 

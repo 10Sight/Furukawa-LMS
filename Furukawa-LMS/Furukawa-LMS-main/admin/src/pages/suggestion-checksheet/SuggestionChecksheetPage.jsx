@@ -7,22 +7,64 @@ import {
   getStoredSuggestionChecksheets,
   saveStoredSuggestionChecksheets
 } from '@/components/suggestion-checksheet';
+import {
+  useGetSuggestionChecksheetsQuery,
+  useCreateSuggestionChecksheetMutation,
+  useUpdateSuggestionChecksheetMutation,
+  useDeleteSuggestionChecksheetMutation
+} from '@/services/api/SuggestionChecksheetApi.js';
 
 export default function SuggestionChecksheetPage() {
   const outletCtx = useOutletContext() || {};
   const { setIsFormView } = outletCtx;
 
-  const user = useSelector((state) => state.auth?.user);
   const [records, setRecords] = useState(() => getStoredSuggestionChecksheets());
   const [selectedItem, setSelectedItem] = useState(null);
   const [currentPage, setCurrentPage] = useState('list'); // 'list' | 'detail'
   const [selectedUnit, setSelectedUnit] = useState(null);
 
-  // Sync records to storage
-  const handleUpdateRecords = (newRecords) => {
-    const updated = typeof newRecords === 'function' ? newRecords(records) : newRecords;
+  // RTK Query endpoints connected to database
+  const { data: apiResponse, refetch } = useGetSuggestionChecksheetsQuery();
+  const [createChecksheetMutation] = useCreateSuggestionChecksheetMutation();
+  const [updateChecksheetMutation] = useUpdateSuggestionChecksheetMutation();
+  const [deleteChecksheetMutation] = useDeleteSuggestionChecksheetMutation();
+
+  // Sync records from database when loaded
+  useEffect(() => {
+    const list = apiResponse?.data;
+    if (Array.isArray(list) && list.length > 0) {
+      setRecords(list);
+      saveStoredSuggestionChecksheets(list);
+    }
+  }, [apiResponse]);
+
+  // Sync records to storage and backend database
+  const handleUpdateRecords = async (newRecords) => {
+    const previous = records;
+    const updated = typeof newRecords === 'function' ? newRecords(previous) : newRecords;
     setRecords(updated);
     saveStoredSuggestionChecksheets(updated);
+
+    // Detect if an item was added or deleted
+    if (updated.length > previous.length) {
+      // Newly added item (first item)
+      const newItem = updated[0];
+      try {
+        await createChecksheetMutation(newItem).unwrap();
+      } catch (err) {
+        console.warn('Backend sync on create failed, saved locally:', err);
+      }
+    } else if (updated.length < previous.length) {
+      // Deleted item
+      const deletedItem = previous.find((p) => !updated.some((u) => u.id === p.id));
+      if (deletedItem) {
+        try {
+          await deleteChecksheetMutation(deletedItem.id).unwrap();
+        } catch (err) {
+          console.warn('Backend sync on delete failed, saved locally:', err);
+        }
+      }
+    }
   };
 
   // Open detail format
@@ -35,11 +77,17 @@ export default function SuggestionChecksheetPage() {
   };
 
   // Save changes from detail form
-  const handleSaveChecksheet = (updatedItem) => {
+  const handleSaveChecksheet = async (updatedItem) => {
     const updated = records.map((rec) => (rec.id === updatedItem.id ? updatedItem : rec));
     setRecords(updated);
     saveStoredSuggestionChecksheets(updated);
     setSelectedItem(updatedItem);
+
+    try {
+      await updateChecksheetMutation({ id: updatedItem.id, ...updatedItem }).unwrap();
+    } catch (err) {
+      console.warn('Backend sync on update failed, saved locally:', err);
+    }
   };
 
   // Back to list
@@ -84,4 +132,3 @@ export default function SuggestionChecksheetPage() {
     </div>
   );
 }
-

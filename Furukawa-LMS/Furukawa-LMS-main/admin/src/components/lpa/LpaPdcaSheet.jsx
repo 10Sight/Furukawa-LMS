@@ -332,6 +332,7 @@ export default function LpaPdcaSheet({
   const isCreatorOrSameDept = Boolean(isCreator || isSameDepartmentAsSheet);
   const isCreatorOrAdmin = Boolean(isAdmin || !topic?.id || isCreatorOrSameDept);
   const canEditEntireSheet = Boolean(!readOnly && isCreatorOrAdmin);
+  const canDeleteRow = Boolean(!readOnly && isAdmin);
 
   const cftAssignedMembers = topic?.assignedMembers || [];
   const defaultAssignedStr = cftAssignedMembers.length > 0
@@ -1712,6 +1713,10 @@ export default function LpaPdcaSheet({
 
   // Delete Row
   const handleDeleteRow = (idx) => {
+    if (!canDeleteRow) {
+      if (typeof showToast === 'function') showToast('Access Denied: Only administrators have permission to delete rows.');
+      return;
+    }
     if (rows.length <= 1) {
       setRows([createEmptyRow()]);
       return;
@@ -3032,14 +3037,16 @@ export default function LpaPdcaSheet({
                       >
                         <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteRow(idx)}
-                        className="flex items-center justify-center w-5 h-5 shrink-0 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-400 hover:bg-rose-50 transition-all shadow-2xs cursor-pointer"
-                        title="Delete row"
-                      >
-                        <Trash2 className="w-3.5 h-3.5 stroke-[2]" />
-                      </button>
+                      {canDeleteRow && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteRow(idx)}
+                          className="flex items-center justify-center w-5 h-5 shrink-0 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-400 hover:bg-rose-50 transition-all shadow-2xs cursor-pointer"
+                          title="Delete row"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 stroke-[2]" />
+                        </button>
+                      )}
                     </>
                   )}
                 </div>

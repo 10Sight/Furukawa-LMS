@@ -1132,3 +1132,39 @@ test('27. S.No Counting preserves permanent row index (idx + 1) when Done rows a
   assert.ok(pdcaSheetCode.includes('const sNo = idx + 1;'), 'PDCASheet must use idx + 1 for sNo');
   assert.ok(!pdcaSheetCode.includes('visibleCounter'), 'PDCASheet must not re-index S.No using visibleCounter');
 });
+
+test('28. Image upload deletion access granted to all employees editing the sheet, while other delete permissions remain protected', () => {
+  const pdcaSheetCode = fs.readFileSync(new URL('../../../components/pdca/PDCASheet.jsx', import.meta.url), 'utf8');
+  const evidenceModalCode = fs.readFileSync(new URL('../../../components/pdca/EvidenceViewerModal.jsx', import.meta.url), 'utf8');
+
+  // EvidenceViewerModal defaults canDelete to true
+  assert.ok(evidenceModalCode.includes('canDelete = true'), 'EvidenceViewerModal must allow delete by default');
+
+  // PDCASheet passes canDelete based on row/sheet edit access, not restricted to admin
+  assert.ok(
+    pdcaSheetCode.includes("canDelete={evidenceModal.field === 'imageAfter' ? canUserEditActionColsForModalRow : canEditEntireSheet}"),
+    'EvidenceViewerModal canDelete must be granted to all employees who can edit the row/sheet'
+  );
+
+  // handleRemoveEvidenceImage is NOT blocked by !isAdmin
+  assert.ok(
+    !pdcaSheetCode.includes('if (!isAdmin) return;'),
+    'handleRemoveEvidenceImage must not block non-admin employees'
+  );
+  assert.ok(
+    pdcaSheetCode.includes("const isModalReadOnly = evidenceModal.field === 'imageAfter' ? !canUserEditActionColsForModalRow : !canEditEntireSheet;"),
+    'handleRemoveEvidenceImage must allow all employees who can edit the sheet/row'
+  );
+
+  // Full-view modal delete button is available to users who can edit the row/sheet
+  assert.ok(
+    pdcaSheetCode.includes("selectedImageAction?.field === 'imageAfter' ? canUserEditActionColsForSelectedImage : canEditEntireSheet"),
+    'Full-view modal delete button must be available to employees with edit access'
+  );
+
+  // Other delete permissions remain strictly protected (row deletion, sheet deletion, revision deletion)
+  assert.ok(pdcaSheetCode.includes('Access Denied: Only administrators or sheet creators can delete revised dates.'), 'Revision date deletion remains strictly protected');
+  assert.ok(pdcaSheetCode.includes("const canDeleteSheet = Boolean(!readOnly && (hasFullAccess || hasPermission('pdca:delete') || hasPermission('pdca:delete_sheet') || hasPermission('lpa:delete')));"), 'Sheet deletion remains protected');
+  assert.ok(pdcaSheetCode.includes("const canDeleteRow = Boolean(!readOnly && (hasFullAccess || hasPermission('pdca:delete') || hasPermission('pdca:delete_row')));"), 'Row deletion remains protected');
+  assert.ok(!pdcaSheetCode.includes("isCreatorOrSameDept || hasPermission('pdca:delete')"), 'canDeleteRow must not grant row deletion to non-admin creator or department employees');
+});

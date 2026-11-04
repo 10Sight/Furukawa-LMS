@@ -183,3 +183,12 @@ test('15. Suggestion checksheet store and mock data contain no dummy records', (
   assert.equal(JSON.parse(storeContent).length, 0, 'Persistent store must contain 0 dummy records');
 });
 
+
+
+test('16. Add Checksheet modal contains Search Bar Dropdown for Employee Name / ID', () => {
+  const addModalFile = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetAddModal.jsx', import.meta.url), 'utf8');
+  assert.ok(addModalFile.includes('employeeSearchTerm'), 'State for search term must exist');
+  assert.ok(addModalFile.includes('isEmployeeDropdownOpen'), 'State for dropdown toggle must exist');
+  assert.ok(addModalFile.includes('Search by employee name or ID...'), 'Search input placeholder must exist');
+  assert.ok(addModalFile.includes('filteredEmployeeOptions'), 'Filtered employee options computation must exist');
+});

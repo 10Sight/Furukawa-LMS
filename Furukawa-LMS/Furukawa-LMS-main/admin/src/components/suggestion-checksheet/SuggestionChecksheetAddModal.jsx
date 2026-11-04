@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { X, FilePlus } from 'lucide-react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { X, FilePlus, Search, ChevronDown, Check } from 'lucide-react';
 import { useGetAllDepartmentsQuery } from "@/services/api/DepartmentApi.js";
 import { useGetSectionsByDepartmentQuery } from "@/services/api/SectionApi.js";
 import { useGetLinesBySectionQuery } from "@/services/api/LineApi.js";
@@ -36,6 +36,24 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
 
   const [isCustomEmployee, setIsCustomEmployee] = useState(false);
   const [customEmployeeText, setCustomEmployeeText] = useState('');
+
+  // Search bar dropdown states for Employee Name / ID
+  const [isEmployeeDropdownOpen, setIsEmployeeDropdownOpen] = useState(false);
+  const [employeeSearchTerm, setEmployeeSearchTerm] = useState('');
+  const employeeDropdownRef = useRef(null);
+
+  // Close employee dropdown on click outside
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (employeeDropdownRef.current && !employeeDropdownRef.current.contains(event.target)) {
+        setIsEmployeeDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   // 1. Fetch departments from database
   const { data: deptData } = useGetAllDepartmentsQuery({ limit: 200 }, { skip: !isOpen });
@@ -155,6 +173,19 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
     return list;
   }, [usersData, formData.unit]);
 
+  // Filter employee options by search term
+  const filteredEmployeeOptions = useMemo(() => {
+    if (!employeeSearchTerm.trim()) return employeeOptions;
+    const q = employeeSearchTerm.toLowerCase().trim();
+    return employeeOptions.filter((emp) => {
+      const matchName = (emp.name || '').toLowerCase().includes(q);
+      const matchCode = (emp.code || '').toLowerCase().includes(q);
+      const matchDept = (emp.department || '').toLowerCase().includes(q);
+      const matchDisplay = (emp.displayText || '').toLowerCase().includes(q);
+      return matchName || matchCode || matchDept || matchDisplay;
+    });
+  }, [employeeOptions, employeeSearchTerm]);
+
   if (!isOpen) return null;
 
   // Handle department selection with automatic section and line reset
@@ -196,21 +227,28 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
     }));
   };
 
-  // Handle employee selection
-  const handleEmployeeSelect = (e) => {
-    const val = e.target.value;
-    if (val === '__custom__') {
-      setIsCustomEmployee(true);
-      setFormData((prev) => ({ ...prev, submittedBy: customEmployeeText }));
-    } else {
-      setIsCustomEmployee(false);
-      setFormData((prev) => ({ ...prev, submittedBy: val }));
-      // If employee has a known department and current dept is empty, prefill
-      const matched = employeeOptions.find((emp) => emp.displayText === val);
-      if (matched && matched.department && !formData.department) {
-        setFormData((prev) => ({ ...prev, department: matched.department }));
-      }
+  // Handle employee selection from search dropdown
+  const handleSelectEmployee = (emp) => {
+    setIsCustomEmployee(false);
+    setFormData((prev) => ({
+      ...prev,
+      submittedBy: emp.displayText,
+    }));
+
+    // Auto-fill department if available and department is empty
+    if (emp.department && !formData.department) {
+      const matchedDept = departments.find(
+        (d) => d.name.toLowerCase() === emp.department.toLowerCase()
+      );
+      setFormData((prev) => ({
+        ...prev,
+        submittedBy: emp.displayText,
+        department: matchedDept ? matchedDept.name : emp.department,
+        departmentId: matchedDept ? matchedDept.id : '',
+      }));
     }
+    setIsEmployeeDropdownOpen(false);
+    setEmployeeSearchTerm('');
   };
 
   const handleSubmit = (e) => {
@@ -267,6 +305,8 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
     });
     setIsCustomEmployee(false);
     setCustomEmployeeText('');
+    setIsEmployeeDropdownOpen(false);
+    setEmployeeSearchTerm('');
   };
 
   return (
@@ -315,14 +355,17 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
               </select>
             </div>
 
-            {/* 2. Employee Name / ID (Fetched from Database) */}
-            <div>
+            {/* 2. Employee Name / ID (Search Bar Dropdown) */}
+            <div ref={employeeDropdownRef} className="relative">
               <div className="flex items-center justify-between mb-1">
                 <label className="block text-slate-700 font-semibold">Employee Name / ID</label>
                 <button
                   type="button"
                   className="text-[11px] text-blue-600 hover:underline cursor-pointer"
-                  onClick={() => setIsCustomEmployee(!isCustomEmployee)}
+                  onClick={() => {
+                    setIsCustomEmployee(!isCustomEmployee);
+                    setIsEmployeeDropdownOpen(false);
+                  }}
                 >
                   {isCustomEmployee ? 'Select from list' : '+ Enter custom'}
                 </button>
@@ -341,19 +384,122 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
                   autoFocus
                 />
               ) : (
-                <select
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
-                  value={formData.submittedBy}
-                  onChange={handleEmployeeSelect}
-                >
-                  <option value="">-- Select Employee from Database --</option>
-                  {employeeOptions.map((emp) => (
-                    <option key={emp.id} value={emp.displayText}>
-                      {emp.displayText} {emp.department ? `[${emp.department}]` : ''}
-                    </option>
-                  ))}
-                  <option value="__custom__">+ Enter Custom Employee...</option>
-                </select>
+                <div className="relative">
+                  {/* Dropdown Trigger Box */}
+                  <button
+                    type="button"
+                    onClick={() => setIsEmployeeDropdownOpen((prev) => !prev)}
+                    className="w-full flex items-center justify-between px-3 py-2 border border-slate-300 rounded-lg text-slate-800 bg-white hover:border-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-left transition-colors cursor-pointer"
+                  >
+                    <span className={`truncate text-xs ${formData.submittedBy ? 'text-slate-900 font-medium' : 'text-slate-400'}`}>
+                      {formData.submittedBy || '-- Select Employee from Database --'}
+                    </span>
+                    <div className="flex items-center gap-1 shrink-0 ml-2">
+                      {formData.submittedBy && (
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          className="p-0.5 text-slate-400 hover:text-slate-600 rounded hover:bg-slate-100 cursor-pointer"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setFormData((prev) => ({ ...prev, submittedBy: '' }));
+                          }}
+                          title="Clear selection"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </span>
+                      )}
+                      <ChevronDown
+                        className={`w-4 h-4 text-slate-400 transition-transform duration-150 ${
+                          isEmployeeDropdownOpen ? 'rotate-180 text-blue-600' : ''
+                        }`}
+                      />
+                    </div>
+                  </button>
+
+                  {/* Dropdown Menu with Search Bar */}
+                  {isEmployeeDropdownOpen && (
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+                      {/* Search Bar Input */}
+                      <div className="p-2 border-b border-slate-100 bg-slate-50 sticky top-0 z-10">
+                        <div className="relative flex items-center">
+                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 pointer-events-none" />
+                          <input
+                            type="text"
+                            autoFocus
+                            className="w-full pl-8 pr-7 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                            placeholder="Search by employee name or ID..."
+                            value={employeeSearchTerm}
+                            onChange={(e) => setEmployeeSearchTerm(e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          {employeeSearchTerm && (
+                            <button
+                              type="button"
+                              className="absolute right-2 p-0.5 text-slate-400 hover:text-slate-600 rounded cursor-pointer"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEmployeeSearchTerm('');
+                              }}
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Employee List */}
+                      <div className="max-h-56 overflow-y-auto divide-y divide-slate-50">
+                        {filteredEmployeeOptions.length > 0 ? (
+                          filteredEmployeeOptions.map((emp) => {
+                            const isSelected = formData.submittedBy === emp.displayText;
+                            return (
+                              <button
+                                key={emp.id}
+                                type="button"
+                                onClick={() => handleSelectEmployee(emp)}
+                                className={`w-full px-3 py-2 text-left flex items-center justify-between text-xs hover:bg-blue-50 transition-colors cursor-pointer ${
+                                  isSelected ? 'bg-blue-50/80 font-semibold text-blue-700' : 'text-slate-700'
+                                }`}
+                              >
+                                <div className="flex flex-col min-w-0 pr-2">
+                                  <span className="truncate">{emp.displayText}</span>
+                                  {emp.department && (
+                                    <span className="text-[10px] text-slate-400 font-normal">
+                                      Dept: {emp.department}
+                                    </span>
+                                  )}
+                                </div>
+                                {isSelected && (
+                                  <Check className="w-4 h-4 text-blue-600 shrink-0 ml-1" />
+                                )}
+                              </button>
+                            );
+                          })
+                        ) : (
+                          <div className="px-4 py-6 text-center text-xs text-slate-400">
+                            No employees found matching &quot;{employeeSearchTerm}&quot;
+                          </div>
+                        )}
+
+                        {/* Custom Option at Bottom */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsCustomEmployee(true);
+                            setIsEmployeeDropdownOpen(false);
+                            setCustomEmployeeText(employeeSearchTerm);
+                            setFormData((prev) => ({ ...prev, submittedBy: employeeSearchTerm }));
+                          }}
+                          className="w-full px-3 py-2 text-left text-xs text-blue-600 hover:bg-blue-50 font-medium border-t border-slate-100 flex items-center gap-1.5 cursor-pointer bg-slate-50/50"
+                        >
+                          <span>+ Enter custom employee</span>
+                          {employeeSearchTerm ? ` "${employeeSearchTerm}"` : '...'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </div>

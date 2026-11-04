@@ -23,6 +23,15 @@ import { prepareManpowerUser, isUserActiveForManpowerDate, getManpowerInactiveRe
 import { normalizeEvaluationDate } from "../utils/skillMatrix.util.js";
 import DojoStageHistory from "../models/dojoStagHistory.model.js";
 import { assertJoiningNotAfterLeaving, getJoiningLeavingDateError } from "../utils/dateValidation.js";
+import {
+  assertEmployeeFields,
+  getEmployeeUpdateError,
+  normalizePhoneNumber,
+  normalizeGender,
+  parseEmployeeStatus,
+  isValidPhoneNumber,
+} from "../utils/employeeFields.js";
+import { resolveActiveContractor } from "../utils/contractorLookup.js";
 
 // Kept in sync with LEAVING_REASONS in admin/src/pages/Admin/DojoHiring.jsx.
 // A "reasonOfLeaving" filter value of "Other" means "any custom reason not in this list".
@@ -1112,6 +1121,22 @@ export const createUser = asyncHandler(async (req, res) => {
     throw new ApiError("Missing required fields (fullName, userName, password, unit)", 400);
   }
 
+  // Operator records opt in to the 12 mandatory employee fields; this endpoint also creates
+  // admins, trainers and quick-created users, which don't collect them.
+  if (data.requireEmployeeFields === true) {
+    assertEmployeeFields({
+      ...data,
+      empId: data.empId || data.userName,
+      contractor: data.contractorId || data.contractor,
+    });
+    const contractorRow = await resolveActiveContractor({ contractorId: data.contractorId, contractor: data.contractor });
+    if (!contractorRow) throw new ApiError("Selected contractor does not exist or is inactive.", 400);
+    data.contractorId = contractorRow.id;
+    data.phoneNumber = normalizePhoneNumber(data.phoneNumber);
+    data.gender = normalizeGender(data.gender);
+    data.status = parseEmployeeStatus(data.status);
+  }
+
   assertJoiningNotAfterLeaving(data.joiningDate, data.leavingDate);
 
   // Duplicate Check
@@ -1361,6 +1386,17 @@ export const updateUser = asyncHandler(async (req, res) => {
         throw new ApiError("Shift scheduling is not allowed for temporary users", 400);
       }
     }
+  }
+
+  // Operator records (STUDENT role, incl. Dojo candidates): mandatory employee fields that are
+  // already filled in can't be blanked, and changed values must be well-formed.
+  if ((data.role ?? oldUser.role) === "STUDENT") {
+    const employeeUpdateError = getEmployeeUpdateError(oldUser, data);
+    if (employeeUpdateError) throw new ApiError(employeeUpdateError, 400);
+    if (data.phoneNumber !== undefined && isValidPhoneNumber(data.phoneNumber)) {
+      data.phoneNumber = normalizePhoneNumber(data.phoneNumber);
+    }
+    if (data.gender) data.gender = normalizeGender(data.gender);
   }
 
   // Enforce permission to change status

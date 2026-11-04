@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from "react-dom";
 import * as XLSX from 'xlsx';
 import {
@@ -22,6 +22,7 @@ import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { format } from "date-fns";
 import { safeDateFormat, dateToInputFormat } from "@/utils/dateUtils.js";
+import { getEmployeeFieldErrors, summarizeEmployeeFieldErrors } from "@/utils/employeeFields.js";
 import ExportColumnSelectorModal from "@/components/common/ExportColumnSelectorModal.jsx";
 import {
     Table,
@@ -139,6 +140,16 @@ const formatDuration = (totalSeconds) => {
     return `${mins}:${String(secs).padStart(2, "0")}`;
 };
 
+// Label for a mandatory field: drops any "*" already baked into the translation and appends a
+// red one, so every required field is marked the same way in all languages.
+const RequiredLabel = ({ htmlFor, children }) => (
+    <Label htmlFor={htmlFor}>
+        {String(children).replace(/\s*\*\s*$/, "")} <span className="text-red-500">*</span>
+    </Label>
+);
+
+const FieldError = ({ message }) => (message ? <p className="text-xs text-red-500">{message}</p> : null);
+
 const DojoHiring = () => {
     const { t, language } = useTranslate();
     const navigate = useNavigate();
@@ -218,7 +229,7 @@ const DojoHiring = () => {
     const [endDate, setEndDate] = useState("");
 
     const [formData, setFormData] = useState({
-        fullName: "", empId: "", idCard: "", fatherHusbandName: "", gender: "MALE",
+        fullName: "", empId: "", idCard: "", fatherHusbandName: "", gender: "",
         designation: "", dob: "", joiningDate: new Date().toISOString().split('T')[0],
         departmentId: "", sectionId: "", lineId: "", subSectionId: "", stationId: "",
         education: "", email: "", phoneNumber: "", district: "", state: "",
@@ -226,6 +237,11 @@ const DojoHiring = () => {
         leavingDate: "", reasonOfLeaving: "", contractor: "", expectedHandover: "",
         shiftSchedule: {}, dojoShift: ""
     });
+    // Mandatory-field errors shown under each input in the candidate dialog.
+    const [fieldErrors, setFieldErrors] = useState({});
+    // Form values as loaded when editing, so validation only flags fields the user changed
+    // (older records may legitimately be missing data that was never collected).
+    const editInitialFormRef = useRef(null);
 
     const [isShiftDialogOpen, setIsShiftDialogOpen] = useState(false);
     const [shiftStudent, setShiftStudent] = useState(null);
@@ -375,8 +391,17 @@ const DojoHiring = () => {
     };
 
     const handleSubmit = async () => {
-        if (!formData.fullName || !formData.empId) {
-            toast.error("Name and Employee Code are required");
+        // All mandatory employee fields except Status (new candidates are always PRESENT).
+        let errors = getEmployeeFieldErrors(formData, { requireStatus: false });
+        if (selectedUser && editInitialFormRef.current) {
+            const initial = editInitialFormRef.current;
+            errors = Object.fromEntries(
+                Object.entries(errors).filter(([key]) => String(formData[key] ?? "") !== String(initial[key] ?? ""))
+            );
+        }
+        setFieldErrors(errors);
+        if (Object.keys(errors).length > 0) {
+            toast.error(summarizeEmployeeFieldErrors(errors));
             return;
         }
 
@@ -643,7 +668,8 @@ const DojoHiring = () => {
                 const row = allRows[i];
                 if (row && Array.isArray(row) && row.some((cell) => {
                     if (!cell) return false;
-                    const c = cell.toString().trim().toLowerCase();
+                    // Tolerate the template's "Employee Code *" required-field marker.
+                    const c = cell.toString().trim().toLowerCase().replace(/\s*\*$/, "");
                     return c === "employeeid" || c === "employee code" || c === "employee id";
                 })) {
                     headerRowIndex = i;
@@ -853,12 +879,12 @@ const DojoHiring = () => {
             return (val && val !== 0 && val !== "0") ? String(val) : "";
         };
 
-        setFormData({
+        const editForm = {
             fullName: user.fullName || "",
             empId: user.empId || "",
             idCard: user.idCard || "",
             fatherHusbandName: user.fatherHusbandName || "",
-            gender: user.gender || "MALE",
+            gender: user.gender || "",
             designation: user.designation || "",
             dob: user.dob ? dateToInputFormat(user.dob) : "",
             joiningDate: user.joiningDate ? dateToInputFormat(user.joiningDate) : new Date().toISOString().split('T')[0],
@@ -885,7 +911,10 @@ const DojoHiring = () => {
                 ? (() => { try { return JSON.parse(user.shiftSchedule); } catch (e) { return {}; } })()
                 : (user.shiftSchedule || {}),
             dojoShift: user.dojoShift || ""
-        });
+        };
+        setFormData(editForm);
+        editInitialFormRef.current = editForm;
+        setFieldErrors({});
 
         const existingReason = user.reasonOfLeaving || "";
         if (existingReason && !LEAVING_REASONS.includes(existingReason)) {
@@ -902,8 +931,10 @@ const DojoHiring = () => {
     const closeModal = () => {
         setIsAddModalOpen(false);
         setSelectedUser(null);
+        editInitialFormRef.current = null;
+        setFieldErrors({});
         setFormData({
-            fullName: "", empId: "", idCard: "", fatherHusbandName: "", gender: "MALE",
+            fullName: "", empId: "", idCard: "", fatherHusbandName: "", gender: "",
             designation: "", dob: "", joiningDate: new Date().toISOString().split('T')[0],
             departmentId: "", sectionId: "", lineId: "", subSectionId: "", stationId: "",
             education: "", email: "", phoneNumber: "", district: "", state: "",
@@ -1753,7 +1784,7 @@ const DojoHiring = () => {
                                 <h3 className="text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-md w-fit mb-2 uppercase tracking-wider">{t("dojoHiring.modal.secIdentification")}</h3>
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="fullName">{t("dojoHiring.modal.lblFullName")}</Label>
+                                <RequiredLabel htmlFor="fullName">{t("dojoHiring.modal.lblFullName")}</RequiredLabel>
                                 <Input
                                     id="fullName"
                                     name="fullName"
@@ -1761,9 +1792,10 @@ const DojoHiring = () => {
                                     onChange={handleInputChange}
                                     placeholder={t("dojoHiring.modal.lblFullName").replace(" *", "")}
                                 />
+                                <FieldError message={fieldErrors.fullName} />
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="empId">{t("dojoHiring.modal.lblEmpCode")}</Label>
+                                <RequiredLabel htmlFor="empId">{t("dojoHiring.modal.lblEmpCode")}</RequiredLabel>
                                 <Input
                                     id="empId"
                                     name="empId"
@@ -1771,9 +1803,10 @@ const DojoHiring = () => {
                                     onChange={handleInputChange}
                                     placeholder="e.g. AS000233"
                                 />
+                                <FieldError message={fieldErrors.empId} />
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="idCard">{t("dojoHiring.modal.lblCardNo")}</Label>
+                                <RequiredLabel htmlFor="idCard">{t("dojoHiring.modal.lblCardNo")}</RequiredLabel>
                                 <Input
                                     id="idCard"
                                     name="idCard"
@@ -1781,6 +1814,7 @@ const DojoHiring = () => {
                                     onChange={handleInputChange}
                                     placeholder="e.g. 00C0233"
                                 />
+                                <FieldError message={fieldErrors.idCard} />
                             </div>
 
                             {/* Profile Section */}
@@ -1788,13 +1822,14 @@ const DojoHiring = () => {
                                 <h3 className="text-sm font-bold text-slate-600 bg-slate-100 px-3 py-1 rounded-md w-fit mb-2 uppercase tracking-wider">{t("dojoHiring.modal.secPersonalProfile")}</h3>
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="fatherHusbandName">{t("dojoHiring.modal.lblFatherHusbandName")}</Label>
+                                <RequiredLabel htmlFor="fatherHusbandName">{t("dojoHiring.modal.lblFatherHusbandName")}</RequiredLabel>
                                 <Input id="fatherHusbandName" name="fatherHusbandName" value={formData.fatherHusbandName} onChange={handleInputChange} placeholder={t("dojoHiring.modal.lblFatherHusbandName")} />
+                                <FieldError message={fieldErrors.fatherHusbandName} />
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="gender">{t("dojoHiring.modal.lblGender")}</Label>
+                                <RequiredLabel htmlFor="gender">{t("dojoHiring.modal.lblGender")}</RequiredLabel>
                                 <Select value={formData.gender} onValueChange={(val) => handleSelectChange('gender', val)}>
-                                    <SelectTrigger>
+                                    <SelectTrigger id="gender">
                                         <SelectValue placeholder={t("dojoHiring.modal.lblGender")} />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -1803,6 +1838,7 @@ const DojoHiring = () => {
                                         <SelectItem value="OTHER">{t("charts.other")}</SelectItem>
                                     </SelectContent>
                                 </Select>
+                                <FieldError message={fieldErrors.gender} />
                             </div>
                             <div className="grid gap-2">
                                 <Label htmlFor="status">{t("dojoHiring.modal.lblOnboardingStatus")}</Label>
@@ -1863,27 +1899,31 @@ const DojoHiring = () => {
                                 </>
                             )}
                             <div className="grid gap-2">
-                                <Label htmlFor="designation">{t("dojoHiring.modal.lblDesignation")}</Label>
+                                <RequiredLabel htmlFor="designation">{t("dojoHiring.modal.lblDesignation")}</RequiredLabel>
                                 <Input id="designation" name="designation" value={formData.designation} onChange={handleInputChange} placeholder="Trainee / Operator" />
+                                <FieldError message={fieldErrors.designation} />
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="dob">{t("dojoHiring.modal.lblDob")}</Label>
+                                <RequiredLabel htmlFor="dob">{t("dojoHiring.modal.lblDob")}</RequiredLabel>
                                 <Input id="dob" type="date" name="dob" value={formData.dob} onChange={handleInputChange} />
+                                <FieldError message={fieldErrors.dob} />
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="education">{t("dojoHiring.modal.lblEducation")}</Label>
+                                <RequiredLabel htmlFor="education">{t("dojoHiring.modal.lblEducation")}</RequiredLabel>
                                 <Input id="education" name="education" value={formData.education} onChange={handleInputChange} placeholder={t("dojoHiring.modal.lblEducation")} />
+                                <FieldError message={fieldErrors.education} />
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="joiningDate">{t("dojoHiring.modal.lblJoiningDate")}</Label>
+                                <RequiredLabel htmlFor="joiningDate">{t("dojoHiring.modal.lblJoiningDate")}</RequiredLabel>
                                 <Input id="joiningDate" type="date" name="joiningDate" value={formData.joiningDate} onChange={handleInputChange} />
+                                <FieldError message={fieldErrors.joiningDate} />
                             </div>
                             <div className="grid gap-2">
                                 <Label htmlFor="expectedHandover">{t("dojoHiring.modal.lblExpectedHandover")}</Label>
                                 <Input id="expectedHandover" type="date" name="expectedHandover" value={formData.expectedHandover} onChange={handleInputChange} />
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="contractorId">{t("dojoHiring.modal.lblContractor")}</Label>
+                                <RequiredLabel htmlFor="contractorId">{t("dojoHiring.modal.lblContractor")}</RequiredLabel>
                                 <Select
                                     value={formData.contractorId || "none"}
                                     onValueChange={(val) => setFormData(prev => ({ ...prev, contractorId: val === "none" ? "" : val }))}
@@ -1898,6 +1938,7 @@ const DojoHiring = () => {
                                         ))}
                                     </SelectContent>
                                 </Select>
+                                <FieldError message={fieldErrors.contractorId} />
                             </div>
 
                             {/* Contact Section */}
@@ -1905,8 +1946,9 @@ const DojoHiring = () => {
                                 <h3 className="text-sm font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-md w-fit mb-2 uppercase tracking-wider">{t("dojoHiring.modal.secContactAddress")}</h3>
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="phoneNumber">{t("dojoHiring.modal.lblMobileNo")}</Label>
+                                <RequiredLabel htmlFor="phoneNumber">{t("dojoHiring.modal.lblMobileNo")}</RequiredLabel>
                                 <Input id="phoneNumber" name="phoneNumber" value={formData.phoneNumber} onChange={handleInputChange} placeholder="10 digit number" />
+                                <FieldError message={fieldErrors.phoneNumber} />
                             </div>
                             <div className="grid gap-2">
                                 <Label htmlFor="email">{t("dojoHiring.modal.lblEmail")}</Label>

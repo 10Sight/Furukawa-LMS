@@ -128,6 +128,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { getMediaUrl } from "@/utils/mediaUtils.js";
 import { safeDateFormat, dateToInputFormat } from "@/utils/dateUtils.js";
 import { getExcelRows } from "@/utils/excelUtils.js";
+import { getEmployeeFieldErrors, normalizePhoneNumber } from "@/utils/employeeFields.js";
 import StudentLevelManager from "@/components/common/training/StudentLevelManager.jsx";
 import ShiftScheduler from "@/components/common/training/ShiftScheduler.jsx";
 import { useGetPendingLeftRequestCountQuery } from "@/services/api/LeftRequestApi.js";
@@ -279,7 +280,7 @@ const Students = () => {
     idCard: "",
     fullName: "",
     fatherHusbandName: "",
-    gender: "MALE",
+    gender: "",
     departments: [],
     sections: [],
     lines: [],
@@ -796,7 +797,7 @@ const Students = () => {
       idCard: "",
       fullName: "",
       fatherHusbandName: "",
-      gender: "MALE",
+      gender: "",
       departments: [],
       sections: [],
       lines: [],
@@ -841,14 +842,13 @@ const Students = () => {
     setFormErrors({});
     const errors = {};
 
-    // Validate required fields
-    if (!formData.fullName?.trim()) {
-      errors.fullName = "Full name is required";
-    }
+    // The 12 mandatory employee fields (Employee Code, Card No., Name, Father/Husband Name,
+    // Gender, Designation, Contractor, DOB, DOJ, Education, Mobile No., Status).
+    Object.assign(errors, getEmployeeFieldErrors(formData));
+
     if (!formData.userName?.trim()) {
       errors.userName = "Username is required";
     }
-    // Phone number is optional
     if (!formData.password?.trim()) {
       errors.password = "Password is required";
     }
@@ -899,10 +899,12 @@ const Students = () => {
         fullName: formData.fullName.trim(),
         userName: formData.userName.trim().toLowerCase(),
         email: formData.email.trim().toLowerCase(),
-        phoneNumber: formData.phoneNumber.trim(),
+        phoneNumber: normalizePhoneNumber(formData.phoneNumber),
         password: formData.password.trim(),
         role: selectedStudent?.role === "CUSTOM" ? "CUSTOM" : "STUDENT",
         isEmployee: true,
+        // Tells /auth/register to enforce the mandatory employee fields server-side.
+        requireEmployeeFields: true,
         unit: formData.unit,
         empId: formData.empId?.trim() || null,
         idCard: formData.idCard?.trim() || null,
@@ -1339,7 +1341,8 @@ const Students = () => {
         const row = allRows[i];
         if (row && Array.isArray(row) && row.some((cell) => {
           if (!cell) return false;
-          const c = cell.toString().trim().toLowerCase();
+          // Tolerate the template's "Employee Code *" required-field marker.
+          const c = cell.toString().trim().toLowerCase().replace(/\s*\*$/, "");
           return c === "employeeid" || c === "employee code" || c === "employee id";
         })) {
           headerRowIndex = i;
@@ -3393,7 +3396,7 @@ const Students = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 py-4">
             {/* Operator ID & Card No */}
             <div className="grid gap-2">
-              <Label htmlFor="empId">Employee Code *</Label>
+              <Label htmlFor="empId">Employee Code <span className="text-red-500">*</span></Label>
               <Input
                 id="empId"
                 name="empId"
@@ -3406,19 +3409,21 @@ const Students = () => {
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="idCard">Card No</Label>
+              <Label htmlFor="idCard">Card No <span className="text-red-500">*</span></Label>
               <Input
                 id="idCard"
                 name="idCard"
                 value={formData.idCard}
                 onChange={handleInputChange}
                 placeholder="CARD123"
+                className={formErrors.idCard ? "border-red-500" : ""}
               />
+              {formErrors.idCard && <p className="text-xs text-red-600">{formErrors.idCard}</p>}
             </div>
 
             {/* Name & Father/Husband Name */}
             <div className="grid gap-2">
-              <Label htmlFor="fullName">Name *</Label>
+              <Label htmlFor="fullName">Name <span className="text-red-500">*</span></Label>
               <Input
                 id="fullName"
                 name="fullName"
@@ -3431,24 +3436,26 @@ const Students = () => {
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="fatherHusbandName">Father / Husband Name</Label>
+              <Label htmlFor="fatherHusbandName">Father / Husband Name <span className="text-red-500">*</span></Label>
               <Input
                 id="fatherHusbandName"
                 name="fatherHusbandName"
                 value={formData.fatherHusbandName}
                 onChange={handleInputChange}
                 placeholder="Name"
+                className={formErrors.fatherHusbandName ? "border-red-500" : ""}
               />
+              {formErrors.fatherHusbandName && <p className="text-xs text-red-600">{formErrors.fatherHusbandName}</p>}
             </div>
 
             {/* Gender & Designation */}
             <div className="grid gap-2">
-              <Label htmlFor="gender">Gender</Label>
+              <Label htmlFor="gender">Gender <span className="text-red-500">*</span></Label>
               <Select
                 value={formData.gender}
                 onValueChange={(value) => setFormData({ ...formData, gender: value })}
               >
-                <SelectTrigger>
+                <SelectTrigger id="gender" className={formErrors.gender ? "border-red-500" : ""}>
                   <SelectValue placeholder="Select Gender" />
                 </SelectTrigger>
                 <SelectContent>
@@ -3457,33 +3464,38 @@ const Students = () => {
                   <SelectItem value="OTHER">Other</SelectItem>
                 </SelectContent>
               </Select>
+              {formErrors.gender && <p className="text-xs text-red-600">{formErrors.gender}</p>}
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="designation">Designation</Label>
+              <Label htmlFor="designation">Designation <span className="text-red-500">*</span></Label>
               <Input
                 id="designation"
                 name="designation"
                 value={formData.designation}
                 onChange={handleInputChange}
                 placeholder="Operator / Senior Operator"
+                className={formErrors.designation ? "border-red-500" : ""}
               />
+              {formErrors.designation && <p className="text-xs text-red-600">{formErrors.designation}</p>}
             </div>
 
             {/* DOB & DOJ */}
             <div className="grid gap-2">
-              <Label htmlFor="dob">Date of Birth</Label>
+              <Label htmlFor="dob">Date of Birth <span className="text-red-500">*</span></Label>
               <Input
                 id="dob"
                 name="dob"
                 type="date"
                 value={formData.dob}
                 onChange={handleInputChange}
+                className={formErrors.dob ? "border-red-500" : ""}
               />
+              {formErrors.dob && <p className="text-xs text-red-600">{formErrors.dob}</p>}
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="joiningDate">Date of Joining</Label>
+              <Label htmlFor="joiningDate">Date of Joining <span className="text-red-500">*</span></Label>
               <Input
                 id="joiningDate"
                 name="joiningDate"
@@ -3491,7 +3503,9 @@ const Students = () => {
                 max={formData.leavingDate || undefined}
                 value={formData.joiningDate}
                 onChange={handleInputChange}
+                className={formErrors.joiningDate ? "border-red-500" : ""}
               />
+              {formErrors.joiningDate && <p className="text-xs text-red-600">{formErrors.joiningDate}</p>}
             </div>
 
             {/* Hierarchy Dropdowns */}
@@ -3597,14 +3611,16 @@ const Students = () => {
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="education">Education</Label>
+              <Label htmlFor="education">Education <span className="text-red-500">*</span></Label>
               <Input
                 id="education"
                 name="education"
                 value={formData.education}
                 onChange={handleInputChange}
                 placeholder="Qualification"
+                className={formErrors.education ? "border-red-500" : ""}
               />
+              {formErrors.education && <p className="text-xs text-red-600">{formErrors.education}</p>}
             </div>
 
             <div className="grid gap-2">
@@ -3630,13 +3646,13 @@ const Students = () => {
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="contractorId">Contractor</Label>
+              <Label htmlFor="contractorId">Contractor <span className="text-red-500">*</span></Label>
               <Select
                 value={formData.contractorId || "none"}
                 onValueChange={(val) => setFormData({ ...formData, contractorId: val === "none" ? "" : val })}
               >
-                <SelectTrigger id="contractorId">
-                  <SelectValue placeholder="Select contractor (optional)" />
+                <SelectTrigger id="contractorId" className={formErrors.contractorId ? "border-red-500" : ""}>
+                  <SelectValue placeholder="Select contractor" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">None</SelectItem>
@@ -3645,6 +3661,7 @@ const Students = () => {
                   ))}
                 </SelectContent>
               </Select>
+              {formErrors.contractorId && <p className="text-xs text-red-600">{formErrors.contractorId}</p>}
             </div>
 
             <div className="grid gap-2">
@@ -3682,7 +3699,7 @@ const Students = () => {
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="phoneNumber">Mobile No</Label>
+              <Label htmlFor="phoneNumber">Mobile No <span className="text-red-500">*</span></Label>
               <Input
                 id="phoneNumber"
                 name="phoneNumber"
@@ -3769,7 +3786,7 @@ const Students = () => {
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="status">Status</Label>
+              <Label htmlFor="status">Status <span className="text-red-500">*</span></Label>
               <Select
                 value={formData.status}
                 onValueChange={(value) => {
@@ -3784,7 +3801,7 @@ const Students = () => {
                 }}
                 disabled={!hasPermission("user:change_status")}
               >
-                <SelectTrigger>
+                <SelectTrigger id="status" className={formErrors.status ? "border-red-500" : ""}>
                   <SelectValue placeholder="Select Status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -3793,6 +3810,7 @@ const Students = () => {
                   <SelectItem value="LEFT">Inactive (Left)</SelectItem>
                 </SelectContent>
               </Select>
+              {formErrors.status && <p className="text-xs text-red-600">{formErrors.status}</p>}
             </div>
 
             {/* Conditional Leaving Details */}

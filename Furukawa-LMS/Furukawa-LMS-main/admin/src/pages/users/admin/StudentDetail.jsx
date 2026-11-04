@@ -32,6 +32,15 @@ import { Skeleton } from "@/components/common/ui/skeleton.jsx";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/common/ui/avatar.jsx";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/common/ui/tabs.jsx";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/common/ui/dropdown-menu.jsx";
+import {
   Table,
   TableBody,
   TableCell,
@@ -58,6 +67,7 @@ import {
   IconPhone,
   IconRefresh,
   IconChevronRight,
+  IconChevronDown,
   IconBuilding,
   IconLayout,
   IconGitBranch,
@@ -416,6 +426,36 @@ const StudentDetail = () => {
       averageQuizScore: Math.round(averageQuizScore),
     };
   }, [progressList, submissions, attempts]);
+
+  // Single source of truth for the tab navigation (desktop ribbon + mobile selector)
+  const tabsConfig = useMemo(() => [
+    { id: "overview", label: "Overview", icon: IconUser, group: "Learning" },
+    { id: "progress", label: "Progress", icon: IconSchool, count: stats.totalCourses, group: "Learning" },
+    { id: "submissions", label: "Submissions", icon: IconFileText, count: stats.totalSubmissions, group: "Learning" },
+    { id: "quizzes", label: "Test Attempts", icon: IconChartBar, count: stats.totalAttempts, group: "Learning" },
+    { id: "ojt", label: "On Job Training", icon: IconBook2, group: "Training & Dojo" },
+    { id: "dojoEvaluation", label: "Dojo Evaluation Test", icon: IconTrophy, count: dojoAttempts.length, group: "Training & Dojo" },
+    ...(!shouldHideObservance ? [{ id: "observance", label: "Operator Observance", icon: IconEye, group: "Monitoring Sheets" }] : []),
+    { id: "monitoring3", label: "3 Day Monitoring", icon: IconClock, group: "Monitoring Sheets" },
+    { id: "monitoring16", label: "16 Day Monitoring", icon: IconClipboardList, group: "Monitoring Sheets" },
+    { id: "skillEvaluation", label: "Skill Evaluation", fullLabel: "Check Sheet of Skill Evaluation", icon: IconShieldCheck, group: "Monitoring Sheets" },
+    { id: "handover", label: "Handover Sheet", icon: IconHistory, group: "Monitoring Sheets" },
+  ], [stats.totalCourses, stats.totalSubmissions, stats.totalAttempts, dojoAttempts.length, shouldHideObservance]);
+
+  const tabGroups = useMemo(() => {
+    const groups = [];
+    tabsConfig.forEach((tab) => {
+      let group = groups.find((g) => g.name === tab.group);
+      if (!group) {
+        group = { name: tab.group, tabs: [] };
+        groups.push(group);
+      }
+      group.tabs.push(tab);
+    });
+    return groups;
+  }, [tabsConfig]);
+
+  const activeTabConfig = tabsConfig.find((t) => t.id === activeTab) || tabsConfig[0];
 
   const handleRefreshAll = () => {
     [refetchStudent, refetchProgress, refetchSubmissions, refetchAttempts, refetchOjt, refetchDojoAttempts].forEach(fn => {
@@ -1253,22 +1293,105 @@ const StudentDetail = () => {
       </div>
 
       {/* Main Content Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="flex flex-wrap h-auto p-1 gap-1 bg-muted/50">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="progress">Progress ({stats.totalCourses})</TabsTrigger>
-          <TabsTrigger value="submissions">Submissions ({stats.totalSubmissions})</TabsTrigger>
-          <TabsTrigger value="quizzes">Test Attempts ({stats.totalAttempts})</TabsTrigger>
-          <TabsTrigger value="ojt">On Job Training</TabsTrigger>
-          <TabsTrigger value="dojoEvaluation">Dojo Evaluation Test ({dojoAttempts.length})</TabsTrigger>
-          {!shouldHideObservance && (
-            <TabsTrigger value="observance">Operator Observance</TabsTrigger>
-          )}
-          <TabsTrigger value="monitoring3">3 Day Monitoring</TabsTrigger>
-          <TabsTrigger value="monitoring16">16 Day Monitoring</TabsTrigger>
-          <TabsTrigger value="skillEvaluation">Check Sheet of Skill Evaluation</TabsTrigger>
-          <TabsTrigger value="handover">Handover Sheet</TabsTrigger>
-        </TabsList>
+      <Tabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        orientation="vertical"
+        className="w-full gap-4 md:flex-row md:items-start [&>[data-slot=tabs-content]]:min-w-0"
+      >
+        {/* Mobile tab selector (< md) */}
+        <div className="md:hidden">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="flex w-full items-center gap-3 rounded-xl border bg-background px-3 py-2.5 text-left shadow-sm transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label="Select section"
+              >
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  {activeTabConfig && <activeTabConfig.icon className="h-4 w-4" />}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    {activeTabConfig?.group}
+                  </span>
+                  <span className="block truncate text-sm font-semibold">
+                    {activeTabConfig?.fullLabel || activeTabConfig?.label}
+                  </span>
+                </span>
+                {typeof activeTabConfig?.count === "number" && (
+                  <Badge variant="secondary" className="px-1.5 py-0 text-[10px] tabular-nums">
+                    {activeTabConfig.count}
+                  </Badge>
+                )}
+                <IconChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="start"
+              className="w-[var(--radix-dropdown-menu-trigger-width)] max-h-[70vh] overflow-y-auto"
+            >
+              {tabGroups.map((group, gi) => (
+                <DropdownMenuGroup key={group.name}>
+                  {gi > 0 && <DropdownMenuSeparator />}
+                  <DropdownMenuLabel className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                    {group.name}
+                  </DropdownMenuLabel>
+                  {group.tabs.map((tab) => {
+                    const isActive = tab.id === activeTab;
+                    return (
+                      <DropdownMenuItem
+                        key={tab.id}
+                        onSelect={() => setActiveTab(tab.id)}
+                        className={isActive ? "bg-primary/10 text-primary focus:bg-primary/15 focus:text-primary" : ""}
+                      >
+                        <tab.icon className="h-4 w-4" />
+                        <span className="flex-1 truncate">{tab.fullLabel || tab.label}</span>
+                        {typeof tab.count === "number" && (
+                          <Badge variant="secondary" className="px-1.5 py-0 text-[10px] tabular-nums">
+                            {tab.count}
+                          </Badge>
+                        )}
+                        {isActive && <IconCheck className="h-4 w-4" />}
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </DropdownMenuGroup>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        {/* Tablet / desktop vertical sidebar (>= md) */}
+        <aside className="hidden md:block w-56 lg:w-60 shrink-0 md:sticky md:top-4">
+          <TabsList className="flex h-auto w-full flex-col items-stretch justify-start gap-0.5 rounded-xl border bg-muted/40 p-2">
+            {tabGroups.map((group, gi) => (
+              <div key={group.name} className={gi > 0 ? "mt-2 border-t pt-2" : ""}>
+                <p className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  {group.name}
+                </p>
+                <div className="flex flex-col gap-0.5">
+                  {group.tabs.map((tab) => (
+                    <TabsTrigger
+                      key={tab.id}
+                      value={tab.id}
+                      title={tab.fullLabel || tab.label}
+                      className="h-9 w-full flex-none justify-start gap-2 rounded-lg px-2.5 text-left text-muted-foreground hover:bg-background/70 hover:text-foreground data-[state=active]:bg-background data-[state=active]:font-semibold data-[state=active]:text-primary data-[state=active]:shadow-sm dark:data-[state=active]:text-primary"
+                    >
+                      <tab.icon className="h-4 w-4" />
+                      <span className="flex-1 truncate">{tab.label}</span>
+                      {typeof tab.count === "number" && (
+                        <Badge variant="secondary" className="h-5 min-w-5 justify-center rounded-full px-1.5 py-0 text-[10px] tabular-nums">
+                          {tab.count}
+                        </Badge>
+                      )}
+                    </TabsTrigger>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </TabsList>
+        </aside>
 
         <TabsContent value="monitoring16">
           <SixteenDayMonitoringSheet

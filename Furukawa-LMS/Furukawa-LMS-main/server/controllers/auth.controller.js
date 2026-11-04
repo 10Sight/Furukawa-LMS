@@ -17,6 +17,39 @@ import { checkAndProcessLevelUpgrades, formatUser } from "./user.controller.js";
 import DojoStageHistory from "../models/dojoStagHistory.model.js";
 import logger from "../logger/winston.logger.js";
 import { assertJoiningNotAfterLeaving } from "../utils/dateValidation.js";
+import {
+  assertEmployeeFields,
+  normalizePhoneNumber,
+  normalizeGender,
+  parseEmployeeStatus,
+} from "../utils/employeeFields.js";
+import { resolveActiveContractor } from "../utils/contractorLookup.js";
+
+/**
+ * Validates the 12 mandatory employee fields for an operator being created through an API
+ * endpoint, resolves the contractor against the active contractors table, and returns the
+ * normalised values to store. Throws ApiError(400) on any problem.
+ */
+const validateNewEmployee = async (body, { requireStatus = true } = {}) => {
+  assertEmployeeFields(
+    { ...body, contractor: body.contractorId || body.contractor },
+    { requireStatus }
+  );
+  const contractorRow = await resolveActiveContractor({
+    contractorId: body.contractorId,
+    contractor: body.contractor,
+  });
+  if (!contractorRow) {
+    throw new ApiError("Selected contractor does not exist or is inactive.", 400);
+  }
+  return {
+    phoneNumber: normalizePhoneNumber(body.phoneNumber),
+    gender: normalizeGender(body.gender),
+    contractor: contractorRow.name,
+    contractorId: contractorRow.id,
+    ...(requireStatus ? { status: parseEmployeeStatus(body.status) } : {}),
+  };
+};
 
 // Helper to sanitize user object
 const sanitizeUser = (user) => {
@@ -105,11 +138,18 @@ export const register = asyncHandler(async (req, res) => {
     customRoleId, setAsPrimary,
     fatherHusbandName, gender, dob, education, district, state, pin, busRoute, reasonOfLeaving, mentor, designation,
     sectionId, subSectionId, lineId, stationId, departmentId,
-    isMentor, isSupervisor, isIncharge, mentorLimit
+    isMentor, isSupervisor, isIncharge, mentorLimit,
+    contractor, contractorId, status, requireEmployeeFields
   } = req.body;
 
   if (!fullName || !userName || !password || !unit) {
     throw new ApiError("All fields are required (Name, Username, Password, Unit)", 400);
+  }
+
+  // Operator registrations (Students page) opt in to the 12 mandatory employee fields; other
+  // callers of this endpoint (trainers, role-based users) don't collect them.
+  if (requireEmployeeFields === true) {
+    ({ phoneNumber, gender, contractor, contractorId, status } = await validateNewEmployee(req.body));
   }
 
   if (email && !validator.isEmail(email)) {
@@ -129,7 +169,7 @@ export const register = asyncHandler(async (req, res) => {
 
   if (idCard) {
     const idCardExists = await User.findOne({ idCard });
-    if (idCardExists) throw new ApiError("ID Card already in use", 400);
+    if (idCardExists) throw new ApiError(`Card No. ${idCard} is already in use by employee ${idCardExists.userName}`, 400);
   }
 
   const usernameExists = await User.findOne({ userName });
@@ -167,7 +207,8 @@ export const register = asyncHandler(async (req, res) => {
     empId, isEmployee, isAdmin, isTrainer, shift, idCard, privileges, joiningDate, leavingDate,
     sectionId, subSectionId, lineId, stationId, departmentId,
     fatherHusbandName, gender, dob, education, district, state, pin, busRoute, reasonOfLeaving, mentor, designation,
-    customRoleId, isMentor, isSupervisor, isIncharge, mentorLimit
+    customRoleId, isMentor, isSupervisor, isIncharge, mentorLimit,
+    ...(requireEmployeeFields === true ? { contractor, contractorId, status } : {})
   };
 
   const user = await User.create(userData);
@@ -513,19 +554,21 @@ export const dojoRegister = asyncHandler(async (req, res) => {
     shiftSchedule, dojoShift
   } = req.body;
 
-  if (!fullName || !empId || !unit) {
-    throw new ApiError("All fields are required (Name, Employee Code, Unit)", 400);
+  // All mandatory employee fields except Status (Dojo candidates are always created PRESENT).
+  const employee = await validateNewEmployee(req.body, { requireStatus: false });
+
+  if (!unit) {
+    throw new ApiError("Unit is required", 400);
   }
 
+  empId = String(empId).trim();
   userName = empId;
 
   const usernameExists = await User.findOne({ userName });
   if (usernameExists) throw new ApiError("Username already in use", 400);
 
-  if (idCard) {
-    const idCardExists = await User.findOne({ idCard });
-    if (idCardExists) throw new ApiError("ID Card already in use", 400);
-  }
+  const idCardExists = await User.findOne({ idCard });
+  if (idCardExists) throw new ApiError(`Card No. ${idCard} is already in use by employee ${idCardExists.userName}`, 400);
 
   const cleanId = (val) => (val === "0" || val === 0 || !val || val === 'null' || val === 'undefined') ? null : parseInt(val);
 
@@ -536,17 +579,18 @@ export const dojoRegister = asyncHandler(async (req, res) => {
     empId: empId || null,
     idCard: idCard || null,
     email: email ? email.toLowerCase() : null,
-    phoneNumber: phoneNumber || null,
+    phoneNumber: employee.phoneNumber,
     role: "STUDENT",
     unit,
-    gender: gender || "MALE",
+    gender: employee.gender,
     dob: dob || null,
     education: education || null,
     district: district || null,
     state: state || null,
     pin: pin || null,
     busRoute: busRoute || null,
-    contractor: contractor || null,
+    contractor: employee.contractor,
+    contractorId: employee.contractorId,
     designation: designation || null,
     expectedHandover: (expectedHandover === "" || !expectedHandover) ? null : expectedHandover,
     fatherHusbandName: fatherHusbandName || null,

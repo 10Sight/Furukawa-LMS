@@ -22,6 +22,20 @@ import { getUpdatedStatusHistory, resolveRejoiningDate } from "../utils/statusHi
 import { getJoiningLeavingDateError } from "../utils/dateValidation.js";
 import DojoStageHistory from "../models/dojoStagHistory.model.js";
 import logger from "../logger/winston.logger.js";
+import {
+    validateEmployeeFields,
+    formatEmployeeValidation,
+    normalizePhoneNumber,
+    normalizeGender,
+    isBlankValue,
+} from "../utils/employeeFields.js";
+
+/** Header-cell matcher for "Employee Code" columns; tolerates the template's trailing "*". */
+const isEmployeeCodeHeader = (cell) => {
+    if (!cell) return false;
+    const c = cell.toString().trim().toLowerCase().replace(/\s*\*$/, "");
+    return c === "employeeid" || c === "employee code" || c === "employee id";
+};
 
 /**
  * Parse date string in DD-MMM-YY or DD-MMM-YYYY format robustly and timezone-independently
@@ -388,8 +402,8 @@ const processSingleEmployeeRow = async ({
         empId: getRowVal(row, ["EmployeeCode", "EmployeeID", "Employee Code", "Employee ID"])?.toString().trim(),
         idCard: getRowVal(row, ["CardNo", "Card No.", "Card No"])?.toString().trim(),
         fullName: getRowVal(row, ["Name", "Full Name"])?.toString().trim(),
-        fatherHusbandName: getRowVal(row, ["Father/HusbandName", "Father / Husband Name"])?.toString().trim(),
-        gender: getRowVal(row, ["Gender", "Gender "])?.toString().trim(),
+        fatherHusbandName: getRowVal(row, ["Father/HusbandName", "Father / Husband Name", "Father Name", "Husband Name"])?.toString().trim(),
+        gender: normalizeGender(getRowVal(row, ["Gender", "Gender "])?.toString().trim()) || undefined,
         department: getRowVal(row, ["Department"])?.toString().trim(),
         section: getRowVal(row, ["Section"])?.toString().trim(),
         line: getRowVal(row, ["Line"])?.toString().trim(),
@@ -397,8 +411,8 @@ const processSingleEmployeeRow = async ({
         stationNo: getRowVal(row, ["Station No.", "Station No"])?.toString().trim(),
         mentor: getRowVal(row, ["Mentor"])?.toString().trim(),
         designation: getRowVal(row, ["Designation"])?.toString().trim(),
-        dob: normalizeDate(getRowVal(row, ["D.O.B.", "DOB", "D.O.B"])),
-        joiningDate: normalizeDate(getRowVal(row, ["D.O.J.", "DOJ", "D.O.J"])),
+        dob: normalizeDate(getRowVal(row, ["D.O.B.", "DOB", "D.O.B", "Date of Birth"])),
+        joiningDate: normalizeDate(getRowVal(row, ["D.O.J.", "DOJ", "D.O.J", "Date of Joining"])),
         education: getRowVal(row, ["Education"])?.toString().trim(),
         district: getRowVal(row, ["District", "Distt", "Dist"])?.toString().trim(),
         state: getRowVal(row, ["State"])?.toString().trim(),
@@ -409,7 +423,7 @@ const processSingleEmployeeRow = async ({
         currentLevel: getRowVal(row, ["L", "Lavel", "Level"])?.toString().trim(),
         leavingDate: leavingDateVal,
         reasonOfLeaving: getRowVal(row, ["Reason of Leaving", "ReasonofLeaving"])?.toString().trim(),
-        contractor: getRowVal(row, ["Contractor"])?.toString().trim() || null,
+        contractor: getRowVal(row, ["Contractor", "Contractor Name"])?.toString().trim() || null,
         rawStatus: getRowVal(row, ["Status"])?.toString().trim() || null,
         status: leavingDateVal ? "LEFT" : normalizeStatus(getRowVal(row, ["Status"])),
         targetSec: getRowVal(row, ["Target Second", "TargetSecond", "Target Sec"])?.toString().trim(),
@@ -443,7 +457,8 @@ const processSingleEmployeeRow = async ({
         ? (contractorMap.get(normalizedRow.contractor.toLowerCase().trim()) || null)
         : null;
 
-    // Validate required fields (phoneNumber is optional)
+    // Skip rows that aren't employee records at all (blank rows, repeated header rows, footer /
+    // junk rows) before any mandatory-field validation, so they aren't logged as FAILED.
     if (!normalizedRow.empId || !normalizedRow.idCard || !normalizedRow.fullName) {
         const isEssentiallyEmpty = !normalizedRow.empId && !normalizedRow.idCard && !normalizedRow.fullName;
         if (isEssentiallyEmpty) return { skip: true };
@@ -458,8 +473,12 @@ const processSingleEmployeeRow = async ({
         if (normalizedRow.phoneNumber && !/^\d{8,15}$/.test(normalizedRow.phoneNumber.replace(/\D/g, ''))) {
             return { skip: true };
         }
+    }
 
-        const error = "Missing required fields: EmployeeID, CardNo, and Name are mandatory.";
+    // Employee Code is the lookup key for the existing-user check below; without it the row
+    // can't be matched to anyone, so fail it here with the full list of missing fields.
+    if (!normalizedRow.empId) {
+        const error = formatEmployeeValidation(validateEmployeeFields({ ...normalizedRow, status: normalizedRow.rawStatus }));
         await executeQuery(
             "INSERT INTO import_log_details (logId, rowNumber, rowData, status, errorMessage) VALUES (?, ?, ?, ?, ?)",
             [logId, rowNumber, JSON.stringify(row), "FAILED", error]
@@ -467,16 +486,7 @@ const processSingleEmployeeRow = async ({
         return { status: "FAILED", rowNumber, error };
     }
 
-    if (!normalizedRow.contractor) {
-        const error = "Missing required field: Contractor is mandatory.";
-        await executeQuery(
-            "INSERT INTO import_log_details (logId, rowNumber, rowData, status, errorMessage) VALUES (?, ?, ?, ?, ?)",
-            [logId, rowNumber, JSON.stringify(row), "FAILED", error]
-        );
-        return { status: "FAILED", rowNumber, error };
-    }
-
-    if (!contractorId) {
+    if (normalizedRow.contractor && !contractorId) {
         const error = `Contractor '${normalizedRow.contractor}' does not exist in the database. Please add it first or match the name exactly.`;
         await executeQuery(
             "INSERT INTO import_log_details (logId, rowNumber, rowData, status, errorMessage) VALUES (?, ?, ?, ?, ?)",
@@ -520,20 +530,40 @@ const processSingleEmployeeRow = async ({
             existingUser = existing[0];
         }
 
-        // Handle duplicate ID card gracefully instead of failing the row
+        // Mandatory-field check. New employees must have all 12 fields in the sheet. For an
+        // existing employee the sheet may leave a column blank (blank cells never overwrite
+        // stored data), so a field only counts as missing when it's blank in the sheet AND on
+        // file. Format checks apply only to values the sheet actually supplies, so legacy data
+        // already on file doesn't fail an unrelated update.
+        const sheetFields = {
+            ...normalizedRow,
+            status: normalizedRow.rawStatus || (normalizedRow.leavingDate ? "LEFT" : null),
+        };
+        const effectiveFields = existingUser
+            ? Object.fromEntries(Object.entries(sheetFields).map(([key, val]) => [
+                key,
+                isBlankValue(val) ? existingUser[key] : val,
+            ]))
+            : sheetFields;
+        const { missing } = validateEmployeeFields(effectiveFields);
+        const { errors } = validateEmployeeFields(sheetFields);
+        const validationError = formatEmployeeValidation({ missing, errors });
+        if (validationError) {
+            throw new Error(validationError);
+        }
+        if (normalizedRow.phoneNumber) {
+            normalizedRow.phoneNumber = normalizePhoneNumber(normalizedRow.phoneNumber);
+        }
+
+        // A Card No. that already belongs to a different employee fails the row instead of
+        // being silently dropped.
         if (normalizedRow.idCard) {
             const [dupIdCard] = await executeQuery(
                 "SELECT id, userName FROM users WHERE idCard = ? AND userName != ?",
                 [normalizedRow.idCard, normalizedRow.empId.toLowerCase()]
             );
             if (dupIdCard && dupIdCard.length > 0) {
-                if (existingUser) {
-                    // Keep their existing ID card so the update doesn't hit the unique constraint
-                    normalizedRow.idCard = existingUser.idCard || null;
-                } else {
-                    // New user: set null so insert succeeds (NULL is not subject to unique constraint)
-                    normalizedRow.idCard = null;
-                }
+                throw new Error(`Card No. ${normalizedRow.idCard} is already in use by employee ${dupIdCard[0].userName}.`);
             }
         }
 
@@ -933,11 +963,7 @@ export const importEmployees = async (req, res) => {
         // Find the header row (look for "EmployeeID" or "Employee Code")
         for (let i = 0; i < Math.min(allRows.length, 15); i++) {
             const row = allRows[i];
-            if (row && Array.isArray(row) && row.some(cell => {
-                if (!cell) return false;
-                const c = cell.toString().trim().toLowerCase();
-                return c === "employeeid" || c === "employee code" || c === "employee id";
-            })) {
+            if (row && Array.isArray(row) && row.some(isEmployeeCodeHeader)) {
                 hRowIndex = i;
                 break;
             }
@@ -1142,11 +1168,7 @@ export const importEmployeesFull = async (req, res) => {
 
         for (let i = 0; i < Math.min(allRows.length, 15); i++) {
             const row = allRows[i];
-            if (row && Array.isArray(row) && row.some(cell => {
-                if (!cell) return false;
-                const c = cell.toString().trim().toLowerCase();
-                return c === "employeeid" || c === "employee code" || c === "employee id";
-            })) {
+            if (row && Array.isArray(row) && row.some(isEmployeeCodeHeader)) {
                 hRowIndex = i;
                 break;
             }
@@ -1422,32 +1444,32 @@ export const downloadImportTemplate = async (req, res) => {
         // Create sample data with headers matching the image
         const templateData = [
             {
-                "Employee Code": '',
-                "Card No.": '',
-                "Name": '',
-                "Father / Husband Name": '',
-                "Gender": '',
+                "Employee Code *": '',
+                "Card No. *": '',
+                "Name *": '',
+                "Father / Husband Name *": '',
+                "Gender *": '',
                 "Department": '',
                 "Section": '',
                 "Line": '',
                 "Sub Section": '',
                 "Station No.": '',
                 "Mentor": '',
-                "Designation": '',
-                "DOB": '',
-                "D.O.J.": '',
-                "Education": '',
+                "Designation *": '',
+                "DOB *": '',
+                "D.O.J. *": '',
+                "Education *": '',
                 "Distt": '',
                 "State": '',
                 "PIN": '',
                 "Bus Route": '',
                 "E-Mail ID": '',
-                "Mobile No": '',
+                "Mobile No *": '',
                 "Lavel": '',
                 "Date of Leaving": '',
                 "Reason of Leaving": '',
-                "Contractor": '',
-                "Status": '',
+                "Contractor *": '',
+                "Status *": '',
             },
         ];
 
@@ -1489,34 +1511,34 @@ export const downloadImportTemplateFull = async (req, res) => {
     try {
         const templateData = [
             {
-                "Employee Code": '',
-                "Card No.": '',
-                "Name": '',
-                "Father / Husband Name": '',
-                "Gender": '',
+                "Employee Code *": '',
+                "Card No. *": '',
+                "Name *": '',
+                "Father / Husband Name *": '',
+                "Gender *": '',
                 "Department": '',
                 "Section": '',
                 "Line": '',
                 "Sub Section": '',
                 "Station No.": '',
                 "Mentor": '',
-                "Designation": '',
-                "DOB": '',
-                "D.O.J.": '',
-                "Education": '',
+                "Designation *": '',
+                "DOB *": '',
+                "D.O.J. *": '',
+                "Education *": '',
                 "Distt": '',
                 "State": '',
                 "PIN": '',
                 "Bus Route": '',
                 "E-Mail ID": '',
-                "Mobile No": '',
+                "Mobile No *": '',
                 "Lavel": '',
                 "Target Second": 10,
                 "Actual Second": 12,
                 "Date of Leaving": '',
                 "Reason of Leaving": '',
-                "Contractor": '',
-                "Status": '',
+                "Contractor *": '',
+                "Status *": '',
             },
         ];
 
@@ -1566,11 +1588,7 @@ export const importDojoUsers = async (req, res) => {
         let hRowIndex = -1;
         for (let i = 0; i < Math.min(allRows.length, 15); i++) {
             const row = allRows[i];
-            if (row && Array.isArray(row) && row.some(cell => {
-                if (!cell) return false;
-                const c = cell.toString().trim().toLowerCase();
-                return c === "employeeid" || c === "employee code" || c === "employee id";
-            })) {
+            if (row && Array.isArray(row) && row.some(isEmployeeCodeHeader)) {
                 hRowIndex = i;
                 break;
             }
@@ -1615,7 +1633,7 @@ export const importDojoUsers = async (req, res) => {
                     empId: getRowVal(row, ["Employee Code", "EmployeeID", "Employee ID"])?.toString().trim(),
                     idCard: getRowVal(row, ["Card No.", "Card No", "CardNo"])?.toString().trim(),
                     fullName: getRowVal(row, ["Name", "Full Name"])?.toString().trim(),
-                    gender: getRowVal(row, ["Gender"])?.toString().trim() || "MALE",
+                    gender: normalizeGender(getRowVal(row, ["Gender"])?.toString().trim()),
                     department: getRowVal(row, ["Department"])?.toString().trim(),
                     section: getRowVal(row, ["Section"])?.toString().trim(),
                     line: getRowVal(row, ["Line"])?.toString().trim(),
@@ -1627,8 +1645,8 @@ export const importDojoUsers = async (req, res) => {
                     dob: normalizeDate(getRowVal(row, ["DOB", "D.O.B.", "Date of Birth"])),
                     joiningDate: normalizeDate(getRowVal(row, ["D.O.J.", "DOJ", "Date of Joining", "Date of Join"])),
                     expectedHandover: normalizeDate(getRowVal(row, ["Expected Handover Date", "Expected handover date", "Expected Handover"])),
-                    fatherHusbandName: getRowVal(row, ["Father / Husband Name", "Father/HusbandName", "Father Name", "Husband Name"]),
-                    education: getRowVal(row, ["Education"]),
+                    fatherHusbandName: getRowVal(row, ["Father / Husband Name", "Father/HusbandName", "Father Name", "Husband Name"])?.toString().trim(),
+                    education: getRowVal(row, ["Education"])?.toString().trim(),
                     district: getRowVal(row, ["Distt", "District"]),
                     state: getRowVal(row, ["State"]),
                     pin: getRowVal(row, ["PIN", "Pincode", "Pin Code"]),
@@ -1637,14 +1655,17 @@ export const importDojoUsers = async (req, res) => {
                 };
 
 
-                if (!normalizedRow.empId || !normalizedRow.fullName) {
-                    if (!normalizedRow.empId && !normalizedRow.fullName) continue;
-                    throw new Error("Missing required fields: Employee Code and Name are mandatory.");
-                }
+                // Blank rows are skipped, not failed.
+                if (!normalizedRow.empId && !normalizedRow.fullName && !normalizedRow.idCard) continue;
 
-                if (!normalizedRow.contractor) {
-                    throw new Error("Missing required field: Contractor is mandatory.");
+                // All mandatory fields except Status — Dojo candidates are always created PRESENT.
+                const validationError = formatEmployeeValidation(
+                    validateEmployeeFields(normalizedRow, { requireStatus: false })
+                );
+                if (validationError) {
+                    throw new Error(validationError);
                 }
+                normalizedRow.phoneNumber = normalizePhoneNumber(normalizedRow.phoneNumber);
 
                 const contractorId = contractorMap.get(normalizedRow.contractor.toLowerCase().trim()) || null;
                 if (!contractorId) {
@@ -1664,15 +1685,13 @@ export const importDojoUsers = async (req, res) => {
                     throw new Error(`Candidate with Employee Code ${normalizedRow.empId} already exists.`);
                 }
 
-                // If ID card is already in use, clear it so creation still proceeds
-                if (normalizedRow.idCard) {
-                    const [dupIdCard] = await executeQuery(
-                        "SELECT id FROM users WHERE idCard = ?",
-                        [normalizedRow.idCard]
-                    );
-                    if (dupIdCard && dupIdCard.length > 0) {
-                        normalizedRow.idCard = null;
-                    }
+                // A Card No. already assigned to someone else fails the row instead of being dropped.
+                const [dupIdCard] = await executeQuery(
+                    "SELECT id, userName FROM users WHERE idCard = ?",
+                    [normalizedRow.idCard]
+                );
+                if (dupIdCard && dupIdCard.length > 0) {
+                    throw new Error(`Card No. ${normalizedRow.idCard} is already in use by employee ${dupIdCard[0].userName}.`);
                 }
 
                 // Resolve hierarchy
@@ -1692,7 +1711,7 @@ export const importDojoUsers = async (req, res) => {
                     isEmployee: true,
                     isTemporary: true,
                     status: "PRESENT",
-                    gender: (normalizedRow.gender || "").toUpperCase().startsWith('F') ? "FEMALE" : "MALE",
+                    gender: normalizedRow.gender,
                     email: normalizedRow.email || null,
                     phoneNumber: normalizedRow.phoneNumber || null,
                     departmentId: null,
@@ -1704,7 +1723,7 @@ export const importDojoUsers = async (req, res) => {
                     targetStationId: stationId,
                     designation: normalizedRow.designation,
                     dob: normalizedRow.dob,
-                    joiningDate: normalizedRow.joiningDate || new Date().toISOString().split('T')[0],
+                    joiningDate: normalizedRow.joiningDate,
                     fatherHusbandName: normalizedRow.fatherHusbandName,
                     education: normalizedRow.education,
                     district: normalizedRow.district,
@@ -1768,29 +1787,28 @@ export const downloadDojoImportTemplate = async (req, res) => {
     try {
         const templateData = [
             {
-                "Employee Code": '',
-                "Card No.": '',
-                "Name": '',
-                "Father / Husband Name": '',
-                "Gender": '',
-                "Contractor": '',
+                "Employee Code *": '',
+                "Card No. *": '',
+                "Name *": '',
+                "Father / Husband Name *": '',
+                "Gender *": '',
+                "Contractor *": '',
                 "Department": '',
                 "Section": '',
                 "Line": '',
                 "Sub Section": '',
                 "Station No.": '',
-                "Designation": '',
-                "DOB": '',
-                "D.O.J.": '',
+                "Designation *": '',
+                "DOB *": '',
+                "D.O.J. *": '',
                 "Expected Handover Date": '',
-                "Education": '',
+                "Education *": '',
                 "Distt": '',
                 "State": '',
                 "PIN": '',
                 "Bus Route": '',
                 "E-Mail ID": '',
-                "Mobile No": '',
-                "Status": '',
+                "Mobile No *": '',
                 "Shift": '',
             },
         ];

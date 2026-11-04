@@ -332,7 +332,7 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
                 <input
                   type="text"
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
-                  placeholder="e.g. Vikas Sharma (BWL-4821)"
+                  placeholder="Enter custom employee name or ID..."
                   value={customEmployeeText}
                   onChange={(e) => {
                     setCustomEmployeeText(e.target.value);

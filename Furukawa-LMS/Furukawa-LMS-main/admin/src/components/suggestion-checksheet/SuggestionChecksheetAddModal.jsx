@@ -4,14 +4,11 @@ import { X, FilePlus } from 'lucide-react';
 export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, defaultUnit = 'Bawal' }) {
   const [formData, setFormData] = useState({
     unit: defaultUnit && defaultUnit !== 'All Units' ? defaultUnit : 'Bawal',
+    submittedBy: '',
     department: '',
     section: '',
     lineArea: '',
-    title: '',
-    description: '',
-    category: '',
-    submittedBy: '',
-    priority: 'Medium',
+    date: new Date().toISOString().slice(0, 10),
   });
 
   if (!isOpen) return null;
@@ -22,20 +19,22 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
     const generatedId = `SC-${(formData.unit || 'BWL').substring(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
     const newRecord = {
       id: generatedId,
-      date: new Date().toISOString().split('T')[0],
+      date: formData.date || new Date().toISOString().split('T')[0],
       unit: formData.unit || 'Bawal',
       department: formData.department.trim(),
       section: formData.section.trim(),
       lineArea: formData.lineArea.trim(),
-      title: formData.title.trim() || `Blank Suggestion Sheet (${generatedId})`,
-      description: formData.description.trim(),
-      problemText: formData.description.trim(),
+      title: formData.submittedBy.trim()
+        ? `${formData.submittedBy.trim()} - Suggestion`
+        : `Suggestion Sheet (${generatedId})`,
+      description: '',
+      problemText: '',
       suggestionText: '',
-      category: formData.category || '',
+      category: '',
       submittedBy: formData.submittedBy.trim(),
       employeeCode: formData.lineArea.trim(),
       status: 'Pending',
-      priority: formData.priority || 'Medium',
+      priority: 'Medium',
       isBlank: true,
       rejectedAccepted: '',
       reasonIfRejected: '',
@@ -54,14 +53,11 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
     // Reset form to blank
     setFormData({
       unit: defaultUnit && defaultUnit !== 'All Units' ? defaultUnit : 'Bawal',
+      submittedBy: '',
       department: '',
       section: '',
       lineArea: '',
-      title: '',
-      description: '',
-      category: '',
-      submittedBy: '',
-      priority: 'Medium',
+      date: new Date().toISOString().slice(0, 10),
     });
   };
 
@@ -71,7 +67,7 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
       onClick={onClose}
     >
       <div
-        className="relative bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-2xl w-full max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95"
+        className="relative bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-xl w-full max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
@@ -81,8 +77,8 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
               <FilePlus className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-slate-800 leading-tight">Add New Suggestion Checksheet</h3>
-              <p className="text-xs text-slate-500">Submit an operational improvement, safety, or quality idea</p>
+              <h3 className="text-base font-bold text-slate-800 leading-tight">Create Suggestion Checksheet</h3>
+              <p className="text-xs text-slate-500">Enter checksheet details to initialize a blank format</p>
             </div>
           </div>
           <button
@@ -95,7 +91,7 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
           </button>
         </div>
 
-        {/* Modal Body / Form */}
+        {/* Modal Body / Form - Contains only: Plant Unit, Employee Name/ID, Department, Section, Line/Area, Date */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-4 text-xs">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -111,21 +107,14 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
             </div>
 
             <div>
-              <label className="block text-slate-700 font-semibold mb-1">Category</label>
-              <select
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
-                value={formData.category}
-                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-              >
-                <option value="">-- Blank / Select Category --</option>
-                <option value="Safety">Safety (S)</option>
-                <option value="Quality">Quality (Q)</option>
-                <option value="Productivity">Productivity (P)</option>
-                <option value="Cost Reduction">Cost Reduction (C)</option>
-                <option value="Delivery">Delivery (D)</option>
-                <option value="Maintenance">Maintenance / Morale (M)</option>
-                <option value="5S">5S</option>
-              </select>
+              <label className="block text-slate-700 font-semibold mb-1">Employee Name / ID</label>
+              <input
+                type="text"
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                placeholder="e.g. Vikas Sharma / EMP001"
+                value={formData.submittedBy}
+                onChange={(e) => setFormData({ ...formData, submittedBy: e.target.value })}
+              />
             </div>
           </div>
 
@@ -135,7 +124,7 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
               <input
                 type="text"
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                placeholder="e.g. Production (or leave blank)"
+                placeholder="e.g. Production"
                 value={formData.department}
                 onChange={(e) => setFormData({ ...formData, department: e.target.value })}
               />
@@ -145,7 +134,7 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
               <input
                 type="text"
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                placeholder="e.g. Main Assembly (or leave blank)"
+                placeholder="e.g. Main Assembly"
                 value={formData.section}
                 onChange={(e) => setFormData({ ...formData, section: e.target.value })}
               />
@@ -155,59 +144,21 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
               <input
                 type="text"
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                placeholder="e.g. Assembly Line 1 (or leave blank)"
+                placeholder="e.g. Assembly Line 1"
                 value={formData.lineArea}
                 onChange={(e) => setFormData({ ...formData, lineArea: e.target.value })}
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-slate-700 font-semibold mb-1">Employee Name / ID</label>
-              <input
-                type="text"
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                placeholder="e.g. Vikas Sharma (or leave blank)"
-                value={formData.submittedBy}
-                onChange={(e) => setFormData({ ...formData, submittedBy: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="block text-slate-700 font-semibold mb-1">Priority</label>
-              <select
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
-                value={formData.priority}
-                onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
-              >
-                <option value="Low">Low</option>
-                <option value="Medium">Medium</option>
-                <option value="High">High</option>
-                <option value="Urgent">Urgent</option>
-              </select>
-            </div>
-          </div>
-
           <div>
-            <label className="block text-slate-700 font-semibold mb-1">Suggestion Title</label>
+            <label className="block text-slate-700 font-semibold mb-1">Date</label>
             <input
-              type="text"
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-              placeholder="Brief summary of the suggestion (or leave blank)"
-              value={formData.title}
-              onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+              type="date"
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
+              value={formData.date}
+              onChange={(e) => setFormData({ ...formData, date: e.target.value })}
             />
-          </div>
-
-          <div>
-            <label className="block text-slate-700 font-semibold mb-1">Problem Description / Details</label>
-            <textarea
-              rows="3"
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-              placeholder="Describe the current issue or problem observed in the process"
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-            ></textarea>
           </div>
 
           {/* Modal Footer */}

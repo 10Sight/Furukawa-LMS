@@ -108,4 +108,33 @@ test('8. Newly created sheets are initialized blank without hardcoded dummy text
   );
 });
 
+test('9. Create modal contains only Plant Unit, Employee Name/ID, Dept, Section, Line/Area, Date', () => {
+  const addModalFile = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetAddModal.jsx', import.meta.url), 'utf8');
+  assert.ok(addModalFile.includes('Plant Unit *'), 'Must contain Plant Unit');
+  assert.ok(addModalFile.includes('Employee Name / ID'), 'Must contain Employee Name / ID');
+  assert.ok(addModalFile.includes('Department'), 'Must contain Department');
+  assert.ok(addModalFile.includes('Section'), 'Must contain Section');
+  assert.ok(addModalFile.includes('Line / Area'), 'Must contain Line / Area');
+  assert.ok(addModalFile.includes('type="date"'), 'Must contain Date with calendar input');
+
+  // Verify removed fields
+  assert.ok(!addModalFile.includes('label className="block text-slate-700 font-semibold mb-1">Category'), 'Category label must be removed');
+  assert.ok(!addModalFile.includes('label className="block text-slate-700 font-semibold mb-1">Priority'), 'Priority label must be removed');
+  assert.ok(!addModalFile.includes('Suggestion Title'), 'Suggestion Title must be removed');
+  assert.ok(!addModalFile.includes('Problem Description / Details'), 'Problem Description must be removed');
+});
+
+test('10. Second row of checksheet format displays selected Unit', () => {
+  const detailFile = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetDetail.jsx', import.meta.url), 'utf8');
+  assert.ok(
+    detailFile.includes('Row 2: SUGGESTION FORMAT & UNIT'),
+    'Detail format must have Row 2 with SUGGESTION FORMAT & UNIT'
+  );
+  assert.ok(
+    detailFile.includes('<span className="font-bold mr-1.5">UNIT:-</span>'),
+    'Must display UNIT:- label in Row 2'
+  );
+});
+
+
 

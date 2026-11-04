@@ -4,6 +4,7 @@ import fmeLogo from './assets/suggestionChecksheetLogo.png';
 
 export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
   const [formData, setFormData] = useState({
+    unit: item?.unit || 'Bawal',
     date: item?.date || new Date().toISOString().slice(0, 10),
     department: item?.department || '',
     section: item?.section || '',
@@ -61,6 +62,7 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
       onSave({
         ...item,
         ...formData,
+        unit: formData.unit || item?.unit || 'Bawal',
         submittedBy: formData.employeeName,
         department: formData.department,
         section: formData.section,
@@ -159,17 +161,26 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
             <div style={{ width: '220px' }}></div>
           </div>
 
-          {/* Row 2: SUGGESTION FORMAT */}
-          <div className="text-center py-1.5 border-b border-black bg-white">
-            <h3
-              className="text-lg md:text-xl font-bold tracking-wider mb-0"
-              style={{
-                letterSpacing: '1.5px',
-                fontFamily: "'Times New Roman', Times, serif",
-              }}
-            >
-              SUGGESTION FORMAT
-            </h3>
+          {/* Row 2: SUGGESTION FORMAT & UNIT */}
+          <div className="flex items-center justify-between px-4 py-1.5 border-b border-black bg-white">
+            <div style={{ width: '220px' }} className="flex items-center text-sm font-bold">
+              <span className="font-bold mr-1.5">UNIT:-</span>
+              <span className="font-semibold text-black">{formData.unit || item?.unit || 'Bawal'}</span>
+            </div>
+
+            <div className="text-center flex-1">
+              <h3
+                className="text-lg md:text-xl font-bold tracking-wider mb-0"
+                style={{
+                  letterSpacing: '1.5px',
+                  fontFamily: "'Times New Roman', Times, serif",
+                }}
+              >
+                SUGGESTION FORMAT
+              </h3>
+            </div>
+
+            <div style={{ width: '220px' }}></div>
           </div>
 
           {/* Row 3: Checkbox Blocks P Q C D M S 5'S */}

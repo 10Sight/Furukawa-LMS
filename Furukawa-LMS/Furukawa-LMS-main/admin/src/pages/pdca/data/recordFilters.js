@@ -807,6 +807,12 @@ export function getMissingSaveMandatoryFields(row) {
     missing.push('Staff Name');
   }
 
+  // 8. Std. Duration in min (Mandatory if Response Date is selected)
+  const hasResponseDate = Boolean(String(row.responseDate || '').trim());
+  if (hasResponseDate && !hasValidStdDuration(row.stdDurationMin ?? row.stdDuration)) {
+    missing.push('Std. Duration in min');
+  }
+
   return missing;
 }
 

@@ -1093,3 +1093,42 @@ test('24. Responsible Person Single Constant Line Dividing Rule (Parent Column w
   assert.ok(sheetCode.includes('w-[160px] min-w-[150px]'), 'Staff Name width must be 160px');
   assert.ok(sheetCode.includes('w-[120px] min-w-[110px]'), 'CFT width must be 120px');
 });
+
+test('25. Std. Duration in min is mandatory for saving IF Response date is selected', () => {
+  const validBaseRow = {
+    date: '2026-11-04',
+    shift: 'A',
+    status: 'In- Progress',
+    unit: 'Bawal',
+    department: 'Assembly',
+    observation: 'Minor vibration at stage 2',
+    staffName: 'Manoj Sharma'
+  };
+
+  // Case 1: No Response date -> Std. Duration in min is optional for save
+  assert.deepEqual(getMissingSaveMandatoryFields({ ...validBaseRow, responseDate: '', stdDurationMin: '' }), []);
+
+  // Case 2: Response date is selected, but Std. Duration is empty -> mandatory save validation fails
+  const missingWithResponseDate = getMissingSaveMandatoryFields({ ...validBaseRow, responseDate: '2026-11-10', stdDurationMin: '' });
+  assert.ok(missingWithResponseDate.includes('Std. Duration in min'), 'Must report Std. Duration in min as mandatory when Response date is filled');
+
+  // Case 3: Response date is selected and Std. Duration is filled -> valid for save
+  assert.deepEqual(getMissingSaveMandatoryFields({ ...validBaseRow, responseDate: '2026-11-10', stdDurationMin: '01:00' }), []);
+  assert.deepEqual(getMissingSaveMandatoryFields({ ...validBaseRow, responseDate: '2026-11-10', stdDurationMin: '45' }), []);
+});
+
+test('26. Image Before and Image After cells have gap from borders', () => {
+  const pdcaSheetCode = fs.readFileSync(new URL('../../../components/pdca/PDCASheet.jsx', import.meta.url), 'utf8');
+  const lpaSheetCode = fs.readFileSync(new URL('../../../components/lpa/LpaPdcaSheet.jsx', import.meta.url), 'utf8');
+
+  // PDCASheet has p-1.5 padding gap and rounded corners on images
+  assert.ok(pdcaSheetCode.includes('p-1.5 m-0 overflow-hidden group/imgcell'), 'PDCASheet images must have p-1.5 border gap');
+  assert.ok(lpaSheetCode.includes('p-1.5 m-0 overflow-hidden group/imgcell'), 'LpaPdcaSheet images must have p-1.5 border gap');
+});
+
+test('27. S.No Counting preserves permanent row index (idx + 1) when Done rows are hidden', () => {
+  const pdcaSheetCode = fs.readFileSync(new URL('../../../components/pdca/PDCASheet.jsx', import.meta.url), 'utf8');
+  // PDCASheet assigns sNo as idx + 1 so hidden Done rows do not cause renumbering
+  assert.ok(pdcaSheetCode.includes('const sNo = idx + 1;'), 'PDCASheet must use idx + 1 for sNo');
+  assert.ok(!pdcaSheetCode.includes('visibleCounter'), 'PDCASheet must not re-index S.No using visibleCounter');
+});

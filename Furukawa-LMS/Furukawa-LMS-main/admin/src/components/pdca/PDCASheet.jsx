@@ -5766,12 +5766,10 @@ export default function PDCASheet({
           {/* Table Rows with thin bordered cells matching reference style */}
           <tbody className="bg-white">
             {(() => {
-              let visibleCounter = 0;
               const renderedRows = rows.map((row, idx) => {
                 const isDone = normalizePDCAStatus(row.status) === 'Done';
                 if (!showDoneRows && isDone) return null;
-                visibleCounter += 1;
-                const sNo = visibleCounter;
+                const sNo = idx + 1;
                 const canEditEntireRow = canEditEntireSheet;
                 const unitSelected = usesCheckboxMultiSelects
                   ? (row.units || (row.unit ? [row.unit] : [])).some(unit => PDCA_UNITS.includes(unit))
@@ -6064,27 +6062,27 @@ export default function PDCASheet({
                               const countText = `${count} ${count === 1 ? 'Photo' : 'Photos'}`;
 
                               return (
-                                <div className="relative w-full h-full min-h-[90px] flex items-center justify-center p-0 m-0 overflow-hidden group/imgcell">
+                                <div className="relative w-full h-full min-h-[90px] flex items-center justify-center p-1.5 m-0 overflow-hidden group/imgcell">
                                   <button
                                     type="button"
                                     onClick={() => handleOpenEvidenceViewer(idx, 'imageBefore')}
-                                    className="relative w-full h-full min-h-[90px] flex items-center justify-center p-0 m-0 border-0 rounded-none bg-transparent cursor-pointer overflow-hidden block"
+                                    className="relative w-full h-full min-h-[85px] flex items-center justify-center p-0 m-0 border-0 rounded-md bg-transparent cursor-pointer overflow-hidden block"
                                     title={`View evidence: ${countText}`}
                                   >
                                     <img
                                       src={getMediaUrl(beforeImages[0].url)}
                                       alt={beforeImages[0].name || `Row ${sNo} Before`}
                                       onLoad={(e) => handleImageLoad(beforeImages[0].url, e)}
-                                      className="w-full h-full object-cover block m-0 p-0 transition-transform duration-200 group-hover/imgcell:scale-105"
+                                      className="w-full h-full object-cover block m-0 p-0 rounded-md transition-transform duration-200 group-hover/imgcell:scale-105"
                                       style={{
-                                        minHeight: '100px',
+                                        minHeight: '85px',
                                         maxHeight: '260px',
                                         aspectRatio: imageDimensions[beforeImages[0].url]
                                           ? `${imageDimensions[beforeImages[0].url].width} / ${imageDimensions[beforeImages[0].url].height}`
                                           : 'auto'
                                       }}
                                     />
-                                    <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover/imgcell:opacity-100 flex items-center justify-center transition-opacity duration-150 pointer-events-none">
+                                    <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover/imgcell:opacity-100 flex items-center justify-center transition-opacity duration-150 pointer-events-none rounded-md">
                                       <span className="flex items-center gap-1.5 bg-black/75 backdrop-blur-xs px-2.5 py-1 rounded-md text-[11px] font-semibold text-white shadow-md">
                                         <Eye className="w-3.5 h-3.5" />
                                         <span>View</span>
@@ -6253,27 +6251,27 @@ export default function PDCASheet({
                               const countText = `${count} ${count === 1 ? 'Photo' : 'Photos'}`;
 
                               return (
-                                <div className="relative w-full h-full min-h-[90px] flex items-center justify-center p-0 m-0 overflow-hidden group/imgcell">
+                                <div className="relative w-full h-full min-h-[90px] flex items-center justify-center p-1.5 m-0 overflow-hidden group/imgcell">
                                   <button
                                     type="button"
                                     onClick={() => handleOpenEvidenceViewer(idx, 'imageAfter')}
-                                    className="relative w-full h-full min-h-[90px] flex items-center justify-center p-0 m-0 border-0 rounded-none bg-transparent cursor-pointer overflow-hidden block"
+                                    className="relative w-full h-full min-h-[85px] flex items-center justify-center p-0 m-0 border-0 rounded-md bg-transparent cursor-pointer overflow-hidden block"
                                     title={`View evidence: ${countText}`}
                                   >
                                     <img
                                       src={getMediaUrl(afterImages[0].url)}
                                       alt={afterImages[0].name || `Row ${sNo} After`}
                                       onLoad={(e) => handleImageLoad(afterImages[0].url, e)}
-                                      className="w-full h-full object-cover block m-0 p-0 transition-transform duration-200 group-hover/imgcell:scale-105"
+                                      className="w-full h-full object-cover block m-0 p-0 rounded-md transition-transform duration-200 group-hover/imgcell:scale-105"
                                       style={{
-                                        minHeight: '100px',
+                                        minHeight: '85px',
                                         maxHeight: '260px',
                                         aspectRatio: imageDimensions[afterImages[0].url]
                                           ? `${imageDimensions[afterImages[0].url].width} / ${imageDimensions[afterImages[0].url].height}`
                                           : 'auto'
                                       }}
                                     />
-                                    <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover/imgcell:opacity-100 flex items-center justify-center transition-opacity duration-150 pointer-events-none">
+                                    <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover/imgcell:opacity-100 flex items-center justify-center transition-opacity duration-150 pointer-events-none rounded-md">
                                       <span className="flex items-center gap-1.5 bg-black/75 backdrop-blur-xs px-2.5 py-1 rounded-md text-[11px] font-semibold text-white shadow-md">
                                         <Eye className="w-3.5 h-3.5" />
                                         <span>View</span>

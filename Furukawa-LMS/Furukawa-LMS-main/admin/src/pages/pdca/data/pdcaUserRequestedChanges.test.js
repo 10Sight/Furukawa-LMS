@@ -1164,6 +1164,7 @@ test('28. Image upload deletion access granted to all employees editing the shee
 
   // Other delete permissions remain strictly protected (row deletion, sheet deletion, revision deletion)
   assert.ok(pdcaSheetCode.includes('Access Denied: Only administrators or sheet creators can delete revised dates.'), 'Revision date deletion remains strictly protected');
-  assert.ok(pdcaSheetCode.includes("const canDeleteSheet = Boolean(!readOnly && (hasFullAccess || isCreator || hasPermission('pdca:delete') || hasPermission('pdca:delete_sheet') || hasPermission('lpa:delete')));"), 'Sheet deletion remains protected');
-  assert.ok(pdcaSheetCode.includes("const canDeleteRow = Boolean(!readOnly && (hasFullAccess || isCreator || isCreatorOrSameDept || hasPermission('pdca:delete') || hasPermission('pdca:delete_sheet') || hasPermission('lpa:delete')));"), 'Row deletion remains protected');
+  assert.ok(pdcaSheetCode.includes("const canDeleteSheet = Boolean(!readOnly && (hasFullAccess || hasPermission('pdca:delete') || hasPermission('pdca:delete_sheet') || hasPermission('lpa:delete')));"), 'Sheet deletion remains protected');
+  assert.ok(pdcaSheetCode.includes("const canDeleteRow = Boolean(!readOnly && (hasFullAccess || hasPermission('pdca:delete') || hasPermission('pdca:delete_row')));"), 'Row deletion remains protected');
+  assert.ok(!pdcaSheetCode.includes("isCreatorOrSameDept || hasPermission('pdca:delete')"), 'canDeleteRow must not grant row deletion to non-admin creator or department employees');
 });

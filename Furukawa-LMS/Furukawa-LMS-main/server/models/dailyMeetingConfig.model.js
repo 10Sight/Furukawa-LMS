@@ -20,6 +20,8 @@ class DailyMeetingConfig {
                 `);
             }
             await migrationHelper.ensureColumnExists('daily_meeting_configs', 'lpaShutter', 'BIT DEFAULT 0');
+            await migrationHelper.ensureColumnExists('daily_meeting_configs', 'hrMeetingShutter', 'BIT DEFAULT 0');
+            await migrationHelper.ensureColumnExists('daily_meeting_configs', 'handoverShutter', 'BIT DEFAULT 0');
             logger.info("Checked/Created daily_meeting_configs table in MSSQL");
         } catch (error) {
             logger.error("Failed to initialize daily_meeting_configs table", error);
@@ -34,22 +36,33 @@ class DailyMeetingConfig {
         return rows.length > 0 ? rows[0] : null;
     }
 
-    static async upsert(departmentId, shutter, sections, lpaShutter = false) {
+    // Departments that show the Daily HR Meeting or Daily Handover Report tab; used to send
+    // the old /daily-meeting/hr-meeting link to a department where that tab exists.
+    static async findWithHrTabs() {
+        const [rows] = await executeQuery(
+            "SELECT departmentId, hrMeetingShutter, handoverShutter FROM daily_meeting_configs WHERE hrMeetingShutter = 1 OR handoverShutter = 1"
+        );
+        return rows;
+    }
+
+    static async upsert(departmentId, shutter, sections, lpaShutter = false, hrMeetingShutter = false, handoverShutter = false) {
         const sectionsJson = JSON.stringify(sections);
         const shutterVal = shutter ? 1 : 0;
         const lpaShutterVal = lpaShutter ? 1 : 0;
+        const hrMeetingShutterVal = hrMeetingShutter ? 1 : 0;
+        const handoverShutterVal = handoverShutter ? 1 : 0;
         const existing = await DailyMeetingConfig.findByDepartmentId(departmentId);
 
         if (existing) {
             await executeQuery(
-                "UPDATE daily_meeting_configs SET shutter = ?, lpaShutter = ?, sections = ?, updatedAt = GETDATE() WHERE departmentId = ?",
-                [shutterVal, lpaShutterVal, sectionsJson, departmentId]
+                "UPDATE daily_meeting_configs SET shutter = ?, lpaShutter = ?, hrMeetingShutter = ?, handoverShutter = ?, sections = ?, updatedAt = GETDATE() WHERE departmentId = ?",
+                [shutterVal, lpaShutterVal, hrMeetingShutterVal, handoverShutterVal, sectionsJson, departmentId]
             );
         } else {
             await executeQuery(
-                `INSERT INTO daily_meeting_configs (departmentId, shutter, lpaShutter, sections, createdAt, updatedAt)
-                 VALUES (?, ?, ?, ?, GETDATE(), GETDATE())`,
-                [departmentId, shutterVal, lpaShutterVal, sectionsJson]
+                `INSERT INTO daily_meeting_configs (departmentId, shutter, lpaShutter, hrMeetingShutter, handoverShutter, sections, createdAt, updatedAt)
+                 VALUES (?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())`,
+                [departmentId, shutterVal, lpaShutterVal, hrMeetingShutterVal, handoverShutterVal, sectionsJson]
             );
         }
 

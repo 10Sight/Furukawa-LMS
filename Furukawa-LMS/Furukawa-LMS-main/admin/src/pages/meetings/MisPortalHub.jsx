@@ -1,10 +1,10 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
-import { Calendar, FileText, Users } from "lucide-react";
+import { Calendar, FileText } from "lucide-react";
 import PortalTile from "@/components/common/PortalTile.jsx";
 import useTranslate from "@/hooks/useTranslate.js";
-import { canOpenPage, MIS_HR_MEETING_KEY, MIS_MORNING_MEETING_KEY, MIS_MONTHLY_REPORT_KEY } from "@/constants/navigation/pageRegistry.js";
+import { canOpenPage, MIS_MORNING_MEETING_KEY, MIS_MONTHLY_REPORT_KEY } from "@/constants/navigation/pageRegistry.js";
 
 // Mirrors the admin check used across the Daily Meeting / Monthly Report
 // feature family (see server/utils/dailyMeetingAccess.util.js and
@@ -26,11 +26,11 @@ export default function MisPortalHub() {
     const { t } = useTranslate();
 
     // A workspace needs both: the page assigned to the user's role, and the
-    // permission its data is served under.
-    const canSeeHrMeeting = hasPermission(user, "hr_meeting:read") && canOpenPage(MIS_HR_MEETING_KEY, user);
+    // permission its data is served under. The Daily HR Meeting is no longer a
+    // tile: it opens as tabs inside the Daily Morning Meeting workspace.
     const canSeeDailyMeeting = hasPermission(user, "daily_meeting:read") && canOpenPage(MIS_MORNING_MEETING_KEY, user);
     const canSeeMonthlyReport = hasPermission(user, "monthly_report:read") && canOpenPage(MIS_MONTHLY_REPORT_KEY, user);
-    const visibleTiles = [canSeeHrMeeting, canSeeDailyMeeting, canSeeMonthlyReport].filter(Boolean).length;
+    const visibleTiles = [canSeeDailyMeeting, canSeeMonthlyReport].filter(Boolean).length;
 
     return (
         <div className="max-w-3xl mx-auto py-8 px-3 sm:px-4">
@@ -43,19 +43,7 @@ export default function MisPortalHub() {
                 </p>
             </div>
 
-            <div className={`grid grid-cols-1 gap-4 sm:gap-5 mx-auto ${visibleTiles >= 3 ? "sm:grid-cols-3 max-w-3xl" : "sm:grid-cols-2 max-w-xl"}`}>
-                {canSeeHrMeeting && (
-                    <PortalTile
-                        accent="green"
-                        darkMode={darkMode}
-                        icon={Users}
-                        title={t("misPortal.dailyHrMeetingTitle")}
-                        desc={t("misPortal.dailyHrMeetingDesc")}
-                        ctaLabel="Open"
-                        onClick={() => navigate("hr-meeting")}
-                    />
-                )}
-
+            <div className={`grid grid-cols-1 gap-4 sm:gap-5 mx-auto ${visibleTiles >= 2 ? "sm:grid-cols-2 max-w-2xl" : "max-w-md"}`}>
                 {canSeeDailyMeeting && (
                     <PortalTile
                         accent="amber"
@@ -80,7 +68,7 @@ export default function MisPortalHub() {
                     />
                 )}
 
-                {!canSeeHrMeeting && !canSeeDailyMeeting && !canSeeMonthlyReport && (
+                {!canSeeDailyMeeting && !canSeeMonthlyReport && (
                     <div className={`col-span-full text-center py-12 rounded-2xl border-2 border-dashed ${darkMode ? "border-slate-800 text-slate-500" : "border-slate-200 text-slate-500"}`}>
                         You do not have access to any MIS Portal workspace. Contact an administrator if you believe this is a mistake.
                     </div>

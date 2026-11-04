@@ -1,5 +1,5 @@
 import React, { Suspense, lazy } from "react";
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, useLocation } from "react-router-dom";
 import { useSelector } from "react-redux";
 import Highcharts from 'highcharts';
 Highcharts.setOptions({ accessibility: { enabled: false } });
@@ -26,7 +26,6 @@ const Daily5MRecording = lazy(() => import("../pages/production/daily-5m/Daily5M
 const Daily5MDashboard = lazy(() => import("../pages/production/daily-5m/Daily5MDashboard.jsx"));
 const DailyMeeting = lazy(() => import("../pages/meetings/DailyMeeting.jsx"));
 const MisPortalHub = lazy(() => import("../pages/meetings/MisPortalHub.jsx"));
-const DailyHrMeeting = lazy(() => import("../pages/meetings/DailyHrMeeting.jsx"));
 const MonthlyMeetingReport = lazy(() => import("../pages/meetings/MonthlyMeetingReport.jsx"));
 const DashboardHome = lazy(() => import("../pages/dashboard/admin/DashboardHome.jsx"));
 const AssemblyDashboard = lazy(() => import("../pages/dashboard/admin/AssemblyDashboard.jsx"));
@@ -165,6 +164,17 @@ const StudentOnJobTraining = lazy(() => import("../pages/training/student/OnJobT
 const StudentFeedback = lazy(() => import("../pages/account/Feedback.jsx"));
 const NotFound = lazy(() => import("../pages/system/NotFound.jsx"));
 const AccessDenied = lazy(() => import("../pages/system/AccessDenied.jsx"));
+
+// The Daily HR Meeting page now opens as tabs inside the Management Information System page
+// (the morning-meeting route). Old links and bookmarks — under /daily-meeting or
+// /portal/daily-meeting — keep working: the old ?tab=handover maps to the Handover tab, and
+// the page picks a department where that tab is switched on.
+const LegacyHrMeetingRedirect = () => {
+  const { pathname, search } = useLocation();
+  const view = new URLSearchParams(search).get("tab") === "handover" ? "handover" : "hr-meeting";
+  const target = pathname.replace(/\/hr-meeting\/?$/, "/morning-meeting");
+  return <Navigate to={`${target}?view=${view}`} replace />;
+};
 
 const RoleRedirect = () => {
   const { user } = useSelector((state) => state.auth);
@@ -428,7 +438,7 @@ const AppRoutes = () => {
             }
           >
             <Route index element={<MisPortalHub />} />
-            <Route path="hr-meeting" element={<DailyHrMeeting />} />
+            <Route path="hr-meeting" element={<LegacyHrMeetingRedirect />} />
             <Route path="morning-meeting" element={<DailyMeeting />} />
             <Route path="monthly-report" element={<MonthlyMeetingReport />} />
           </Route>
@@ -604,7 +614,7 @@ const AppRoutes = () => {
             <Route path="handover-sheet" element={<HandoverSheetPage />} />
             <Route path="abnormal-condition" element={<AbnormalCondition />} />
             <Route path="daily-meeting" element={<MisPortalHub />} />
-            <Route path="daily-meeting/hr-meeting" element={<DailyHrMeeting />} />
+            <Route path="daily-meeting/hr-meeting" element={<LegacyHrMeetingRedirect />} />
             <Route path="daily-meeting/morning-meeting" element={<DailyMeeting />} />
             <Route path="daily-meeting/monthly-report" element={<MonthlyMeetingReport />} />
             <Route path="pdca" element={

@@ -23,7 +23,7 @@ import {
 } from "@tabler/icons-react";
 import {
     useGetDailyMeetingDepartmentsQuery, useGetDailyMeetingSectionsQuery,
-    useGetDailyMeetingConfigQuery, useSaveDailyMeetingConfigMutation,
+    useGetDailyMeetingConfigQuery, useSaveDailyMeetingConfigMutation, useGetDailyMeetingHrTabDepartmentsQuery,
     useGetDailyMorningMeetingsQuery, useGetDailyMorningMeetingDetailQuery,
     useCreateDailyMorningMeetingMutation, useCloneDailyMorningMeetingMutation,
     useUpdateDailyMorningMeetingMutation, useDeleteDailyMorningMeetingMutation
@@ -37,6 +37,28 @@ import ExcelErrorBoundary from "@/components/tables/spreadsheet/ErrorBoundary.js
 // Loaded on demand: the LPA page is large and only needed once the LPA tab is opened.
 const LpaPage = React.lazy(() => import("@/pages/lpa/LpaPage.jsx"));
 const LPA_VIEW_CONTEXT = { setIsFormView: () => { } };
+
+// Daily HR Meeting reports, loaded on demand. They are plant-wide (not tied to one section),
+// so they sit beside a department's section tabs rather than inside each section, and are
+// switched on per department in Settings Configuration. The open one lives in ?view=.
+const DailyHrMeeting = React.lazy(() => import("@/pages/meetings/DailyHrMeeting.jsx"));
+const HR_VIEWS = [
+    {
+        key: "hr-meeting",
+        configKey: "hrMeetingShutter",
+        lockedTab: "manpower",
+        label: "Daily HR Meeting",
+        description: "Daily Manpower Report: present headcount, overtime and gap against requirement, by department."
+    },
+    {
+        key: "handover",
+        configKey: "handoverShutter",
+        lockedTab: "handover",
+        label: "Daily Handover Report",
+        description: "Approved handovers by section and Dojo recruits by shift."
+    }
+];
+const HR_VIEW_KEYS = new Set(HR_VIEWS.map((v) => v.key));
 
 const formatMeetingDate = (dateStr) => {
     if (!dateStr) return "";
@@ -707,6 +729,8 @@ function AdminConfigPanel({ departmentId, sections, allSectionsLoading }) {
 
     const [shutter, setShutter] = useState(false);
     const [lpaShutter, setLpaShutter] = useState(false);
+    const [hrMeetingShutter, setHrMeetingShutter] = useState(false);
+    const [handoverShutter, setHandoverShutter] = useState(false);
     const [selectedSections, setSelectedSections] = useState([]);
     const [popoverOpen, setPopoverOpen] = useState(false);
 
@@ -714,6 +738,8 @@ function AdminConfigPanel({ departmentId, sections, allSectionsLoading }) {
         if (configData?.data) {
             setShutter(!!configData.data.shutter);
             setLpaShutter(!!configData.data.lpaShutter);
+            setHrMeetingShutter(!!configData.data.hrMeetingShutter);
+            setHandoverShutter(!!configData.data.handoverShutter);
             setSelectedSections(configData.data.sections || []);
         }
     }, [configData]);
@@ -724,7 +750,9 @@ function AdminConfigPanel({ departmentId, sections, allSectionsLoading }) {
                 departmentId,
                 shutter,
                 sections: selectedSections,
-                lpaShutter
+                lpaShutter,
+                hrMeetingShutter,
+                handoverShutter
             }).unwrap();
             toast.success("Management Information System settings saved successfully!");
         } catch (err) {
@@ -791,6 +819,38 @@ function AdminConfigPanel({ departmentId, sections, allSectionsLoading }) {
                         id={`lpa-shutter-${departmentId}`}
                         checked={lpaShutter}
                         onCheckedChange={setLpaShutter}
+                    />
+                </div>
+
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 bg-white rounded-xl border border-slate-100">
+                    <div className="space-y-0.5">
+                        <Label htmlFor={`hr-meeting-shutter-${departmentId}`} className="text-sm font-semibold text-slate-900 cursor-pointer">
+                            Enable Daily HR Meeting Tab
+                        </Label>
+                        <p className="text-xs text-slate-500 max-w-md">
+                            When enabled, a Daily HR Meeting tab (Daily Manpower Report) is shown next to this department's section tabs. Only users with the View Daily HR Meeting permission see it.
+                        </p>
+                    </div>
+                    <Switch
+                        id={`hr-meeting-shutter-${departmentId}`}
+                        checked={hrMeetingShutter}
+                        onCheckedChange={setHrMeetingShutter}
+                    />
+                </div>
+
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 bg-white rounded-xl border border-slate-100">
+                    <div className="space-y-0.5">
+                        <Label htmlFor={`handover-shutter-${departmentId}`} className="text-sm font-semibold text-slate-900 cursor-pointer">
+                            Enable Daily Handover Report Tab
+                        </Label>
+                        <p className="text-xs text-slate-500 max-w-md">
+                            When enabled, a Daily Handover Report tab is shown next to this department's section tabs. Only users with the View Daily HR Meeting permission see it.
+                        </p>
+                    </div>
+                    <Switch
+                        id={`handover-shutter-${departmentId}`}
+                        checked={handoverShutter}
+                        onCheckedChange={setHandoverShutter}
                     />
                 </div>
 
@@ -866,6 +926,17 @@ function SectionTabsView({ departmentId, sections, allSectionsLoading, isPreview
     const isLpaEnabled = !!configData?.data?.lpaShutter;
     const selectedSectionsList = configData?.data?.sections || [];
 
+    // HR report tabs need both the department's switch and the permission the report's data
+    // is served under; the server re-checks hr_meeting:read on every request.
+    const authUser = useSelector((state) => state.auth.user);
+    const canReadHrMeeting = hasPermission(authUser, "hr_meeting:read");
+    const hrViews = useMemo(
+        () => (canReadHrMeeting ? HR_VIEWS.filter((v) => !!configData?.data?.[v.configKey]) : []),
+        [configData, canReadHrMeeting]
+    );
+    const requestedView = searchParams.get("view") || "";
+    const activeView = hrViews.some((v) => v.key === requestedView) ? requestedView : "";
+
     const visibleSections = useMemo(() => {
         if (allSectionsLoading) return [];
         if (shutter) return sections;
@@ -901,7 +972,7 @@ function SectionTabsView({ departmentId, sections, allSectionsLoading, isPreview
         );
     }
 
-    if (visibleSections.length === 0) {
+    if (visibleSections.length === 0 && hrViews.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center py-12 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
                 <div className="p-4 bg-white rounded-full shadow-sm mb-3">
@@ -942,10 +1013,16 @@ function SectionTabsView({ departmentId, sections, allSectionsLoading, isPreview
                 </div>
             )}
             <Tabs
-                value={activeSectionId}
+                // With no section shown, the first HR report tab is the only content to open.
+                value={activeView || (visibleSections.length > 0 ? activeSectionId : hrViews[0]?.key || "")}
                 onValueChange={(val) => {
                     const next = new URLSearchParams(searchParams);
-                    next.set("section", val);
+                    if (HR_VIEW_KEYS.has(val)) {
+                        next.set("view", val);
+                    } else {
+                        next.set("section", val);
+                        next.delete("view");
+                    }
                     next.delete("mtab");
                     next.delete("meeting");
                     next.delete("mode");
@@ -967,7 +1044,40 @@ function SectionTabsView({ departmentId, sections, allSectionsLoading, isPreview
                             </TabsTrigger>
                         );
                     })}
+                    {hrViews.length > 0 && visibleSections.length > 0 && (
+                        <span aria-hidden="true" className="self-stretch w-px my-1 mx-1 bg-slate-300" />
+                    )}
+                    {hrViews.map((v) => (
+                        <TabsTrigger
+                            key={v.key}
+                            value={v.key}
+                            title={v.description}
+                            className="text-xs font-semibold px-3 py-1.5 rounded-md text-slate-600 cursor-pointer transition-all data-[state=active]:bg-white data-[state=active]:text-green-700 data-[state=active]:shadow-sm"
+                        >
+                            {v.label}
+                        </TabsTrigger>
+                    ))}
                 </TabsList>
+                {hrViews.map((v) => (
+                    <TabsContent key={v.key} value={v.key}>
+                        <Card className="border-slate-200/70 shadow-sm">
+                            <CardHeader className="pb-3 border-b border-slate-100 bg-white">
+                                <CardTitle className="text-lg font-bold text-slate-800">{v.label}</CardTitle>
+                                <CardDescription>{v.description}</CardDescription>
+                            </CardHeader>
+                            <CardContent className="p-2 sm:p-4 bg-white">
+                                <React.Suspense fallback={
+                                    <div className="flex items-center justify-center py-20 text-slate-500 text-sm">
+                                        <IconLoader2 className="w-5 h-5 animate-spin text-indigo-600 mr-2" />
+                                        Loading {v.label}...
+                                    </div>
+                                }>
+                                    <DailyHrMeeting lockedTab={v.lockedTab} embedded />
+                                </React.Suspense>
+                            </CardContent>
+                        </Card>
+                    </TabsContent>
+                ))}
                 {visibleSections.map((sec) => (
                     <TabsContent key={sec.id || sec._id} value={String(sec.id || sec._id)}>
                         <Card className="border-slate-200/70 shadow-sm hover:shadow-md transition-shadow">
@@ -1021,16 +1131,32 @@ export default function DailyMeeting() {
         setSearchParams(next, { replace: true });
     };
 
+    // A link that asks for an HR report tab without a department (the old
+    // /daily-meeting/hr-meeting page redirects here with ?view=) opens the first
+    // department where that tab is switched on, instead of simply the first department.
+    const requestedView = searchParams.get("view") || "";
+    const wantsHrViewDept = HR_VIEW_KEYS.has(requestedView) && !activeDeptId;
+    const { data: hrTabDeptsData, error: hrTabDeptsError } = useGetDailyMeetingHrTabDepartmentsQuery(undefined, {
+        skip: !wantsHrViewDept || !canReadDailyMeeting
+    });
+
     useEffect(() => {
         if (departments.length === 0) return;
         const validIds = departments.map((d) => String(d.id || d._id));
         if (!activeDeptId || !validIds.includes(activeDeptId)) {
+            if (wantsHrViewDept && !hrTabDeptsData && !hrTabDeptsError) return;
+            let target = validIds[0];
+            if (wantsHrViewDept) {
+                const configKey = HR_VIEWS.find((v) => v.key === requestedView)?.configKey;
+                const match = (hrTabDeptsData?.data || []).find((row) => row[configKey] && validIds.includes(String(row.departmentId)));
+                if (match) target = String(match.departmentId);
+            }
             const next = new URLSearchParams(searchParams);
-            next.set("dept", validIds[0]);
+            next.set("dept", target);
             setSearchParams(next, { replace: true });
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [departments, activeDeptId]);
+    }, [departments, activeDeptId, hrTabDeptsData, hrTabDeptsError]);
 
     const { data: sectionsData, isLoading: sectionsLoading } = useGetDailyMeetingSectionsQuery(activeDeptId, {
         skip: !activeDeptId || !canReadDailyMeeting,
@@ -1104,6 +1230,7 @@ export default function DailyMeeting() {
                         const next = new URLSearchParams(searchParams);
                         next.set("dept", val);
                         next.delete("section");
+                        next.delete("view");
                         next.delete("mtab");
                         next.delete("meeting");
                         next.delete("mode");

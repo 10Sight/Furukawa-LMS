@@ -57,7 +57,11 @@ const TABS = [
     { key: "handover", label: "Daily Handover Report" },
 ];
 
-export default function DailyHrMeeting() {
+// Shown inside the Management Information System page (DailyMeeting.jsx) as two separate
+// tabs: there `lockedTab` fixes the report ("manpower" | "handover"), which hides this page's
+// own tab bar and leaves ?tab= alone, and `embedded` drops the page title the outer tab
+// already shows.
+export default function DailyHrMeeting({ lockedTab = null, embedded = false }) {
     const { user } = useSelector((state) => state.auth);
     const { darkMode } = useSelector((state) => state.theme);
     const { t } = useTranslate();
@@ -69,7 +73,10 @@ export default function DailyHrMeeting() {
     // keeps it; anything else falls back to the first tab.
     const [searchParams, setSearchParams] = useSearchParams();
     const tabParam = searchParams.get("tab");
-    const activeTab = TABS.some((tab) => tab.key === tabParam) ? tabParam : TABS[0].key;
+    const isLocked = TABS.some((tab) => tab.key === lockedTab);
+    const activeTab = isLocked
+        ? lockedTab
+        : TABS.some((tab) => tab.key === tabParam) ? tabParam : TABS[0].key;
     const setActiveTab = (key) => setSearchParams((prev) => {
         const next = new URLSearchParams(prev);
         next.set("tab", key);
@@ -152,12 +159,14 @@ export default function DailyHrMeeting() {
     }
 
     return (
-        <div className="px-3 sm:px-5 py-5 space-y-4">
+        <div className={cn("space-y-4", embedded ? "p-1 sm:p-2" : "px-3 sm:px-5 py-5")}>
             <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>
-                    <h1 className={cn("flex items-center gap-2 text-xl font-extrabold tracking-tight", darkMode ? "text-slate-100" : "text-slate-900")}>
-                        <IconUsers size={22} /> {t("misPortal.dailyHrMeetingTitle")}
-                    </h1>
+                    {!embedded && (
+                        <h1 className={cn("flex items-center gap-2 text-xl font-extrabold tracking-tight", darkMode ? "text-slate-100" : "text-slate-900")}>
+                            <IconUsers size={22} /> {t("misPortal.dailyHrMeetingTitle")}
+                        </h1>
+                    )}
                     <p className={cn("text-xs mt-0.5", muted)}>
                         {!isManpower
                             ? "Approved handovers and Dojo recruits, up to date."
@@ -214,7 +223,7 @@ export default function DailyHrMeeting() {
                 </div>
             </div>
 
-            <div className={cn("flex gap-1 border-b", darkMode ? "border-slate-800" : "border-slate-200")} role="tablist">
+            {!isLocked && <div className={cn("flex gap-1 border-b", darkMode ? "border-slate-800" : "border-slate-200")} role="tablist">
                 {TABS.map((tab) => (
                     <button
                         key={tab.key}
@@ -232,7 +241,7 @@ export default function DailyHrMeeting() {
                         {tab.label}
                     </button>
                 ))}
-            </div>
+            </div>}
 
             {handoverReport && (handoverNotShown > 0 || handoverDiagnostics?.unassignedShiftTotal > 0) && (
                 <div className={cn("rounded-lg border px-3 py-2 text-xs space-y-1", darkMode ? "border-amber-900 bg-amber-950/40 text-amber-200" : "border-amber-300 bg-amber-50 text-amber-900")}>

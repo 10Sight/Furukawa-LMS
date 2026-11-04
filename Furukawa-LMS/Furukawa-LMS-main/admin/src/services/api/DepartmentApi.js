@@ -240,12 +240,24 @@ export const departmentApi = createApi({
         }),
 
         saveDailyMeetingConfig: builder.mutation({
-            query: ({ departmentId, shutter, sections, lpaShutter }) => ({
+            query: ({ departmentId, shutter, sections, lpaShutter, hrMeetingShutter, handoverShutter }) => ({
                 url: `/api/daily-meeting-configs/save`,
                 method: "POST",
-                data: { departmentId, shutter, sections, lpaShutter }
+                data: { departmentId, shutter, sections, lpaShutter, hrMeetingShutter, handoverShutter }
             }),
-            invalidatesTags: (result, error, { departmentId }) => [{ type: 'Department', id: `daily-meeting-config-${departmentId}` }],
+            invalidatesTags: (result, error, { departmentId }) => [
+                { type: 'Department', id: `daily-meeting-config-${departmentId}` },
+                { type: 'Department', id: 'daily-meeting-hr-tabs' }
+            ],
+        }),
+
+        // Departments where the Daily HR Meeting / Daily Handover Report tab is switched on.
+        getDailyMeetingHrTabDepartments: builder.query({
+            query: () => ({
+                url: `/api/daily-meeting-configs/hr-tabs`,
+                method: "GET",
+            }),
+            providesTags: [{ type: 'Department', id: 'daily-meeting-hr-tabs' }],
         }),
 
         getDailyMeetingSheet: builder.query({
@@ -503,6 +515,7 @@ export const {
     useSaveDojoHiringConfigMutation,
     useGetDailyMeetingConfigQuery,
     useSaveDailyMeetingConfigMutation,
+    useGetDailyMeetingHrTabDepartmentsQuery,
     useGetDailyMeetingSheetQuery,
     useSaveDailyMeetingSheetMutation,
     useGetDailyMeetingDepartmentsQuery,

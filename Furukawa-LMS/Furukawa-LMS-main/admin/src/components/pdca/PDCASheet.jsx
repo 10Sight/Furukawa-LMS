@@ -5270,10 +5270,10 @@ export default function PDCASheet({
             <col style={{ width: '115px', minWidth: '105px' }} />
             <col style={{ width: '105px', minWidth: '95px' }} />
             <col style={{ width: '135px', minWidth: '120px' }} />
-            <col style={{ width: '120px', minWidth: '105px' }} />
-            <col style={{ width: '90px', minWidth: '80px' }} />
-            <col style={{ width: '160px', minWidth: '145px' }} />
-            <col style={{ width: '95px', minWidth: '85px' }} />
+            <col style={{ width: '110px', minWidth: '100px' }} />
+            <col style={{ width: '145px', minWidth: '135px' }} />
+            <col style={{ width: '160px', minWidth: '150px' }} />
+            <col style={{ width: '120px', minWidth: '110px' }} />
             <col style={{ width: '150px', minWidth: '140px' }} />
             {canShowRowActions && <col style={{ width: '55px', minWidth: '45px' }} />}
           </colgroup>
@@ -6412,25 +6412,309 @@ export default function PDCASheet({
                       )}
                     </td>
 
-                    {/* Unit in Responsible Person Confirmation */}
-                    <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[110px] min-w-[100px]">
-                      {(() => {
-                        const { units, deptsByUnit } = getResponsiblePersonStructure(row);
-                        if (units.length === 0) {
-                          return (
-                            <div className="p-1 w-full">
-                              <CheckboxMultiSelect
-                                disabled={!canEditEntireRow}
-                                value={[]}
-                                options={PDCA_UNITS.map((u) => ({ value: u, label: u }))}
-                                placeholder="Unit..."
-                                onChange={(newUnits) => handleResponsibleUnitsChange(idx, newUnits)}
-                              />
+                    {/* Responsible Person: When both units chosen, parent cell with single dividing line */}
+                    {(() => {
+                      const { units, deptsByUnit } = getResponsiblePersonStructure(row);
+                      if (units.length > 1) {
+                        return (
+                          <td
+                            colSpan={4}
+                            className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC]"
+                          >
+                            <div className="flex flex-col w-full h-full divide-y divide-[#CBD5E1]">
+                              {units.map((unitName) => {
+                                const unitDepts = deptsByUnit[unitName] || [];
+                                const unitOptions = getDepartmentsForUnit(unitName).map((d) => ({ value: d, label: d }));
+                                const flexGrow = Math.max(1, unitDepts.length);
+                                const unitCft = (row.cftByUnit && row.cftByUnit[unitName]) ||
+                                  (unitName === units[0] ? {
+                                    cftTopic: row.cftTopic,
+                                    cftTopicId: row.cftTopicId,
+                                    cftSelectedType: row.cftSelectedType,
+                                    cftSelectedName: row.cftSelectedName,
+                                    cftSelectedCode: row.cftSelectedCode
+                                  } : { cftTopic: '', cftTopicId: '', cftSelectedType: '', cftSelectedName: '', cftSelectedCode: '' });
+                                const hasTopic = Boolean(unitCft.cftTopic);
+
+                                return (
+                                  <div
+                                    key={unitName}
+                                    style={{ flex: flexGrow }}
+                                    className="flex w-full items-stretch divide-x divide-[#CBD5E1]"
+                                  >
+                                    {/* 1. Unit Child */}
+                                    <div className="w-[110px] min-w-[100px] shrink-0 relative min-h-[30px] flex items-center justify-between px-2 py-1 bg-white hover:bg-slate-50 transition-colors">
+                                      <span className="text-[14px] font-bold text-slate-800">{unitName}</span>
+                                      {canEditEntireRow && (
+                                        <CheckboxMultiSelect
+                                          value={units}
+                                          options={PDCA_UNITS.map((u) => ({ value: u, label: u }))}
+                                          onChange={(newUnits) => handleResponsibleUnitsChange(idx, newUnits)}
+                                          renderTrigger={({ open, setOpen, buttonRef }) => (
+                                            <button
+                                              ref={buttonRef}
+                                              type="button"
+                                              onClick={() => setOpen(!open)}
+                                              className="text-slate-400 hover:text-blue-600 p-0.5 rounded cursor-pointer"
+                                              title={`Change units (currently: ${units.join(', ')})`}
+                                            >
+                                              <ChevronDown className="w-2.5 h-2.5" />
+                                            </button>
+                                          )}
+                                        />
+                                      )}
+                                    </div>
+
+                                    {/* 2. Dept Child */}
+                                    <div className="w-[145px] min-w-[135px] shrink-0 flex items-center justify-center">
+                                      {unitDepts.length === 0 ? (
+                                        <div className="w-full p-1 min-h-[30px] flex items-center justify-center">
+                                          <CheckboxMultiSelect
+                                            disabled={!canEditEntireRow}
+                                            value={[]}
+                                            options={unitOptions}
+                                            placeholder="Dept..."
+                                            onChange={(newDepts) => handleUnitDepartmentsChange(idx, unitName, newDepts)}
+                                          />
+                                        </div>
+                                      ) : unitDepts.length === 1 ? (
+                                        <div className="flex-1 w-full min-h-[30px] flex items-center justify-between px-2 py-1 gap-1 hover:bg-blue-50/40 transition-colors">
+                                          <span className="text-[14px] font-semibold text-slate-800 whitespace-nowrap text-left" title={unitDepts[0]}>
+                                            {unitDepts[0]}
+                                          </span>
+                                          {canEditEntireRow && (
+                                            <CheckboxMultiSelect
+                                              value={unitDepts}
+                                              options={unitOptions}
+                                              onChange={(newDepts) => handleUnitDepartmentsChange(idx, unitName, newDepts)}
+                                              renderTrigger={({ open, setOpen, buttonRef }) => (
+                                                <button
+                                                  ref={buttonRef}
+                                                  type="button"
+                                                  onClick={() => setOpen(!open)}
+                                                  className="text-slate-400 hover:text-blue-600 p-0.5 cursor-pointer ml-1 shrink-0"
+                                                  title={`Edit ${unitName} departments`}
+                                                >
+                                                  <ChevronDown className="w-2.5 h-2.5" />
+                                                </button>
+                                              )}
+                                            />
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <div className="flex flex-col h-full w-full divide-y divide-[#CBD5E1] justify-center">
+                                          {unitDepts.map((deptName) => (
+                                            <div
+                                              key={deptName}
+                                              className="flex-1 min-h-[30px] flex items-center justify-between px-2 py-1 gap-1 hover:bg-blue-50/40 transition-colors"
+                                            >
+                                              <span className="text-[14px] font-semibold text-slate-800 whitespace-nowrap text-left" title={deptName}>
+                                                {deptName}
+                                              </span>
+                                              {canEditEntireRow && (
+                                                <CheckboxMultiSelect
+                                                  value={unitDepts}
+                                                  options={unitOptions}
+                                                  onChange={(newDepts) => handleUnitDepartmentsChange(idx, unitName, newDepts)}
+                                                  renderTrigger={({ open, setOpen, buttonRef }) => (
+                                                    <button
+                                                      ref={buttonRef}
+                                                      type="button"
+                                                      onClick={() => setOpen(!open)}
+                                                      className="text-slate-400 hover:text-blue-600 p-0.5 cursor-pointer ml-1 shrink-0"
+                                                      title={`Edit ${unitName} departments`}
+                                                    >
+                                                      <ChevronDown className="w-2.5 h-2.5" />
+                                                    </button>
+                                                  )}
+                                                />
+                                              )}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* 3. Staff Name Child */}
+                                    <div className="w-[160px] min-w-[150px] shrink-0 flex items-center justify-center">
+                                      {unitDepts.length === 0 ? (
+                                        (() => {
+                                          const assignedEmps = (row.staffEmployees || []).filter(
+                                            (e) => e.unit === unitName || (!e.unit && units.length === 1)
+                                          );
+                                          const legacyDisplay = units.length === 1 && !assignedEmps.length ? (row.staffEmployee ? stripEmployeeId(row.staffEmployee) : '') : '';
+
+                                          if (assignedEmps.length || legacyDisplay) {
+                                            return (
+                                              <div className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors justify-center">
+                                                {(assignedEmps.length ? assignedEmps : [{ name: legacyDisplay, legacy: true }]).map((employee, employeeIndex) => (
+                                                  <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
+                                                    <button type="button" disabled={!canEditEntireRow} onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, '', e)} className={`min-w-0 flex-1 truncate text-left text-[14px] font-semibold text-slate-800 ${canEditEntireRow ? 'cursor-pointer hover:text-blue-600' : 'cursor-default'}`} title={`${unitName}: ${employee.name}`}>
+                                                      {stripEmployeeId(employee.name || employee.label || '')}
+                                                    </button>
+                                                    {canEditEntireRow && <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(idx, unitName, '', null) : handleRemoveDepartmentEmployee(idx, unitName, '', employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>}
+                                                  </div>
+                                                ))}
+                                                {canEditEntireRow && <button type="button" onClick={() => handleOpenAddStaffModal(idx, unitName, '')} className="flex items-center justify-center gap-1 rounded py-0.5 text-[13px] font-semibold text-blue-600 hover:bg-blue-50 cursor-pointer"><Plus className="h-3 w-3" /> Add Employee</button>}
+                                              </div>
+                                            );
+                                          }
+
+                                          if (!canEditEntireRow) {
+                                            return (
+                                              <div className="w-full py-1.5 flex items-center justify-center text-slate-300 text-[14px] select-none">
+                                                -
+                                              </div>
+                                            );
+                                          }
+
+                                          return (
+                                            <div className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1">
+                                              <button
+                                                type="button"
+                                                onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, '', e)}
+                                                className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer"
+                                                title={`Select staff for ${unitName} (Department will auto-fetch)`}
+                                              >
+                                                <div className="flex items-center gap-1 text-[14px]">
+                                                  <Search className="h-3.5 w-3.5" />
+                                                  <span>Staff...</span>
+                                                  <ChevronDown className="h-3 w-3" />
+                                                </div>
+                                              </button>
+                                            </div>
+                                          );
+                                        })()
+                                      ) : (
+                                        <div className="flex flex-col h-full w-full divide-y divide-[#CBD5E1] justify-center">
+                                          {unitDepts.map((deptName) => {
+                                            const assignedEmps = (row.staffEmployees || []).filter(
+                                              (e) => e.department === deptName && (e.unit === unitName || (!e.unit && units.length === 1))
+                                            );
+                                            const legacyDisplay = units.length === 1 && unitDepts.length === 1 && !(row.staffEmployees || []).length ? row.staffEmployee : '';
+
+                                            if (assignedEmps.length || legacyDisplay) {
+                                              return (
+                                                <div
+                                                  key={deptName}
+                                                  className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors justify-center"
+                                                >
+                                                  {(assignedEmps.length ? assignedEmps : (legacyDisplay ? [{ name: legacyDisplay, department: deptName, unit: unitName, legacy: true }] : [])).map((employee, employeeIndex) => (
+                                                    <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
+                                                      <button type="button" disabled={!canEditEntireRow} onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, deptName, e)} className={`min-w-0 flex-1 truncate text-left text-[14px] font-semibold text-slate-800 ${canEditEntireRow ? 'cursor-pointer hover:text-blue-600' : 'cursor-default'}`} title={`${unitName} - ${deptName}: ${employee.name}`}>
+                                                        {stripEmployeeId(employee.name || employee.label || '')}
+                                                      </button>
+                                                      {canEditEntireRow && <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(idx, unitName, deptName, null) : handleRemoveDepartmentEmployee(idx, unitName, deptName, employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>}
+                                                    </div>
+                                                  ))}
+                                                  {canEditEntireRow && <button type="button" onClick={() => handleOpenAddStaffModal(idx, unitName, deptName)} className="flex items-center justify-center gap-1 rounded py-0.5 text-[13px] font-semibold text-blue-600 hover:bg-blue-50 cursor-pointer"><Plus className="h-3 w-3" /> Add Employee</button>}
+                                                </div>
+                                              );
+                                            }
+
+                                            if (!canEditEntireRow) {
+                                              return (
+                                                <div
+                                                  key={deptName}
+                                                  className="flex-1 w-full min-h-[30px] flex items-center justify-center text-slate-300 text-[14px] select-none"
+                                                >
+                                                  -
+                                                </div>
+                                              );
+                                            }
+
+                                            return (
+                                              <div
+                                                key={deptName}
+                                                className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1"
+                                              >
+                                                <div className="flex w-full flex-col items-center">
+                                                  <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, deptName, e)} className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer" title={`Select staff for ${unitName} - ${deptName}`}><div className="flex items-center gap-1 text-[14px]"><Search className="h-3.5 w-3.5" /><span>Staff...</span><ChevronDown className="h-3 w-3" /></div></button>
+                                                  {canEditEntireRow && <button type="button" onClick={() => handleOpenAddStaffModal(idx, unitName, deptName)} className="flex items-center gap-1 py-0.5 text-[13px] font-semibold text-blue-600 hover:bg-blue-50 rounded cursor-pointer"><Plus className="h-3 w-3" /> Add Employee</button>}
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* 4. CFT Child */}
+                                    <div className="w-[120px] min-w-[110px] shrink-0 relative flex items-center justify-center p-0.5">
+                                      {hasTopic ? (
+                                        <div className="w-full px-1 py-0.5 flex items-center justify-between gap-0.5 group/cft-cell">
+                                          <button
+                                            type="button"
+                                            onClick={canEditEntireRow ? (e) => handleToggleCFTDropdown(idx, e, 'members', unitName) : undefined}
+                                            className={`cft-trigger-btn flex-1 min-w-0 text-left ${canEditEntireRow ? 'cursor-pointer hover:opacity-85' : 'cursor-default'} flex flex-col justify-center py-0.5 transition-opacity`}
+                                            title={`${unitName} CFT Topic: ${unitCft.cftTopic} (Click to view members)`}
+                                          >
+                                            <span
+                                              className="text-[14px] font-semibold truncate max-w-[85px] leading-tight text-blue-900 hover:text-blue-700 transition-colors"
+                                              title={unitCft.cftTopic}
+                                            >
+                                              {unitCft.cftTopic}
+                                            </span>
+                                            {unitCft.cftSelectedName && (
+                                              <div className="flex items-center gap-0.5 mt-0.5">
+                                                <span
+                                                  className={`text-[13px] font-medium truncate max-w-[80px] px-0.5 py-0.2 rounded leading-tight ${
+                                                    unitCft.cftSelectedType === 'member'
+                                                      ? 'text-blue-700 bg-blue-50 border border-blue-200'
+                                                      : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                                                  }`}
+                                                  title={unitCft.cftSelectedName}
+                                                >
+                                                  {unitCft.cftSelectedName}
+                                                </span>
+                                              </div>
+                                            )}
+                                          </button>
+                                          {canEditEntireRow && (
+                                            <div className="flex items-center gap-0.5 shrink-0 opacity-80 group-hover/cft-cell:opacity-100 transition-opacity">
+                                              <button
+                                                type="button"
+                                                onClick={(e) => handleEditCFTTopic(idx, e, unitName)}
+                                                className="p-0.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                                                title={`Change ${unitName} CFT Topic`}
+                                              >
+                                                <Edit3 className="w-2.5 h-2.5" />
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={(e) => handleDeleteCFT(idx, e, unitName)}
+                                                className="p-0.5 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                                title={`Delete ${unitName} CFT Topic`}
+                                              >
+                                                <Trash2 className="w-2.5 h-2.5" />
+                                              </button>
+                                            </div>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={canEditEntireRow ? (e) => handleToggleCFTDropdown(idx, e, 'topics', unitName) : undefined}
+                                          className={`cft-trigger-btn w-full h-full min-h-[30px] flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/40 transition-colors ${canEditEntireRow ? 'cursor-pointer' : 'cursor-default'}`}
+                                          title={canEditEntireRow ? `Click to select CFT Topic for ${unitName}` : undefined}
+                                        >
+                                          <span className="text-[14px] font-medium">-</span>
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
                             </div>
-                          );
-                        }
-                        if (units.length === 1) {
-                          return (
+                          </td>
+                        );
+                      }
+
+                      // units.length <= 1: Render 4 individual cells
+                      return (
+                        <>
+                          {/* Unit in Responsible Person */}
+                          <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[110px] min-w-[100px]">
                             <div className="p-1 w-full">
                               <CheckboxMultiSelect
                                 disabled={!canEditEntireRow}
@@ -6440,72 +6724,22 @@ export default function PDCASheet({
                                 onChange={(newUnits) => handleResponsibleUnitsChange(idx, newUnits)}
                               />
                             </div>
-                          );
-                        }
-                        // Both units selected: Divide into two separate sections: Bawal and Gujrat
-                        return (
-                          <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
-                            {units.map((unitName) => {
-                              const unitDepts = deptsByUnit[unitName] || [];
-                              const flexGrow = Math.max(1, unitDepts.length);
-                              return (
-                                <div
-                                  key={unitName}
-                                  style={{ flex: flexGrow }}
-                                  className="relative min-h-[30px] flex items-center justify-between px-2 py-1 bg-white hover:bg-slate-50 transition-colors"
-                                >
-                                  <span className="text-[14px] font-bold text-slate-800">{unitName}</span>
-                                  {canEditEntireRow && (
-                                    <CheckboxMultiSelect
-                                      value={units}
-                                      options={PDCA_UNITS.map((u) => ({ value: u, label: u }))}
-                                      onChange={(newUnits) => handleResponsibleUnitsChange(idx, newUnits)}
-                                      renderTrigger={({ open, setOpen, buttonRef }) => (
-                                        <button
-                                          ref={buttonRef}
-                                          type="button"
-                                          onClick={() => setOpen(!open)}
-                                          className="text-slate-400 hover:text-blue-600 p-0.5 rounded cursor-pointer"
-                                          title={`Change units (currently: ${units.join(', ')})`}
-                                        >
-                                          <ChevronDown className="w-2.5 h-2.5" />
-                                        </button>
-                                      )}
-                                    />
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        );
-                      })()}
-                    </td>
+                          </td>
 
-                    {/* Department Dropdown in Responsible Person Confirmation */}
-                    <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[145px] min-w-[135px]">
-                      {(() => {
-                        const { units, deptsByUnit } = getResponsiblePersonStructure(row);
-                        if (units.length === 0) {
-                          return (
-                            <div className="w-full py-1 text-center text-slate-300 text-[14px] select-none" title="Select Staff Name to auto-fetch Department">
-                              -
-                            </div>
-                          );
-                        }
-                        return (
-                          <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
-                            {units.map((unitName) => {
+                          {/* Department Dropdown in Responsible Person */}
+                          <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[145px] min-w-[135px]">
+                            {units.length === 0 ? (
+                              <div className="w-full py-1 text-center text-slate-300 text-[14px] select-none" title="Select Staff Name to auto-fetch Department">
+                                -
+                              </div>
+                            ) : (() => {
+                              const unitName = units[0];
                               const unitDepts = deptsByUnit[unitName] || [];
                               const unitOptions = getDepartmentsForUnit(unitName).map((d) => ({ value: d, label: d }));
-                              const flexGrow = Math.max(1, unitDepts.length);
 
                               if (unitDepts.length === 0) {
                                 return (
-                                  <div
-                                    key={unitName}
-                                    style={{ flex: flexGrow }}
-                                    className="p-1 min-h-[30px] flex items-center justify-center"
-                                  >
+                                  <div className="p-1 min-h-[30px] flex items-center justify-center">
                                     <CheckboxMultiSelect
                                       disabled={!canEditEntireRow}
                                       value={[]}
@@ -6519,11 +6753,7 @@ export default function PDCASheet({
 
                               if (unitDepts.length === 1) {
                                 return (
-                                  <div
-                                    key={unitName}
-                                    style={{ flex: flexGrow }}
-                                    className="flex-1 min-h-[30px] flex items-center justify-between px-2 py-1 gap-1 hover:bg-blue-50/40 transition-colors"
-                                  >
+                                  <div className="flex-1 min-h-[30px] flex items-center justify-between px-2 py-1 gap-1 hover:bg-blue-50/40 transition-colors">
                                     <span className="text-[14px] font-semibold text-slate-800 whitespace-nowrap text-left" title={unitDepts[0]}>
                                       {unitDepts[0]}
                                     </span>
@@ -6549,13 +6779,8 @@ export default function PDCASheet({
                                 );
                               }
 
-                              // Multiple departments selected: Dynamically divide into separate sections
                               return (
-                                <div
-                                  key={unitName}
-                                  style={{ flex: flexGrow }}
-                                  className="flex flex-col h-full w-full divide-y divide-[#CBD5E1] justify-center"
-                                >
+                                <div className="flex flex-col h-full w-full divide-y divide-[#CBD5E1] justify-center">
                                   {unitDepts.map((deptName) => (
                                     <div
                                       key={deptName}
@@ -6586,62 +6811,56 @@ export default function PDCASheet({
                                   ))}
                                 </div>
                               );
-                            })}
-                          </div>
-                        );
-                      })()}
-                    </td>
+                            })()}
+                          </td>
 
-                    {/* 13. Staff Name (Centered in cell, supports multiple departments/units aligned, or selecting staff directly without department) */}
-                    <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[160px] min-w-[150px]">
-                      {(() => {
-                        const { units, deptsByUnit } = getResponsiblePersonStructure(row);
-                        if (units.length === 0) {
-                          const assignedEmps = row.staffEmployees || [];
-                          const legacyDisplay = !assignedEmps.length ? (row.staffEmployee ? stripEmployeeId(row.staffEmployee) : '') : '';
-                          if (assignedEmps.length || legacyDisplay) {
-                            return (
-                              <div className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors">
-                                {(assignedEmps.length ? assignedEmps : [{ name: legacyDisplay, legacy: true }]).map((employee, employeeIndex) => (
-                                  <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
-                                    <button type="button" disabled={!canEditEntireRow} onClick={(e) => handleToggleStaffDropdown(idx, e)} className={`min-w-0 flex-1 truncate text-left text-[14px] font-semibold text-slate-800 ${canEditEntireRow ? 'cursor-pointer hover:text-blue-600' : 'cursor-default'}`} title={`Staff: ${employee.name}`}>
-                                      {stripEmployeeId(employee.name || employee.label || '')}
+                          {/* 13. Staff Name in Responsible Person */}
+                          <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[160px] min-w-[150px]">
+                            {units.length === 0 ? (
+                              (() => {
+                                const assignedEmps = row.staffEmployees || [];
+                                const legacyDisplay = !assignedEmps.length ? (row.staffEmployee ? stripEmployeeId(row.staffEmployee) : '') : '';
+                                if (assignedEmps.length || legacyDisplay) {
+                                  return (
+                                    <div className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors">
+                                      {(assignedEmps.length ? assignedEmps : [{ name: legacyDisplay, legacy: true }]).map((employee, employeeIndex) => (
+                                        <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
+                                          <button type="button" disabled={!canEditEntireRow} onClick={(e) => handleToggleStaffDropdown(idx, e)} className={`min-w-0 flex-1 truncate text-left text-[14px] font-semibold text-slate-800 ${canEditEntireRow ? 'cursor-pointer hover:text-blue-600' : 'cursor-default'}`} title={`Staff: ${employee.name}`}>
+                                            {stripEmployeeId(employee.name || employee.label || '')}
+                                          </button>
+                                          {canEditEntireRow && <button type="button" onClick={() => handleSelectStaffMember(idx, '')} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  );
+                                }
+                                if (!canEditEntireRow) {
+                                  return (
+                                    <div className="w-full py-1 text-center text-slate-300 text-[14px] select-none">
+                                      -
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <div className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleToggleStaffDropdown(idx, e)}
+                                      className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer"
+                                      title="Select staff name (Department will auto-fetch)"
+                                    >
+                                      <div className="flex items-center gap-1 text-[14px]">
+                                        <Search className="h-3.5 w-3.5" />
+                                        <span>Staff...</span>
+                                        <ChevronDown className="h-3 w-3" />
+                                      </div>
                                     </button>
-                                    {canEditEntireRow && <button type="button" onClick={() => handleSelectStaffMember(idx, '')} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>}
                                   </div>
-                                ))}
-                              </div>
-                            );
-                          }
-                          if (!canEditEntireRow) {
-                            return (
-                              <div className="w-full py-1 text-center text-slate-300 text-[14px] select-none">
-                                -
-                              </div>
-                            );
-                          }
-                          return (
-                            <div className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1">
-                              <button
-                                type="button"
-                                onClick={(e) => handleToggleStaffDropdown(idx, e)}
-                                className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer"
-                                title="Select staff name (Department will auto-fetch)"
-                              >
-                                <div className="flex items-center gap-1 text-[14px]">
-                                  <Search className="h-3.5 w-3.5" />
-                                  <span>Staff...</span>
-                                  <ChevronDown className="h-3 w-3" />
-                                </div>
-                              </button>
-                            </div>
-                          );
-                        }
-                        return (
-                          <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
-                            {units.map((unitName) => {
+                                );
+                              })()
+                            ) : (() => {
+                              const unitName = units[0];
                               const unitDepts = deptsByUnit[unitName] || [];
-                              const flexGrow = Math.max(1, unitDepts.length);
 
                               if (unitDepts.length === 0) {
                                 const assignedEmps = (row.staffEmployees || []).filter(
@@ -6651,11 +6870,7 @@ export default function PDCASheet({
 
                                 if (assignedEmps.length || legacyDisplay) {
                                   return (
-                                    <div
-                                      key={unitName}
-                                      style={{ flex: flexGrow }}
-                                      className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors"
-                                    >
+                                    <div className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors">
                                       {(assignedEmps.length ? assignedEmps : [{ name: legacyDisplay, legacy: true }]).map((employee, employeeIndex) => (
                                         <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
                                           <button type="button" disabled={!canEditEntireRow} onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, '', e)} className={`min-w-0 flex-1 truncate text-left text-[14px] font-semibold text-slate-800 ${canEditEntireRow ? 'cursor-pointer hover:text-blue-600' : 'cursor-default'}`} title={`${unitName}: ${employee.name}`}>
@@ -6670,22 +6885,14 @@ export default function PDCASheet({
 
                                 if (!canEditEntireRow) {
                                   return (
-                                    <div
-                                      key={unitName}
-                                      style={{ flex: flexGrow }}
-                                      className="w-full py-1.5 flex items-center justify-center text-slate-300 text-[14px] select-none"
-                                    >
+                                    <div className="w-full py-1.5 flex items-center justify-center text-slate-300 text-[14px] select-none">
                                       -
                                     </div>
                                   );
                                 }
 
                                 return (
-                                  <div
-                                    key={unitName}
-                                    style={{ flex: flexGrow }}
-                                    className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1"
-                                  >
+                                  <div className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1">
                                     <button
                                       type="button"
                                       onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, '', e)}
@@ -6703,11 +6910,7 @@ export default function PDCASheet({
                               }
 
                               return (
-                                <div
-                                  key={unitName}
-                                  style={{ flex: flexGrow }}
-                                  className="flex flex-col h-full w-full divide-y divide-[#CBD5E1] justify-center"
-                                >
+                                <div className="flex flex-col h-full w-full divide-y divide-[#CBD5E1] justify-center">
                                   {unitDepts.map((deptName) => {
                                     const assignedEmps = (row.staffEmployees || []).filter(
                                       (e) => e.department === deptName && (e.unit === unitName || (!e.unit && units.length === 1))
@@ -6758,174 +6961,77 @@ export default function PDCASheet({
                                   })}
                                 </div>
                               );
-                            })}
-                          </div>
-                        );
-                      })()}
-                    </td>
+                            })()}
+                          </td>
 
-                    {/* 14. CFT (Centered in cell - Subdivided per unit when Both units selected) */}
-                    <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[95px] min-w-[85px]">
-                      {(() => {
-                        const { units, deptsByUnit } = getResponsiblePersonStructure(row);
-                        if (units.length > 1) {
-                          return (
-                        <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
-                          {units.map((unitName) => {
-                            const unitDepts = deptsByUnit[unitName] || [];
-                            const flexGrow = Math.max(1, unitDepts.length);
-                            const unitCft = (row.cftByUnit && row.cftByUnit[unitName]) ||
-                              (unitName === units[0] ? {
-                                cftTopic: row.cftTopic,
-                                cftTopicId: row.cftTopicId,
-                                cftSelectedType: row.cftSelectedType,
-                                cftSelectedName: row.cftSelectedName,
-                                cftSelectedCode: row.cftSelectedCode
-                              } : { cftTopic: '', cftTopicId: '', cftSelectedType: '', cftSelectedName: '', cftSelectedCode: '' });
-
-                            const hasTopic = Boolean(unitCft.cftTopic);
-
-                            return (
-                              <div
-                                key={unitName}
-                                style={{ flex: flexGrow }}
-                                className="relative min-h-[30px] flex items-center justify-center p-0.5"
-                              >
-                                {hasTopic ? (
-                                  <div className="w-full px-1 py-0.5 flex items-center justify-between gap-0.5 group/cft-cell">
-                                    <button
-                                      type="button"
-                                      onClick={canEditEntireRow ? (e) => handleToggleCFTDropdown(idx, e, 'members', unitName) : undefined}
-                                      className={`cft-trigger-btn flex-1 min-w-0 text-left ${canEditEntireRow ? 'cursor-pointer hover:opacity-85' : 'cursor-default'} flex flex-col justify-center py-0.5 transition-opacity`}
-                                      title={`${unitName} CFT Topic: ${unitCft.cftTopic} (Click to view members)`}
+                          {/* 14. CFT in Responsible Person */}
+                          <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[120px] min-w-[110px]">
+                            <div className="relative w-full h-full p-1 flex items-center justify-center">
+                              {row.cftTopic ? (
+                                <div className="w-full px-1 py-0.5 flex items-center justify-between gap-0.5 group/cft-cell">
+                                  <button
+                                    type="button"
+                                    onClick={canEditEntireRow ? (e) => handleToggleCFTDropdown(idx, e, 'members') : undefined}
+                                    className={`cft-trigger-btn flex-1 min-w-0 text-left ${canEditEntireRow ? 'cursor-pointer hover:opacity-85' : 'cursor-default'} flex flex-col justify-center py-0.5 transition-opacity`}
+                                    title={`CFT Topic: ${row.cftTopic} (Click to view members)`}
+                                  >
+                                    <span
+                                      className="text-[14px] font-semibold truncate max-w-[85px] leading-tight text-blue-900 hover:text-blue-700 transition-colors"
+                                      title={row.cftTopic}
                                     >
-                                      <span
-                                        className="text-[14px] font-semibold truncate max-w-[85px] leading-tight text-blue-900 hover:text-blue-700 transition-colors"
-                                        title={unitCft.cftTopic}
-                                      >
-                                        {unitCft.cftTopic}
-                                      </span>
-                                      {unitCft.cftSelectedName && (
-                                        <div className="flex items-center gap-0.5 mt-0.5">
-                                          <span
-                                            className={`text-[13px] font-medium truncate max-w-[80px] px-0.5 py-0.2 rounded leading-tight ${
-                                              unitCft.cftSelectedType === 'member'
-                                                ? 'text-blue-700 bg-blue-50 border border-blue-200'
-                                                : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
-                                            }`}
-                                            title={unitCft.cftSelectedName}
-                                          >
-                                            {unitCft.cftSelectedName}
-                                          </span>
-                                        </div>
-                                      )}
-                                    </button>
-                                    {canEditEntireRow && (
-                                      <div className="flex items-center gap-0.5 shrink-0 opacity-80 group-hover/cft-cell:opacity-100 transition-opacity">
-                                        <button
-                                          type="button"
-                                          onClick={(e) => handleEditCFTTopic(idx, e, unitName)}
-                                          className="p-0.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
-                                          title={`Change ${unitName} CFT Topic`}
+                                      {row.cftTopic}
+                                    </span>
+                                    {row.cftSelectedName && (
+                                      <div className="flex items-center gap-0.5 mt-0.5">
+                                        <span
+                                          className={`text-[13px] font-medium truncate max-w-[80px] px-0.5 py-0.2 rounded leading-tight ${
+                                            row.cftSelectedType === 'member'
+                                              ? 'text-blue-700 bg-blue-50 border border-blue-200'
+                                              : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                                          }`}
+                                          title={row.cftSelectedName}
                                         >
-                                          <Edit3 className="w-2.5 h-2.5" />
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={(e) => handleDeleteCFT(idx, e, unitName)}
-                                          className="p-0.5 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                                          title={`Delete ${unitName} CFT Topic`}
-                                        >
-                                          <Trash2 className="w-2.5 h-2.5" />
-                                        </button>
+                                          {row.cftSelectedName}
+                                        </span>
                                       </div>
                                     )}
-                                  </div>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    onClick={canEditEntireRow ? (e) => handleToggleCFTDropdown(idx, e, 'topics', unitName) : undefined}
-                                    className={`cft-trigger-btn w-full h-full min-h-[30px] flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/40 transition-colors ${canEditEntireRow ? 'cursor-pointer' : 'cursor-default'}`}
-                                    title={canEditEntireRow ? `Click to select CFT Topic for ${unitName}` : undefined}
-                                  >
-                                    <span className="text-[14px] font-medium">-</span>
                                   </button>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    }
-                    return (
-                      <div className="relative w-full h-full p-1 flex items-center justify-center">
-                          {row.cftTopic ? (
-                            <div className="w-full px-1 py-0.5 flex items-center justify-between gap-0.5 group/cft-cell">
-                              {/* Left: Topic Name & Optional Member Name (clickable to open Members dropdown) */}
-                              <button
-                                type="button"
-                                onClick={canEditEntireRow ? (e) => handleToggleCFTDropdown(idx, e, 'members') : undefined}
-                                className={`cft-trigger-btn flex-1 min-w-0 text-left ${canEditEntireRow ? 'cursor-pointer hover:opacity-85' : 'cursor-default'} flex flex-col justify-center py-0.5 transition-opacity`}
-                                title={`CFT Topic: ${row.cftTopic} (Click to view members)`}
-                              >
-                                <span
-                                  className="text-[14px] font-semibold truncate max-w-[85px] leading-tight text-blue-900 hover:text-blue-700 transition-colors"
-                                  title={row.cftTopic}
-                                >
-                                  {row.cftTopic}
-                                </span>
-                                {row.cftSelectedName && (
-                                  <div className="flex items-center gap-0.5 mt-0.5">
-                                    <span
-                                      className={`text-[13px] font-medium truncate max-w-[80px] px-0.5 py-0.2 rounded leading-tight ${row.cftSelectedType === 'member'
-                                        ? 'text-blue-700 bg-blue-50 border border-blue-200'
-                                        : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
-                                        }`}
-                                      title={row.cftSelectedName}
-                                    >
-                                      {row.cftSelectedName}
-                                    </span>
-                                  </div>
-                                )}
-                              </button>
-
-                              {/* Right: Edit & Delete buttons (Only when creator/admin) */}
-                              {canEditEntireRow && (
-                                <div className="flex items-center gap-0.5 shrink-0 opacity-80 group-hover/cft-cell:opacity-100 transition-opacity">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => handleEditCFTTopic(idx, e)}
-                                    className="p-0.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
-                                    title="Change CFT Topic"
-                                  >
-                                    <Edit3 className="w-2.5 h-2.5" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => handleDeleteCFT(idx, e)}
-                                    className="p-0.5 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                                    title="Delete CFT Topic & Member"
-                                  >
-                                    <Trash2 className="w-2.5 h-2.5" />
-                                  </button>
+                                  {canEditEntireRow && (
+                                    <div className="flex items-center gap-0.5 shrink-0 opacity-80 group-hover/cft-cell:opacity-100 transition-opacity">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => handleEditCFTTopic(idx, e)}
+                                        className="p-0.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                                        title="Change CFT Topic"
+                                      >
+                                        <Edit3 className="w-2.5 h-2.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => handleDeleteCFT(idx, e)}
+                                        className="p-0.5 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                        title="Delete CFT Topic & Member"
+                                      >
+                                        <Trash2 className="w-2.5 h-2.5" />
+                                      </button>
+                                    </div>
+                                  )}
                                 </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={canEditEntireRow ? (e) => handleToggleCFTDropdown(idx, e, 'topics') : undefined}
+                                  className={`cft-trigger-btn w-full h-full min-h-[30px] flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/40 transition-colors ${canEditEntireRow ? 'cursor-pointer' : 'cursor-default'}`}
+                                  title={canEditEntireRow ? 'Click to select CFT Topic' : undefined}
+                                >
+                                  <span className="text-[14px] font-medium">-</span>
+                                </button>
                               )}
                             </div>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={canEditEntireRow ? (e) => handleToggleCFTDropdown(idx, e, 'topics') : undefined}
-                              className={`cft-trigger-btn w-full h-full min-h-[30px] flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/40 transition-colors ${canEditEntireRow ? 'cursor-pointer' : 'cursor-default'}`}
-                              title={canEditEntireRow ? 'Click to select CFT Topic' : undefined}
-                            >
-                              <span className="text-[14px] font-medium">-</span>
-                            </button>
-                          )}
-                        </div>
+                          </td>
+                        </>
                       );
                     })()}
-                    </td>
-
                     {/* 15. Responsible Person Instruction, etc. Column: Upside Name, Middle Confirmed/Not-Confirmed dropdown, Downside Mandatory Input */}
                     <td className="p-1.5 align-top border-r border-b border-[#64748B] w-[185px] min-w-[175px] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-left">
                       <div className="w-full flex flex-col items-start justify-start">

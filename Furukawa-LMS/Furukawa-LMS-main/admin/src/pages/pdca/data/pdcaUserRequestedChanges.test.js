@@ -1076,3 +1076,20 @@ test('23. Responsible Person: 4 Columns (Unit, Dept, Staff Name, CFT) Divided in
   assert.ok(sheetCode.includes("handleEditCFTTopic(idx, e, unitName)"), 'CFT edit must support unitName');
   assert.ok(sheetCode.includes("handleDeleteCFT(idx, e, unitName)"), 'CFT delete must support unitName');
 });
+
+test('24. Responsible Person Single Constant Line Dividing Rule (Parent Column with Child Columns)', () => {
+  const sheetCode = fs.readFileSync(new URL('../../../components/pdca/PDCASheet.jsx', import.meta.url), 'utf8');
+
+  // When units.length > 1, Responsible Person must render as a single parent cell with colSpan={4}
+  assert.ok(sheetCode.includes('colSpan={4}'), 'Must render parent colSpan={4} td');
+  assert.ok(sheetCode.includes('flex flex-col w-full h-full divide-y divide-[#CBD5E1]'), 'Must have single constant horizontal dividing line');
+
+  // Each sub-row contains the 4 child columns (Unit, Dept, Staff Name, CFT) with divide-x
+  assert.ok(sheetCode.includes('flex w-full items-stretch divide-x divide-[#CBD5E1]'), 'Sub-rows must use items-stretch and divide-x');
+
+  // Sub-row child column widths match headers
+  assert.ok(sheetCode.includes('w-[110px] min-w-[100px]'), 'Unit width must be 110px');
+  assert.ok(sheetCode.includes('w-[145px] min-w-[135px]'), 'Dept width must be 145px');
+  assert.ok(sheetCode.includes('w-[160px] min-w-[150px]'), 'Staff Name width must be 160px');
+  assert.ok(sheetCode.includes('w-[120px] min-w-[110px]'), 'CFT width must be 120px');
+});

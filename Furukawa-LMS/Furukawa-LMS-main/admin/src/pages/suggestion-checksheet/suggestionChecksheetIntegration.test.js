@@ -173,3 +173,13 @@ test('14. Mandatory validation rules and calendar inputs in Detail sheet', () =>
   assert.ok(detailFile.includes('Reason if Rejected is mandatory when Suggestion is Rejected'), 'Reason mandatory validation');
   assert.ok(detailFile.includes('type="date"'), 'Contains native calendar date inputs');
 });
+
+test('15. Suggestion checksheet store and mock data contain no dummy records', () => {
+  const mockDataFile = fs.readFileSync(new URL('../../components/suggestion-checksheet/suggestionChecksheetMockData.js', import.meta.url), 'utf8');
+  const storePath = new URL('../../../../server/db/suggestionChecksheet/suggestion_checksheet_store.json', import.meta.url);
+  const storeContent = fs.readFileSync(storePath, 'utf8');
+  
+  assert.ok(mockDataFile.includes('INITIAL_SUGGESTION_CHECKSHETS = []'), 'Mock data INITIAL_SUGGESTION_CHECKSHETS must be empty');
+  assert.equal(JSON.parse(storeContent).length, 0, 'Persistent store must contain 0 dummy records');
+});
+

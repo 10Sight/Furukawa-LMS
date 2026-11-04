@@ -36,3 +36,4 @@ export const deleteSuggestionChecksheet = asyncHandler(async (req, res) => {
   const success = await SuggestionChecksheetModel.delete(id);
   return res.status(200).json(new ApiResponse(200, { success }, "Suggestion checksheet deleted successfully"));
 });
+

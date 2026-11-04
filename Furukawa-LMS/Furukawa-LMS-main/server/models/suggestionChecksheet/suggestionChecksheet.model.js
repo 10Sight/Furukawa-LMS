@@ -84,3 +84,4 @@ class SuggestionChecksheetModel {
 }
 
 export default SuggestionChecksheetModel;
+

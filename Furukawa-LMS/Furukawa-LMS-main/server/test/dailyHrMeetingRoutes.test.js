@@ -47,7 +47,7 @@ const allowed = (guard, user) => {
 test("every route is guarded and the expected set exists", () => {
     assert.deepEqual(
         routes.map((r) => `${r.method} ${r.path}`).sort(),
-        ["GET /attendance-map", "GET /config", "GET /data", "GET /training",
+        ["GET /attendance-map", "GET /config", "GET /data", "GET /handover", "GET /training",
             "POST /attendance-map", "POST /config", "POST /recalculate", "POST /training"]
     );
 });

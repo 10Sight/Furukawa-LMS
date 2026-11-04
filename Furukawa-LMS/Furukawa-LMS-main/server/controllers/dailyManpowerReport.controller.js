@@ -7,6 +7,7 @@ import DailyHrMeetingDaily from "../models/dailyHrMeetingDaily.model.js";
 import { buildMonthlyReport, listMonthDates } from "../services/dailyHrMeetingReport.js";
 import { computeAndStoreDates } from "../services/dailyHrMeetingSnapshot.service.js";
 import { todayIST } from "../services/dailyHrMeetingScheduler.js";
+import { buildHandoverReport, getHandoverRows, getHiringRows } from "../services/dailyHandoverReport.service.js";
 
 // Daily HR Meeting — Daily Manpower Report.
 // GET /data reads only the stored figures (daily_hr_meeting_manpower_daily); it never aggregates
@@ -64,6 +65,42 @@ export const getMonthlyReportData = asyncHandler(async (req, res) => {
     });
 
     return res.status(200).json(new ApiResponse(200, report, "Daily manpower report fetched"));
+});
+
+// Daily Handover Report tab: Handover Actual by department + Hiring Actual by shift, every day of
+// the month up to today (IST). Read live; see services/dailyHandoverReport.service.js.
+// ?months=2 adds the month before the selected one (1-3, default 1), so HR sees two months at once.
+const MAX_HANDOVER_MONTHS = 3;
+
+export const getHandoverReportData = asyncHandler(async (req, res) => {
+    const { year, monthNumber } = parseMonth(req.query);
+    const requestedMonths = Number.parseInt(req.query.months ?? "1", 10);
+    if (!Number.isInteger(requestedMonths) || requestedMonths < 1 || requestedMonths > MAX_HANDOVER_MONTHS) {
+        throw new ApiError(`months must be between 1 and ${MAX_HANDOVER_MONTHS}`, 400);
+    }
+
+    const dates = [];
+    for (let back = requestedMonths - 1; back >= 0; back--) {
+        const index = year * 12 + (monthNumber - 1) - back;
+        dates.push(...monthRange(Math.floor(index / 12), (index % 12) + 1).dates);
+    }
+
+    if (!dates.length) {
+        return res.status(200).json(new ApiResponse(200, buildHandoverReport({
+            year, monthNumber, dates: [], departments: [], handoverRows: [], hiringRows: [],
+        }), "Month has not started"));
+    }
+
+    const startDate = dates[0];
+    const endDate = dates[dates.length - 1];
+    const [departments, handoverRows, hiringRows] = await Promise.all([
+        DailyManpowerConfig.getDepartmentsWithConfig(),
+        getHandoverRows(startDate, endDate),
+        getHiringRows(startDate, endDate),
+    ]);
+
+    const report = buildHandoverReport({ year, monthNumber, dates, departments, handoverRows, hiringRows });
+    return res.status(200).json(new ApiResponse(200, report, "Daily handover report fetched"));
 });
 
 export const getConfig = asyncHandler(async (req, res) => {

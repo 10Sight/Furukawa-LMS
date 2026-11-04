@@ -50,11 +50,37 @@ export const listMonthDates = (year, monthNumber, { upTo = null } = {}) => {
 
 const dayOf = (date) => Number(String(date).slice(8, 10));
 
+const departmentLabel = (dep) => dep.displayName || dep.departmentName;
+
 const compareDepartments = (a, b) => {
     const ao = a.sortOrder === null ? Number.MAX_SAFE_INTEGER : a.sortOrder;
     const bo = b.sortOrder === null ? Number.MAX_SAFE_INTEGER : b.sortOrder;
     if (ao !== bo) return ao - bo;
-    return a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: "base" });
+    return departmentLabel(a).localeCompare(departmentLabel(b), undefined, { numeric: true, sensitivity: "base" });
+};
+
+/**
+ * Shared section layout for every Daily HR Meeting table (configured in DepartmentConfigModal):
+ * hidden departments dropped, groups ordered (MAIN first on ties), each group's own departments
+ * sorted, and the departments marked "Other" listed separately for merging into one row.
+ * @returns {Array<{name: string, own: Array, merged: Array}>}
+ */
+export const groupReportDepartments = (departments) => {
+    const groupsByName = new Map();
+    for (const dep of departments.filter((d) => !d.isHidden)) {
+        const name = dep.groupName || "MAIN";
+        if (!groupsByName.has(name)) groupsByName.set(name, { name, groupSortOrder: dep.groupSortOrder || 0, deps: [] });
+        const g = groupsByName.get(name);
+        g.groupSortOrder = Math.min(g.groupSortOrder, dep.groupSortOrder || 0);
+        g.deps.push(dep);
+    }
+    return [...groupsByName.values()]
+        .sort((a, b) => (a.groupSortOrder - b.groupSortOrder) || (a.name === "MAIN" ? -1 : b.name === "MAIN" ? 1 : a.name.localeCompare(b.name)))
+        .map((g) => ({
+            name: g.name,
+            own: g.deps.filter((d) => !d.isOther).sort(compareDepartments),
+            merged: g.deps.filter((d) => d.isOther),
+        }));
 };
 
 /**
@@ -126,25 +152,10 @@ export const buildMonthlyReport = ({ year, monthNumber, dates, departments, stor
         };
     };
 
-    const visible = departments.filter((d) => !d.isHidden);
-    const groupsByName = new Map();
-    for (const dep of visible) {
-        const name = dep.groupName || "MAIN";
-        if (!groupsByName.has(name)) groupsByName.set(name, { name, groupSortOrder: dep.groupSortOrder || 0, deps: [] });
-        const g = groupsByName.get(name);
-        g.groupSortOrder = Math.min(g.groupSortOrder, dep.groupSortOrder || 0);
-        g.deps.push(dep);
-    }
-
-    const groups = [...groupsByName.values()]
-        .sort((a, b) => (a.groupSortOrder - b.groupSortOrder) || (a.name === "MAIN" ? -1 : b.name === "MAIN" ? 1 : a.name.localeCompare(b.name)))
+    const groups = groupReportDepartments(departments)
         .map((g) => {
-            const own = g.deps.filter((d) => !d.isOther)
-                .map((d) => ({ dep: d, row: departmentRow(d) }))
-                .map(({ dep, row }) => ({ ...row, sortOrder: dep.sortOrder }))
-                .sort(compareDepartments)
-                .map(({ sortOrder, ...row }) => row);
-            const merged = g.deps.filter((d) => d.isOther).map(departmentRow);
+            const own = g.own.map(departmentRow);
+            const merged = g.merged.map(departmentRow);
             const rows = merged.length ? [...own, otherRow(g.name, merged)] : own;
             const total = sumRows(rows, dates, {
                 key: `total-${g.name}`,

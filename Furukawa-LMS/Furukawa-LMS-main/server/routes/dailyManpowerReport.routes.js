@@ -3,6 +3,7 @@ import verifyJWT from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/authrization.middleware.js";
 import {
     getMonthlyReportData,
+    getHandoverReportData,
     getConfig,
     saveDepartmentConfigs,
     getAttendanceDeptMap,
@@ -20,6 +21,7 @@ const canRead = authorizeRoles("hr_meeting:read", "isAdmin", "SUPERADMIN");
 const canWrite = authorizeRoles("hr_meeting:update", "isAdmin", "SUPERADMIN");
 
 router.get("/data", canRead, getMonthlyReportData);
+router.get("/handover", canRead, getHandoverReportData);
 router.get("/config", canRead, getConfig);
 router.post("/config", canWrite, saveDepartmentConfigs);
 router.get("/attendance-map", canRead, getAttendanceDeptMap);

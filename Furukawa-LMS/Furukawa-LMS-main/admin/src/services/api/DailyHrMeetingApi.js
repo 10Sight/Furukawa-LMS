@@ -15,6 +15,12 @@ export const dailyHrMeetingApi = createApi({
             providesTags: (result, error, { year, month }) => [{ type: "HrReport", id: `${year}-${month}` }],
         }),
 
+        // Daily Handover Report tab. Shares "HrReport" so saving the section config refreshes it too.
+        getDailyHandoverReport: builder.query({
+            query: ({ year, month, months = 1 }) => ({ url: `${BASE}/handover`, method: "GET", params: { year, month, months } }),
+            providesTags: (result, error, { year, month, months = 1 }) => [{ type: "HrReport", id: `handover-${year}-${month}-${months}` }],
+        }),
+
         getDailyManpowerConfig: builder.query({
             query: () => ({ url: `${BASE}/config`, method: "GET" }),
             providesTags: ["HrConfig"],
@@ -57,6 +63,7 @@ export const dailyHrMeetingApi = createApi({
 
 export const {
     useGetDailyManpowerReportQuery,
+    useGetDailyHandoverReportQuery,
     useGetDailyManpowerConfigQuery,
     useSaveDailyManpowerConfigMutation,
     useGetAttendanceDeptMapQuery,

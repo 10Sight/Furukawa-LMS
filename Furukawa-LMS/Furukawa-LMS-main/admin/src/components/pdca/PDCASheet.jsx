@@ -4743,9 +4743,10 @@ export default function PDCASheet({
     });
   };
 
-  // Remove individual evidence image (Admin only)
+  // Remove individual evidence image (All users with edit access to row/sheet)
   const handleRemoveEvidenceImage = (imageId) => {
-    if (!isAdmin) return;
+    const isModalReadOnly = evidenceModal.field === 'imageAfter' ? !canUserEditActionColsForModalRow : !canEditEntireSheet;
+    if (isModalReadOnly) return;
     const { rowIndex, field } = evidenceModal;
     if (rowIndex === null || !field) return;
 
@@ -4843,6 +4844,10 @@ export default function PDCASheet({
 
   const handleRemoveFile = (rowIndex, field, nameField, typeField) => {
     if (effectiveReadOnly) return;
+    const canEdit = field === 'imageAfter'
+      ? (canEditEntireSheet || (rows[rowIndex] && isUserResponsibleForRow(rows[rowIndex], effectiveUser)))
+      : canEditEntireSheet;
+    if (!canEdit) return;
     setRows((prev) => {
       const updated = [...prev];
       const imagesField = field === 'imageBefore' ? 'imagesBefore' : 'imagesAfter';
@@ -7182,7 +7187,7 @@ export default function PDCASheet({
         onClose={() => setEvidenceModal({ isOpen: false, rowIndex: null, field: null })}
         field={evidenceModal.field}
         readOnly={evidenceModal.field === 'imageAfter' ? !canUserEditActionColsForModalRow : !canEditEntireSheet}
-        canDelete={isAdmin}
+        canDelete={evidenceModal.field === 'imageAfter' ? canUserEditActionColsForModalRow : canEditEntireSheet}
         rowIndex={evidenceModal.rowIndex ?? 0}
         images={
           evidenceModal.rowIndex !== null && evidenceModal.field
@@ -7289,8 +7294,8 @@ export default function PDCASheet({
                   <span className="hidden sm:inline">Download</span>
                 </button>
 
-                {/* Delete Button (Only administrators) */}
-                {isAdmin && (
+                {/* Delete Button (All users with edit access to row/sheet) */}
+                {(!effectiveReadOnly && (selectedImageAction?.field === 'imageAfter' ? canUserEditActionColsForSelectedImage : canEditEntireSheet)) && (
                   <button
                     type="button"
                     onClick={() => {

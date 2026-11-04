@@ -61,7 +61,11 @@ export default function SuggestionChecksheetPage() {
   }, [setIsFormView]);
 
   return (
-    <div className="suggestion-checksheet-page-wrapper w-full min-h-0 flex-1 flex flex-col p-2 sm:p-4">
+    <div
+      className={`suggestion-checksheet-page-wrapper w-full flex flex-col ${
+        currentPage === 'detail' ? 'h-full min-h-0 flex-1 overflow-y-auto p-2 sm:p-4' : 'min-h-0 flex-1 p-2 sm:p-4'
+      }`}
+    >
       {currentPage === 'detail' && selectedItem ? (
         <SuggestionChecksheetDetail
           item={selectedItem}
@@ -80,3 +84,4 @@ export default function SuggestionChecksheetPage() {
     </div>
   );
 }
+

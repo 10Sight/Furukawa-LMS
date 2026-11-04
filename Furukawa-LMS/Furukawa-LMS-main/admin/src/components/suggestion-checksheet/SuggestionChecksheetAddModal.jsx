@@ -243,3 +243,4 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
     </div>
   );
 }
+

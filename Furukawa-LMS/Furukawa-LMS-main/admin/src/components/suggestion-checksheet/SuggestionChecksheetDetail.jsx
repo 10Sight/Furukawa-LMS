@@ -125,16 +125,17 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
       </div>
 
       {/* Full-Width Responsive Checksheet Document */}
-      <form onSubmit={handleSaveForm} className="w-full overflow-x-auto pb-2">
+      <form onSubmit={handleSaveForm} className="w-full pb-10">
         <div
-          className="bg-white checksheet-print-area w-full mx-auto"
+          className="bg-white checksheet-print-area w-full"
           style={{
             border: '2px solid #000000',
             fontFamily: "'Times New Roman', Times, serif",
             color: '#000000',
             boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+            width: '100%',
             minWidth: '820px',
-            maxWidth: '1200px'
+            maxWidth: '100%'
           }}
         >
           {/* Row 1: Logo & Company Name */}
@@ -221,10 +222,10 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
             ))}
           </div>
 
-          {/* Row 4: DATE:-, DEPARTMENT:-, and SECTION:- */}
+          {/* Row 4: DATE:- and Employee Name / ID : in same row */}
           <div className="flex items-stretch border-b border-black text-sm">
             {/* DATE */}
-            <div className="flex items-center px-3 py-1 border-r border-black" style={{ width: '30%' }}>
+            <div className="flex items-center px-3 py-1.5 border-r border-black" style={{ width: '35%' }}>
               <span className="font-bold whitespace-nowrap mr-2">DATE:-</span>
               <input
                 type="text"
@@ -240,43 +241,8 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
               />
             </div>
 
-            {/* DEPARTMENT (Freezed / Non-editable) */}
-            <div
-              className="flex items-center px-3 py-1 border-r border-black bg-slate-50"
-              style={{ width: '35%' }}
-              title="Department is freezed after checksheet creation"
-            >
-              <span className="font-bold whitespace-nowrap mr-2">DEPARTMENT:-</span>
-              <input
-                type="text"
-                className="excel-cell-input flex-1 bg-transparent text-slate-800 cursor-not-allowed"
-                value={formData.department}
-                readOnly
-              />
-              <Lock className="w-3.5 h-3.5 text-slate-400 ml-1 shrink-0" title="Freezed (non-editable)" />
-            </div>
-
-            {/* SECTION (Freezed / Non-editable) */}
-            <div
-              className="flex items-center px-3 py-1 flex-1 bg-slate-50"
-              style={{ width: '35%' }}
-              title="Section is freezed after checksheet creation"
-            >
-              <span className="font-bold whitespace-nowrap mr-2">SECTION:-</span>
-              <input
-                type="text"
-                className="excel-cell-input flex-1 bg-transparent text-slate-800 cursor-not-allowed"
-                value={formData.section}
-                readOnly
-              />
-              <Lock className="w-3.5 h-3.5 text-slate-400 ml-1 shrink-0" title="Freezed (non-editable)" />
-            </div>
-          </div>
-
-          {/* Row 5: Employee Name / ID : and Line / Area : */}
-          <div className="flex items-stretch border-b border-black text-sm">
             {/* Employee Name / ID : */}
-            <div className="flex items-center px-3 py-1 border-r border-black" style={{ width: '50%' }}>
+            <div className="flex items-center px-3 py-1.5 flex-1" style={{ width: '65%' }}>
               <span className="font-bold whitespace-nowrap mr-2">Employee Name / ID :</span>
               <input
                 type="text"
@@ -291,11 +257,46 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
                 placeholder="Enter Employee Name / ID"
               />
             </div>
+          </div>
+
+          {/* Row 5: DEPARTMENT:-, SECTION:-, and Line / Area : in same row */}
+          <div className="flex items-stretch border-b border-black text-sm">
+            {/* DEPARTMENT (Freezed / Non-editable) */}
+            <div
+              className="flex items-center px-3 py-1.5 border-r border-black bg-slate-50"
+              style={{ width: '33.33%' }}
+              title="Department is freezed after checksheet creation"
+            >
+              <span className="font-bold whitespace-nowrap mr-2">DEPARTMENT:-</span>
+              <input
+                type="text"
+                className="excel-cell-input flex-1 bg-transparent text-slate-800 cursor-not-allowed"
+                value={formData.department}
+                readOnly
+              />
+              <Lock className="w-3.5 h-3.5 text-slate-400 ml-1 shrink-0" title="Freezed (non-editable)" />
+            </div>
+
+            {/* SECTION (Freezed / Non-editable) */}
+            <div
+              className="flex items-center px-3 py-1.5 border-r border-black bg-slate-50"
+              style={{ width: '33.33%' }}
+              title="Section is freezed after checksheet creation"
+            >
+              <span className="font-bold whitespace-nowrap mr-2">SECTION:-</span>
+              <input
+                type="text"
+                className="excel-cell-input flex-1 bg-transparent text-slate-800 cursor-not-allowed"
+                value={formData.section}
+                readOnly
+              />
+              <Lock className="w-3.5 h-3.5 text-slate-400 ml-1 shrink-0" title="Freezed (non-editable)" />
+            </div>
 
             {/* Line / Area : (Freezed) */}
             <div
-              className="flex items-center px-3 py-1 flex-1 bg-slate-50"
-              style={{ width: '50%' }}
+              className="flex items-center px-3 py-1.5 flex-1 bg-slate-50"
+              style={{ width: '33.34%' }}
               title="Line / Area is freezed after checksheet creation"
             >
               <span className="font-bold whitespace-nowrap mr-2">Line / Area :</span>
@@ -562,3 +563,4 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
     </div>
   );
 }
+

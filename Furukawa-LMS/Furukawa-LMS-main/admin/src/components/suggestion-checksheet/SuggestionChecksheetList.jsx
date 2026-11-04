@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   Search,
   X,
@@ -28,10 +28,24 @@ export default function SuggestionChecksheetList({
   const setSelectedUnit = setControlledUnit || setInternalUnit;
 
   const [isUnitDropdownOpen, setIsUnitDropdownOpen] = useState(false);
+  const unitDropdownRef = useRef(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [viewRecord, setViewRecord] = useState(null);
+
+  // Close unit dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (unitDropdownRef.current && !unitDropdownRef.current.contains(event.target)) {
+        setIsUnitDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   // Filtered records
   const filteredRecords = useMemo(() => {
@@ -126,12 +140,11 @@ export default function SuggestionChecksheetList({
       {/* Top Filter and Actions Row */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         {/* Unit Selector */}
-        <div className="relative">
+        <div className="relative" ref={unitDropdownRef}>
           <button
             type="button"
             className="unit-dropdown-btn"
-            onClick={() => setIsUnitDropdownOpen(!isUnitDropdownOpen)}
-            onBlur={() => setTimeout(() => setIsUnitDropdownOpen(false), 200)}
+            onClick={() => setIsUnitDropdownOpen((prev) => !prev)}
           >
             <span>{selectedUnit ? `Unit: ${selectedUnit}` : 'Unit'}</span>
             {isUnitDropdownOpen ? (
@@ -144,26 +157,57 @@ export default function SuggestionChecksheetList({
           {isUnitDropdownOpen && (
             <div
               className="absolute left-0 mt-2 bg-white unit-dropdown-menu z-30 shadow-xl"
+              style={{ minWidth: '160px' }}
             >
               <div className="unit-dropdown-header">PLANT UNIT</div>
-              <div
-                className={`unit-dropdown-item ${selectedUnit === 'Bawal' ? 'active' : ''}`}
-                onClick={() => handleSelectUnit('Bawal')}
+              <button
+                type="button"
+                className={`w-full text-left unit-dropdown-item ${selectedUnit === 'Bawal' ? 'active font-semibold text-blue-600 bg-blue-50' : ''}`}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleSelectUnit('Bawal');
+                }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleSelectUnit('Bawal');
+                }}
               >
                 Bawal
-              </div>
-              <div
-                className={`unit-dropdown-item ${selectedUnit === 'Gujrat' ? 'active' : ''}`}
-                onClick={() => handleSelectUnit('Gujrat')}
+              </button>
+              <button
+                type="button"
+                className={`w-full text-left unit-dropdown-item ${selectedUnit === 'Gujrat' ? 'active font-semibold text-blue-600 bg-blue-50' : ''}`}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleSelectUnit('Gujrat');
+                }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleSelectUnit('Gujrat');
+                }}
               >
                 Gujrat
-              </div>
-              <div
-                className={`unit-dropdown-item ${selectedUnit === 'All Units' ? 'active' : ''}`}
-                onClick={() => handleSelectUnit('All Units')}
+              </button>
+              <button
+                type="button"
+                className={`w-full text-left unit-dropdown-item ${selectedUnit === 'All Units' ? 'active font-semibold text-blue-600 bg-blue-50' : ''}`}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleSelectUnit('All Units');
+                }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleSelectUnit('All Units');
+                }}
               >
                 All Units
-              </div>
+              </button>
             </div>
           )}
         </div>
@@ -474,3 +518,4 @@ export default function SuggestionChecksheetList({
     </div>
   );
 }
+

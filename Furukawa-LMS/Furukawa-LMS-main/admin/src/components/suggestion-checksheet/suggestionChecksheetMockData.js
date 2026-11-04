@@ -150,3 +150,4 @@ export function saveStoredSuggestionChecksheets(records) {
     console.warn('Failed to save suggestion checksheets to storage:', err);
   }
 }
+

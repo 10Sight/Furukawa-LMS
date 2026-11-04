@@ -111,3 +111,4 @@ export default function SuggestionChecksheetViewModal({ record, isOpen, onClose,
     </div>
   );
 }
+

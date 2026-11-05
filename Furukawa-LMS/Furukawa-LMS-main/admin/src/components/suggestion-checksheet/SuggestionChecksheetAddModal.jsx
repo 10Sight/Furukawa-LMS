@@ -60,19 +60,21 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
   const departments = useMemo(() => {
     const list = deptData?.data?.departments || deptData?.data || [];
     if (Array.isArray(list) && list.length > 0) {
-      return list.map((d) => ({
-        id: d._id || d.id,
-        name: d.name || d.departmentName || String(d),
-      }));
+      return list
+        .map((d) => ({
+          id: String(d._id || d.id || ''),
+          name: String(d.name || d.departmentName || d.deptName || (typeof d === 'string' ? d : '')),
+        }))
+        .filter((d) => Boolean(d.name));
     }
-    return FALLBACK_DEPARTMENTS.map((name, idx) => ({ id: `dept-${idx}`, name }));
+    return FALLBACK_DEPARTMENTS.map((name, idx) => ({ id: `dept-${idx}`, name: String(name) }));
   }, [deptData]);
 
   // 2. Fetch sections by selected department
   const selectedDeptId = useMemo(() => {
-    if (formData.departmentId) return formData.departmentId;
+    if (formData.departmentId) return String(formData.departmentId);
     const found = departments.find((d) => d.name === formData.department);
-    return found ? found.id : '';
+    return found ? String(found.id) : '';
   }, [departments, formData.department, formData.departmentId]);
 
   const { data: sectionData } = useGetSectionsByDepartmentQuery(selectedDeptId, {
@@ -80,12 +82,14 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
   });
 
   const sections = useMemo(() => {
-    const list = sectionData?.data || [];
+    const list = sectionData?.data?.sections || sectionData?.data || [];
     if (Array.isArray(list) && list.length > 0) {
-      return list.map((s) => ({
-        id: s._id || s.id,
-        name: s.name || s.sectionName || String(s),
-      }));
+      return list
+        .map((s) => ({
+          id: String(s._id || s.id || ''),
+          name: String(s.name || s.sectionName || (typeof s === 'string' ? s : '')),
+        }))
+        .filter((s) => Boolean(s.name));
     }
     // Fallback common sections if department selected
     if (formData.department) {
@@ -101,9 +105,9 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
 
   // 3. Fetch lines by selected section
   const selectedSectionId = useMemo(() => {
-    if (formData.sectionId) return formData.sectionId;
+    if (formData.sectionId) return String(formData.sectionId);
     const found = sections.find((s) => s.name === formData.section);
-    return found ? found.id : '';
+    return found ? String(found.id) : '';
   }, [sections, formData.section, formData.sectionId]);
 
   const { data: lineData } = useGetLinesBySectionQuery(selectedSectionId, {
@@ -111,12 +115,14 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
   });
 
   const lines = useMemo(() => {
-    const list = lineData?.data || [];
+    const list = lineData?.data?.lines || lineData?.data || [];
     if (Array.isArray(list) && list.length > 0) {
-      return list.map((l) => ({
-        id: l._id || l.id,
-        name: l.name || l.lineName || String(l),
-      }));
+      return list
+        .map((l) => ({
+          id: String(l._id || l.id || ''),
+          name: String(l.name || l.lineName || (typeof l === 'string' ? l : '')),
+        }))
+        .filter((l) => Boolean(l.name));
     }
     // Fallback lines if section selected
     if (formData.section) {
@@ -143,32 +149,49 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
     if (Array.isArray(rawUsers) && rawUsers.length > 0) {
       list = rawUsers.map((u) => {
         const name = u.fullName || u.name || `${u.firstName || ''} ${u.lastName || ''}`.trim() || 'Employee';
-        const code = u.employeeId || u.staffId || u.userName || u.code || '';
-        const dept = u.department?.name || u.department || '';
+        const code = u.employeeId || u.staffId || u.userName || u.code || u.empId || '';
+
+        // Resolve department strictly as a clean string!
+        let resolvedDept = '';
+        if (typeof u.deptName === 'string') {
+          resolvedDept = u.deptName;
+        } else if (typeof u.departmentName === 'string') {
+          resolvedDept = u.departmentName;
+        } else if (typeof u.department === 'string') {
+          resolvedDept = u.department;
+        } else if (u.department && typeof u.department === 'object') {
+          resolvedDept = u.department.name || u.department.deptName || u.department.title || '';
+        }
+
+        const deptId = u.actualDeptId || (typeof u.department === 'number' ? u.department : u.departmentId || '');
+
         return {
-          id: u._id || u.id,
-          name,
-          code,
-          unit: u.unit || 'Bawal',
-          department: dept,
-          displayText: code ? `${name} (${code})` : name,
+          id: String(u._id || u.id || `emp-${code || Math.random()}`),
+          name: String(name),
+          code: String(code),
+          unit: String(u.unit || 'Bawal'),
+          department: String(resolvedDept || ''),
+          deptId: deptId ? String(deptId) : '',
+          displayText: code ? `${name} (${code})` : String(name),
         };
       });
     } else {
       // Fallback verified employees
       list = VERIFIED_EMPLOYEE_MASTER.map((u) => ({
-        id: u.id,
-        name: u.name,
-        code: u.code,
-        unit: u.unit || 'Bawal',
-        department: u.department || '',
+        id: String(u.id),
+        name: String(u.name),
+        code: String(u.code),
+        unit: String(u.unit || 'Bawal'),
+        department: String(u.department || ''),
+        deptId: '',
         displayText: `${u.name} (${u.code})`,
       }));
     }
 
     // Filter by selected unit if set
     if (formData.unit && formData.unit !== 'All Units') {
-      return list.filter((e) => !e.unit || e.unit.toLowerCase() === formData.unit.toLowerCase());
+      const uLower = String(formData.unit).toLowerCase();
+      return list.filter((e) => !e.unit || e.unit.toLowerCase() === uLower);
     }
     return list;
   }, [usersData, formData.unit]);
@@ -178,10 +201,10 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
     if (!employeeSearchTerm.trim()) return employeeOptions;
     const q = employeeSearchTerm.toLowerCase().trim();
     return employeeOptions.filter((emp) => {
-      const matchName = (emp.name || '').toLowerCase().includes(q);
-      const matchCode = (emp.code || '').toLowerCase().includes(q);
-      const matchDept = (emp.department || '').toLowerCase().includes(q);
-      const matchDisplay = (emp.displayText || '').toLowerCase().includes(q);
+      const matchName = String(emp.name || '').toLowerCase().includes(q);
+      const matchCode = String(emp.code || '').toLowerCase().includes(q);
+      const matchDept = String(emp.department || '').toLowerCase().includes(q);
+      const matchDisplay = String(emp.displayText || '').toLowerCase().includes(q);
       return matchName || matchCode || matchDept || matchDisplay;
     });
   }, [employeeOptions, employeeSearchTerm]);
@@ -190,12 +213,12 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
 
   // Handle department selection with automatic section and line reset
   const handleDepartmentChange = (e) => {
-    const deptName = e.target.value;
+    const deptName = String(e.target.value || '');
     const found = departments.find((d) => d.name === deptName);
     setFormData((prev) => ({
       ...prev,
       department: deptName,
-      departmentId: found ? found.id : '',
+      departmentId: found ? String(found.id) : '',
       section: '',
       sectionId: '',
       lineArea: '',
@@ -205,12 +228,12 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
 
   // Handle section selection with automatic line reset
   const handleSectionChange = (e) => {
-    const secName = e.target.value;
+    const secName = String(e.target.value || '');
     const found = sections.find((s) => s.name === secName);
     setFormData((prev) => ({
       ...prev,
       section: secName,
-      sectionId: found ? found.id : '',
+      sectionId: found ? String(found.id) : '',
       lineArea: '',
       lineAreaId: '',
     }));
@@ -218,52 +241,81 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
 
   // Handle line selection
   const handleLineChange = (e) => {
-    const lineName = e.target.value;
+    const lineName = String(e.target.value || '');
     const found = lines.find((l) => l.name === lineName);
     setFormData((prev) => ({
       ...prev,
       lineArea: lineName,
-      lineAreaId: found ? found.id : '',
+      lineAreaId: found ? String(found.id) : '',
     }));
   };
 
-  // Handle employee selection from search dropdown
+  // Handle employee selection from search dropdown safely
   const handleSelectEmployee = (emp) => {
-    setIsCustomEmployee(false);
-    setFormData((prev) => ({
-      ...prev,
-      submittedBy: emp.displayText,
-    }));
+    try {
+      setIsCustomEmployee(false);
+      const submittedByText = String(emp?.displayText || emp?.name || '').trim();
 
-    // Auto-fill department if available and department is empty
-    if (emp.department && !formData.department) {
-      const matchedDept = departments.find(
-        (d) => d.name.toLowerCase() === emp.department.toLowerCase()
-      );
+      let matchedDeptName = '';
+      let matchedDeptId = '';
+
+      if (emp) {
+        const empDeptStr = String(emp.department || '').trim();
+        const empDeptIdStr = String(emp.deptId || '').trim();
+
+        // If department is not yet selected in the form, try to find matching department from DB list
+        if (!formData.department) {
+          const found = departments.find((d) => {
+            const dName = String(d?.name || '').trim().toLowerCase();
+            const dId = String(d?.id || '').trim();
+            if (empDeptStr && dName && dName === empDeptStr.toLowerCase()) return true;
+            if (empDeptIdStr && dId && dId === empDeptIdStr) return true;
+            return false;
+          });
+
+          if (found) {
+            matchedDeptName = String(found.name);
+            matchedDeptId = String(found.id);
+          } else if (empDeptStr && isNaN(Number(empDeptStr))) {
+            matchedDeptName = empDeptStr;
+          }
+        }
+      }
+
       setFormData((prev) => ({
         ...prev,
-        submittedBy: emp.displayText,
-        department: matchedDept ? matchedDept.name : emp.department,
-        departmentId: matchedDept ? matchedDept.id : '',
+        submittedBy: submittedByText,
+        ...(matchedDeptName ? { department: matchedDeptName, departmentId: matchedDeptId } : {}),
       }));
+    } catch (err) {
+      console.error('Error selecting employee:', err);
+      setFormData((prev) => ({
+        ...prev,
+        submittedBy: String(emp?.displayText || emp?.name || ''),
+      }));
+    } finally {
+      setIsEmployeeDropdownOpen(false);
+      setEmployeeSearchTerm('');
     }
-    setIsEmployeeDropdownOpen(false);
-    setEmployeeSearchTerm('');
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
 
-    const finalSubmittedBy = isCustomEmployee ? customEmployeeText.trim() : formData.submittedBy.trim();
-    const generatedId = `SC-${(formData.unit || 'BWL').substring(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const finalSubmittedBy = String(
+      isCustomEmployee ? customEmployeeText : formData.submittedBy
+    ).trim();
+
+    const unitStr = String(formData.unit || 'Bawal').trim();
+    const generatedId = `SC-${unitStr.substring(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
     const newRecord = {
       id: generatedId,
       date: formData.date || new Date().toISOString().split('T')[0],
-      unit: formData.unit || 'Bawal',
-      department: formData.department.trim(),
-      section: formData.section.trim(),
-      lineArea: formData.lineArea.trim(),
+      unit: unitStr,
+      department: String(formData.department || '').trim(),
+      section: String(formData.section || '').trim(),
+      lineArea: String(formData.lineArea || '').trim(),
       title: finalSubmittedBy
         ? `${finalSubmittedBy} - Suggestion`
         : `Suggestion Sheet (${generatedId})`,
@@ -272,7 +324,7 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
       suggestionText: '',
       category: '',
       submittedBy: finalSubmittedBy,
-      employeeCode: formData.lineArea.trim(),
+      employeeCode: String(formData.lineArea || '').trim(),
       status: 'Pending',
       priority: 'Medium',
       isBlank: true,
@@ -378,8 +430,9 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
                   placeholder="Enter custom employee name or ID..."
                   value={customEmployeeText}
                   onChange={(e) => {
-                    setCustomEmployeeText(e.target.value);
-                    setFormData((prev) => ({ ...prev, submittedBy: e.target.value }));
+                    const val = e.target.value;
+                    setCustomEmployeeText(val);
+                    setFormData((prev) => ({ ...prev, submittedBy: val }));
                   }}
                   autoFocus
                 />
@@ -464,11 +517,11 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
                               >
                                 <div className="flex flex-col min-w-0 pr-2">
                                   <span className="truncate">{emp.displayText}</span>
-                                  {emp.department && (
+                                  {emp.department ? (
                                     <span className="text-[10px] text-slate-400 font-normal">
-                                      Dept: {emp.department}
+                                      Dept: {String(emp.department)}
                                     </span>
-                                  )}
+                                  ) : null}
                                 </div>
                                 {isSelected && (
                                   <Check className="w-4 h-4 text-blue-600 shrink-0 ml-1" />

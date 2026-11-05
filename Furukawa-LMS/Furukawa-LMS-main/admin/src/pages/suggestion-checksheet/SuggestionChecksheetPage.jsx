@@ -32,7 +32,7 @@ export default function SuggestionChecksheetPage() {
   // Sync records from database when loaded
   useEffect(() => {
     const list = apiResponse?.data;
-    if (Array.isArray(list) && list.length > 0) {
+    if (Array.isArray(list)) {
       setRecords(list);
       saveStoredSuggestionChecksheets(list);
     }

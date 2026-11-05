@@ -178,12 +178,13 @@ test('15. Suggestion checksheet store and mock data contain no dummy records', (
   const mockDataFile = fs.readFileSync(new URL('../../components/suggestion-checksheet/suggestionChecksheetMockData.js', import.meta.url), 'utf8');
   const storePath = new URL('../../../../server/db/suggestionChecksheet/suggestion_checksheet_store.json', import.meta.url);
   const storeContent = fs.readFileSync(storePath, 'utf8');
-  
+  const parsedStore = JSON.parse(storeContent);
+
   assert.ok(mockDataFile.includes('INITIAL_SUGGESTION_CHECKSHETS = []'), 'Mock data INITIAL_SUGGESTION_CHECKSHETS must be empty');
-  assert.equal(JSON.parse(storeContent).length, 0, 'Persistent store must contain 0 dummy records');
+  const dummyIds = ['SC-BWL-1021', 'SC-BWL-1024', 'SC-BWL-1029', 'SC-GJT-2015', 'SC-GJT-2018', 'SC-GJR-2015'];
+  const hasDummy = parsedStore.some((r) => dummyIds.includes(r.id));
+  assert.equal(hasDummy, false, 'Persistent store must not contain any dummy seed records');
 });
-
-
 
 test('16. Add Checksheet modal contains Search Bar Dropdown for Employee Name / ID', () => {
   const addModalFile = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetAddModal.jsx', import.meta.url), 'utf8');

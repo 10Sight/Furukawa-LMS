@@ -528,7 +528,8 @@ const ASSIGNABLE_PORTALS = [
 
 // `permissions` plus whatever the role's pages need to be usable. Without this
 // a role could be given a page that then opens empty for its users.
-const withPortalPagePermissions = (allowedPages, permissions) => {
+// Exported for scripts/grantHrMeetingPermission.js.
+export const withPortalPagePermissions = (allowedPages, permissions) => {
   const result = new Set(Array.isArray(permissions) ? permissions : []);
   const pages = new Set(Array.isArray(allowedPages) ? allowedPages : []);
   for (const portal of ASSIGNABLE_PORTALS) {

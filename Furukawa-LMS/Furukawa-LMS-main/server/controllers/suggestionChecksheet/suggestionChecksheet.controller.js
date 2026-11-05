@@ -7,12 +7,21 @@ import { ApiError } from "../../utils/ApiError.js";
 const sanitizeChecksheetPayload = (payload = {}) => {
   const clean = { ...payload };
   delete clean.description;
+  delete clean.Description;
   delete clean.category;
+  delete clean.Category;
   delete clean.categories;
+  delete clean.Categories;
   delete clean.employeeCode;
+  delete clean.EmployeeCode;
+  delete clean.employee_code;
+  delete clean['Employee Code'];
   delete clean.priority;
+  delete clean.Priority;
   delete clean.rejectedAccepted;
+  delete clean.RejectedAccepted;
   delete clean.rejectAccepted;
+  delete clean.RejectAccepted;
   return clean;
 };
 
@@ -20,6 +29,7 @@ const sanitizeChecksheetPayload = (payload = {}) => {
 const resolveCreatorName = (req) => {
   return (
     req.body?.createdBy ||
+    req.body?.['Created by'] ||
     req.user?.fullName ||
     req.user?.userName ||
     req.headers?.['x-user-name'] ||

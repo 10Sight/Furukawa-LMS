@@ -1,9 +1,13 @@
 -- ==============================================================================
 -- Table: suggestion_checksheets
 -- Module: CMS Portal - Suggestion Check Sheet
--- Database: Microsoft SQL Server (MSSQL)
+-- Database: Microsoft SQL Server (MSSQL - dojo)
 -- ==============================================================================
 
+USE dojo;
+GO
+
+-- 1. If table does not exist, create it cleanly with createdBy at the end
 IF NOT EXISTS (SELECT * FROM sysobjects WHERE name = 'suggestion_checksheets' AND xtype = 'U')
 BEGIN
     CREATE TABLE suggestion_checksheets (
@@ -51,66 +55,123 @@ BEGIN
 END
 ELSE
 BEGIN
-    PRINT 'Table suggestion_checksheets already exists. Applying schema updates...';
+    PRINT 'Table suggestion_checksheets exists. Removing deprecated columns and adding createdBy at the end...';
 
-    -- 1. Remove Description
-    IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'description')
+    -- --------------------------------------------------------------------------
+    -- 1. Remove Priority (drop any default constraints first)
+    -- --------------------------------------------------------------------------
+    DECLARE @dropPriorityConstraintSql NVARCHAR(MAX) = '';
+    SELECT @dropPriorityConstraintSql += 'ALTER TABLE suggestion_checksheets DROP CONSTRAINT ' + QUOTENAME(d.name) + ';' + CHAR(10)
+    FROM sys.default_constraints d
+    JOIN sys.columns c ON d.parent_object_id = c.object_id AND d.parent_column_id = c.column_id
+    WHERE d.parent_object_id = OBJECT_ID('suggestion_checksheets') AND c.name = 'priority';
+
+    IF @dropPriorityConstraintSql <> '' 
+        EXEC sp_executesql @dropPriorityConstraintSql;
+
+    IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'priority')
+    BEGIN
+        ALTER TABLE suggestion_checksheets DROP COLUMN priority;
+        PRINT 'Removed column: priority';
+    END
+
+    -- --------------------------------------------------------------------------
+    -- 2. Remove Description (drop any constraints first if present)
+    -- --------------------------------------------------------------------------
+    DECLARE @dropDescConstraintSql NVARCHAR(MAX) = '';
+    SELECT @dropDescConstraintSql += 'ALTER TABLE suggestion_checksheets DROP CONSTRAINT ' + QUOTENAME(d.name) + ';' + CHAR(10)
+    FROM sys.default_constraints d
+    JOIN sys.columns c ON d.parent_object_id = c.object_id AND d.parent_column_id = c.column_id
+    WHERE d.parent_object_id = OBJECT_ID('suggestion_checksheets') AND c.name = 'description';
+
+    IF @dropDescConstraintSql <> '' 
+        EXEC sp_executesql @dropDescConstraintSql;
+
+    IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'description')
     BEGIN
         ALTER TABLE suggestion_checksheets DROP COLUMN description;
-        PRINT 'Removed column description.';
+        PRINT 'Removed column: description';
     END
 
-    -- 2. Remove Categories / Category
-    IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'category')
+    -- --------------------------------------------------------------------------
+    -- 3. Remove Categories / Category (drop any constraints first)
+    -- --------------------------------------------------------------------------
+    DECLARE @dropCatConstraintSql NVARCHAR(MAX) = '';
+    SELECT @dropCatConstraintSql += 'ALTER TABLE suggestion_checksheets DROP CONSTRAINT ' + QUOTENAME(d.name) + ';' + CHAR(10)
+    FROM sys.default_constraints d
+    JOIN sys.columns c ON d.parent_object_id = c.object_id AND d.parent_column_id = c.column_id
+    WHERE d.parent_object_id = OBJECT_ID('suggestion_checksheets') AND c.name IN ('category', 'categories');
+
+    IF @dropCatConstraintSql <> '' 
+        EXEC sp_executesql @dropCatConstraintSql;
+
+    IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'category')
     BEGIN
         ALTER TABLE suggestion_checksheets DROP COLUMN category;
-        PRINT 'Removed column category.';
+        PRINT 'Removed column: category';
     END
-    IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'categories')
+
+    IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'categories')
     BEGIN
         ALTER TABLE suggestion_checksheets DROP COLUMN categories;
-        PRINT 'Removed column categories.';
+        PRINT 'Removed column: categories';
     END
 
-    -- 3. Remove Employee Code
-    IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'employeeCode')
+    -- --------------------------------------------------------------------------
+    -- 4. Remove Employee Code (drop any constraints first)
+    -- --------------------------------------------------------------------------
+    DECLARE @dropEmpConstraintSql NVARCHAR(MAX) = '';
+    SELECT @dropEmpConstraintSql += 'ALTER TABLE suggestion_checksheets DROP CONSTRAINT ' + QUOTENAME(d.name) + ';' + CHAR(10)
+    FROM sys.default_constraints d
+    JOIN sys.columns c ON d.parent_object_id = c.object_id AND d.parent_column_id = c.column_id
+    WHERE d.parent_object_id = OBJECT_ID('suggestion_checksheets') AND c.name IN ('employeeCode', 'employee_code');
+
+    IF @dropEmpConstraintSql <> '' 
+        EXEC sp_executesql @dropEmpConstraintSql;
+
+    IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'employeeCode')
     BEGIN
         ALTER TABLE suggestion_checksheets DROP COLUMN employeeCode;
-        PRINT 'Removed column employeeCode.';
+        PRINT 'Removed column: employeeCode';
     END
 
-    -- 4. Remove Priority (drop default constraint if present)
-    IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'priority')
+    IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'employee_code')
     BEGIN
-        DECLARE @priConstraint NVARCHAR(200);
-        SELECT @priConstraint = d.name 
-        FROM sys.default_constraints d 
-        JOIN sys.columns c ON d.parent_object_id = c.object_id AND d.parent_column_id = c.column_id 
-        WHERE d.parent_object_id = OBJECT_ID('suggestion_checksheets') AND c.name = 'priority';
-        IF @priConstraint IS NOT NULL
-            EXEC('ALTER TABLE suggestion_checksheets DROP CONSTRAINT ' + @priConstraint);
-
-        ALTER TABLE suggestion_checksheets DROP COLUMN priority;
-        PRINT 'Removed column priority.';
+        ALTER TABLE suggestion_checksheets DROP COLUMN employee_code;
+        PRINT 'Removed column: employee_code';
     END
 
-    -- 5. Remove rejectAccepted / rejectedAccepted
-    IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'rejectedAccepted')
+    -- --------------------------------------------------------------------------
+    -- 5. Remove rejectAccepted / rejectedAccepted (drop any constraints first)
+    -- --------------------------------------------------------------------------
+    DECLARE @dropRejConstraintSql NVARCHAR(MAX) = '';
+    SELECT @dropRejConstraintSql += 'ALTER TABLE suggestion_checksheets DROP CONSTRAINT ' + QUOTENAME(d.name) + ';' + CHAR(10)
+    FROM sys.default_constraints d
+    JOIN sys.columns c ON d.parent_object_id = c.object_id AND d.parent_column_id = c.column_id
+    WHERE d.parent_object_id = OBJECT_ID('suggestion_checksheets') AND c.name IN ('rejectedAccepted', 'rejectAccepted');
+
+    IF @dropRejConstraintSql <> '' 
+        EXEC sp_executesql @dropRejConstraintSql;
+
+    IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'rejectedAccepted')
     BEGIN
         ALTER TABLE suggestion_checksheets DROP COLUMN rejectedAccepted;
-        PRINT 'Removed column rejectedAccepted.';
-    END
-    IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'rejectAccepted')
-    BEGIN
-        ALTER TABLE suggestion_checksheets DROP COLUMN rejectAccepted;
-        PRINT 'Removed column rejectAccepted.';
+        PRINT 'Removed column: rejectedAccepted';
     END
 
+    IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'rejectAccepted')
+    BEGIN
+        ALTER TABLE suggestion_checksheets DROP COLUMN rejectAccepted;
+        PRINT 'Removed column: rejectAccepted';
+    END
+
+    -- --------------------------------------------------------------------------
     -- 6. Add Created by at the end of the table
-    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'createdBy')
+    -- --------------------------------------------------------------------------
+    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'createdBy')
     BEGIN
         ALTER TABLE suggestion_checksheets ADD createdBy NVARCHAR(255) NULL;
-        PRINT 'Added column createdBy at the end of suggestion_checksheets.';
+        PRINT 'Added column: createdBy at the end of suggestion_checksheets.';
     END
 END
 GO
@@ -145,4 +206,14 @@ BEGIN
     CREATE INDEX idx_suggestion_defectRank ON suggestion_checksheets(defectPreventionRank);
     PRINT 'Created index idx_suggestion_defectRank.';
 END
+GO
+
+-- Check columns in suggestion_checksheets
+SELECT column_id, name AS [Column Name], type_name(user_type_id) AS [Data Type], max_length, is_nullable
+FROM sys.columns
+WHERE object_id = OBJECT_ID('suggestion_checksheets')
+ORDER BY column_id ASC;
+GO
+
+SELECT * FROM suggestion_checksheets;
 GO

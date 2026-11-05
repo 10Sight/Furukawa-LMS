@@ -129,12 +129,21 @@ class SuggestionChecksheetModel {
 
     // Remove deprecated columns
     delete newRecord.description;
+    delete newRecord.Description;
     delete newRecord.category;
+    delete newRecord.Category;
     delete newRecord.categories;
+    delete newRecord.Categories;
     delete newRecord.employeeCode;
+    delete newRecord.EmployeeCode;
+    delete newRecord.employee_code;
+    delete newRecord['Employee Code'];
     delete newRecord.priority;
+    delete newRecord.Priority;
     delete newRecord.rejectedAccepted;
+    delete newRecord.RejectedAccepted;
     delete newRecord.rejectAccepted;
+    delete newRecord.RejectAccepted;
 
     const connected = await isDbConnected();
     if (connected) {
@@ -212,12 +221,21 @@ class SuggestionChecksheetModel {
 
     // Remove deprecated columns
     delete updated.description;
+    delete updated.Description;
     delete updated.category;
+    delete updated.Category;
     delete updated.categories;
+    delete updated.Categories;
     delete updated.employeeCode;
+    delete updated.EmployeeCode;
+    delete updated.employee_code;
+    delete updated['Employee Code'];
     delete updated.priority;
+    delete updated.Priority;
     delete updated.rejectedAccepted;
+    delete updated.RejectedAccepted;
     delete updated.rejectAccepted;
+    delete updated.RejectAccepted;
 
     const connected = await isDbConnected();
     if (connected) {

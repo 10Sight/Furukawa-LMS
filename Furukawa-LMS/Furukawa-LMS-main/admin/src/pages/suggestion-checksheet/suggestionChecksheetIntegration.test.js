@@ -265,3 +265,65 @@ test('24. Suggestion related Defect Prevention section with rank checkboxes (1-5
   assert.ok(detailFile.includes('isAutoBest'), 'Detail sheet must compute isAutoBest for rank 4 and 5');
   assert.ok(listFile.includes('Number(item.defectPreventionRank) === 5') && listFile.includes('Number(item.defectPreventionRank) === 4'), 'List filter must automatically include rank 4 or 5 in Best Suggestions');
 });
+
+
+test('25. SQL Server schema table script, model init, and database controller connection exist', () => {
+  const sqlScriptPath = new URL('../../../../server/scripts/create_suggestion_checksheets_table.sql', import.meta.url);
+  const dbFile = fs.readFileSync(new URL('../../../../server/db/suggestionChecksheet/suggestionChecksheetDb.js', import.meta.url), 'utf8');
+  const modelFile = fs.readFileSync(new URL('../../../../server/models/suggestionChecksheet/suggestionChecksheet.model.js', import.meta.url), 'utf8');
+  const serverIndexFile = fs.readFileSync(new URL('../../../../server/index.js', import.meta.url), 'utf8');
+
+  // Verify standalone SQL script
+  assert.ok(fs.existsSync(sqlScriptPath), 'Standalone SQL script create_suggestion_checksheets_table.sql must exist');
+  const sqlScript = fs.readFileSync(sqlScriptPath, 'utf8');
+  assert.ok(sqlScript.includes('CREATE TABLE suggestion_checksheets'), 'SQL script must define table suggestion_checksheets');
+  assert.ok(sqlScript.includes('checksheetId NVARCHAR(100) NOT NULL'), 'SQL script must define checksheetId column');
+  assert.ok(sqlScript.includes('idx_suggestion_checksheetId'), 'SQL script must define index on checksheetId');
+
+  // Verify DB table migration & init helper
+  assert.ok(dbFile.includes('initSuggestionChecksheetTables'), 'DB file must export initSuggestionChecksheetTables');
+  assert.ok(dbFile.includes('isDbConnected'), 'DB file must export isDbConnected');
+  assert.ok(dbFile.includes('CREATE TABLE suggestion_checksheets'), 'DB file must contain table creation query');
+
+  // Verify Model integration with SQL Server
+  assert.ok(modelFile.includes('initSuggestionChecksheetTables'), 'Model must call initSuggestionChecksheetTables in init()');
+  assert.ok(modelFile.includes('SELECT * FROM suggestion_checksheets'), 'Model must query SQL Server table');
+  assert.ok(modelFile.includes('INSERT INTO suggestion_checksheets'), 'Model must insert into SQL Server table');
+
+  // Verify server startup boot call
+  assert.ok(serverIndexFile.includes('SuggestionChecksheetModel.init()'), 'Server index must boot SuggestionChecksheetModel.init()');
+});
+
+test('26. SQL Server table columns (Description, Categories, Employee Code, Priority, rejectAccepted) removed and Created by added at end', () => {
+  const sqlScriptPath = new URL('../../../../server/scripts/create_suggestion_checksheets_table.sql', import.meta.url);
+  const sqlScript = fs.readFileSync(sqlScriptPath, 'utf8');
+  const dbFile = fs.readFileSync(new URL('../../../../server/db/suggestionChecksheet/suggestionChecksheetDb.js', import.meta.url), 'utf8');
+  const modelFile = fs.readFileSync(new URL('../../../../server/models/suggestionChecksheet/suggestionChecksheet.model.js', import.meta.url), 'utf8');
+  const controllerFile = fs.readFileSync(new URL('../../../../server/controllers/suggestionChecksheet/suggestionChecksheet.controller.js', import.meta.url), 'utf8');
+
+  // Verify removed columns are absent from table creation schema
+  assert.ok(!sqlScript.includes('description NVARCHAR'), 'description column must be removed from CREATE TABLE');
+  assert.ok(!sqlScript.includes('category NVARCHAR'), 'category column must be removed from CREATE TABLE');
+  assert.ok(!sqlScript.includes('employeeCode NVARCHAR'), 'employeeCode column must be removed from CREATE TABLE');
+  assert.ok(!sqlScript.includes('priority NVARCHAR'), 'priority column must be removed from CREATE TABLE');
+  assert.ok(!sqlScript.includes('rejectedAccepted NVARCHAR'), 'rejectedAccepted column must be removed from CREATE TABLE');
+
+  // Verify createdBy is added at the end of the table
+  assert.ok(sqlScript.includes('createdBy NVARCHAR(255) NULL'), 'createdBy column must be added at end of CREATE TABLE');
+  assert.ok(sqlScript.includes('ALTER TABLE suggestion_checksheets DROP COLUMN description'), 'Migration must drop description');
+  assert.ok(sqlScript.includes('ALTER TABLE suggestion_checksheets DROP COLUMN priority'), 'Migration must drop priority');
+  assert.ok(sqlScript.includes('ALTER TABLE suggestion_checksheets DROP COLUMN rejectedAccepted'), 'Migration must drop rejectedAccepted');
+
+  // Verify DB initialization migrations
+  assert.ok(dbFile.includes('ALTER TABLE suggestion_checksheets DROP COLUMN description'), 'DB migration must drop description');
+  assert.ok(dbFile.includes("ensureColumnExists('suggestion_checksheets', 'createdBy'"), 'DB migration must ensure createdBy column exists');
+
+  // Verify Model queries and inserts handle createdBy and omit removed columns
+  assert.ok(modelFile.includes('createdBy'), 'Model must handle createdBy');
+  assert.ok(!modelFile.includes('description,'), 'Model INSERT must not include description');
+  assert.ok(!modelFile.includes('priority,'), 'Model INSERT must not include priority');
+
+  // Verify Controller sanitizes removed columns and resolves createdBy
+  assert.ok(controllerFile.includes('sanitizeChecksheetPayload'), 'Controller must sanitize checksheet payload');
+  assert.ok(controllerFile.includes('resolveCreatorName') || controllerFile.includes('createdBy'), 'Controller must resolve createdBy');
+});

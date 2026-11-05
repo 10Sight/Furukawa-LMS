@@ -98,6 +98,7 @@ import suggestionChecksheetRoutes from "./routes/suggestionChecksheet/suggestion
 import lpaRoutes from "./routes/lpa/lpa.routes.js";
 import PDCAModel from "./models/pdca/pdca.model.js";
 import LpaRecord from "./models/lpa/lpaRecord.model.js";
+import SuggestionChecksheetModel from "./models/suggestionChecksheet/suggestionChecksheet.model.js";
 import RevisionRecord from "./models/revisionRecord.model.js";
 import RevisionHistory from "./models/revisionHistory.model.js";
 // import cleanupOldFiles from './scripts/cleanup.js';
@@ -609,6 +610,7 @@ const startServer = async () => {
                 await import("./models/designationShutter.model.js").then(m => m.default.init());
                 await DojoStageHistory.init();
                 await LpaRecord.init().catch(err => logger.error("LPA table init error:", err));
+                await SuggestionChecksheetModel.init().catch(err => logger.error("Suggestion Checksheet table init error:", err));
                 // Daily HR Meeting (Daily Manpower Report) tables
                 await import("./models/dailyManpowerConfig.model.js").then(m => m.default.init()).catch(err => logger.error("Daily HR Meeting config table init error:", err));
                 await import("./models/dailyManpowerManualEntry.model.js").then(m => m.default.init()).catch(err => logger.error("Daily HR Meeting manual entry table init error:", err));

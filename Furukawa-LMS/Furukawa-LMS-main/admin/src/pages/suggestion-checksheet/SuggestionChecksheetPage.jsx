@@ -18,10 +18,21 @@ export default function SuggestionChecksheetPage() {
   const outletCtx = useOutletContext() || {};
   const { setIsFormView } = outletCtx;
 
+  const authUser = useSelector((state) => state.auth?.user);
+  const isAdmin = Boolean(
+    authUser?.isAdmin ||
+    authUser?.role === 'ADMIN' ||
+    authUser?.role === 'SUPERADMIN' ||
+    authUser?.isSuperAdmin ||
+    authUser?.customRole?.permissions?.includes('admin') ||
+    authUser?.customRoleName?.toLowerCase()?.includes('admin')
+  );
+
   const [records, setRecords] = useState(() => getStoredSuggestionChecksheets());
   const [selectedItem, setSelectedItem] = useState(null);
   const [currentPage, setCurrentPage] = useState('list'); // 'list' | 'detail'
-  const [selectedUnit, setSelectedUnit] = useState(null);
+  const [selectedUnit, setSelectedUnit] = useState('Bawal'); // Default unit is Bawal
+  const [activeTab, setActiveTab] = useState('ALL'); // 'ALL' | 'BEST'
 
   // RTK Query endpoints connected to database
   const { data: apiResponse, refetch } = useGetSuggestionChecksheetsQuery();
@@ -90,6 +101,17 @@ export default function SuggestionChecksheetPage() {
     }
   };
 
+  // Toggle Best Suggestion (Admin only)
+  const handleToggleBest = async (item) => {
+    if (!isAdmin) return;
+    const newIsBest = !item.isBest;
+    const updatedItem = {
+      ...item,
+      isBest: newIsBest,
+    };
+    await handleSaveChecksheet(updatedItem);
+  };
+
   // Back to list
   const handleBackToList = () => {
     setCurrentPage('list');
@@ -98,6 +120,28 @@ export default function SuggestionChecksheetPage() {
       setIsFormView(false);
     }
   };
+
+  // Check if current user is creator of the selected sheet
+  const isCreatorOfItem = (item) => {
+    if (!authUser || !item) return false;
+    const uFull = (authUser.fullName || '').toLowerCase().trim();
+    const uName = (authUser.name || '').toLowerCase().trim();
+    const uEmp = (authUser.empId || authUser.employeeId || '').toLowerCase().trim();
+    const uUser = (authUser.userName || '').toLowerCase().trim();
+    const subBy = (item.submittedBy || '').toLowerCase();
+
+    return Boolean(
+      (uFull && subBy.includes(uFull)) ||
+      (uName && subBy.includes(uName)) ||
+      (uEmp && subBy.includes(uEmp)) ||
+      (uUser && subBy.includes(uUser)) ||
+      (authUser.id && item.createdById === authUser.id)
+    );
+  };
+
+  // Edit access rule:
+  // In Best Suggestions page (or if item.isBest): only admin and sheet creator can edit; others can view only
+  const isReadOnly = Boolean(selectedItem?.isBest && !isAdmin && !isCreatorOfItem(selectedItem));
 
   // Cleanup on unmount
   useEffect(() => {
@@ -117,6 +161,7 @@ export default function SuggestionChecksheetPage() {
       {currentPage === 'detail' && selectedItem ? (
         <SuggestionChecksheetDetail
           item={selectedItem}
+          isReadOnly={isReadOnly}
           onBack={handleBackToList}
           onSave={handleSaveChecksheet}
         />
@@ -127,6 +172,10 @@ export default function SuggestionChecksheetPage() {
           onOpenChecksheet={handleOpenChecksheet}
           selectedUnit={selectedUnit}
           setSelectedUnit={setSelectedUnit}
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          isAdmin={isAdmin}
+          onToggleBest={handleToggleBest}
         />
       )}
     </div>

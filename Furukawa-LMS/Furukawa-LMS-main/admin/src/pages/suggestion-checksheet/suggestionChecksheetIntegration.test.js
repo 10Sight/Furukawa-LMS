@@ -70,11 +70,12 @@ test('6. Page wrapper enables vertical scrolling when viewing detail format', ()
   );
 });
 
-test('7. Unit dropdown in SuggestionChecksheetList has robust outside-click handler', () => {
+test('7. Unit dropdown in SuggestionChecksheetList defaults to Bawal', () => {
   const listFile = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetList.jsx', import.meta.url), 'utf8');
+  const pageFile = fs.readFileSync(new URL('./SuggestionChecksheetPage.jsx', import.meta.url), 'utf8');
   assert.ok(
-    listFile.includes('unitDropdownRef'),
-    'Unit dropdown must use ref for outside-click detection'
+    pageFile.includes("useState('Bawal')"),
+    'Default unit must be initialized to Bawal'
   );
   assert.ok(
     listFile.includes("handleSelectUnit('Bawal')") && listFile.includes("handleSelectUnit('Gujrat')"),
@@ -124,15 +125,15 @@ test('9. Create modal contains only Plant Unit, Employee Name/ID, Dept, Section,
   assert.ok(!addModalFile.includes('Problem Description / Details'), 'Problem Description must be removed');
 });
 
-test('10. Second row of checksheet format displays selected Unit', () => {
+test('10. Third row of checksheet format displays selected Unit text on the left', () => {
   const detailFile = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetDetail.jsx', import.meta.url), 'utf8');
   assert.ok(
-    detailFile.includes('Row 2: SUGGESTION FORMAT & UNIT'),
-    'Detail format must have Row 2 with SUGGESTION FORMAT & UNIT'
+    detailFile.includes('Row 3: UNIT (Left - Placed in 3rd row as requested)'),
+    'Detail format must place UNIT in row 3 on the left'
   );
   assert.ok(
     detailFile.includes('<span className="font-bold mr-1.5">UNIT:-</span>'),
-    'Must display UNIT:- label in Row 2'
+    'Must display UNIT:- label in Row 3'
   );
 });
 
@@ -157,20 +158,21 @@ test('12. Backend API routes and persistent storage exist for Suggestion Checksh
   assert.ok(fs.existsSync(dbPath), 'DB store file must exist');
 });
 
-test('13. Accepted/Rejected freezing logic and auto-fill line leader sign', () => {
+test('13. Accepted/Not Feasible freezing logic and auto-fill line leader sign', () => {
   const detailFile = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetDetail.jsx', import.meta.url), 'utf8');
   assert.ok(detailFile.includes("const isAccepted = formData.rejectedAccepted === 'ACCEPTED'"), 'Tracks isAccepted');
-  assert.ok(detailFile.includes("const isRejected = formData.rejectedAccepted === 'REJECTED'"), 'Tracks isRejected');
-  assert.ok(detailFile.includes('disabled={isAccepted}'), 'Reason if Rejected disabled when Accepted');
-  assert.ok(detailFile.includes('disabled={isRejected}'), 'Implementation Status disabled when Rejected');
+  assert.ok(detailFile.includes('isNotFeasible'), 'Tracks isNotFeasible');
+  assert.ok(detailFile.includes('disabled={isAccepted'), 'Reason disabled when Accepted');
+  assert.ok(detailFile.includes('disabled={isNotFeasible'), 'Implementation Status disabled when Not Feasible');
   assert.ok(detailFile.includes('handleDateOfImplementationChange'), 'Date of Implementation handler present');
   assert.ok(detailFile.includes('lineLeaderSign2: val ?'), 'Auto-fills sign 2 on Date of Implementation');
 });
 
-test('14. Mandatory validation rules and calendar inputs in Detail sheet', () => {
+test('14. Mandatory validation rules and calendar inputs in Detail sheet with Not Feasible', () => {
   const detailFile = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetDetail.jsx', import.meta.url), 'utf8');
   assert.ok(detailFile.includes('Implementation Status Target Date is mandatory when Suggestion is Accepted'), 'Target date mandatory validation');
-  assert.ok(detailFile.includes('Reason if Rejected is mandatory when Suggestion is Rejected'), 'Reason mandatory validation');
+  assert.ok(detailFile.includes('Reason if Not Feasible is mandatory when Suggestion is Not Feasible'), 'Reason not feasible validation');
+  assert.ok(detailFile.includes('NOT FEASIBLE / ACCEPTED'), 'Header replaces Rejected with Not Feasible');
   assert.ok(detailFile.includes('type="date"'), 'Contains native calendar date inputs');
 });
 
@@ -192,4 +194,33 @@ test('16. Add Checksheet modal contains Search Bar Dropdown for Employee Name / 
   assert.ok(addModalFile.includes('isEmployeeDropdownOpen'), 'State for dropdown toggle must exist');
   assert.ok(addModalFile.includes('Search by employee name or ID...'), 'Search input placeholder must exist');
   assert.ok(addModalFile.includes('filteredEmployeeOptions'), 'Filtered employee options computation must exist');
+});
+
+test('17. Two pages (All Suggestions & Best Suggestions) with Admin-only Best and Delete buttons', () => {
+  const listFile = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetList.jsx', import.meta.url), 'utf8');
+  assert.ok(listFile.includes('All Suggestions'), 'All Suggestions tab must exist');
+  assert.ok(listFile.includes('Best Suggestions'), 'Best Suggestions tab must exist');
+  assert.ok(listFile.includes('isAdmin &&'), 'Best and Delete actions must be restricted to admin');
+  assert.ok(listFile.includes("activeTab === 'ALL'"), 'Add checksheet must be available only in All Suggestions');
+});
+
+test('18. ID column removed from checksheet table', () => {
+  const listFile = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetList.jsx', import.meta.url), 'utf8');
+  assert.ok(!listFile.includes('<th className="pl-5 py-3 w-[140px]">ID</th>'), 'ID header must be removed');
+  assert.ok(!listFile.includes('{item.id}</td>'), 'ID cell must be removed');
+});
+
+test('19. Filter toolbar supports Department, From-To date calendars, and Status', () => {
+  const listFile = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetList.jsx', import.meta.url), 'utf8');
+  assert.ok(listFile.includes('departmentFilter'), 'Department filter state must exist');
+  assert.ok(listFile.includes('fromDate') && listFile.includes('toDate'), 'From and To date states must exist');
+  assert.ok(listFile.includes('Under Review') && listFile.includes('Approved') && listFile.includes('Implemented'), 'Status filter values must exist');
+});
+
+test('20. Best Suggestion View-only permission for non-admin and non-creator', () => {
+  const pageFile = fs.readFileSync(new URL('./SuggestionChecksheetPage.jsx', import.meta.url), 'utf8');
+  const detailFile = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetDetail.jsx', import.meta.url), 'utf8');
+  assert.ok(pageFile.includes('isReadOnly'), 'Passes isReadOnly flag to detail view');
+  assert.ok(detailFile.includes('isReadOnly'), 'Accepts isReadOnly prop');
+  assert.ok(detailFile.includes('Best Suggestion (View Only'), 'Displays view-only indicator');
 });

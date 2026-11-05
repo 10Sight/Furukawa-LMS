@@ -533,20 +533,21 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave, isRea
               />
             </div>
 
-            {/* Right Column: Suggestion related Defect Prevention Table */}
+            {/* Right Column: Suggestion related Defect Prevention Table (Increased Font Size) */}
             <div
-              className="w-full lg:w-[410px] xl:w-[440px] shrink-0 bg-white flex flex-col justify-start p-2"
-              style={{ minWidth: '320px' }}
+              className="w-full lg:w-[460px] xl:w-[500px] shrink-0 bg-white flex flex-col justify-start p-2"
+              style={{ minWidth: '350px' }}
             >
               <table
-                className="w-full border-collapse border border-black text-black text-xs md:text-sm"
+                className="w-full border-collapse border border-black text-black"
                 style={{ fontFamily: "'Times New Roman', Times, serif" }}
               >
                 <thead>
                   <tr className="border-b border-black bg-white">
                     <th
                       colSpan="2"
-                      className="py-1.5 px-3 text-center font-bold text-xs md:text-sm tracking-wide text-black"
+                      className="py-2.5 px-3 text-center font-bold text-base md:text-lg tracking-wide text-black"
+                      style={{ fontSize: '1.15rem' }}
                     >
                       Suggestion related Defect Prevention
                     </th>
@@ -570,13 +571,16 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave, isRea
                         } ${isReadOnly ? 'cursor-default' : 'cursor-pointer'}`}
                         onClick={() => !isReadOnly && handleSelectRank(row.rank)}
                       >
-                        {/* Description (Read-Only / Non-editable) */}
-                        <td className="py-2 px-3 border-r border-black font-semibold text-slate-900 text-xs md:text-[13px] leading-tight select-none">
-                          <div className="flex items-center justify-between">
+                        {/* Description (Read-Only / Non-editable - Increased Font Size) */}
+                        <td
+                          className="py-2.5 px-3.5 border-r border-black font-bold text-black text-sm md:text-base leading-snug select-none"
+                          style={{ fontSize: '1.05rem' }}
+                        >
+                          <div className="flex items-center justify-between gap-2">
                             <span>{row.label}</span>
                             {isBestRank && (
                               <span
-                                className="ml-1.5 text-[9px] font-bold text-amber-800 bg-amber-100 px-1 py-0.2 rounded"
+                                className="ml-1 text-[10px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded uppercase tracking-wide shrink-0"
                                 title="Rank 4 and 5 automatically classify as Best Suggestion"
                               >
                                 Best
@@ -585,21 +589,24 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave, isRea
                           </div>
                         </td>
 
-                        {/* Rank Checkbox + Number */}
+                        {/* Rank Checkbox + Number (Increased Font Size & Icon Size) */}
                         <td
-                          className="py-2 px-3 text-center align-middle w-16 select-none"
-                          style={{ minWidth: '55px' }}
+                          className="py-2.5 px-3 text-center align-middle w-20 select-none"
+                          style={{ minWidth: '70px' }}
                         >
-                          <div className="flex items-center justify-center gap-1.5">
+                          <div className="flex items-center justify-center gap-2">
                             <input
                               type="checkbox"
                               disabled={isReadOnly}
                               checked={isChecked}
                               onChange={() => handleSelectRank(row.rank)}
                               onClick={(e) => e.stopPropagation()}
-                              className="w-4 h-4 rounded text-blue-600 focus:ring-0 cursor-pointer accent-blue-600"
+                              className="w-5 h-5 rounded text-blue-600 focus:ring-0 cursor-pointer accent-blue-600"
                             />
-                            <span className="font-bold text-sm md:text-base text-black">
+                            <span
+                              className="font-bold text-base md:text-xl text-black"
+                              style={{ fontSize: '1.25rem' }}
+                            >
                               {row.rank}
                             </span>
                           </div>
@@ -611,7 +618,7 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave, isRea
               </table>
 
               {/* Informative indicator below table */}
-              <div className="mt-1.5 flex items-center justify-between text-[10px] text-slate-500 italic px-1">
+              <div className="mt-2 flex items-center justify-between text-xs text-slate-500 italic px-1">
                 <span>Ranks 4 and 5 auto-fetch to Best Suggestions</span>
                 {formData.defectPreventionRank ? (
                   <span className="font-bold text-blue-700 not-italic">

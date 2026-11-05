@@ -60,6 +60,7 @@ import {
     IconShieldCheck,
 } from "@tabler/icons-react";
 import { displayDate } from "@/utils/dateUtils.js";
+import { formatTimeTaken } from "@/utils/formatters.js";
 import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/common/ui/alert.jsx";
 
@@ -955,7 +956,7 @@ const StudentDetail = () => {
                                     <TableHeader>
                                         <TableRow>
                                             <TableHead>Quiz</TableHead>
-                                            <TableHead>Course</TableHead>
+                                            <TableHead>Conducted By</TableHead>
                                             <TableHead>Attempted</TableHead>
                                             <TableHead>Score</TableHead>
                                             <TableHead>Result</TableHead>
@@ -970,7 +971,7 @@ const StudentDetail = () => {
                                                     {attempt.quiz?.title || "Quiz"}
                                                 </TableCell>
                                                 <TableCell>
-                                                    {attempt.quiz?.course?.title || "Unknown Course"}
+                                                    {attempt.conductedBy || attempt.quiz?.conductedBy || "—"}
                                                 </TableCell>
                                                 <TableCell>
                                                     {new Date(attempt.attemptedAt).toLocaleDateString()}
@@ -984,7 +985,7 @@ const StudentDetail = () => {
                                                     </Badge>
                                                 </TableCell>
                                                 <TableCell>
-                                                    {attempt.timeTaken ? `${attempt.timeTaken} min` : "N/A"}
+                                                    {formatTimeTaken(attempt.timeTaken)}
                                                 </TableCell>
                                                 <TableCell className="text-right">
                                                     <Button variant="ghost" size="sm" onClick={() => { setViewAttemptId(attempt._id); setAttemptModalOpen(true); }}>

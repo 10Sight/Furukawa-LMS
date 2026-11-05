@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useRef } from "react";
 import { cn } from "@/utils/classNames.js";
+import useScrollToCurrentDate from "./useScrollToCurrentDate.js";
 
 // Daily Handover Report tab: Handover Actual by section (with the vertical "Handover Plan" cell)
 // followed by Hiring Actual by shift. Both live in one table so their date columns stay aligned
@@ -38,6 +39,8 @@ export default function DailyHandoverReportSheet({ report, visibleDates, darkMod
     const size = large ? SIZES.large : SIZES.normal;
     const W_LABEL = size.label;
     const W_PLAN = size.plan;
+    const scrollRef = useRef(null);
+    useScrollToCurrentDate(scrollRef, visibleDates, large);
     const handoverRows = [
         ...report.handover.groups.flatMap((g) => [...g.rows, g.total]),
         report.handover.grandTotal,
@@ -58,11 +61,11 @@ export default function DailyHandoverReportSheet({ report, visibleDates, darkMod
     });
 
     const dateHeaders = (keyPrefix) => visibleDates.map((d) => (
-        <th key={`${keyPrefix}-${d.date}`} className={cn(cellBase, "font-bold", size.date, p.header)}>{d.date}</th>
+        <th key={`${keyPrefix}-${d.date}`} data-date={d.date} className={cn(cellBase, "font-bold", size.date, p.header)}>{d.date}</th>
     ));
 
     return (
-        <div className={cn("relative overflow-auto rounded-lg border", size.maxHeight, p.border)}>
+        <div ref={scrollRef} className={cn("relative overflow-auto rounded-lg border", size.maxHeight, p.border)}>
             <table className={cn("border-separate border-spacing-0", size.text)}>
                 <thead className="sticky top-0 z-20">
                     <tr>

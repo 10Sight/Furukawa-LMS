@@ -13,6 +13,7 @@ import { useGetLinesQuery } from "@/services/api/LineApi.js";
 import { useGetSubSectionsQuery } from "@/services/api/SubSectionApi.js";
 import { useGetActiveConfigQuery } from "@/services/api/CourseLevelConfigApi.js";
 import { useGetMonitoringAttemptsQuery } from "@/services/api/AttemptedQuizApi.js";
+import { formatTimeTaken } from "@/utils/formatters.js";
 import {
   IconClipboardList,
   IconEye,
@@ -507,7 +508,7 @@ const QuizMonitoring = () => {
                         <TableCell className="py-4 text-xs text-gray-600">
                           <div className="flex items-center gap-1">
                             <IconClock className="h-3.5 w-3.5 text-gray-400" />
-                            <span>{attempt.timeTaken ? `${Math.round(attempt.timeTaken / 60)} min` : "N/A"}</span>
+                            <span>{formatTimeTaken(attempt.timeTaken, "N/A")}</span>
                           </div>
                         </TableCell>
 

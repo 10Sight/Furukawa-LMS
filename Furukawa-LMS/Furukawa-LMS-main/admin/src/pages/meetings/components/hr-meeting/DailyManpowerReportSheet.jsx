@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useRef } from "react";
 import { cn } from "@/utils/classNames.js";
+import useScrollToCurrentDate from "./useScrollToCurrentDate.js";
 import { formatReportDate, requiredHeader } from "@/utils/dailyManpowerExcelExport.js";
 
 // Matrix view of the Daily Manpower Report: frozen Section / Indent 01 / Indent 16 columns and a
@@ -63,6 +64,8 @@ export default function DailyManpowerReportSheet({ report, visibleDates, darkMod
     const size = large ? SIZES.large : SIZES.normal;
     const W_SECTION = size.section;
     const W_REQ = size.req;
+    const scrollRef = useRef(null);
+    useScrollToCurrentDate(scrollRef, visibleDates, large);
     const latestComputed = [...report.dates].reverse().find((d) => d.computed)?.date || null;
 
     const rows = [
@@ -82,7 +85,7 @@ export default function DailyManpowerReportSheet({ report, visibleDates, darkMod
     const stickyCol = (left, width) => ({ position: "sticky", left, minWidth: width, maxWidth: width, width, zIndex: 2 });
 
     return (
-        <div className={cn("relative overflow-auto rounded-lg border", size.maxHeight, p.border)}>
+        <div ref={scrollRef} className={cn("relative overflow-auto rounded-lg border", size.maxHeight, p.border)}>
             <table className={cn("border-separate border-spacing-0", size.text)}>
                 <thead className="sticky top-0 z-20">
                     <tr>
@@ -98,6 +101,7 @@ export default function DailyManpowerReportSheet({ report, visibleDates, darkMod
                         {visibleDates.map((d) => (
                             <th
                                 key={d.date}
+                                data-date={d.date}
                                 colSpan={4}
                                 className={cn(cellBase, "font-bold underline", d.date === latestComputed ? p.latestDateHeader : p.dateHeader)}
                                 title={d.computed ? `Stored ${d.computedAt ? new Date(d.computedAt).toLocaleString() : ""} (${d.computeSource || ""})` : "Not calculated yet"}

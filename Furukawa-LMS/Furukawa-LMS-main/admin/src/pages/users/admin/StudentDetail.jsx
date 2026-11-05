@@ -81,6 +81,7 @@ import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/common/ui/alert.jsx";
 import { getMediaUrl } from "@/utils/mediaUtils.js";
 import { safeDateFormat, displayDate } from "@/utils/dateUtils.js";
+import { formatTimeTaken } from "@/utils/formatters.js";
 import axiosInstance from "@/services/requests/axiosInstance.js";
 
 const safeLocaleDate = (dateValue) => {
@@ -1822,7 +1823,7 @@ const StudentDetail = () => {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Quiz</TableHead>
-                      <TableHead>Course</TableHead>
+                      <TableHead>Conducted By</TableHead>
                       <TableHead>Attempted</TableHead>
                       <TableHead>Score</TableHead>
                       <TableHead>Result</TableHead>
@@ -1837,7 +1838,7 @@ const StudentDetail = () => {
                           {attempt.quiz?.title || "Quiz"}
                         </TableCell>
                         <TableCell>
-                          {attempt.quiz?.course?.title || "Unknown Course"}
+                          {attempt.conductedBy || attempt.quiz?.conductedBy || "—"}
                         </TableCell>
                         <TableCell>
                           {displayDate(attempt.attemptedAt)}
@@ -1851,7 +1852,7 @@ const StudentDetail = () => {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          {attempt.timeTaken ? `${attempt.timeTaken} min` : "N/A"}
+                          {formatTimeTaken(attempt.timeTaken)}
                         </TableCell>
                         <TableCell className="text-right">
                           <Button variant="ghost" size="sm" onClick={() => { setViewAttemptId(attempt._id); setAttemptModalOpen(true); }}>

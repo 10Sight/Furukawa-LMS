@@ -36,6 +36,7 @@ import axiosInstance from "@/services/requests/axiosInstance.js";
 import SixteenDayMonitoringSheet from "@/components/common/training/SixteenDayMonitoringSheet.jsx";
 import MenteeFeedbackMonitoringSheet from "@/components/common/training/MenteeFeedbackMonitoringSheet.jsx";
 import { displayDate, safeDateFormat } from "@/utils/dateUtils.js";
+import { formatTimeTaken } from "@/utils/formatters.js";
 
 const DojoCandidateDetail = () => {
   const { studentId } = useParams();
@@ -452,7 +453,7 @@ const DojoCandidateDetail = () => {
                         <TableCell className="text-xs text-slate-500">
                           <span className="flex items-center gap-1">
                             <IconClock className="h-3 w-3" />
-                            {attempt.timeTaken ? `${attempt.timeTaken} min` : "—"}
+                            {formatTimeTaken(attempt.timeTaken)}
                           </span>
                         </TableCell>
                         <TableCell className="text-right">

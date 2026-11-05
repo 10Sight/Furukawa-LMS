@@ -96,19 +96,14 @@ export async function initSuggestionChecksheetTables() {
           lineArea NVARCHAR(255) NULL,
           lineAreaId NVARCHAR(100) NULL,
           title NVARCHAR(500) NULL,
-          description NVARCHAR(MAX) NULL,
           problemText NVARCHAR(MAX) NULL,
           suggestionText NVARCHAR(MAX) NULL,
-          category NVARCHAR(100) NULL,
           submittedBy NVARCHAR(255) NULL,
-          employeeCode NVARCHAR(100) NULL,
           employeeName NVARCHAR(255) NULL,
           status NVARCHAR(100) NOT NULL DEFAULT 'Pending',
-          priority NVARCHAR(50) NOT NULL DEFAULT 'Medium',
           isBlank BIT NOT NULL DEFAULT 1,
           isBest BIT NOT NULL DEFAULT 0,
           defectPreventionRank INT NULL,
-          rejectedAccepted NVARCHAR(100) NULL,
           reasonIfRejected NVARCHAR(MAX) NULL,
           targetDate NVARCHAR(50) NULL,
           dateOfImplementation NVARCHAR(50) NULL,
@@ -126,7 +121,8 @@ export async function initSuggestionChecksheetTables() {
           category5S BIT NOT NULL DEFAULT 0,
           isDeleted BIT NOT NULL DEFAULT 0,
           createdAt DATETIME NOT NULL DEFAULT GETDATE(),
-          updatedAt DATETIME NOT NULL DEFAULT GETDATE()
+          updatedAt DATETIME NOT NULL DEFAULT GETDATE(),
+          createdBy NVARCHAR(255) NULL
         )
       `);
       logger.info("Successfully created 'suggestion_checksheets' table in SQL Server.");
@@ -149,11 +145,43 @@ export async function initSuggestionChecksheetTables() {
         'CREATE INDEX idx_suggestion_isBest ON suggestion_checksheets(isBest)'
       );
     } else {
-      // Ensure defectPreventionRank and other newly added columns exist
+      // 1. Remove deprecated columns requested: description, category/categories, employeeCode, priority, rejectedAccepted/rejectAccepted
+      await executeQuery(`
+        IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'description')
+          ALTER TABLE suggestion_checksheets DROP COLUMN description;
+        IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'category')
+          ALTER TABLE suggestion_checksheets DROP COLUMN category;
+        IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'categories')
+          ALTER TABLE suggestion_checksheets DROP COLUMN categories;
+        IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'employeeCode')
+          ALTER TABLE suggestion_checksheets DROP COLUMN employeeCode;
+        IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'rejectedAccepted')
+          ALTER TABLE suggestion_checksheets DROP COLUMN rejectedAccepted;
+        IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'rejectAccepted')
+          ALTER TABLE suggestion_checksheets DROP COLUMN rejectAccepted;
+      `).catch(() => {});
+
+      // Priority column may have default constraint
+      await executeQuery(`
+        IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'priority')
+        BEGIN
+          DECLARE @priConstraint NVARCHAR(200);
+          SELECT @priConstraint = d.name 
+          FROM sys.default_constraints d 
+          JOIN sys.columns c ON d.parent_object_id = c.object_id AND d.parent_column_id = c.column_id 
+          WHERE d.parent_object_id = OBJECT_ID('suggestion_checksheets') AND c.name = 'priority';
+          IF @priConstraint IS NOT NULL
+            EXEC('ALTER TABLE suggestion_checksheets DROP CONSTRAINT ' + @priConstraint);
+          ALTER TABLE suggestion_checksheets DROP COLUMN priority;
+        END
+      `).catch(() => {});
+
+      // 2. Ensure defectPreventionRank, isBest, problemText, suggestionText, and createdBy (at the end) exist
       await migrationHelper.ensureColumnExists('suggestion_checksheets', 'defectPreventionRank', 'INT NULL');
       await migrationHelper.ensureColumnExists('suggestion_checksheets', 'isBest', 'BIT NOT NULL DEFAULT 0');
       await migrationHelper.ensureColumnExists('suggestion_checksheets', 'problemText', 'NVARCHAR(MAX) NULL');
       await migrationHelper.ensureColumnExists('suggestion_checksheets', 'suggestionText', 'NVARCHAR(MAX) NULL');
+      await migrationHelper.ensureColumnExists('suggestion_checksheets', 'createdBy', 'NVARCHAR(255) NULL');
     }
 
     // Seed existing disk store records into SQL table if not already present
@@ -182,16 +210,16 @@ async function seedJsonStoreToSql() {
         await executeQuery(`
           INSERT INTO suggestion_checksheets (
             checksheetId, date, unit, department, departmentId, section, sectionId, lineArea, lineAreaId,
-            title, description, problemText, suggestionText, category, submittedBy, employeeCode, employeeName,
-            status, priority, isBlank, isBest, defectPreventionRank, rejectedAccepted, reasonIfRejected,
+            title, problemText, suggestionText, submittedBy, employeeName,
+            status, isBlank, isBest, defectPreventionRank, reasonIfRejected,
             targetDate, dateOfImplementation, lineLeaderSign1, lineLeaderSign2, approvalDate, costSaving, benefitDetails,
-            categoryP, categoryQ, categoryC, categoryD, categoryM, categoryS, category5S, isDeleted
+            categoryP, categoryQ, categoryC, categoryD, categoryM, categoryS, category5S, isDeleted, createdBy
           ) VALUES (
             ?, ?, ?, ?, ?, ?, ?, ?, ?,
-            ?, ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?,
             ?, ?, ?, ?, ?, ?, ?,
-            ?, ?, ?, ?, ?, ?, ?,
-            ?, ?, ?, ?, ?, ?, ?, 0
+            ?, ?, ?, ?, ?, ?, ?, 0, ?
           )
         `, [
           rec.id,
@@ -204,19 +232,14 @@ async function seedJsonStoreToSql() {
           rec.lineArea || null,
           rec.lineAreaId || null,
           rec.title || null,
-          rec.description || null,
           rec.problemText || null,
           rec.suggestionText || null,
-          rec.category || null,
           rec.submittedBy || null,
-          rec.employeeCode || null,
           rec.employeeName || null,
           rec.status || 'Pending',
-          rec.priority || 'Medium',
           rec.isBlank ? 1 : 0,
           rec.isBest ? 1 : 0,
           rec.defectPreventionRank || null,
-          rec.rejectedAccepted || null,
           rec.reasonIfRejected || null,
           rec.targetDate || null,
           rec.dateOfImplementation || null,
@@ -232,6 +255,7 @@ async function seedJsonStoreToSql() {
           rec.categoryM ? 1 : 0,
           rec.categoryS ? 1 : 0,
           rec.category5S ? 1 : 0,
+          rec.createdBy || rec.submittedBy || rec.employeeName || null,
         ]);
         logger.info(`Seeded suggestion checksheet ${rec.id} into SQL Server.`);
       }

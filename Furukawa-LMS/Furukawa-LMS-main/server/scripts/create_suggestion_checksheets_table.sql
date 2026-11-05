@@ -18,19 +18,14 @@ BEGIN
         lineArea NVARCHAR(255) NULL,
         lineAreaId NVARCHAR(100) NULL,
         title NVARCHAR(500) NULL,
-        description NVARCHAR(MAX) NULL,
         problemText NVARCHAR(MAX) NULL,
         suggestionText NVARCHAR(MAX) NULL,
-        category NVARCHAR(100) NULL,
         submittedBy NVARCHAR(255) NULL,
-        employeeCode NVARCHAR(100) NULL,
         employeeName NVARCHAR(255) NULL,
         status NVARCHAR(100) NOT NULL DEFAULT 'Pending',
-        priority NVARCHAR(50) NOT NULL DEFAULT 'Medium',
         isBlank BIT NOT NULL DEFAULT 1,
         isBest BIT NOT NULL DEFAULT 0,
         defectPreventionRank INT NULL,
-        rejectedAccepted NVARCHAR(100) NULL,
         reasonIfRejected NVARCHAR(MAX) NULL,
         targetDate NVARCHAR(50) NULL,
         dateOfImplementation NVARCHAR(50) NULL,
@@ -48,14 +43,75 @@ BEGIN
         category5S BIT NOT NULL DEFAULT 0,
         isDeleted BIT NOT NULL DEFAULT 0,
         createdAt DATETIME NOT NULL DEFAULT GETDATE(),
-        updatedAt DATETIME NOT NULL DEFAULT GETDATE()
+        updatedAt DATETIME NOT NULL DEFAULT GETDATE(),
+        createdBy NVARCHAR(255) NULL
     );
 
     PRINT 'Created table suggestion_checksheets successfully.';
 END
 ELSE
 BEGIN
-    PRINT 'Table suggestion_checksheets already exists.';
+    PRINT 'Table suggestion_checksheets already exists. Applying schema updates...';
+
+    -- 1. Remove Description
+    IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'description')
+    BEGIN
+        ALTER TABLE suggestion_checksheets DROP COLUMN description;
+        PRINT 'Removed column description.';
+    END
+
+    -- 2. Remove Categories / Category
+    IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'category')
+    BEGIN
+        ALTER TABLE suggestion_checksheets DROP COLUMN category;
+        PRINT 'Removed column category.';
+    END
+    IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'categories')
+    BEGIN
+        ALTER TABLE suggestion_checksheets DROP COLUMN categories;
+        PRINT 'Removed column categories.';
+    END
+
+    -- 3. Remove Employee Code
+    IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'employeeCode')
+    BEGIN
+        ALTER TABLE suggestion_checksheets DROP COLUMN employeeCode;
+        PRINT 'Removed column employeeCode.';
+    END
+
+    -- 4. Remove Priority (drop default constraint if present)
+    IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'priority')
+    BEGIN
+        DECLARE @priConstraint NVARCHAR(200);
+        SELECT @priConstraint = d.name 
+        FROM sys.default_constraints d 
+        JOIN sys.columns c ON d.parent_object_id = c.object_id AND d.parent_column_id = c.column_id 
+        WHERE d.parent_object_id = OBJECT_ID('suggestion_checksheets') AND c.name = 'priority';
+        IF @priConstraint IS NOT NULL
+            EXEC('ALTER TABLE suggestion_checksheets DROP CONSTRAINT ' + @priConstraint);
+
+        ALTER TABLE suggestion_checksheets DROP COLUMN priority;
+        PRINT 'Removed column priority.';
+    END
+
+    -- 5. Remove rejectAccepted / rejectedAccepted
+    IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'rejectedAccepted')
+    BEGIN
+        ALTER TABLE suggestion_checksheets DROP COLUMN rejectedAccepted;
+        PRINT 'Removed column rejectedAccepted.';
+    END
+    IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'rejectAccepted')
+    BEGIN
+        ALTER TABLE suggestion_checksheets DROP COLUMN rejectAccepted;
+        PRINT 'Removed column rejectAccepted.';
+    END
+
+    -- 6. Add Created by at the end of the table
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'createdBy')
+    BEGIN
+        ALTER TABLE suggestion_checksheets ADD createdBy NVARCHAR(255) NULL;
+        PRINT 'Added column createdBy at the end of suggestion_checksheets.';
+    END
 END
 GO
 
@@ -90,4 +146,3 @@ BEGIN
     PRINT 'Created index idx_suggestion_defectRank.';
 END
 GO
-

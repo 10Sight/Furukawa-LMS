@@ -12,6 +12,7 @@ function mapSqlRowToChecksheet(row) {
   return {
     ...row,
     id: row.checksheetId || `SC-${row.id}`,
+    createdBy: row.createdBy || row.submittedBy || '',
     isBlank: Boolean(row.isBlank),
     isBest: Boolean(row.isBest),
     defectPreventionRank: row.defectPreventionRank !== null ? Number(row.defectPreventionRank) : null,
@@ -47,13 +48,13 @@ class SuggestionChecksheetModel {
         }
 
         if (status && status !== "All") {
-          sql += ` AND (status = ? OR rejectedAccepted = ?)`;
-          params.push(status, status);
+          sql += ` AND status = ?`;
+          params.push(status);
         }
 
         if (search && search.trim()) {
           const q = `%${search.trim()}%`;
-          sql += ` AND (title LIKE ? OR description LIKE ? OR submittedBy LIKE ? OR checksheetId LIKE ? OR department LIKE ? OR section LIKE ?)`;
+          sql += ` AND (title LIKE ? OR submittedBy LIKE ? OR createdBy LIKE ? OR checksheetId LIKE ? OR department LIKE ? OR section LIKE ?)`;
           params.push(q, q, q, q, q, q);
         }
 
@@ -76,15 +77,15 @@ class SuggestionChecksheetModel {
     }
 
     if (status && status !== "All") {
-      records = records.filter((r) => r.status === status || r.rejectedAccepted === status);
+      records = records.filter((r) => r.status === status);
     }
 
     if (search && search.trim()) {
       const q = search.trim().toLowerCase();
       records = records.filter((r) =>
         (r.title || "").toLowerCase().includes(q) ||
-        (r.description || "").toLowerCase().includes(q) ||
         (r.submittedBy || "").toLowerCase().includes(q) ||
+        (r.createdBy || "").toLowerCase().includes(q) ||
         (r.id || "").toLowerCase().includes(q) ||
         (r.department || "").toLowerCase().includes(q) ||
         (r.section || "").toLowerCase().includes(q)
@@ -121,9 +122,19 @@ class SuggestionChecksheetModel {
     const newRecord = {
       ...data,
       id: newId,
+      createdBy: data.createdBy || data.submittedBy || data.employeeName || 'System User',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
+
+    // Remove deprecated columns
+    delete newRecord.description;
+    delete newRecord.category;
+    delete newRecord.categories;
+    delete newRecord.employeeCode;
+    delete newRecord.priority;
+    delete newRecord.rejectedAccepted;
+    delete newRecord.rejectAccepted;
 
     const connected = await isDbConnected();
     if (connected) {
@@ -131,16 +142,16 @@ class SuggestionChecksheetModel {
         await executeQuery(`
           INSERT INTO suggestion_checksheets (
             checksheetId, date, unit, department, departmentId, section, sectionId, lineArea, lineAreaId,
-            title, description, problemText, suggestionText, category, submittedBy, employeeCode, employeeName,
-            status, priority, isBlank, isBest, defectPreventionRank, rejectedAccepted, reasonIfRejected,
+            title, problemText, suggestionText, submittedBy, employeeName,
+            status, isBlank, isBest, defectPreventionRank, reasonIfRejected,
             targetDate, dateOfImplementation, lineLeaderSign1, lineLeaderSign2, approvalDate, costSaving, benefitDetails,
-            categoryP, categoryQ, categoryC, categoryD, categoryM, categoryS, category5S, isDeleted
+            categoryP, categoryQ, categoryC, categoryD, categoryM, categoryS, category5S, isDeleted, createdBy
           ) VALUES (
             ?, ?, ?, ?, ?, ?, ?, ?, ?,
-            ?, ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?,
             ?, ?, ?, ?, ?, ?, ?,
-            ?, ?, ?, ?, ?, ?, ?,
-            ?, ?, ?, ?, ?, ?, ?, 0
+            ?, ?, ?, ?, ?, ?, ?, 0, ?
           )
         `, [
           newId,
@@ -153,19 +164,14 @@ class SuggestionChecksheetModel {
           newRecord.lineArea || null,
           newRecord.lineAreaId || null,
           newRecord.title || null,
-          newRecord.description || null,
           newRecord.problemText || null,
           newRecord.suggestionText || null,
-          newRecord.category || null,
           newRecord.submittedBy || null,
-          newRecord.employeeCode || null,
           newRecord.employeeName || null,
           newRecord.status || 'Pending',
-          newRecord.priority || 'Medium',
           newRecord.isBlank ? 1 : 0,
           newRecord.isBest ? 1 : 0,
           newRecord.defectPreventionRank || null,
-          newRecord.rejectedAccepted || null,
           newRecord.reasonIfRejected || null,
           newRecord.targetDate || null,
           newRecord.dateOfImplementation || null,
@@ -181,6 +187,7 @@ class SuggestionChecksheetModel {
           newRecord.categoryM ? 1 : 0,
           newRecord.categoryS ? 1 : 0,
           newRecord.category5S ? 1 : 0,
+          newRecord.createdBy || null,
         ]);
         logger.info(`Inserted Suggestion Checksheet into SQL Server: ${newId}`);
       } catch (err) {
@@ -203,6 +210,15 @@ class SuggestionChecksheetModel {
       updatedAt: new Date().toISOString(),
     };
 
+    // Remove deprecated columns
+    delete updated.description;
+    delete updated.category;
+    delete updated.categories;
+    delete updated.employeeCode;
+    delete updated.priority;
+    delete updated.rejectedAccepted;
+    delete updated.rejectAccepted;
+
     const connected = await isDbConnected();
     if (connected) {
       try {
@@ -214,18 +230,14 @@ class SuggestionChecksheetModel {
             section = ?,
             lineArea = ?,
             title = ?,
-            description = ?,
             problemText = ?,
             suggestionText = ?,
-            category = ?,
             submittedBy = ?,
             employeeName = ?,
             status = ?,
-            priority = ?,
             isBlank = ?,
             isBest = ?,
             defectPreventionRank = ?,
-            rejectedAccepted = ?,
             reasonIfRejected = ?,
             targetDate = ?,
             dateOfImplementation = ?,
@@ -241,6 +253,7 @@ class SuggestionChecksheetModel {
             categoryM = ?,
             categoryS = ?,
             category5S = ?,
+            createdBy = COALESCE(?, createdBy),
             updatedAt = GETDATE()
           WHERE checksheetId = ? OR CAST(id AS NVARCHAR(100)) = ?
         `, [
@@ -250,18 +263,14 @@ class SuggestionChecksheetModel {
           updated.section || null,
           updated.lineArea || null,
           updated.title || null,
-          updated.description || null,
           updated.problemText || null,
           updated.suggestionText || null,
-          updated.category || null,
           updated.submittedBy || null,
           updated.employeeName || null,
           updated.status || 'Pending',
-          updated.priority || 'Medium',
           updated.isBlank ? 1 : 0,
           updated.isBest ? 1 : 0,
           updated.defectPreventionRank || null,
-          updated.rejectedAccepted || null,
           updated.reasonIfRejected || null,
           updated.targetDate || null,
           updated.dateOfImplementation || null,
@@ -277,11 +286,15 @@ class SuggestionChecksheetModel {
           updated.categoryM ? 1 : 0,
           updated.categoryS ? 1 : 0,
           updated.category5S ? 1 : 0,
+          updated.createdBy || null,
           id,
           id,
         ]);
         logger.info(`Updated Suggestion Checksheet in SQL Server: ${id}`);
       } catch (err) {
+        logger.error("Failed updating checksheet in SQL Server:", err.message);
+      }
+    }
         logger.error("Failed updating checksheet in SQL Server:", err.message);
       }
     }

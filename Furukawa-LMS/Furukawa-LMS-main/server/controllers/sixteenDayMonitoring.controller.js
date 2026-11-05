@@ -17,6 +17,7 @@ import { executeQuery } from "../db/mssqlHelper.js";
 import logAudit from "../utils/auditLogger.js";
 import RevisionRecordService from "../services/revisionRecord.service.js";
 import { getNextCalendarDayMidnightIST } from "../utils/istDate.util.js";
+import { resolveLeftAssociateSave } from "../utils/sixteenDayLeftAssociate.util.js";
 
 // A signature is "validly signed" when it's filled and wasn't a rejection —
 // this is the same notion of validity the client gates its sign-off buttons on.
@@ -442,29 +443,19 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
         sheet = await SixteenDayMonitoring.findByStudentId(sid);
     }
 
-    // LEFT associates: pin the performance data and header fields to their persisted
-    // values server-side, regardless of what the client sends. Only the comment, the
-    // signature/approval fields and the submission status may change. This can't be
+    // LEFT associates: the performance grid is pinned to its persisted values server-side
+    // (only the comment may change), Employee Code and Start Date never change, and header
+    // details may change only for users allowed to edit LEFT headers (with an audit remark
+    // when overwriting a saved value). Signatures and status stay open. This can't be
     // enforced by the frontend UI lock alone since this endpoint is a real trust boundary.
     if (isLeftUser) {
-        if (!sheet || isNewAttempt) {
-            throw new ApiError("This associate has left. A new monitoring attempt cannot be created.", 400);
-        }
-        const incomingComment = (gridData && gridData.comment) || '';
-        employeeName = sheet.employeeName;
-        employeeCode = sheet.employeeCode;
-        processName = sheet.processName;
-        dept = sheet.dept;
-        handoverDate = sheet.handoverDate;
-        trgResult = sheet.trgResult;
-        workingWith = sheet.workingWith;
-        lineLeaderName = sheet.lineLeaderName;
-        checkedBy = checkedBy !== undefined ? checkedBy : sheet.checkedBy;
-        verifiedBy = verifiedBy !== undefined ? verifiedBy : sheet.verifiedBy;
-        approvedBy = approvedBy !== undefined ? approvedBy : sheet.approvedBy;
-        verifiedByEduCell = verifiedByEduCell !== undefined ? verifiedByEduCell : sheet.verifiedByEduCell;
-        startDate = sheet.startDate;
-        gridData = { ...sheet.gridData, comment: incomingComment };
+        const resolved = resolveLeftAssociateSave({ sheet, body: req.body, user: req.user });
+        ({
+            employeeName, employeeCode, processName, dept, handoverDate,
+            trgResult, workingWith, lineLeaderName, startDate,
+        } = resolved.header);
+        ({ checkedBy, verifiedBy, approvedBy, verifiedByEduCell } = resolved.signatures);
+        gridData = resolved.gridData;
     }
 
     validateSignatureProgression({ checkedBy, verifiedBy, approvedBy, verifiedByEduCell }, req.user?.isAdmin);

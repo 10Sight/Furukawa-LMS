@@ -71,6 +71,10 @@ const FROZEN_LABEL_SPAN = `sticky left-[15px] z-20 w-[520px] min-w-[520px] max-w
 const FROZEN_MARK = `sticky left-[535px] z-20 w-[95px] min-w-[95px] max-w-[95px] border-r-2 border-black shadow-[2px_0_5px_-2px_rgba(0,0,0,0.25)] print:shadow-none ${FROZEN_EDGE} after:border-r-2`;
 
 // Sheet zoom (CSS `zoom`, so sticky header/columns and scroll sizes stay correct). Persisted per browser.
+// Header fields an authorized user may correct for an associate who has LEFT.
+// Keep in sync with LEFT_EDITABLE_HEADER_FIELDS in server/utils/sixteenDayLeftAssociate.util.js.
+const LEFT_EDITABLE_HEADER_FIELDS = ['employeeName', 'dept', 'processName', 'handoverDate', 'trgResult', 'workingWith', 'lineLeaderName'];
+
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 1.5;
 const ZOOM_STEP = 0.05;
@@ -138,6 +142,11 @@ const SixteenDayMonitoringSheet = ({
     const canApprove = authUser?.isAdmin || authUser?.customRole?.permissions?.includes('sixteen_day:approve');
     const canVerifyEduCell = authUser?.isAdmin || authUser?.customRole?.permissions?.includes('sixteen_day:verify_education');
     const canEditSubmitted = authUser?.isAdmin || authUser?.customRole?.permissions?.includes('sixteen_day:edit_submitted');
+    // Who may correct header details of an associate who has LEFT. Mirrors
+    // canEditLeftAssociateHeader in server/utils/sixteenDayLeftAssociate.util.js.
+    const canEditLeftHeader = !!(authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN' ||
+        authUser?.customRole?.permissions?.includes('sixteen_day:edit_submitted') ||
+        authUser?.customRole?.permissions?.includes('sixteen_day:manage'));
 
     const [gridData, setGridData] = useState({});
     const [originalGridData, setOriginalGridData] = useState({});
@@ -205,7 +214,10 @@ const SixteenDayMonitoringSheet = ({
     const isCellLocked = (key, type = 'grid') => {
         if (isLeftUser) {
             const workflowFields = ['comment', 'checkedBy', 'verifiedBy', 'approvedBy', 'verifiedByEduCell'];
-            return !workflowFields.includes(key);
+            if (workflowFields.includes(key)) return false;
+            // Performance grid stays frozen; header details open only to authorized users.
+            if (type === 'header' && LEFT_EDITABLE_HEADER_FIELDS.includes(key)) return !canEditLeftHeader;
+            return true;
         }
         // Dojo Hiring renders this sheet fully read-only except for the Education Cell
         // sign-off, which authorized reviewers must still be able to act on there.
@@ -270,9 +282,10 @@ const SixteenDayMonitoringSheet = ({
 
         // Only check user-editable header fields.
         // Excludes: status, checkedBy, verifiedBy, approvedBy, verifiedByEduCell,
-        // startDate, attemptNumber, employeeName, employeeCode, dept — these are
-        // system-managed or set by workflow buttons, not direct text edits.
-        const EDITABLE_HEADER_FIELDS = ['processName', 'handoverDate', 'trgResult', 'workingWith', 'lineLeaderName'];
+        // startDate, attemptNumber, employeeCode — these are system-managed or set by
+        // workflow buttons, not direct text edits. employeeName and dept are only
+        // editable for LEFT associates, but compared always (they don't change otherwise).
+        const EDITABLE_HEADER_FIELDS = LEFT_EDITABLE_HEADER_FIELDS;
         for (const key of EDITABLE_HEADER_FIELDS) {
             const originalVal = originalHeaderInfo[key];
             if (originalVal !== undefined && originalVal !== null && originalVal.toString().trim() !== "") {
@@ -596,7 +609,7 @@ const SixteenDayMonitoringSheet = ({
         const targetStatus = finalStatus || headerInfo.status || "Draft";
 
         // Intercept: admin or canEditSubmitted user editing a saved sheet must provide a remark if they modified already saved values
-        if ((isAdmin || canEditSubmitted) && isSheetSaved && didAdminChangeSavedValues() && !adminRemark) {
+        if ((isAdmin || canEditSubmitted || (isLeftUser && canEditLeftHeader)) && isSheetSaved && didAdminChangeSavedValues() && !adminRemark) {
             setPendingSaveParams({ finalStatus, isSubmit });
             setAdminRemarkText('');
             setIsAdminRemarkDialogOpen(true);
@@ -1218,7 +1231,9 @@ const SixteenDayMonitoringSheet = ({
             {isLeftUser && (
                 <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 print:hidden">
                     <AlertTriangle className="h-4 w-4 shrink-0" />
-                    Associate has LEFT: Performance grid is locked. Comments and verification/approval signatures can be updated and submitted.
+                    {canEditLeftHeader
+                        ? "Associate has LEFT: Performance grid is locked. Header details, comments, and approvals can be updated and submitted."
+                        : "Associate has LEFT: Performance grid is locked. Comments and verification/approval signatures can be updated and submitted."}
                 </div>
             )}
             {eligibilityStillWaiting && (
@@ -1236,7 +1251,7 @@ const SixteenDayMonitoringSheet = ({
                             {headerInfo.status || 'Draft'}
                         </Badge>
                         {isLocked && <Badge variant="outline" className="text-[10px] text-orange-600 border-orange-200 bg-orange-50">View Only</Badge>}
-                        {isLeftUser && <Badge variant="outline" className="text-[10px] text-red-600 border-red-200 bg-red-50">Associate Left — Comments & Signatures Only</Badge>}
+                        {isLeftUser && <Badge variant="outline" className="text-[10px] text-red-600 border-red-200 bg-red-50">{canEditLeftHeader ? "Associate Left — Details, Comments & Approvals Only" : "Associate Left — Comments & Signatures Only"}</Badge>}
                         {eligibilityStillWaiting && (
                             <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-200 bg-amber-50">
                                 ⏳ Eligible in {eligibilityCountdown}
@@ -1354,7 +1369,18 @@ const SixteenDayMonitoringSheet = ({
                                 <div className="border-r border-black">
                                     <div className="flex border-b border-black h-10 items-center">
                                         <div className="w-40 p-1 font-bold">Employee Name</div>
-                                        <div className="flex-1 p-1 border-l border-black h-full flex items-center font-semibold text-blue-700">: {headerInfo.employeeName}</div>
+                                        {isLeftUser && !readOnly && !isLocked && !isCellLocked('employeeName', 'header') ? (
+                                            <div className="flex-1 p-1 border-l border-black h-full">
+                                                <input
+                                                    className="w-full h-full bg-transparent border-none outline-none px-1 font-semibold text-blue-700"
+                                                    value={headerInfo.employeeName || ""}
+                                                    onChange={e => handleHeaderChange('employeeName', e.target.value)}
+                                                    placeholder=": Enter Name"
+                                                />
+                                            </div>
+                                        ) : (
+                                            <div className="flex-1 p-1 border-l border-black h-full flex items-center font-semibold text-blue-700">: {headerInfo.employeeName}</div>
+                                        )}
                                     </div>
                                     <div className="flex border-b border-black h-10 items-center">
                                         <div className="w-40 p-1 font-bold">Employee Code</div>
@@ -1374,7 +1400,18 @@ const SixteenDayMonitoringSheet = ({
                                     </div>
                                     <div className="flex h-10 items-center">
                                         <div className="w-40 p-1 font-bold">Deptt.</div>
-                                        <div className="flex-1 p-1 border-l border-black h-full flex items-center font-semibold text-blue-700">: {typeof headerInfo.dept === 'string' ? headerInfo.dept : (headerInfo.dept?.name || headerInfo.dept?._id || "")}</div>
+                                        {isLeftUser && !readOnly && !isLocked && !isCellLocked('dept', 'header') ? (
+                                            <div className="flex-1 p-1 border-l border-black h-full">
+                                                <input
+                                                    className="w-full h-full bg-transparent border-none outline-none px-1 font-semibold text-blue-700"
+                                                    value={typeof headerInfo.dept === 'string' ? headerInfo.dept : (headerInfo.dept?.name || "")}
+                                                    onChange={e => handleHeaderChange('dept', e.target.value)}
+                                                    placeholder=": Enter Department / Section"
+                                                />
+                                            </div>
+                                        ) : (
+                                            <div className="flex-1 p-1 border-l border-black h-full flex items-center font-semibold text-blue-700">: {typeof headerInfo.dept === 'string' ? headerInfo.dept : (headerInfo.dept?.name || headerInfo.dept?._id || "")}</div>
+                                        )}
                                     </div>
                                 </div>
                                 <div className="border-l border-black">

@@ -265,3 +265,31 @@ test('24. Suggestion related Defect Prevention section with rank checkboxes (1-5
   assert.ok(detailFile.includes('isAutoBest'), 'Detail sheet must compute isAutoBest for rank 4 and 5');
   assert.ok(listFile.includes('Number(item.defectPreventionRank) === 5') && listFile.includes('Number(item.defectPreventionRank) === 4'), 'List filter must automatically include rank 4 or 5 in Best Suggestions');
 });
+
+
+test('25. SQL Server schema table script, model init, and database controller connection exist', () => {
+  const sqlScriptPath = new URL('../../../../server/scripts/create_suggestion_checksheets_table.sql', import.meta.url);
+  const dbFile = fs.readFileSync(new URL('../../../../server/db/suggestionChecksheet/suggestionChecksheetDb.js', import.meta.url), 'utf8');
+  const modelFile = fs.readFileSync(new URL('../../../../server/models/suggestionChecksheet/suggestionChecksheet.model.js', import.meta.url), 'utf8');
+  const serverIndexFile = fs.readFileSync(new URL('../../../../server/index.js', import.meta.url), 'utf8');
+
+  // Verify standalone SQL script
+  assert.ok(fs.existsSync(sqlScriptPath), 'Standalone SQL script create_suggestion_checksheets_table.sql must exist');
+  const sqlScript = fs.readFileSync(sqlScriptPath, 'utf8');
+  assert.ok(sqlScript.includes('CREATE TABLE suggestion_checksheets'), 'SQL script must define table suggestion_checksheets');
+  assert.ok(sqlScript.includes('checksheetId NVARCHAR(100) NOT NULL'), 'SQL script must define checksheetId column');
+  assert.ok(sqlScript.includes('idx_suggestion_checksheetId'), 'SQL script must define index on checksheetId');
+
+  // Verify DB table migration & init helper
+  assert.ok(dbFile.includes('initSuggestionChecksheetTables'), 'DB file must export initSuggestionChecksheetTables');
+  assert.ok(dbFile.includes('isDbConnected'), 'DB file must export isDbConnected');
+  assert.ok(dbFile.includes('CREATE TABLE suggestion_checksheets'), 'DB file must contain table creation query');
+
+  // Verify Model integration with SQL Server
+  assert.ok(modelFile.includes('initSuggestionChecksheetTables'), 'Model must call initSuggestionChecksheetTables in init()');
+  assert.ok(modelFile.includes('SELECT * FROM suggestion_checksheets'), 'Model must query SQL Server table');
+  assert.ok(modelFile.includes('INSERT INTO suggestion_checksheets'), 'Model must insert into SQL Server table');
+
+  // Verify server startup boot call
+  assert.ok(serverIndexFile.includes('SuggestionChecksheetModel.init()'), 'Server index must boot SuggestionChecksheetModel.init()');
+});

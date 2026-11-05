@@ -71,6 +71,7 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave, isRea
     approvalDate: normalizeDateToYMD(item?.approvalDate) || '',
     costSaving: item?.costSaving || '',
     benefitDetails: item?.benefitStatusDetails || item?.benefitDetails || '',
+    defectPreventionRank: item?.defectPreventionRank ? Number(item.defectPreventionRank) : null,
   });
 
   const [activeCellId, setActiveCellId] = useState(null);
@@ -141,6 +142,18 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave, isRea
   };
 
   // Save form with mandatory validations
+  // Handle rank selection for Suggestion related Defect Prevention (Rank 1 - 5)
+  const handleSelectRank = (selectedRank) => {
+    if (isReadOnly) return;
+    setFormData((prev) => {
+      const nextRank = Number(prev.defectPreventionRank) === selectedRank ? null : selectedRank;
+      return {
+        ...prev,
+        defectPreventionRank: nextRank,
+      };
+    });
+  };
+
   const handleSaveForm = (e) => {
     if (e) e.preventDefault();
     if (isReadOnly) {
@@ -169,10 +182,17 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave, isRea
       }
     }
 
+    const isAutoBest =
+      Number(formData.defectPreventionRank) === 5 ||
+      Number(formData.defectPreventionRank) === 4;
+    const finalIsBest = isAutoBest ? true : Boolean(item?.isBest);
+
     if (onSave) {
       onSave({
         ...item,
         ...formData,
+        isBest: finalIsBest,
+        defectPreventionRank: formData.defectPreventionRank,
         unit: formData.unit || item?.unit || 'Bawal',
         submittedBy: formData.employeeName,
         department: formData.department,
@@ -487,28 +507,121 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave, isRea
           </div>
 
           {/* Section 2 Input (Increased text size) */}
-          <div className="w-full border-b border-black bg-white p-2">
-            <textarea
-              readOnly={isReadOnly}
-              className="w-full p-2.5 border border-slate-200 rounded-xs text-base leading-relaxed text-black bg-white focus:outline-none"
-              rows="7"
-              wrap="soft"
-              style={{
-                fontFamily: "'Times New Roman', Times, serif",
-                fontSize: '1.05rem',
-                border: activeCellId === 'suggestionText' ? '2px solid #217346' : '1px solid #cbd5e1',
-                resize: 'vertical',
-                minHeight: '190px',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
-              }}
-              value={formData.suggestionText}
-              onChange={(e) => setFormData({ ...formData, suggestionText: e.target.value })}
-              onKeyDown={handleWrapInputKeyDown}
-              onFocus={() => setActiveCellId('suggestionText')}
-              onBlur={() => setActiveCellId(null)}
-              placeholder="Enter your valuable suggestion to improve the current situation (Press Shift + Enter for new line)..."
-            />
+          <div className="w-full border-b border-black bg-white flex flex-col lg:flex-row items-stretch">
+            {/* Left Column: Suggestion Textarea */}
+            <div className="flex-1 p-2 border-b lg:border-b-0 lg:border-r border-black flex flex-col min-w-0">
+              <textarea
+                readOnly={isReadOnly}
+                className="w-full flex-1 p-2.5 border border-slate-200 rounded-xs text-base leading-relaxed text-black bg-white focus:outline-none"
+                rows="7"
+                wrap="soft"
+                style={{
+                  fontFamily: "'Times New Roman', Times, serif",
+                  fontSize: '1.05rem',
+                  border: activeCellId === 'suggestionText' ? '2px solid #217346' : '1px solid #cbd5e1',
+                  resize: 'vertical',
+                  minHeight: '190px',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                }}
+                value={formData.suggestionText}
+                onChange={(e) => setFormData({ ...formData, suggestionText: e.target.value })}
+                onKeyDown={handleWrapInputKeyDown}
+                onFocus={() => setActiveCellId('suggestionText')}
+                onBlur={() => setActiveCellId(null)}
+                placeholder="Enter your valuable suggestion to improve the current situation (Press Shift + Enter for new line)..."
+              />
+            </div>
+
+            {/* Right Column: Suggestion related Defect Prevention Table */}
+            <div
+              className="w-full lg:w-[410px] xl:w-[440px] shrink-0 bg-white flex flex-col justify-start p-2"
+              style={{ minWidth: '320px' }}
+            >
+              <table
+                className="w-full border-collapse border border-black text-black text-xs md:text-sm"
+                style={{ fontFamily: "'Times New Roman', Times, serif" }}
+              >
+                <thead>
+                  <tr className="border-b border-black bg-white">
+                    <th
+                      colSpan="2"
+                      className="py-1.5 px-3 text-center font-bold text-xs md:text-sm tracking-wide text-black"
+                    >
+                      Suggestion related Defect Prevention
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    { rank: 5, label: '1.Suggestion Occurrence related' },
+                    { rank: 4, label: '2.Suggestion Detection related' },
+                    { rank: 3, label: '3.Unique Process Improvement' },
+                    { rank: 2, label: '4.Facility Related Improvement' },
+                    { rank: 1, label: '5.Not related to Quality & Productivity' },
+                  ].map((row) => {
+                    const isChecked = Number(formData.defectPreventionRank) === row.rank;
+                    const isBestRank = row.rank === 5 || row.rank === 4;
+                    return (
+                      <tr
+                        key={row.rank}
+                        className={`border-b last:border-b-0 border-black transition-colors ${
+                          isChecked ? 'bg-amber-50/70' : 'hover:bg-slate-50'
+                        } ${isReadOnly ? 'cursor-default' : 'cursor-pointer'}`}
+                        onClick={() => !isReadOnly && handleSelectRank(row.rank)}
+                      >
+                        {/* Description (Read-Only / Non-editable) */}
+                        <td className="py-2 px-3 border-r border-black font-semibold text-slate-900 text-xs md:text-[13px] leading-tight select-none">
+                          <div className="flex items-center justify-between">
+                            <span>{row.label}</span>
+                            {isBestRank && (
+                              <span
+                                className="ml-1.5 text-[9px] font-bold text-amber-800 bg-amber-100 px-1 py-0.2 rounded"
+                                title="Rank 4 and 5 automatically classify as Best Suggestion"
+                              >
+                                Best
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Rank Checkbox + Number */}
+                        <td
+                          className="py-2 px-3 text-center align-middle w-16 select-none"
+                          style={{ minWidth: '55px' }}
+                        >
+                          <div className="flex items-center justify-center gap-1.5">
+                            <input
+                              type="checkbox"
+                              disabled={isReadOnly}
+                              checked={isChecked}
+                              onChange={() => handleSelectRank(row.rank)}
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-4 h-4 rounded text-blue-600 focus:ring-0 cursor-pointer accent-blue-600"
+                            />
+                            <span className="font-bold text-sm md:text-base text-black">
+                              {row.rank}
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+
+              {/* Informative indicator below table */}
+              <div className="mt-1.5 flex items-center justify-between text-[10px] text-slate-500 italic px-1">
+                <span>Ranks 4 and 5 auto-fetch to Best Suggestions</span>
+                {formData.defectPreventionRank ? (
+                  <span className="font-bold text-blue-700 not-italic">
+                    Selected: Rank {formData.defectPreventionRank}
+                  </span>
+                ) : (
+                  <span className="text-slate-400 not-italic">None selected</span>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Section 3: Bottom Review Table (Down of the Sheet) */}

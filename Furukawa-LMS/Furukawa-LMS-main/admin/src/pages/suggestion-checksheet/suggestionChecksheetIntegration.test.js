@@ -245,3 +245,23 @@ test('23. Table columns reflect Created By and Approved / Rejected By & ID', () 
   assert.ok(listFile.includes('<th className="py-3 w-[180px]">Approved / Rejected By & ID</th>'), 'Table header must have Approved / Rejected By & ID at previous Created By position');
   assert.ok(listFile.includes('ID: {item.id}'), 'Table cell must display sheet ID');
 });
+
+
+test('24. Suggestion related Defect Prevention section with rank checkboxes (1-5) and auto-fetch rank 4 or 5 into Best Suggestions', () => {
+  const detailFile = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetDetail.jsx', import.meta.url), 'utf8');
+  const listFile = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetList.jsx', import.meta.url), 'utf8');
+
+  // Verify Defect Prevention table in detail sheet
+  assert.ok(detailFile.includes('Suggestion related Defect Prevention'), 'Detail format must include Suggestion related Defect Prevention table');
+  assert.ok(detailFile.includes('1.Suggestion Occurrence related'), 'Must include 1.Suggestion Occurrence related');
+  assert.ok(detailFile.includes('2.Suggestion Detection related'), 'Must include 2.Suggestion Detection related');
+  assert.ok(detailFile.includes('3.Unique Process Improvement'), 'Must include 3.Unique Process Improvement');
+  assert.ok(detailFile.includes('4.Facility Related Improvement'), 'Must include 4.Facility Related Improvement');
+  assert.ok(detailFile.includes('5.Not related to Quality & Productivity'), 'Must include 5.Not related to Quality & Productivity');
+  assert.ok(detailFile.includes('handleSelectRank'), 'Must have handleSelectRank handler');
+  assert.ok(detailFile.includes('type="checkbox"'), 'Ranks must be selectable via checkbox');
+
+  // Verify auto-fetch logic for rank 4 and 5 into Best Suggestions
+  assert.ok(detailFile.includes('isAutoBest'), 'Detail sheet must compute isAutoBest for rank 4 and 5');
+  assert.ok(listFile.includes('Number(item.defectPreventionRank) === 5') && listFile.includes('Number(item.defectPreventionRank) === 4'), 'List filter must automatically include rank 4 or 5 in Best Suggestions');
+});

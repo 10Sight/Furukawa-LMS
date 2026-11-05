@@ -64,8 +64,14 @@ export default function SuggestionChecksheetList({
   }, [deptData, records]);
 
   // Counts for tabs
-  const allSuggestionsCount = useMemo(() => records.filter((r) => !r.isBest).length, [records]);
-  const bestSuggestionsCount = useMemo(() => records.filter((r) => Boolean(r.isBest)).length, [records]);
+  const allSuggestionsCount = useMemo(() => records.filter((r) => {
+    const isBestItem = Boolean(r.isBest || Number(r.defectPreventionRank) === 5 || Number(r.defectPreventionRank) === 4);
+    return !isBestItem;
+  }).length, [records]);
+  const bestSuggestionsCount = useMemo(() => records.filter((r) => {
+    const isBestItem = Boolean(r.isBest || Number(r.defectPreventionRank) === 5 || Number(r.defectPreventionRank) === 4);
+    return isBestItem;
+  }).length, [records]);
 
   // Close unit dropdown on outside click
   useEffect(() => {
@@ -86,10 +92,16 @@ export default function SuggestionChecksheetList({
       // 1. Tab Partitioning:
       // In "All Suggestions", hide items that have been marked as Best.
       // In "Best Suggestions", show only items marked as Best.
+      const isBestItem = Boolean(
+        item.isBest ||
+        Number(item.defectPreventionRank) === 5 ||
+        Number(item.defectPreventionRank) === 4
+      );
+
       if (activeTab === 'BEST') {
-        if (!item.isBest) return false;
+        if (!isBestItem) return false;
       } else {
-        if (item.isBest) return false;
+        if (isBestItem) return false;
       }
 
       // 2. Unit Filter
@@ -571,7 +583,7 @@ export default function SuggestionChecksheetList({
                       <div className="font-semibold text-slate-800 flex items-center gap-1.5">
                         <User className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                         <span className="truncate max-w-[200px]">{item.submittedBy || 'Anonymous'}</span>
-                        {item.isBest && (
+                        {(item.isBest || Number(item.defectPreventionRank) >= 4) && (
                           <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-400 shrink-0" title="Best Suggestion" />
                         )}
                       </div>
@@ -585,6 +597,18 @@ export default function SuggestionChecksheetList({
                       <span className="inline-block px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-medium text-[11px]">
                         {item.category || '-'}
                       </span>
+                      {item.defectPreventionRank && (
+                        <span
+                          className={`inline-block ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                            Number(item.defectPreventionRank) >= 4
+                              ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                              : 'bg-slate-100 text-slate-600'
+                          }`}
+                          title={`Defect Prevention Rank: ${item.defectPreventionRank}`}
+                        >
+                          R{item.defectPreventionRank}
+                        </span>
+                      )}
                     </td>
                     {/* At the place of the Created By column: 'Approved / Rejected By and the id' */}
                     <td className="py-3 text-slate-700">

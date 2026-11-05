@@ -141,7 +141,7 @@ export default function SuggestionChecksheetPage() {
 
   // Edit access rule:
   // In Best Suggestions page (or if item.isBest): only admin and sheet creator can edit; others can view only
-  const isReadOnly = Boolean(selectedItem?.isBest && !isAdmin && !isCreatorOfItem(selectedItem));
+  const isReadOnly = Boolean((selectedItem?.isBest || Number(selectedItem?.defectPreventionRank) >= 4) && !isAdmin && !isCreatorOfItem(selectedItem));
 
   // Cleanup on unmount
   useEffect(() => {

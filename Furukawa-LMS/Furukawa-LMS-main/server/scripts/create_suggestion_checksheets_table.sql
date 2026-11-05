@@ -90,3 +90,4 @@ BEGIN
     PRINT 'Created index idx_suggestion_defectRank.';
 END
 GO
+

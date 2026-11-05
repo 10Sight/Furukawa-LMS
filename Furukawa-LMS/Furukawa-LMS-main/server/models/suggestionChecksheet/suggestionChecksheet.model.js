@@ -313,9 +313,6 @@ class SuggestionChecksheetModel {
         logger.error("Failed updating checksheet in SQL Server:", err.message);
       }
     }
-        logger.error("Failed updating checksheet in SQL Server:", err.message);
-      }
-    }
 
     // Keep fallback store synchronized
     const records = readSuggestionStore();

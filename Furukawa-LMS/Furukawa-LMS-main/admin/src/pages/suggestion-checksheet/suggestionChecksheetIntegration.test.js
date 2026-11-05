@@ -232,10 +232,11 @@ test('21. Add modal contains NO dummy employee data fallback and fetches only re
   assert.ok(addModalFile.includes('No employees found in database'), 'Must show clean empty state when no DB users');
 });
 
-test('22. Unit selector is on top right corner and dropdown options are cleanly separated', () => {
+test('22. Unit selector is on top left corner and dropdown options are cleanly separated', () => {
   const listFile = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetList.jsx', import.meta.url), 'utf8');
-  assert.ok(listFile.includes('Unit Selector on Top Right Corner'), 'Unit selector must be placed on top right corner');
-  assert.ok(listFile.includes('absolute right-0 top-full mt-1.5 w-44 bg-white border border-slate-200 rounded-xl shadow-2xl z-50'), 'Dropdown menu must have solid z-index, right alignment, and white background');
+  assert.ok(listFile.includes('Unit Selecting Option on the Top Left Corner'), 'Unit selector must be placed on top left corner');
+  assert.ok(listFile.includes('Bawal') && listFile.includes('Gujrat') && listFile.includes('All Units'), 'Dropdown must include Bawal, Gujrat, All Units');
+  assert.ok(listFile.includes("display: 'flex'") && listFile.includes("flexDirection: 'column'"), 'Options must be stacked vertically to prevent overlapping');
 });
 
 test('23. Table columns reflect Created By and Approved / Rejected By & ID', () => {

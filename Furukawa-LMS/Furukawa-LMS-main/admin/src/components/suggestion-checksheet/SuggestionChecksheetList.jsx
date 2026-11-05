@@ -221,7 +221,124 @@ export default function SuggestionChecksheetList({
   };
 
   return (
-    <div className="suggestion-checksheet-root flex flex-col gap-3 w-full">
+    <div className="suggestion-checksheet-root flex flex-col gap-3.5 w-full">
+      {/* 0. Topmost Section: Unit Selecting Option on the Top Left Corner (Everything else is down) */}
+      <div className="flex items-center justify-between w-full">
+        {/* Top Left Corner: Unit Selector */}
+        <div className="relative inline-block" ref={unitDropdownRef}>
+          <button
+            type="button"
+            className="px-4 py-2 bg-white border border-slate-300 rounded-xl text-slate-800 text-xs font-bold flex items-center gap-2 shadow-xs hover:bg-slate-50 hover:border-slate-400 transition-colors cursor-pointer"
+            onClick={() => setIsUnitDropdownOpen((prev) => !prev)}
+            title="Select Unit"
+          >
+            <MapPin className="w-4 h-4 text-blue-600 shrink-0" />
+            <span>Unit: {selectedUnit || 'Bawal'}</span>
+            <ChevronDown
+              className={`w-4 h-4 text-slate-400 transition-transform duration-150 shrink-0 ${
+                isUnitDropdownOpen ? 'rotate-180 text-blue-600' : ''
+              }`}
+            />
+          </button>
+
+          {isUnitDropdownOpen && (
+            <div
+              className="absolute left-0 top-full mt-1.5 w-48 bg-white border border-slate-200 rounded-xl shadow-2xl z-[9999] p-1.5 flex flex-col gap-1"
+              style={{
+                position: 'absolute',
+                top: 'calc(100% + 6px)',
+                left: '0px',
+                width: '190px',
+                minWidth: '190px',
+                backgroundColor: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderRadius: '12px',
+                boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+                zIndex: 9999,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '4px',
+                padding: '6px',
+              }}
+            >
+              <div
+                style={{
+                  padding: '6px 10px 4px 10px',
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  color: '#94a3b8',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  borderBottom: '1px solid #f1f5f9',
+                  marginBottom: '2px',
+                }}
+              >
+                Select Unit
+              </div>
+              {[
+                { id: 'Bawal', label: 'Bawal' },
+                { id: 'Gujrat', label: 'Gujrat' },
+                { id: 'All Units', label: 'All Units' },
+              ].map((u) => {
+                const isSelected = (selectedUnit || 'Bawal') === u.id;
+                return (
+                  <button
+                    key={u.id}
+                    type="button"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                      fontWeight: isSelected ? '700' : '500',
+                      color: isSelected ? '#1d4ed8' : '#334155',
+                      backgroundColor: isSelected ? '#eff6ff' : 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'background-color 0.15s',
+                      boxSizing: 'border-box',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSelected) e.currentTarget.style.backgroundColor = '#f8fafc';
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent';
+                    }}
+                    onClick={() => handleSelectUnit(u.id)}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <MapPin
+                        style={{
+                          width: '14px',
+                          height: '14px',
+                          color: isSelected ? '#2563eb' : '#94a3b8',
+                          flexShrink: 0,
+                        }}
+                      />
+                      <span>{u.label}</span>
+                    </div>
+                    {isSelected && (
+                      <span
+                        style={{
+                          width: '6px',
+                          height: '6px',
+                          borderRadius: '9999px',
+                          backgroundColor: '#2563eb',
+                        }}
+                      />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* 1. Page Header Tabs: All Suggestions & Best Suggestions */}
       <div className="flex flex-wrap items-center justify-between border-b border-slate-200 pb-2 gap-3 bg-white px-4 py-2 rounded-xl shadow-2xs">
         <div className="flex items-center gap-2">
@@ -268,57 +385,8 @@ export default function SuggestionChecksheetList({
           </button>
         </div>
 
-        {/* Top Right Controls: Unit Selector, Export Excel, Add Checksheet */}
-        <div className="flex items-center gap-2.5">
-          {/* Unit Selector on Top Right Corner */}
-          <div className="relative" ref={unitDropdownRef}>
-            <button
-              type="button"
-              className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-700 text-xs font-semibold flex items-center gap-1.5 shadow-2xs hover:bg-slate-50 hover:border-slate-400 transition-colors cursor-pointer"
-              onClick={() => setIsUnitDropdownOpen((prev) => !prev)}
-            >
-              <MapPin className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-              <span>Unit: {selectedUnit || 'Bawal'}</span>
-              <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-150 shrink-0 ${isUnitDropdownOpen ? 'rotate-180 text-blue-600' : ''}`} />
-            </button>
-
-            {isUnitDropdownOpen && (
-              <div
-                className="absolute right-0 top-full mt-1.5 w-44 bg-white border border-slate-200 rounded-xl shadow-2xl z-50 p-1 flex flex-col gap-0.5 animate-in fade-in zoom-in-95 duration-100"
-                style={{ backgroundColor: '#ffffff', minWidth: '160px' }}
-              >
-                <div className="px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 mb-0.5">
-                  Select Unit
-                </div>
-                {[
-                  { id: 'Bawal', label: 'Bawal' },
-                  { id: 'Gujrat', label: 'Gujrat' },
-                  { id: 'All Units', label: 'All Units' },
-                ].map((u) => {
-                  const isSelected = (selectedUnit || 'Bawal') === u.id;
-                  return (
-                    <button
-                      key={u.id}
-                      type="button"
-                      className={`w-full px-3 py-2 text-left rounded-lg text-xs font-medium flex items-center justify-between transition-colors cursor-pointer ${
-                        isSelected
-                          ? 'bg-blue-50 text-blue-700 font-bold'
-                          : 'text-slate-700 hover:bg-slate-100'
-                      }`}
-                      onClick={() => handleSelectUnit(u.id)}
-                    >
-                      <div className="flex items-center gap-2">
-                        <MapPin className={`w-3.5 h-3.5 ${isSelected ? 'text-blue-600' : 'text-slate-400'}`} />
-                        <span>{u.label}</span>
-                      </div>
-                      {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-blue-600" />}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
+        {/* Action Buttons: Export Excel & Add Checksheet */}
+        <div className="flex items-center gap-2">
           <button
             type="button"
             className="btn-export-excel"

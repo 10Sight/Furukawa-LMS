@@ -46,13 +46,14 @@
 .suggestion-checksheet-root .unit-dropdown-menu {
   position: absolute;
   top: calc(100% + 6px);
-  right: 0;
+  left: 0;
+  right: auto;
   background-color: #ffffff;
   border-radius: 14px;
   border: 1px solid #e4e7ec;
   box-shadow: 0 12px 24px -4px rgba(16, 24, 40, 0.12), 0 4px 8px -2px rgba(16, 24, 40, 0.06);
   padding: 8px 6px;
-  min-width: 170px;
+  min-width: 180px;
   z-index: 100;
   display: flex;
   flex-direction: column;

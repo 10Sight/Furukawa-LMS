@@ -129,6 +129,30 @@ class TenCycleSheet {
         return rows.map((row) => new TenCycleSheet(row));
     }
 
+    // Sheets with at least one row whose operator Emp. Code is this code, newest first. A LIKE
+    // on the code narrows the scan in SQL; each row's empCode is then compared exactly. Every
+    // match carries the 1-based numbers of the rows that name the operator.
+    static async findByOperatorCode(empCode) {
+        const code = String(empCode || "").trim();
+        if (!code) return [];
+
+        // "!" is the LIKE escape character, so LIKE wildcards in the code match literally.
+        const likeCode = code.replace(/[!%_[]/g, (ch) => `!${ch}`);
+        const [rows] = await executeQuery(
+            "SELECT * FROM ten_cycle_sheets WHERE entries LIKE ? ESCAPE '!' ORDER BY createdAt DESC, id DESC",
+            [`%${likeCode}%`]
+        );
+
+        const target = code.toLowerCase();
+        return rows.flatMap((row) => {
+            const sheet = new TenCycleSheet(row);
+            const rowNumbers = (Array.isArray(sheet.entries) ? sheet.entries : [])
+                .map((entry, index) => (String(entry?.empCode ?? "").trim().toLowerCase() === target ? index + 1 : null))
+                .filter(Boolean);
+            return rowNumbers.length > 0 ? [Object.assign(sheet, { rowNumbers })] : [];
+        });
+    }
+
     static async findByDepartmentId(departmentId) {
         return this.findByFilters({ departmentId });
     }

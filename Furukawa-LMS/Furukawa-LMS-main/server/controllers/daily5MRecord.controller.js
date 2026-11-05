@@ -340,6 +340,38 @@ export const get5MRecords = async (req, res, next) => {
     }
 };
 
+// Daily 5M forms (latest version of each) that list a user as operator or deputed person.
+// Scoped like the records list: every department for global admins / daily5m:read holders,
+// otherwise the caller's own 5M department/section assignments.
+export const getUser5MRecords = async (req, res, next) => {
+    try {
+        const { userId } = req.params;
+        const [userRows] = await executeQuery(
+            isNaN(userId)
+                ? "SELECT empId FROM users WHERE LOWER(userName) = LOWER(?)"
+                : "SELECT empId FROM users WHERE id = ?",
+            [userId]
+        );
+        if (userRows.length === 0) {
+            return next(new ApiError("User not found", 404));
+        }
+
+        const scoped = scope5MRequestFor(req.user, "all", undefined, canViewAll5MRecords(req.user) ? "all" : undefined);
+        if (scoped.forbidden) {
+            return next(new ApiError(scoped.forbidden, 403));
+        }
+
+        const records = await Daily5MRecord.findSessionsByEmployeeCode(userRows[0].empId, {
+            allowedDepartmentIds: scoped.empty ? [] : scoped.allowedDepartmentIds,
+            allowedSectionIds: scoped.allowedSectionIds,
+        });
+
+        res.status(200).json({ success: true, message: "User 5M records fetched successfully", data: records });
+    } catch (error) {
+        return next(new ApiError(error.message, 500));
+    }
+};
+
 // Get single record by ID
 export const get5MRecordById = async (req, res, next) => {
     try {

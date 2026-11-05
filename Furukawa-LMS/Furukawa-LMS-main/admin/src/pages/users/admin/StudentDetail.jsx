@@ -17,15 +17,11 @@ import {
 } from "@/components/common/ui/card.jsx";
 import { Button } from "@/components/common/ui/button.jsx";
 import AttemptReviewModal from "@/components/common/AttemptReviewModal.jsx";
-import OnJobTrainingTable from "@/components/tables/admin/OnJobTrainingTable.jsx"; // Keep this for detail view
-import OJTTrainingRecordSheet from "@/components/common/training/OJTTrainingRecordSheet.jsx"; // New format
+import StudentOjtTab from "@/components/common/training/StudentOjtTab.jsx";
 import { useGetStudentOJTsQuery } from "@/services/api/OnJobTrainingApi.js";
 import { useGetStudentEvaluationTestAttemptsQuery } from "@/services/api/EvaluationTestApi.js";
 import EvaluationTestAttemptPage from "@/pages/assessments/evaluation-tests/EvaluationTestAttemptPage.jsx";
-import SkillMatrixCertificate from "@/components/common/training/SkillMatrixCertificate.jsx";
-import OperatorObservanceSheet from "@/components/common/training/OperatorObservanceSheet.jsx";
-import SixteenDayMonitoringSheet from "@/components/common/training/SixteenDayMonitoringSheet.jsx";
-import ThreeDayMonitoringSheet from "@/components/common/training/ThreeDayMonitoringSheet.jsx";
+import MonitoringSheetTab from "@/components/common/training/MonitoringSheetTab.jsx";
 import { Badge } from "@/components/common/ui/badge.jsx";
 import { Progress } from "@/components/common/ui/progress.jsx";
 import { Skeleton } from "@/components/common/ui/skeleton.jsx";
@@ -75,7 +71,8 @@ import {
   IconSettings,
   IconHistory,
   IconShieldCheck,
-  IconClipboardCheck
+  IconClipboardCheck,
+  IconRepeat
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/common/ui/alert.jsx";
@@ -98,6 +95,8 @@ const TAB_VIEW_ACTIONS = {
   monitoring3: "VIEW_STUDENT_3DAY_MONITORING",
   monitoring16: "VIEW_STUDENT_16DAY_MONITORING",
   skillEvaluation: "VIEW_STUDENT_SKILL_EVALUATION",
+  daily5m: "VIEW_STUDENT_DAILY_5M_FORMS",
+  tenCycle: "VIEW_STUDENT_10_CYCLE_SHEETS",
   handover: "VIEW_STUDENT_HANDOVER_HISTORY",
   dojoEvaluation: "VIEW_STUDENT_DOJO_EVALUATION_TEST",
 };
@@ -110,7 +109,6 @@ const StudentDetail = () => {
   const [attemptModalOpen, setAttemptModalOpen] = useState(false);
 
   // OJT State
-  const [selectedOjtId, setSelectedOjtId] = useState(null);
   const [createOjtOpen, setCreateOjtOpen] = useState(false);
 
   // Dojo Evaluation Test State
@@ -377,11 +375,6 @@ const StudentDetail = () => {
   // Loading state
   const isLoading = studentLoading || progressLoading || submissionsLoading || attemptsLoading || ojtLoading;
 
-  const passedOjts = useMemo(() => {
-    const ojts = ojtData?.data || [];
-    return ojts.filter(o => o.result === "Pass" || o.result === "Approved");
-  }, [ojtData]);
-
   const dojoAttempts = dojoAttemptsData?.data || [];
 
   // Calculate overall statistics
@@ -441,6 +434,8 @@ const StudentDetail = () => {
     { id: "monitoring16", label: "16 Day Monitoring", icon: IconClipboardList, group: "Monitoring Sheets" },
     { id: "skillEvaluation", label: "Skill Evaluation", fullLabel: "Check Sheet of Skill Evaluation", icon: IconShieldCheck, group: "Monitoring Sheets" },
     { id: "handover", label: "Handover Sheet", icon: IconHistory, group: "Monitoring Sheets" },
+    { id: "daily5m", label: "Daily 5M", icon: IconClipboardCheck, group: "Monitoring Sheets" },
+    { id: "tenCycle", label: "10 Cycle", icon: IconRepeat, group: "Monitoring Sheets" },
   ], [stats.totalCourses, stats.totalSubmissions, stats.totalAttempts, dojoAttempts.length, shouldHideObservance]);
 
   const tabGroups = useMemo(() => {
@@ -1395,7 +1390,8 @@ const StudentDetail = () => {
         </aside>
 
         <TabsContent value="monitoring16">
-          <SixteenDayMonitoringSheet
+          <MonitoringSheetTab
+            type="sixteenDay"
             studentId={studentId}
             studentName={student?.fullName || ""}
             employeeCode={student?.userName || student?.empId || student?.employeeId || ""}
@@ -1406,14 +1402,18 @@ const StudentDetail = () => {
         </TabsContent>
 
         <TabsContent value="monitoring3">
-          <ThreeDayMonitoringSheet
+          <MonitoringSheetTab
+            type="threeDay"
             studentId={studentId}
+            studentName={student?.fullName || ""}
+            employeeCode={student?.userName || student?.empId || student?.employeeId || ""}
             departmentId={student?.department?._id || student?.department}
           />
         </TabsContent>
 
         <TabsContent value="skillEvaluation">
-          <SkillMatrixCertificate
+          <MonitoringSheetTab
+            type="skillEvaluation"
             studentId={student.id}
             studentName={student?.fullName || ""}
             employeeCode={student?.userName || student?.empId || ""}
@@ -1421,6 +1421,14 @@ const StudentDetail = () => {
             subSectionId={student?.subSectionId || student?.targetSubSectionId}
             onSaved={handleRefreshAll}
           />
+        </TabsContent>
+
+        <TabsContent value="daily5m">
+          <MonitoringSheetTab type="daily5m" studentId={student.id} />
+        </TabsContent>
+
+        <TabsContent value="tenCycle">
+          <MonitoringSheetTab type="tenCycle" studentId={student.id} />
         </TabsContent>
 
         <TabsContent value="overview" className="space-y-6">
@@ -1877,139 +1885,7 @@ const StudentDetail = () => {
         </TabsContent>
 
         <TabsContent value="ojt">
-          {selectedOjtId ? (
-            <Tabs defaultValue="record" className="w-full">
-              <TabsList className="grid w-full grid-cols-2 mb-4">
-                <TabsTrigger value="record">Training Record Sheet</TabsTrigger>
-                <TabsTrigger value="evaluation">Evaluation Form</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="record">
-                <Card className="border border-slate-200 shadow-sm">
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 border-b bg-slate-50/50">
-                    <CardTitle className="text-xl font-bold text-slate-800">OJT Training Record Sheet</CardTitle>
-                    <Button variant="outline" size="sm" onClick={() => setSelectedOjtId(null)}>
-                      <IconArrowLeft className="h-4 w-4 mr-2" />
-                      Back to List
-                    </Button>
-                  </CardHeader>
-                  <CardContent className="pt-6">
-                    <OJTTrainingRecordSheet
-                      ojtId={selectedOjtId}
-                      studentName={student.fullName}
-                      readOnly={true}
-                      onBack={() => setSelectedOjtId(null)}
-                    />
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="evaluation">
-                <Card className="border border-slate-200 shadow-sm">
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 border-b bg-slate-50/50">
-                    <CardTitle className="text-xl font-bold text-slate-800">On Job Training Evaluation Form</CardTitle>
-                    <Button variant="outline" size="sm" onClick={() => setSelectedOjtId(null)}>
-                      <IconArrowLeft className="h-4 w-4 mr-2" />
-                      Back to List
-                    </Button>
-                  </CardHeader>
-                  <CardContent className="pt-6">
-                    <OnJobTrainingTable
-                      ojtId={selectedOjtId}
-                      studentName={student.fullName}
-                      model="-"
-                      readOnly={true}
-                      onBack={() => setSelectedOjtId(null)}
-                    />
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            </Tabs>
-          ) : (
-            <Card className="border-slate-200 shadow-md">
-              <CardHeader className="pb-3 border-b bg-slate-50/50">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <CardTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                      <IconTrophy className="h-5 w-5 text-amber-500" />
-                      On Job Training Portfolio
-                    </CardTitle>
-                    <CardDescription>
-                      Approved and passed Level-1 Practical Evaluations for this operator
-                    </CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-6">
-                {passedOjts.length === 0 ? (
-                  <div className="text-center py-16 border border-dashed border-slate-200 rounded-xl bg-slate-50/30 text-slate-500">
-                    <IconTrophy className="h-16 w-16 text-slate-300 mx-auto mb-4" />
-                    <h3 className="text-base font-semibold text-slate-700">No Passed OJT Records</h3>
-                    <p className="text-sm text-slate-400 mt-1 max-w-sm mx-auto">
-                      This operator has not passed any On Job Training assessments yet.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="border border-slate-100 rounded-xl overflow-hidden shadow-sm">
-                    <Table>
-                      <TableHeader className="bg-slate-50">
-                        <TableRow>
-                          <TableHead className="font-bold text-slate-700">Training Topic</TableHead>
-                          <TableHead className="font-bold text-slate-700">Department</TableHead>
-                          <TableHead className="font-bold text-slate-700">Section & Line</TableHead>
-                          <TableHead className="font-bold text-slate-700">Sub-Section & Machine</TableHead>
-                          <TableHead className="font-bold text-slate-700">Approved Date</TableHead>
-                          <TableHead className="font-bold text-slate-700">Status</TableHead>
-                          <TableHead className="font-bold text-slate-700 text-right">Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {passedOjts.map((ojtItem) => (
-                          <TableRow key={ojtItem.id || ojtItem._id} className="hover:bg-slate-50/40 transition-colors">
-                            <TableCell className="font-semibold text-slate-900">
-                              {ojtItem.trainingTopic || ojtItem.name || "Practical Evaluation"}
-                            </TableCell>
-                            <TableCell className="text-slate-600">
-                              {ojtItem.department?.name || ojtItem.department || "-"}
-                            </TableCell>
-                            <TableCell className="text-slate-600">
-                              <span className="font-medium">{ojtItem.section?.name || ojtItem.section || "-"}</span>
-                              <span className="text-slate-400 mx-1">/</span>
-                              <span className="text-xs">{ojtItem.line?.name || ojtItem.line || "-"}</span>
-                            </TableCell>
-                            <TableCell className="text-slate-600">
-                              <span className="font-medium">{ojtItem.subSection?.name || ojtItem.subSection || "-"}</span>
-                              <span className="text-slate-400 mx-1">/</span>
-                              <span className="text-xs font-mono bg-slate-100 px-1 rounded">{ojtItem.machine?.name || ojtItem.machine || "-"}</span>
-                            </TableCell>
-                            <TableCell className="text-slate-600">
-                              {new Date(ojtItem.updatedAt || ojtItem.createdAt).toLocaleDateString()}
-                            </TableCell>
-                            <TableCell>
-                              <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 font-bold hover:bg-emerald-100">
-                                Approved
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="border-indigo-100 text-indigo-700 hover:bg-indigo-50/50 hover:text-indigo-800 gap-1.5"
-                                onClick={() => setSelectedOjtId(ojtItem.id || ojtItem._id)}
-                              >
-                                <IconEye className="h-4 w-4" />
-                                View Portfolio
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
+          <StudentOjtTab ojts={ojtData?.data || []} student={student} loading={ojtLoading} />
         </TabsContent>
 
         <TabsContent value="dojoEvaluation">
@@ -2128,7 +2004,8 @@ const StudentDetail = () => {
               The Operator Observance sheet is disabled for this student's section.
             </div>
           ) : (
-            <OperatorObservanceSheet
+            <MonitoringSheetTab
+              type="observance"
               studentId={studentId}
               studentName={student?.fullName || ""}
               employeeCode={student?.userName || student?.empId || student?.employeeId || ""}

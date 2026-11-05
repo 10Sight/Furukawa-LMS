@@ -89,3 +89,37 @@ test("the backfill fills NULL counts in batches and survives bad JSON", async ()
     assert.deepEqual(updates.map(u => u.params), [[1, 1, 1, 1], [0, 0, 0, 2]]);
     assert.equal(batches, 2);
 });
+
+test("a user's 5M forms: latest row per session, matched on operator/deputed code fields only", async () => {
+    db.respond = (sql) => sql.includes("LatestSessions") ? [[
+        { id: 1, sessionId: 7, date: "2026-11-01", formType: "standard", status: "APPROVED",
+          recordData: JSON.stringify({ rec_0_OpCode: "E100", rec_2_DeputedCode: "e100 ", rec_1_OpCode: "E200" }) },
+        { id: 2, sessionId: 8, date: "2026-11-02", formType: "crimping",
+          recordData: JSON.stringify({ rec_0_OperatorId: "E1000", rec_0_Remarks: "covering for E100" }) },
+        { id: 3, sessionId: 9, date: "2026-11-03", formType: "crimping",
+          recordData: JSON.stringify({ rec_3_EmpCode: "E100" }) },
+    ]] : [[]];
+
+    const forms = await Daily5MRecord.findSessionsByEmployeeCode(" E100 ", { allowedDepartmentIds: ["4"] });
+    const query = db.queries.at(-1);
+    assert.ok(query.sql.includes("PARTITION BY COALESCE(r.sessionId, -r.id)"));
+    assert.ok(query.sql.includes("WHERE rn = 1 AND recordData LIKE ? ESCAPE '!'"));
+    assert.deepEqual(query.params, ["4", "%E100%"]);
+
+    // Form 2 only mentions E100 in free text / as a longer code, so it is dropped.
+    assert.deepEqual(forms.map(f => [f.id, f.roles, f.rowNumbers]), [
+        [1, ["Operator", "Deputed"], [1, 3]],
+        [3, ["Deputed"], [4]],
+    ]);
+    assert.equal(forms[0].recordData, undefined); // the list never ships the full sheet
+});
+
+test("a user's 5M forms: LIKE wildcards in the code are escaped; no code or no access means no query", async () => {
+    await Daily5MRecord.findSessionsByEmployeeCode("A_1%[!");
+    assert.equal(db.queries.at(-1).params.at(-1), "%A!_1!%![!!%");
+
+    db.queries = [];
+    assert.deepEqual(await Daily5MRecord.findSessionsByEmployeeCode(""), []);
+    assert.deepEqual(await Daily5MRecord.findSessionsByEmployeeCode("E1", { allowedDepartmentIds: [] }), []);
+    assert.equal(db.queries.length, 0);
+});

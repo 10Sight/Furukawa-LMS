@@ -106,6 +106,8 @@ const SixteenDayMonitoringSheet = ({
     feedbackRef = null,
     studentStatus = "PRESENT",
     headerActionsContainer = null,
+    // Open a specific saved attempt instead of the latest one (e.g. picked from a history table).
+    initialRecordId = null,
 }) => {
     const liveRevisionInfo = useRevisionInfo("sixteen-day-monitoring", { docNo: "FRM-HR-004", revNo: "07", revDate: "11.12.21" }, { departmentId, sectionId: sectionId || null });
     const [savedRevisionInfo, setSavedRevisionInfo] = useState(null);
@@ -350,7 +352,9 @@ const SixteenDayMonitoringSheet = ({
                     setLineLeaderOptions(progressData.lineLeaderOptions || []);
                     setLineNamePart(progressData.lineName || "");
                 } catch (err) { console.error(err); }
-                const response = await axiosInstance.get(`/api/sixteen-day-monitoring/${studentId}`);
+                const response = await axiosInstance.get(`/api/sixteen-day-monitoring/${studentId}`, {
+                    params: initialRecordId && !initialForceNewAttempt ? { recordId: initialRecordId } : undefined,
+                });
                 if (response.data.success && response.data.data?.userStatus) {
                     setUserStatus(response.data.data.userStatus);
                 }
@@ -447,7 +451,7 @@ const SixteenDayMonitoringSheet = ({
         loadInitialData();
         fetchConfig();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [studentId, studentName, employeeCode, departmentName, sectionName, initialForceNewAttempt]);
+    }, [studentId, studentName, employeeCode, departmentName, sectionName, initialForceNewAttempt, initialRecordId]);
 
     const fetchHistoryAttempts = async () => {
         if (!studentId) return;

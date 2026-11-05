@@ -5,6 +5,7 @@ import {
     createTenCycleSheet,
     getTenCycleSheetById,
     listTenCycleSheets,
+    listUserTenCycleSheets,
     updateTenCycleSheetById,
     approveTenCycleSheet,
     deleteTenCycleSheet,
@@ -20,6 +21,7 @@ router.use(verifyJWT);
 
 router.get("/", authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN", "ten_cycle:read", "ten_cycle:manage"), listTenCycleSheets);
 router.post("/", authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN", "ten_cycle:create", "ten_cycle:manage"), createTenCycleSheet);
+router.get("/user/:userId", authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN", "ten_cycle:read", "ten_cycle:manage"), listUserTenCycleSheets);
 router.get("/config/:departmentId", authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN", "ten_cycle:read", "ten_cycle:manage"), getTenCycleSheetConfig);
 router.post("/config/save", authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN", "ten_cycle:edit_layout", "ten_cycle:manage"), saveTenCycleSheetConfig);
 router.post("/config/save-with-revision", authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN", "ten_cycle:edit_layout", "ten_cycle:manage", "revision:update"), saveTenCycleSheetConfigWithRevision);

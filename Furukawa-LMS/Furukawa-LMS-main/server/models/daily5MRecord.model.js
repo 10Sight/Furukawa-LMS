@@ -442,6 +442,62 @@ class Daily5MRecord {
         return { records, totalCount };
     }
 
+    // Row fields that hold a person's employee code, by the role they play on that row.
+    static PERSON_CODE_FIELDS = Object.freeze({
+        OperatorId: "Operator",   // crimping form
+        OpCode: "Operator",       // standard / SRC forms
+        EmpCode: "Deputed",       // crimping form
+        DeputedCode: "Deputed",   // standard / SRC forms
+    });
+
+    // Latest version of every 5M form (one per session) that names this employee code as an
+    // operator or deputed person on any row. A LIKE on the code narrows the scan in SQL;
+    // the rows are then checked field by field so a code inside free text doesn't count.
+    static async findSessionsByEmployeeCode(empCode, { allowedDepartmentIds, allowedSectionIds } = {}) {
+        const code = String(empCode || "").trim();
+        if (!code) return [];
+        if (Array.isArray(allowedDepartmentIds) && allowedDepartmentIds.length === 0) return [];
+
+        const scopeClause = this.buildScopeClause("r.", allowedDepartmentIds, allowedSectionIds);
+        // "!" is the LIKE escape character, so LIKE wildcards in the code match literally.
+        const likeCode = code.replace(/[!%_[]/g, (ch) => `!${ch}`);
+        const sql = `
+            WITH LatestSessions AS (
+                SELECT r.*, u.fullName as submittedByName,
+                       s.name as sectionName, d.name as departmentName,
+                       ROW_NUMBER() OVER (PARTITION BY COALESCE(r.sessionId, -r.id) ORDER BY r.createdAt DESC) as rn
+                FROM daily_5m_records r
+                LEFT JOIN users u ON r.submittedBy = CAST(u.id AS NVARCHAR(255))
+                LEFT JOIN [sections] s ON r.sectionId = CAST(s.id AS NVARCHAR(255))
+                LEFT JOIN departments d ON r.departmentId = CAST(d.id AS NVARCHAR(255))
+                WHERE 1 = 1${scopeClause.sql}
+            )
+            SELECT * FROM LatestSessions
+            WHERE rn = 1 AND recordData LIKE ? ESCAPE '!'
+            ORDER BY date DESC, createdAt DESC
+        `;
+        const [rows] = await executeQuery(sql, [...scopeClause.params, `%${likeCode}%`]);
+
+        const target = code.toLowerCase();
+        return rows.flatMap((row) => {
+            const record = new Daily5MRecord(row);
+            const roles = new Set();
+            const rowNumbers = new Set();
+            for (const [key, value] of Object.entries(record.recordData || {})) {
+                const match = /^rec_(\d+)_(\w+)$/.exec(key);
+                const role = match && Daily5MRecord.PERSON_CODE_FIELDS[match[2]];
+                if (role && String(value ?? "").trim().toLowerCase() === target) {
+                    roles.add(role);
+                    rowNumbers.add(Number(match[1]) + 1);
+                }
+            }
+            if (roles.size === 0) return [];
+            // recordData is dropped: the list only needs the summary, the form loads by id.
+            const { recordData, rejectedRows, adminRemarksHistory, ...summary } = record;
+            return [{ ...summary, roles: [...roles], rowNumbers: [...rowNumbers].sort((a, b) => a - b) }];
+        });
+    }
+
     static async findById(id) {
         const query = `
             SELECT r.*, u.fullName as submittedByName, au.fullName as approvedByName

@@ -96,6 +96,8 @@ const ThreeDayMonitoringSheet = ({
     canEditConfig = false,
     initialForceNewAttempt = false,
     headerActionsContainer = null,
+    // Open a specific saved attempt instead of the latest one (e.g. picked from a history table).
+    initialRecordId = null,
 }) => {
     // No sectionId prop reaches this component today — department-level scoping
     // only; the backend still resolves the student's own section at freeze time.
@@ -159,9 +161,14 @@ const ThreeDayMonitoringSheet = ({
         : !isOwner && !canEdit;
 
     useEffect(() => {
-        if (studentId) fetchData();
+        if (studentId) {
+            // fetchData fills the operator/line context; the requested attempt then replaces the latest record's data.
+            fetchData().then(() => {
+                if (initialRecordId && !initialForceNewAttempt) handleAttemptChange(String(initialRecordId));
+            });
+        }
         if (departmentId && departmentId !== 'undefined') fetchConfig();
-    }, [studentId, departmentId, sectionName, departmentName, authUser, initialForceNewAttempt]);
+    }, [studentId, departmentId, sectionName, departmentName, authUser, initialForceNewAttempt, initialRecordId]);
 
     // Auto-populate checkedByName when authUser is available and it's a new or blank field
     useEffect(() => {
@@ -378,6 +385,7 @@ const ThreeDayMonitoringSheet = ({
                 });
                 
                 setStatus(data.status || "Draft");
+                setSavedRevisionInfo({ docNo: data.docNo, revNo: data.revNo, issueDate: data.issueDate, revDate: data.revDate });
             }
         } catch (err) {
             console.error("Error loading attempt:", err);

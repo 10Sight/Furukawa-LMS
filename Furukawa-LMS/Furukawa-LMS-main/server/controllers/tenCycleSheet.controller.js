@@ -44,7 +44,30 @@ export const listTenCycleSheets = asyncHandler(async (req, res) => {
     const { departmentId, sectionId, lineId, subSectionId } = req.query;
 
     const sheets = await TenCycleSheet.findByFilters({ departmentId, sectionId, lineId, subSectionId });
+    const result = await toSheetListItems(sheets);
 
+    return res.status(200).json(new ApiResponse(200, result, "10 cycle sheets fetched successfully"));
+});
+
+// 10 cycle sheets that list a user (by Emp. Code) as an operator on any row; same access as the list.
+export const listUserTenCycleSheets = asyncHandler(async (req, res) => {
+    const { userId } = req.params;
+    const [userRows] = await executeQuery(
+        isNaN(userId)
+            ? "SELECT empId FROM users WHERE LOWER(userName) = LOWER(?)"
+            : "SELECT empId FROM users WHERE id = ?",
+        [userId]
+    );
+    if (userRows.length === 0) throw new ApiError("User not found", 404);
+
+    const sheets = await TenCycleSheet.findByOperatorCode(userRows[0].empId);
+    const result = await toSheetListItems(sheets);
+
+    return res.status(200).json(new ApiResponse(200, result, "User 10 cycle sheets fetched successfully"));
+});
+
+// Summary rows for sheet lists (no entries), with department/section/line/sub-section names.
+const toSheetListItems = async (sheets) => {
     // Batch-fetch names for all unique ids referenced in the result set
     const buildMap = async (table, ids) => {
         const uniqueIds = [...new Set(ids.filter(Boolean))];
@@ -61,7 +84,7 @@ export const listTenCycleSheets = asyncHandler(async (req, res) => {
         buildMap("sub_sections", sheets.map(s => s.subSectionId)),
     ]);
 
-    const result = sheets.map((s) => ({
+    return sheets.map((s) => ({
         id: s.id,
         departmentId: s.departmentId,
         departmentName: deptMap[s.departmentId] || "",
@@ -83,10 +106,9 @@ export const listTenCycleSheets = asyncHandler(async (req, res) => {
         createdDate: s.createdDate,
         createdAt: s.createdAt,
         updatedAt: s.updatedAt,
+        ...(s.rowNumbers ? { rowNumbers: s.rowNumbers } : {}),
     }));
-
-    return res.status(200).json(new ApiResponse(200, result, "10 cycle sheets fetched successfully"));
-});
+};
 
 export const createTenCycleSheet = asyncHandler(async (req, res) => {
     const { departmentId, sectionId, lineId, subSectionId, formType } = req.body || {};

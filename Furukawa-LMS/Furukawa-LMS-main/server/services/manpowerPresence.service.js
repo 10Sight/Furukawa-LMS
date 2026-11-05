@@ -15,11 +15,13 @@ import {
 // Department-wise present / OT / requirement figures for the Daily HR Meeting report, built on
 // the same rules as the Dashboard (MPS Portal) Daily Manpower Trend (utils/manpowerPresence.js).
 //
-// Deliberate differences from the trend chart:
-// - no holiday exclusion (OT can be worked on a holiday),
+// Differences from the trend chart:
+// - no holiday exclusion here (OT can be worked on a holiday); the Daily HR Meeting snapshot sets
+//   holiday Present to 0 itself,
 // - shift is always ALL,
-// - with departmentResolution "attendance", a present punch is assigned to the department written
-//   on that day's attendance row (attendance_logs.department, mapped through
+// - departmentResolution "current" (used by the Daily HR Meeting) assigns a present punch to the
+//   user's current department, exactly like the trend chart. "attendance" instead uses the
+//   department written on that day's attendance row (attendance_logs.department, mapped through
 //   daily_manpower_attendance_dept_map), falling back to the user's current department.
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;

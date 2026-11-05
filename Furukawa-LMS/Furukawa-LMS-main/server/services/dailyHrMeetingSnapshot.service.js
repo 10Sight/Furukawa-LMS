@@ -14,6 +14,10 @@ import {
 // daily_hr_meeting_manpower_daily / daily_hr_meeting_daily_meta (replacing what was there).
 // Requirements are frozen at computation time: a later requirement change does not rewrite
 // past days until they are recalculated.
+//
+// Present follows the MPS Portal Daily Manpower Trend so both screens show the same headcount:
+// each present employee is counted in their current department (users.departmentId), and on a
+// dashboard holiday Present is 0. OT hours are kept on holidays (the trend chart has no OT).
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -26,39 +30,43 @@ export const buildSnapshotRows = ({ dates, departmentIds, requirements, presence
     for (const date of dates) {
         const day = Number(date.slice(8, 10));
         const perDept = presence.byDate.get(date) || new Map();
+        // Same as the trend chart: a holiday shows no present headcount.
+        const isHoliday = holidays.has(date);
+        const presentOf = (p) => (isHoliday ? 0 : p.present);
 
         for (const departmentId of departmentIds) {
             const req = requirements.byDepartment.get(departmentId) || { fn01: 0, fn02: 0 };
             const p = perDept.get(departmentId) || { present: 0, otHrs: 0, fallbackCount: 0 };
             const requiredForDay = getRequiredForDay(day, req.fn01, req.fn02);
+            const presentCount = presentOf(p);
             rows.push({
                 reportDate: date,
                 departmentId,
                 requiredFN01: req.fn01,
                 requiredFN02: req.fn02,
                 requiredForDay,
-                presentCount: p.present,
+                presentCount,
                 otHrs: p.otHrs,
                 otMandays: otHoursToMandays(p.otHrs),
-                gap: p.present - requiredForDay,
-                deptFallbackCount: p.fallbackCount,
+                gap: presentCount - requiredForDay,
+                deptFallbackCount: isHoliday ? 0 : p.fallbackCount,
             });
         }
 
         // Present punches resolved to a department id that is not an active department.
         let orphanPresent = 0;
         for (const [departmentId, p] of perDept) {
-            if (!knownDepartments.has(departmentId)) orphanPresent += p.present;
+            if (!knownDepartments.has(departmentId)) orphanPresent += presentOf(p);
         }
 
         metaRows.push({
             reportDate: date,
-            unmappedPresent: unmappedPresent.get(date) || 0,
-            noDepartmentPresent: (presence.noDepartmentPresentByDate.get(date) || 0) + orphanPresent,
+            unmappedPresent: isHoliday ? 0 : unmappedPresent.get(date) || 0,
+            noDepartmentPresent: isHoliday ? 0 : (presence.noDepartmentPresentByDate.get(date) || 0) + orphanPresent,
             unmappedRequirementFN01: requirements.unmapped.fn01,
             unmappedRequirementFN02: requirements.unmapped.fn02,
             unmappedAttendanceDepartments: presence.unmappedAttendanceDepartmentsByDate.get(date) || [],
-            isHoliday: holidays.has(date),
+            isHoliday,
         });
     }
 
@@ -96,7 +104,7 @@ export const computeAndStoreDates = async (dates, { source, userId = null } = {}
 
         const [requirements, presence, unmappedPresent, holidays, attendanceDates] = await Promise.all([
             getRequirementsByDepartment({ year, monthNumber }),
-            getDailyPresenceByDepartment({ startDate, endDate, departmentResolution: "attendance" }),
+            getDailyPresenceByDepartment({ startDate, endDate, departmentResolution: "current" }),
             getUnmappedPresentByDate({ startDate, endDate }),
             getHolidayDates({ startDate, endDate }),
             getDatesWithAttendance({ startDate, endDate }),

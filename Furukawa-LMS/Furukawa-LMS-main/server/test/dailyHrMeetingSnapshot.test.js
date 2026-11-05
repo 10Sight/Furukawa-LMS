@@ -59,8 +59,8 @@ test("stores only days with attendance but clears every requested day, one month
     assert.equal(result.dates, 2);
     assert.deepEqual(calls.requirements, [{ year: 2026, monthNumber: 10 }, { year: 2026, monthNumber: 11 }]);
     assert.deepEqual(calls.presence.map((p) => [p.startDate, p.endDate, p.departmentResolution]), [
-        ["2026-10-31", "2026-10-31", "attendance"],
-        ["2026-11-01", "2026-11-02", "attendance"],
+        ["2026-10-31", "2026-10-31", "current"],
+        ["2026-11-01", "2026-11-02", "current"],
     ]);
 
     const [oct, nov] = calls.replace;

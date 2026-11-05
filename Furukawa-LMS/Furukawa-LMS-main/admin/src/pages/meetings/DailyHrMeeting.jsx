@@ -22,7 +22,8 @@ import ManualTrainingEditModal from "@/pages/meetings/components/hr-meeting/Manu
 
 // Daily HR Meeting workspace (MIS Portal).
 // - Daily Manpower Report: figures stored server-side when attendance is uploaded (and nightly /
-//   on Recalculate); this page only reads them.
+//   on Recalculate); this page only reads them. Present follows the MPS Portal Daily Manpower
+//   Trend: current department of each employee, 0 on dashboard holidays.
 // - Daily Handover Report: Handover Actual by section + Hiring Actual by shift, read live.
 // Both tabs share the month, the days-shown switch and the section configuration.
 
@@ -171,7 +172,7 @@ export default function DailyHrMeeting({ lockedTab = null, embedded = false }) {
                         {!isManpower
                             ? "Approved handovers and Dojo recruits, up to date."
                             : report?.lastComputedAt
-                                ? `Last calculated ${new Date(report.lastComputedAt).toLocaleString()}`
+                                ? `Last calculated ${new Date(report.lastComputedAt).toLocaleString()} · Present by employee's current department, as in MPS Portal`
                                 : "Figures are calculated when attendance is uploaded."}
                     </p>
                 </div>

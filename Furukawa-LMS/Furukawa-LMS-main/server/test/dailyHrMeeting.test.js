@@ -142,7 +142,7 @@ test("stored rows: every department every date, FN01 until the 15th, FN02 from t
     const presenceResult = {
         byDate: new Map([["2026-11-15", new Map([[10, { present: 1300, otHrs: 7, fallbackCount: 2 }]])]]),
         unmappedAttendanceDepartmentsByDate: new Map(),
-        noDepartmentPresentByDate: new Map([["2026-11-16", 3]]),
+        noDepartmentPresentByDate: new Map([["2026-11-15", 3]]),
     };
     const { rows, metaRows } = buildSnapshotRows({
         dates: ["2026-11-15", "2026-11-16"],
@@ -165,8 +165,30 @@ test("stored rows: every department every date, FN01 until the 15th, FN02 from t
     const zero = rows.find((r) => r.reportDate === "2026-11-16" && r.departmentId === 20);
     assert.equal(zero.presentCount, 0);
     assert.equal(metaRows[0].unmappedPresent, 4);
-    assert.equal(metaRows[1].noDepartmentPresent, 3);
+    assert.equal(metaRows[0].noDepartmentPresent, 3);
     assert.equal(metaRows[1].isHoliday, true);
+});
+
+test("stored rows: a holiday shows Present 0 like the MPS trend chart, OT hours are kept", () => {
+    const { rows, metaRows } = buildSnapshotRows({
+        dates: ["2026-11-16"],
+        departmentIds: [10],
+        requirements: { byDepartment: new Map([[10, { fn01: 0, fn02: 50 }]]), unmapped: { fn01: 0, fn02: 0 } },
+        presence: {
+            byDate: new Map([["2026-11-16", new Map([[10, { present: 12, otHrs: 16, fallbackCount: 1 }], [99, { present: 2, otHrs: 0, fallbackCount: 0 }]])]]),
+            unmappedAttendanceDepartmentsByDate: new Map(),
+            noDepartmentPresentByDate: new Map([["2026-11-16", 3]]),
+        },
+        unmappedPresent: new Map([["2026-11-16", 4]]),
+        holidays: new Set(["2026-11-16"]),
+    });
+
+    assert.deepEqual(rows[0], {
+        reportDate: "2026-11-16", departmentId: 10, requiredFN01: 0, requiredFN02: 50, requiredForDay: 50,
+        presentCount: 0, otHrs: 16, otMandays: 2, gap: -50, deptFallbackCount: 0,
+    });
+    assert.equal(metaRows[0].unmappedPresent, 0);
+    assert.equal(metaRows[0].noDepartmentPresent, 0);
 });
 
 // ---------------------------------------------------------------------------------------------

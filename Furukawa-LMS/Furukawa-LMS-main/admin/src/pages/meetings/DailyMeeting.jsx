@@ -47,6 +47,8 @@ const HR_VIEWS = [
         key: "hr-meeting",
         configKey: "hrMeetingShutter",
         lockedTab: "manpower",
+        // Opens over the whole window, with a larger sheet, for reading out in the meeting.
+        fullScreen: true,
         label: "Daily HR Meeting",
         description: "Daily Manpower Report: present headcount, overtime and gap against requirement, by department."
     },
@@ -54,11 +56,47 @@ const HR_VIEWS = [
         key: "handover",
         configKey: "handoverShutter",
         lockedTab: "handover",
+        fullScreen: true,
         label: "Daily Handover Report",
         description: "Approved handovers by section and Dojo recruits by shift."
     }
 ];
 const HR_VIEW_KEYS = new Set(HR_VIEWS.map((v) => v.key));
+
+const HrViewLoading = ({ label }) => (
+    <div className="flex items-center justify-center py-20 text-slate-500 text-sm">
+        <IconLoader2 className="w-5 h-5 animate-spin text-indigo-600 mr-2" />
+        Loading {label}...
+    </div>
+);
+
+// An HR report opened full screen: covers the whole window (app sidebar, navbar and the
+// department list included), like an open meeting. Portaled to <body> so no ancestor's layout
+// can clip it; z-40 keeps it under dialogs and popovers.
+function HrViewFullScreen({ view, onBack }) {
+    const { darkMode } = useSelector((state) => state.theme);
+
+    useEffect(() => {
+        const previous = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+        return () => { document.body.style.overflow = previous; };
+    }, []);
+
+    return createPortal(
+        <div className={cn("fixed inset-0 z-40 overflow-auto p-3 space-y-2", darkMode ? "bg-slate-950" : "bg-slate-50")}>
+            <div className="flex items-center gap-3">
+                <Button variant="outline" size="sm" onClick={onBack} className="cursor-pointer flex items-center gap-1.5">
+                    <IconArrowLeft className="w-4 h-4" /> Back
+                </Button>
+                <h2 className={cn("text-xl font-bold", darkMode ? "text-slate-100" : "text-slate-800")}>{view.label}</h2>
+            </div>
+            <React.Suspense fallback={<HrViewLoading label={view.label} />}>
+                <DailyHrMeeting lockedTab={view.lockedTab} embedded fullScreen />
+            </React.Suspense>
+        </div>,
+        document.body
+    );
+}
 
 const formatMeetingDate = (dateStr) => {
     if (!dateStr) return "";
@@ -1060,22 +1098,28 @@ function SectionTabsView({ departmentId, sections, allSectionsLoading, isPreview
                 </TabsList>
                 {hrViews.map((v) => (
                     <TabsContent key={v.key} value={v.key}>
+                        {v.fullScreen && activeView === v.key ? (
+                            <HrViewFullScreen
+                                view={v}
+                                onBack={() => {
+                                    const next = new URLSearchParams(searchParams);
+                                    next.delete("view");
+                                    setSearchParams(next);
+                                }}
+                            />
+                        ) : (
                         <Card className="border-slate-200/70 shadow-sm">
                             <CardHeader className="pb-3 border-b border-slate-100 bg-white">
                                 <CardTitle className="text-lg font-bold text-slate-800">{v.label}</CardTitle>
                                 <CardDescription>{v.description}</CardDescription>
                             </CardHeader>
                             <CardContent className="p-2 sm:p-4 bg-white">
-                                <React.Suspense fallback={
-                                    <div className="flex items-center justify-center py-20 text-slate-500 text-sm">
-                                        <IconLoader2 className="w-5 h-5 animate-spin text-indigo-600 mr-2" />
-                                        Loading {v.label}...
-                                    </div>
-                                }>
+                                <React.Suspense fallback={<HrViewLoading label={v.label} />}>
                                     <DailyHrMeeting lockedTab={v.lockedTab} embedded />
                                 </React.Suspense>
                             </CardContent>
                         </Card>
+                        )}
                     </TabsContent>
                 ))}
                 {visibleSections.map((sec) => (

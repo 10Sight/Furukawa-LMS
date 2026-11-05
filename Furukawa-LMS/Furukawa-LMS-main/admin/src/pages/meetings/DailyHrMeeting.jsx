@@ -6,6 +6,7 @@ import {
     IconAlertTriangle, IconCalculator, IconDownload, IconLoader2, IconRefresh, IconSettings, IconUsers,
 } from "@tabler/icons-react";
 import { Button } from "@/components/common/ui/button.jsx";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/common/ui/popover.jsx";
 import { cn } from "@/utils/classNames.js";
 import useTranslate from "@/hooks/useTranslate.js";
 import {
@@ -60,9 +61,9 @@ const TABS = [
 
 // Shown inside the Management Information System page (DailyMeeting.jsx) as two separate
 // tabs: there `lockedTab` fixes the report ("manpower" | "handover"), which hides this page's
-// own tab bar and leaves ?tab= alone, and `embedded` drops the page title the outer tab
-// already shows.
-export default function DailyHrMeeting({ lockedTab = null, embedded = false }) {
+// own tab bar and leaves ?tab= alone, `embedded` drops the page title the outer tab
+// already shows, and `fullScreen` (the window-filling meeting view) renders the sheet larger.
+export default function DailyHrMeeting({ lockedTab = null, embedded = false, fullScreen = false }) {
     const { user } = useSelector((state) => state.auth);
     const { darkMode } = useSelector((state) => state.theme);
     const { t } = useTranslate();
@@ -89,6 +90,7 @@ export default function DailyHrMeeting({ lockedTab = null, embedded = false }) {
     const [configTab, setConfigTab] = useState("sections");
     const [trainingOpen, setTrainingOpen] = useState(false);
     const [exporting, setExporting] = useState(false);
+    const [warningsOpen, setWarningsOpen] = useState(false);
 
     const [year, month] = monthValue.split("-").map(Number);
     const isManpower = activeTab === "manpower";
@@ -146,10 +148,62 @@ export default function DailyHrMeeting({ lockedTab = null, embedded = false }) {
         }
     };
 
-    const openConfig = (tab) => { setConfigTab(tab); setConfigOpen(true); };
+    const openConfig = (tab) => { setWarningsOpen(false); setConfigTab(tab); setConfigOpen(true); };
 
     const card = darkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200";
     const muted = darkMode ? "text-slate-400" : "text-slate-500";
+
+    // "Check before the meeting" items for the open tab, listed behind the warning button.
+    const warningItems = [];
+    if (handoverReport) {
+        if (handoverNotShown > 0) {
+            warningItems.push(
+                <div key="handover-not-shown">
+                    {handoverNotShown} handover(s) in these {HANDOVER_MONTHS} months are not in any row
+                    {handoverDiagnostics.hiddenDepartmentHandovers > 0 ? ` (${handoverDiagnostics.hiddenDepartmentHandovers} to hidden sections)` : ""}
+                    {handoverDiagnostics.unassignedHandovers > 0 ? ` (${handoverDiagnostics.unassignedHandovers} with no or a deleted department)` : ""}.
+                    {canEdit && handoverDiagnostics.hiddenDepartmentHandovers > 0 && (
+                        <button type="button" className="ml-2 font-semibold underline" onClick={() => openConfig("sections")}>Configure sections</button>
+                    )}
+                </div>
+            );
+        }
+        if (handoverDiagnostics?.unassignedShiftTotal > 0) {
+            warningItems.push(
+                <div key="handover-no-shift">{handoverDiagnostics.unassignedShiftTotal} Dojo recruit(s) in these {HANDOVER_MONTHS} months have no A/B/C/G shift and are shown under “No shift”.</div>
+            );
+        }
+    }
+    if (report) {
+        if (notComputed > 0) {
+            warningItems.push(
+                <div key="not-computed">{notComputed} day(s) have no figures (shown as “–”): no attendance uploaded for them, or not calculated yet.{canEdit ? " Upload attendance or use Recalculate month." : ""}</div>
+            );
+        }
+        if (hasUnmappedDepartments) {
+            warningItems.push(
+                <div key="unmapped-departments">
+                    Attendance department names not mapped to a department (counted under each person's current department):{" "}
+                    {diagnostics.unmappedAttendanceDepartments.slice(0, 5).map((u) => `${u.name} (${u.count})`).join(", ")}
+                    {diagnostics.unmappedAttendanceDepartments.length > 5 ? "…" : ""}
+                    {canEdit && (
+                        <button type="button" className="ml-2 font-semibold underline" onClick={() => openConfig("mapping")}>Map them</button>
+                    )}
+                </div>
+            );
+        }
+        if (diagnostics?.unmappedPresentTotal > 0) {
+            warningItems.push(
+                <div key="unmapped-present">{diagnostics.unmappedPresentTotal} present punch(es) this month have no matching employee and are not in any row.</div>
+            );
+        }
+        if (diagnostics?.noDepartmentPresentTotal > 0) {
+            warningItems.push(
+                <div key="no-department">{diagnostics.noDepartmentPresentTotal} present punch(es) could not be placed in an active department.</div>
+            );
+        }
+    }
+    const amber = darkMode ? "border-amber-900 bg-amber-950 text-amber-200" : "border-amber-300 bg-amber-50 text-amber-900";
 
     if (!canRead) {
         return (
@@ -177,6 +231,26 @@ export default function DailyHrMeeting({ lockedTab = null, embedded = false }) {
                     </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                    {warningItems.length > 0 && (
+                        <Popover open={warningsOpen} onOpenChange={setWarningsOpen}>
+                            <PopoverTrigger asChild>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className={cn("relative", amber, darkMode ? "hover:bg-amber-900" : "hover:bg-amber-100")}
+                                    title="Check before the meeting"
+                                    aria-label={`Check before the meeting: ${warningItems.length} item(s)`}
+                                >
+                                    <IconAlertTriangle />
+                                    <span className="tabular-nums font-semibold">{warningItems.length}</span>
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent align="end" className={cn("w-96 max-w-[calc(100vw-2rem)] p-3 text-xs space-y-1.5", amber)}>
+                                <div className="flex items-center gap-1.5 font-semibold"><IconAlertTriangle size={14} /> Check before the meeting</div>
+                                {warningItems}
+                            </PopoverContent>
+                        </Popover>
+                    )}
                     <input
                         type="month"
                         value={monthValue}
@@ -244,50 +318,6 @@ export default function DailyHrMeeting({ lockedTab = null, embedded = false }) {
                 ))}
             </div>}
 
-            {handoverReport && (handoverNotShown > 0 || handoverDiagnostics?.unassignedShiftTotal > 0) && (
-                <div className={cn("rounded-lg border px-3 py-2 text-xs space-y-1", darkMode ? "border-amber-900 bg-amber-950/40 text-amber-200" : "border-amber-300 bg-amber-50 text-amber-900")}>
-                    <div className="flex items-center gap-1.5 font-semibold"><IconAlertTriangle size={14} /> Check before the meeting</div>
-                    {handoverNotShown > 0 && (
-                        <div>
-                            {handoverNotShown} handover(s) in these {HANDOVER_MONTHS} months are not in any row
-                            {handoverDiagnostics.hiddenDepartmentHandovers > 0 ? ` (${handoverDiagnostics.hiddenDepartmentHandovers} to hidden sections)` : ""}
-                            {handoverDiagnostics.unassignedHandovers > 0 ? ` (${handoverDiagnostics.unassignedHandovers} with no or a deleted department)` : ""}.
-                            {canEdit && handoverDiagnostics.hiddenDepartmentHandovers > 0 && (
-                                <button type="button" className="ml-2 font-semibold underline" onClick={() => openConfig("sections")}>Configure sections</button>
-                            )}
-                        </div>
-                    )}
-                    {handoverDiagnostics?.unassignedShiftTotal > 0 && (
-                        <div>{handoverDiagnostics.unassignedShiftTotal} Dojo recruit(s) in these {HANDOVER_MONTHS} months have no A/B/C/G shift and are shown under “No shift”.</div>
-                    )}
-                </div>
-            )}
-
-            {report && (hasUnmappedDepartments || diagnostics?.unmappedPresentTotal > 0 || diagnostics?.noDepartmentPresentTotal > 0 || notComputed > 0) && (
-                <div className={cn("rounded-lg border px-3 py-2 text-xs space-y-1", darkMode ? "border-amber-900 bg-amber-950/40 text-amber-200" : "border-amber-300 bg-amber-50 text-amber-900")}>
-                    <div className="flex items-center gap-1.5 font-semibold"><IconAlertTriangle size={14} /> Check before the meeting</div>
-                    {notComputed > 0 && (
-                        <div>{notComputed} day(s) have no figures (shown as “–”): no attendance uploaded for them, or not calculated yet.{canEdit ? " Upload attendance or use Recalculate month." : ""}</div>
-                    )}
-                    {hasUnmappedDepartments && (
-                        <div>
-                            Attendance department names not mapped to a department (counted under each person's current department):{" "}
-                            {diagnostics.unmappedAttendanceDepartments.slice(0, 5).map((u) => `${u.name} (${u.count})`).join(", ")}
-                            {diagnostics.unmappedAttendanceDepartments.length > 5 ? "…" : ""}
-                            {canEdit && (
-                                <button type="button" className="ml-2 font-semibold underline" onClick={() => openConfig("mapping")}>Map them</button>
-                            )}
-                        </div>
-                    )}
-                    {diagnostics?.unmappedPresentTotal > 0 && (
-                        <div>{diagnostics.unmappedPresentTotal} present punch(es) this month have no matching employee and are not in any row.</div>
-                    )}
-                    {diagnostics?.noDepartmentPresentTotal > 0 && (
-                        <div>{diagnostics.noDepartmentPresentTotal} present punch(es) could not be placed in an active department.</div>
-                    )}
-                </div>
-            )}
-
             <div className={cn("rounded-xl border p-2", card)}>
                 {isError ? (
                     <div className={cn("py-16 text-center text-sm", muted)}>{error?.message || "Could not load the report."}</div>
@@ -296,7 +326,7 @@ export default function DailyHrMeeting({ lockedTab = null, embedded = false }) {
                 ) : !activeReport.dates.length ? (
                     <div className={cn("py-16 text-center text-sm", muted)}>This month has not started yet.</div>
                 ) : !isManpower ? (
-                    <DailyHandoverReportSheet report={handoverReport} visibleDates={visibleDates} darkMode={darkMode} />
+                    <DailyHandoverReportSheet report={handoverReport} visibleDates={visibleDates} darkMode={darkMode} large={fullScreen} />
                 ) : (
                     <DailyManpowerReportSheet
                         report={report}
@@ -304,6 +334,7 @@ export default function DailyHrMeeting({ lockedTab = null, embedded = false }) {
                         darkMode={darkMode}
                         canEdit={canEdit}
                         onEditTraining={() => setTrainingOpen(true)}
+                        large={fullScreen}
                     />
                 )}
             </div>

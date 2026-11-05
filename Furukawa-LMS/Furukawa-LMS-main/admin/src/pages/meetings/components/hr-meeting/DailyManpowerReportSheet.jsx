@@ -13,8 +13,11 @@ const SUB_HEADERS = [
     { key: "gap", label: "Gap" },
 ];
 
-const W_SECTION = 168;
-const W_REQ = 112;
+// Column widths and type per size. "large" is the full-screen meeting view (read across a room).
+const SIZES = {
+    normal: { section: 168, req: 112, sub: "w-[84px] min-w-[84px]", text: "text-xs", sectionHeader: "text-sm", edit: "text-[10px]", maxHeight: "max-h-[calc(100vh-260px)]" },
+    large: { section: 240, req: 150, sub: "w-[120px] min-w-[120px]", text: "text-base", sectionHeader: "text-lg", edit: "text-xs", maxHeight: "max-h-[calc(100vh-150px)]" },
+};
 
 const formatNumber = (value) => {
     if (value === null || value === undefined) return "";
@@ -55,8 +58,11 @@ const palette = (darkMode) => (darkMode
         negative: "text-red-600",
     });
 
-export default function DailyManpowerReportSheet({ report, visibleDates, darkMode, canEdit, onEditTraining }) {
+export default function DailyManpowerReportSheet({ report, visibleDates, darkMode, canEdit, onEditTraining, large = false }) {
     const p = palette(darkMode);
+    const size = large ? SIZES.large : SIZES.normal;
+    const W_SECTION = size.section;
+    const W_REQ = size.req;
     const latestComputed = [...report.dates].reverse().find((d) => d.computed)?.date || null;
 
     const rows = [
@@ -72,15 +78,15 @@ export default function DailyManpowerReportSheet({ report, visibleDates, darkMod
         return p.body;
     };
 
-    const cellBase = cn("border px-2 py-1 text-center tabular-nums whitespace-nowrap", p.border);
+    const cellBase = cn("border text-center tabular-nums whitespace-nowrap", large ? "px-3 py-1.5" : "px-2 py-1", p.border);
     const stickyCol = (left, width) => ({ position: "sticky", left, minWidth: width, maxWidth: width, width, zIndex: 2 });
 
     return (
-        <div className={cn("relative overflow-auto rounded-lg border max-h-[calc(100vh-260px)]", p.border)}>
-            <table className="border-separate border-spacing-0 text-xs">
+        <div className={cn("relative overflow-auto rounded-lg border", size.maxHeight, p.border)}>
+            <table className={cn("border-separate border-spacing-0", size.text)}>
                 <thead className="sticky top-0 z-20">
                     <tr>
-                        <th rowSpan={2} className={cn(cellBase, "font-bold text-sm", p.section)} style={{ ...stickyCol(0, W_SECTION), zIndex: 30 }}>
+                        <th rowSpan={2} className={cn(cellBase, "font-bold", size.sectionHeader, p.section)} style={{ ...stickyCol(0, W_SECTION), zIndex: 30 }}>
                             Section
                         </th>
                         <th rowSpan={2} className={cn(cellBase, "font-bold whitespace-normal", p.required)} style={{ ...stickyCol(W_SECTION, W_REQ), zIndex: 30 }}>
@@ -103,7 +109,7 @@ export default function DailyManpowerReportSheet({ report, visibleDates, darkMod
                     </tr>
                     <tr>
                         {visibleDates.map((d) => SUB_HEADERS.map((s) => (
-                            <th key={`${d.date}-${s.key}`} className={cn(cellBase, "font-semibold whitespace-normal w-[84px] min-w-[84px]", p.subHeader)}>
+                            <th key={`${d.date}-${s.key}`} className={cn(cellBase, "font-semibold whitespace-normal", size.sub, p.subHeader)}>
                                 {s.label}
                             </th>
                         )))}
@@ -126,7 +132,7 @@ export default function DailyManpowerReportSheet({ report, visibleDates, darkMod
                                             <button
                                                 type="button"
                                                 onClick={onEditTraining}
-                                                className="shrink-0 text-[10px] font-semibold text-blue-600 hover:underline dark:text-blue-400"
+                                                className={cn("shrink-0 font-semibold text-blue-600 hover:underline dark:text-blue-400", size.edit)}
                                             >
                                                 Edit
                                             </button>

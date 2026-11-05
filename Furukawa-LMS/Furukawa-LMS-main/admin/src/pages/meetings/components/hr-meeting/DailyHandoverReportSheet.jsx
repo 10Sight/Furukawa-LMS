@@ -5,8 +5,11 @@ import { cn } from "@/utils/classNames.js";
 // followed by Hiring Actual by shift. Both live in one table so their date columns stay aligned
 // and scroll together. Rows and totals come pre-built from the server.
 
-const W_LABEL = 150;
-const W_PLAN = 34;
+// Column widths and type per size. "large" is the full-screen meeting view (read across a room).
+const SIZES = {
+    normal: { label: 150, plan: 34, date: "min-w-[84px]", text: "text-xs", title: "text-sm", plan_text: "text-[10px]", maxHeight: "max-h-[calc(100vh-260px)]" },
+    large: { label: 220, plan: 44, date: "min-w-[120px]", text: "text-base", title: "text-lg", plan_text: "text-sm", maxHeight: "max-h-[calc(100vh-150px)]" },
+};
 
 const palette = (darkMode) => (darkMode
     ? {
@@ -30,15 +33,18 @@ const palette = (darkMode) => (darkMode
         zero: "text-slate-400",
     });
 
-export default function DailyHandoverReportSheet({ report, visibleDates, darkMode }) {
+export default function DailyHandoverReportSheet({ report, visibleDates, darkMode, large = false }) {
     const p = palette(darkMode);
+    const size = large ? SIZES.large : SIZES.normal;
+    const W_LABEL = size.label;
+    const W_PLAN = size.plan;
     const handoverRows = [
         ...report.handover.groups.flatMap((g) => [...g.rows, g.total]),
         report.handover.grandTotal,
     ];
     const hiringRows = [...report.hiring.rows, report.hiring.grandTotal];
 
-    const cellBase = cn("border px-2 py-1 text-center tabular-nums whitespace-nowrap", p.border);
+    const cellBase = cn("border text-center tabular-nums whitespace-nowrap", large ? "px-3 py-1.5" : "px-2 py-1", p.border);
     const sticky = (left, width, zIndex = 2) => ({ position: "sticky", left, minWidth: width, maxWidth: width, width, zIndex });
     const rowClass = (row) => (row.kind === "groupTotal" ? p.total : row.kind === "grandTotal" ? p.grandTotal : p.body);
 
@@ -52,15 +58,15 @@ export default function DailyHandoverReportSheet({ report, visibleDates, darkMod
     });
 
     const dateHeaders = (keyPrefix) => visibleDates.map((d) => (
-        <th key={`${keyPrefix}-${d.date}`} className={cn(cellBase, "font-bold min-w-[84px]", p.header)}>{d.date}</th>
+        <th key={`${keyPrefix}-${d.date}`} className={cn(cellBase, "font-bold", size.date, p.header)}>{d.date}</th>
     ));
 
     return (
-        <div className={cn("relative overflow-auto rounded-lg border max-h-[calc(100vh-260px)]", p.border)}>
-            <table className="border-separate border-spacing-0 text-xs">
+        <div className={cn("relative overflow-auto rounded-lg border", size.maxHeight, p.border)}>
+            <table className={cn("border-separate border-spacing-0", size.text)}>
                 <thead className="sticky top-0 z-20">
                     <tr>
-                        <th colSpan={2} className={cn(cellBase, "font-bold text-sm underline", p.header)} style={sticky(0, W_LABEL + W_PLAN, 30)}>
+                        <th colSpan={2} className={cn(cellBase, "font-bold underline", size.title, p.header)} style={sticky(0, W_LABEL + W_PLAN, 30)}>
                             Daily Handover Report
                         </th>
                         {dateHeaders("h")}
@@ -82,7 +88,7 @@ export default function DailyHandoverReportSheet({ report, visibleDates, darkMod
                                     className={cn(cellBase, "px-0 font-bold tracking-[0.15em]", p.plan)}
                                     style={sticky(W_LABEL, W_PLAN)}
                                 >
-                                    <span className="inline-block [writing-mode:vertical-rl] [text-orientation:upright] text-[10px]">Handover Plan</span>
+                                    <span className={cn("inline-block [writing-mode:vertical-rl] [text-orientation:upright]", size.plan_text)}>Handover Plan</span>
                                 </td>
                             )}
                             {valueCells(row)}
@@ -94,7 +100,7 @@ export default function DailyHandoverReportSheet({ report, visibleDates, darkMod
                     </tr>
 
                     <tr>
-                        <th colSpan={2} className={cn(cellBase, "font-bold text-sm", p.header)} style={sticky(0, W_LABEL + W_PLAN)}>
+                        <th colSpan={2} className={cn(cellBase, "font-bold", size.title, p.header)} style={sticky(0, W_LABEL + W_PLAN)}>
                             Hiring Actual
                         </th>
                         {dateHeaders("r")}

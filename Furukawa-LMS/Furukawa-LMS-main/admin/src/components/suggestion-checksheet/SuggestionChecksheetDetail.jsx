@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useSelector } from 'react-redux';
-import { ArrowLeft, CheckCircle2, Printer, Lock, Check, AlertCircle, Calendar } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Printer, Lock, Check, AlertCircle, Calendar, Eye } from 'lucide-react';
 import fmeLogo from './assets/suggestionChecksheetLogo.png';
 
 function normalizeDateToYMD(val) {
@@ -22,7 +22,7 @@ function normalizeDateToYMD(val) {
   return '';
 }
 
-export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
+export default function SuggestionChecksheetDetail({ item, onBack, onSave, isReadOnly = false }) {
   const authUser = useSelector((state) => state.auth?.user);
   const currentUserName =
     authUser?.fullName ||
@@ -31,6 +31,16 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
     (authUser?.empId ? `EMP: ${authUser.empId}` : 'Line Leader');
 
   const getTodayDateStr = () => new Date().toISOString().slice(0, 10);
+
+  const initialDecision =
+    item?.rejectedAccepted === 'NOT FEASIBLE' ||
+    item?.rejectedAccepted === 'REJECTED' ||
+    item?.status === 'Rejected' ||
+    item?.status === 'Not Feasible'
+      ? 'NOT FEASIBLE'
+      : item?.rejectedAccepted === 'ACCEPTED' || item?.status === 'Approved'
+      ? 'ACCEPTED'
+      : '';
 
   const [formData, setFormData] = useState({
     unit: item?.unit || 'Bawal',
@@ -48,9 +58,10 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
     category5S: !!item?.category5S || item?.category === '5S' || item?.category === "5'S",
     problemText: item?.problemText !== undefined ? item.problemText : (item?.description || ''),
     suggestionText: item?.suggestionText || '',
-    rejectedAccepted: item?.rejectedAccepted || (item?.status === 'Rejected' ? 'REJECTED' : item?.status === 'Approved' ? 'ACCEPTED' : ''),
+    rejectedAccepted: initialDecision,
     reasonIfRejected:
       item?.reasonIfRejected ||
+      item?.reasonIfNotFeasible ||
       (Array.isArray(item?.reasonLines) ? item.reasonLines.filter(Boolean).join(' ') : '') ||
       '',
     targetDate: normalizeDateToYMD(item?.targetDate) || '',
@@ -68,10 +79,11 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
 
   // Freezing states
   const isAccepted = formData.rejectedAccepted === 'ACCEPTED';
-  const isRejected = formData.rejectedAccepted === 'REJECTED';
+  const isNotFeasible = formData.rejectedAccepted === 'NOT FEASIBLE' || formData.rejectedAccepted === 'REJECTED';
 
   // Toggle category checkbox
   const handleToggleCategory = (catKey) => {
+    if (isReadOnly) return;
     setFormData((prev) => ({
       ...prev,
       [catKey]: !prev[catKey],
@@ -85,8 +97,9 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
     }
   };
 
-  // Decision change (ACCEPTED / REJECTED)
+  // Decision change (ACCEPTED / NOT FEASIBLE)
   const handleDecisionChange = (decision) => {
+    if (isReadOnly) return;
     setErrorMessage('');
     const today = getTodayDateStr();
 
@@ -99,10 +112,10 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
           lineLeaderSign1: prev.lineLeaderSign1 || currentUserName,
           approvalDate: prev.approvalDate || today,
         };
-      } else if (decision === 'REJECTED') {
+      } else if (decision === 'NOT FEASIBLE' || decision === 'REJECTED') {
         return {
           ...prev,
-          rejectedAccepted: 'REJECTED',
+          rejectedAccepted: 'NOT FEASIBLE',
           // Auto fill Concerned Line Leader Sign. and Date through login info
           lineLeaderSign1: prev.lineLeaderSign1 || currentUserName,
           approvalDate: prev.approvalDate || today,
@@ -118,6 +131,7 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
 
   // When Date of Implementation is filled -> Auto fill Concerned Line Leader Sign. (Sign 2) through login info
   const handleDateOfImplementationChange = (val) => {
+    if (isReadOnly) return;
     setErrorMessage('');
     setFormData((prev) => ({
       ...prev,
@@ -129,10 +143,14 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
   // Save form with mandatory validations
   const handleSaveForm = (e) => {
     if (e) e.preventDefault();
+    if (isReadOnly) {
+      alert('This sheet is in View-Only mode. Only Admins and the Sheet Creator can make edits.');
+      return;
+    }
     setErrorMessage('');
 
     // Rule 1: Accepted -> Target Date is MANDATORY
-    if (formData.rejectedAccepted === 'ACCEPTED') {
+    if (isAccepted) {
       if (!formData.targetDate || !formData.targetDate.trim()) {
         const msg = 'Implementation Status Target Date is mandatory when Suggestion is Accepted.';
         setErrorMessage(msg);
@@ -141,10 +159,10 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
       }
     }
 
-    // Rule 2: Rejected -> Reason if Rejected is MANDATORY
-    if (formData.rejectedAccepted === 'REJECTED') {
+    // Rule 2: Not Feasible -> Reason if Not Feasible is MANDATORY
+    if (isNotFeasible) {
       if (!formData.reasonIfRejected || !formData.reasonIfRejected.trim()) {
-        const msg = 'Reason if Rejected is mandatory when Suggestion is Rejected.';
+        const msg = 'Reason if Not Feasible is mandatory when Suggestion is Not Feasible.';
         setErrorMessage(msg);
         alert(msg);
         return;
@@ -164,12 +182,11 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
         problemText: formData.problemText,
         suggestionText: formData.suggestionText,
         description: (formData.problemText || '').slice(0, 120) + '...',
-        status:
-          formData.rejectedAccepted === 'ACCEPTED'
-            ? 'Approved'
-            : formData.rejectedAccepted === 'REJECTED'
-            ? 'Rejected'
-            : item?.status || 'Pending',
+        status: isAccepted
+          ? 'Approved'
+          : isNotFeasible
+          ? 'Not Feasible'
+          : item?.status || 'Pending',
       });
     }
 
@@ -190,6 +207,13 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
           <span>Back to Suggestion Checksheet</span>
         </button>
 
+        {isReadOnly && (
+          <div className="bg-amber-50 text-amber-900 border border-amber-200 py-1 px-3 text-xs rounded-full inline-flex items-center gap-1.5 font-semibold">
+            <Eye className="w-3.5 h-3.5 text-amber-600" />
+            <span>Best Suggestion (View Only — Only Admin & Creator can edit)</span>
+          </div>
+        )}
+
         {saveSuccess && (
           <div className="bg-emerald-50 text-emerald-800 border border-emerald-200 py-1 px-3 text-xs rounded-full inline-flex items-center gap-1.5 animate-in fade-in">
             <CheckCircle2 className="w-4 h-4 text-emerald-600" />
@@ -205,14 +229,16 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
         )}
 
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors shadow-xs cursor-pointer"
-            onClick={handleSaveForm}
-          >
-            <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-            <span>Save Checksheet</span>
-          </button>
+          {!isReadOnly && (
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors shadow-xs cursor-pointer"
+              onClick={handleSaveForm}
+            >
+              <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+              <span>Save Checksheet</span>
+            </button>
+          )}
           <button
             type="button"
             className="inline-flex items-center gap-1.5 px-3.5 py-1.5 border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
@@ -235,7 +261,7 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
             boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
             width: '100%',
             minWidth: '820px',
-            maxWidth: '100%'
+            maxWidth: '100%',
           }}
         >
           {/* Row 1: Logo & Company Name */}
@@ -268,77 +294,76 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
             <div style={{ width: '220px' }}></div>
           </div>
 
-          {/* Row 2: SUGGESTION FORMAT & UNIT */}
-          <div className="flex items-center justify-between px-4 py-1.5 border-b border-black bg-white">
-            <div style={{ width: '220px' }} className="flex items-center text-sm font-bold">
+          {/* Row 2: SUGGESTION FORMAT (Centered) */}
+          <div className="flex items-center justify-center px-4 py-1.5 border-b border-black bg-white">
+            <h3
+              className="text-lg md:text-xl font-bold tracking-wider mb-0 text-center"
+              style={{
+                letterSpacing: '1.5px',
+                fontFamily: "'Times New Roman', Times, serif",
+              }}
+            >
+              SUGGESTION FORMAT
+            </h3>
+          </div>
+
+          {/* Row 3: UNIT (Left - Placed in 3rd row as requested) & Checkbox Blocks P Q C D M S 5'S (Right) */}
+          <div className="flex justify-between items-center px-4 py-1.5 border-b border-black text-sm font-bold bg-white">
+            {/* Unit Text in 3rd Row */}
+            <div className="flex items-center text-sm md:text-base font-bold">
               <span className="font-bold mr-1.5">UNIT:-</span>
               <span className="font-semibold text-black">{formData.unit || item?.unit || 'Bawal'}</span>
             </div>
 
-            <div className="text-center flex-1">
-              <h3
-                className="text-lg md:text-xl font-bold tracking-wider mb-0"
-                style={{
-                  letterSpacing: '1.5px',
-                  fontFamily: "'Times New Roman', Times, serif",
-                }}
-              >
-                SUGGESTION FORMAT
-              </h3>
-            </div>
-
-            <div style={{ width: '220px' }}></div>
-          </div>
-
-          {/* Row 3: Checkbox Blocks P Q C D M S 5'S */}
-          <div
-            className="flex justify-end items-center px-4 py-1.5 border-b border-black gap-3 text-sm font-bold bg-white"
-          >
-            {[
-              { key: 'categoryP', label: 'P' },
-              { key: 'categoryQ', label: 'Q' },
-              { key: 'categoryC', label: 'C' },
-              { key: 'categoryD', label: 'D' },
-              { key: 'categoryM', label: 'M' },
-              { key: 'categoryS', label: 'S' },
-              { key: 'category5S', label: "5'S" },
-            ].map((cat) => (
-              <div
-                key={cat.key}
-                className="flex items-center gap-1.5 cursor-pointer select-none"
-                onClick={() => handleToggleCategory(cat.key)}
-                title={`Toggle ${cat.label}`}
-              >
-                <span>{cat.label}</span>
+            {/* Checkbox Blocks */}
+            <div className="flex items-center gap-3">
+              {[
+                { key: 'categoryP', label: 'P' },
+                { key: 'categoryQ', label: 'Q' },
+                { key: 'categoryC', label: 'C' },
+                { key: 'categoryD', label: 'D' },
+                { key: 'categoryM', label: 'M' },
+                { key: 'categoryS', label: 'S' },
+                { key: 'category5S', label: "5'S" },
+              ].map((cat) => (
                 <div
-                  style={{
-                    width: '30px',
-                    height: '18px',
-                    border: '2px solid #000000',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: '#ffffff',
-                    cursor: 'pointer',
-                    fontSize: '13px',
-                    lineHeight: '1',
-                    fontWeight: 'bold',
-                  }}
+                  key={cat.key}
+                  className={`flex items-center gap-1.5 select-none ${isReadOnly ? 'cursor-default' : 'cursor-pointer'}`}
+                  onClick={() => handleToggleCategory(cat.key)}
+                  title={`Toggle ${cat.label}`}
                 >
-                  {formData[cat.key] ? '✓' : ''}
+                  <span className="text-sm font-bold">{cat.label}</span>
+                  <div
+                    style={{
+                      width: '30px',
+                      height: '18px',
+                      border: '2px solid #000000',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: '#ffffff',
+                      cursor: isReadOnly ? 'default' : 'pointer',
+                      fontSize: '13px',
+                      lineHeight: '1',
+                      fontWeight: 'bold',
+                    }}
+                  >
+                    {formData[cat.key] ? '✓' : ''}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
 
-          {/* Row 4: DATE:- and Employee Name / ID : in same row */}
+          {/* Row 4: DATE:- and Employee Name / ID : in same row (Increased Text Size) */}
           <div className="flex items-stretch border-b border-black text-sm">
             {/* DATE (with Calendar Picker) */}
             <div className="flex items-center px-3 py-1.5 border-r border-black" style={{ width: '35%' }}>
-              <span className="font-bold whitespace-nowrap mr-2">DATE:-</span>
+              <span className="font-bold whitespace-nowrap mr-2 text-sm md:text-base">DATE:-</span>
               <input
                 type="date"
-                className="excel-cell-input flex-1 cursor-pointer bg-transparent"
+                readOnly={isReadOnly}
+                className="excel-cell-input flex-1 cursor-pointer bg-transparent text-sm md:text-base font-semibold py-1"
                 style={{
                   border: activeCellId === 'date' ? '2px solid #217346' : '1px solid transparent',
                   fontFamily: "'Times New Roman', Times, serif",
@@ -352,10 +377,11 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
 
             {/* Employee Name / ID : */}
             <div className="flex items-center px-3 py-1.5 flex-1" style={{ width: '65%' }}>
-              <span className="font-bold whitespace-nowrap mr-2">Employee Name / ID :</span>
+              <span className="font-bold whitespace-nowrap mr-2 text-sm md:text-base">Employee Name / ID :</span>
               <input
                 type="text"
-                className="excel-cell-input flex-1"
+                readOnly={isReadOnly}
+                className="excel-cell-input flex-1 text-sm md:text-base font-semibold py-1"
                 style={{
                   border: activeCellId === 'empName' ? '2px solid #217346' : '1px solid transparent',
                 }}
@@ -368,7 +394,7 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
             </div>
           </div>
 
-          {/* Row 5: DEPARTMENT:-, SECTION:-, and Line / Area : in same row */}
+          {/* Row 5: DEPARTMENT:-, SECTION:-, and Line / Area : in same row (Increased Text Size) */}
           <div className="flex items-stretch border-b border-black text-sm">
             {/* DEPARTMENT (Freezed / Non-editable) */}
             <div
@@ -376,10 +402,10 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
               style={{ width: '33.33%' }}
               title="Department is freezed after checksheet creation"
             >
-              <span className="font-bold whitespace-nowrap mr-2">DEPARTMENT:-</span>
+              <span className="font-bold whitespace-nowrap mr-2 text-sm md:text-base">DEPARTMENT:-</span>
               <input
                 type="text"
-                className="excel-cell-input flex-1 bg-transparent text-slate-800 cursor-not-allowed"
+                className="excel-cell-input flex-1 bg-transparent text-slate-800 cursor-not-allowed text-sm md:text-base font-semibold py-1"
                 value={formData.department}
                 readOnly
               />
@@ -392,10 +418,10 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
               style={{ width: '33.33%' }}
               title="Section is freezed after checksheet creation"
             >
-              <span className="font-bold whitespace-nowrap mr-2">SECTION:-</span>
+              <span className="font-bold whitespace-nowrap mr-2 text-sm md:text-base">SECTION:-</span>
               <input
                 type="text"
-                className="excel-cell-input flex-1 bg-transparent text-slate-800 cursor-not-allowed"
+                className="excel-cell-input flex-1 bg-transparent text-slate-800 cursor-not-allowed text-sm md:text-base font-semibold py-1"
                 value={formData.section}
                 readOnly
               />
@@ -408,10 +434,10 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
               style={{ width: '33.34%' }}
               title="Line / Area is freezed after checksheet creation"
             >
-              <span className="font-bold whitespace-nowrap mr-2">Line / Area :</span>
+              <span className="font-bold whitespace-nowrap mr-2 text-sm md:text-base">Line / Area :</span>
               <input
                 type="text"
-                className="excel-cell-input flex-1 bg-transparent text-slate-800 cursor-not-allowed"
+                className="excel-cell-input flex-1 bg-transparent text-slate-800 cursor-not-allowed text-sm md:text-base font-semibold py-1"
                 value={formData.lineArea}
                 readOnly
               />
@@ -421,24 +447,25 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
 
           {/* Section 1 Header: PROBLEM NAME / PROBLEM IN CURRENT PROCESS OR METHOD : */}
           <div
-            className="px-3 py-1.5 border-b border-black font-bold text-sm bg-white"
+            className="px-3 py-1.5 border-b border-black font-bold text-sm md:text-base bg-white"
             style={{ textDecoration: 'underline' }}
           >
             PROBLEM NAME / PROBLEM IN CURRENT PROCESS OR METHOD :
           </div>
 
-          {/* Section 1 Input */}
+          {/* Section 1 Input (Increased text size) */}
           <div className="w-full border-b border-black bg-white p-2">
             <textarea
-              className="w-full p-2.5 border border-slate-200 rounded-xs text-sm leading-relaxed text-black bg-white focus:outline-none"
+              readOnly={isReadOnly}
+              className="w-full p-2.5 border border-slate-200 rounded-xs text-base leading-relaxed text-black bg-white focus:outline-none"
               rows="6"
               wrap="soft"
               style={{
                 fontFamily: "'Times New Roman', Times, serif",
-                fontSize: '1rem',
+                fontSize: '1.05rem',
                 border: activeCellId === 'problemText' ? '2px solid #217346' : '1px solid #cbd5e1',
                 resize: 'vertical',
-                minHeight: '160px',
+                minHeight: '170px',
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-word',
               }}
@@ -453,24 +480,25 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
 
           {/* Section 2 Header: YOUR VALUABLE SUGGESTION TO IMPROVE THE CURRENT SITUATION */}
           <div
-            className="px-3 py-1.5 border-b border-black font-bold text-sm bg-white"
+            className="px-3 py-1.5 border-b border-black font-bold text-sm md:text-base bg-white"
             style={{ textDecoration: 'underline' }}
           >
             YOUR VALUABLE SUGGESTION TO IMPROVE THE CURRENT SITUATION (Give calculation if required):
           </div>
 
-          {/* Section 2 Input */}
+          {/* Section 2 Input (Increased text size) */}
           <div className="w-full border-b border-black bg-white p-2">
             <textarea
-              className="w-full p-2.5 border border-slate-200 rounded-xs text-sm leading-relaxed text-black bg-white focus:outline-none"
+              readOnly={isReadOnly}
+              className="w-full p-2.5 border border-slate-200 rounded-xs text-base leading-relaxed text-black bg-white focus:outline-none"
               rows="7"
               wrap="soft"
               style={{
                 fontFamily: "'Times New Roman', Times, serif",
-                fontSize: '1rem',
+                fontSize: '1.05rem',
                 border: activeCellId === 'suggestionText' ? '2px solid #217346' : '1px solid #cbd5e1',
                 resize: 'vertical',
-                minHeight: '180px',
+                minHeight: '190px',
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-word',
               }}
@@ -486,36 +514,37 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
           {/* Section 3: Bottom Review Table (Down of the Sheet) */}
           <div className="w-full border-b border-black bg-white">
             <div className="grid grid-cols-4 divide-x divide-black">
-              {/* Column 1: REJECTED / ACCEPTED */}
+              {/* Column 1: NOT FEASIBLE / ACCEPTED (Replaced Rejected with Not Feasible!) */}
               <div className="flex flex-col justify-between" style={{ minHeight: '170px' }}>
                 <div className="border-b border-black p-2 text-center font-bold text-xs md:text-sm">
-                  REJECTED / ACCEPTED
+                  NOT FEASIBLE / ACCEPTED
                 </div>
                 <div className="p-2 text-center my-auto">
                   <select
-                    className="w-full text-center font-bold border-0 bg-transparent text-base cursor-pointer focus:outline-none"
+                    disabled={isReadOnly}
+                    className="w-full text-center font-bold border-0 bg-transparent text-sm md:text-base cursor-pointer focus:outline-none"
                     style={{
                       fontFamily: "'Times New Roman', Times, serif",
                       color:
                         formData.rejectedAccepted === 'ACCEPTED'
                           ? '#15803d'
-                          : formData.rejectedAccepted === 'REJECTED'
+                          : isNotFeasible
                           ? '#b91c1c'
                           : '#64748b',
                       backgroundColor: activeCellId === 'decision' ? '#f0fdf4' : 'transparent',
                     }}
-                    value={formData.rejectedAccepted}
+                    value={formData.rejectedAccepted === 'REJECTED' ? 'NOT FEASIBLE' : formData.rejectedAccepted}
                     onChange={(e) => handleDecisionChange(e.target.value)}
                     onFocus={() => setActiveCellId('decision')}
                     onBlur={() => setActiveCellId(null)}
                   >
                     <option value="">-- Select Decision --</option>
                     <option value="ACCEPTED">ACCEPTED</option>
-                    <option value="REJECTED">REJECTED</option>
+                    <option value="NOT FEASIBLE">NOT FEASIBLE</option>
                   </select>
                 </div>
 
-                {/* Concerned Line Leader Sign. (Auto filled by login info on ACCEPTED/REJECTED) */}
+                {/* Concerned Line Leader Sign. (Auto filled by login info on ACCEPTED/NOT FEASIBLE) */}
                 <div className="p-2 border-t border-black bg-white">
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-xs">Concerned Line Leader Sign.</span>
@@ -527,7 +556,8 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
                   </div>
                   <input
                     type="text"
-                    className="excel-cell-input mt-1 font-semibold"
+                    readOnly={isReadOnly}
+                    className="excel-cell-input mt-1 font-semibold text-sm md:text-base"
                     style={{
                       border: activeCellId === 'sign1' ? '2px solid #217346' : '1px solid transparent',
                     }}
@@ -539,12 +569,13 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
                   />
                 </div>
 
-                {/* Date : (Auto filled on ACCEPTED/REJECTED + Calendar Picker) */}
+                {/* Date : (Auto filled on ACCEPTED/NOT FEASIBLE + Calendar Picker) */}
                 <div className="p-2 border-t border-black flex items-center gap-1.5 bg-white">
                   <span className="font-bold text-xs whitespace-nowrap">Date :</span>
                   <input
                     type="date"
-                    className="excel-cell-input flex-1 cursor-pointer bg-transparent"
+                    readOnly={isReadOnly}
+                    className="excel-cell-input flex-1 cursor-pointer bg-transparent text-sm md:text-base font-semibold"
                     style={{
                       border: activeCellId === 'signDate' ? '2px solid #217346' : '1px solid transparent',
                       fontFamily: "'Times New Roman', Times, serif",
@@ -557,7 +588,7 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
                 </div>
               </div>
 
-              {/* Column 2: Reason if Rejected (Freezed if ACCEPTED, Mandatory if REJECTED) */}
+              {/* Column 2: Reason if Not Feasible (Freezed if ACCEPTED, Mandatory if NOT FEASIBLE) */}
               <div
                 className={`flex flex-col transition-colors ${
                   isAccepted ? 'bg-slate-100 opacity-75' : 'bg-white'
@@ -565,13 +596,13 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
                 style={{ minHeight: '170px' }}
               >
                 <div className="border-b border-black p-2 font-bold text-xs md:text-sm flex items-center justify-between text-[#004b91]">
-                  <span>Reason if Rejected</span>
+                  <span>Reason if Not Feasible</span>
                   {isAccepted && (
                     <span className="inline-flex items-center gap-1 text-[11px] text-slate-500 font-semibold bg-slate-200 px-1.5 py-0.5 rounded">
                       <Lock className="w-3 h-3" /> Freezed
                     </span>
                   )}
-                  {isRejected && (
+                  {isNotFeasible && (
                     <span className="text-[11px] text-red-600 font-bold bg-red-50 px-1.5 py-0.5 rounded">
                       * Mandatory
                     </span>
@@ -579,8 +610,8 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
                 </div>
                 <div className="p-2 flex-1 flex flex-col">
                   <textarea
-                    disabled={isAccepted}
-                    className={`excel-cell-input w-full flex-1 p-2 focus:outline-none ${
+                    disabled={isAccepted || isReadOnly}
+                    className={`excel-cell-input w-full flex-1 p-2 text-sm md:text-base focus:outline-none ${
                       isAccepted
                         ? 'bg-transparent text-slate-500 cursor-not-allowed italic'
                         : 'bg-transparent text-black'
@@ -598,24 +629,24 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
                     placeholder={
                       isAccepted
                         ? 'Freezed (Suggestion is Accepted)'
-                        : isRejected
-                        ? 'Enter reason for rejection (* Required)...'
-                        : 'Enter reason if rejected...'
+                        : isNotFeasible
+                        ? 'Enter reason if not feasible (* Required)...'
+                        : 'Enter reason if not feasible...'
                     }
                   />
                 </div>
               </div>
 
-              {/* Column 3: Implementation Status (Freezed if REJECTED, Target Date Mandatory if ACCEPTED) */}
+              {/* Column 3: Implementation Status (Freezed if NOT FEASIBLE, Target Date Mandatory if ACCEPTED) */}
               <div
                 className={`flex flex-col justify-between transition-colors ${
-                  isRejected ? 'bg-slate-100 opacity-75' : 'bg-white'
+                  isNotFeasible ? 'bg-slate-100 opacity-75' : 'bg-white'
                 }`}
                 style={{ minHeight: '170px' }}
               >
                 <div className="border-b border-black p-2 font-bold text-xs md:text-sm flex items-center justify-between">
                   <span>Implementation Status</span>
-                  {isRejected && (
+                  {isNotFeasible && (
                     <span className="inline-flex items-center gap-1 text-[11px] text-slate-500 font-semibold bg-slate-200 px-1.5 py-0.5 rounded">
                       <Lock className="w-3 h-3" /> Freezed
                     </span>
@@ -634,9 +665,9 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
                   </div>
                   <input
                     type="date"
-                    disabled={isRejected}
-                    className={`excel-cell-input mt-1 cursor-pointer w-full bg-transparent ${
-                      isRejected ? 'cursor-not-allowed text-slate-500' : ''
+                    disabled={isNotFeasible || isReadOnly}
+                    className={`excel-cell-input mt-1 cursor-pointer w-full bg-transparent text-sm md:text-base font-semibold ${
+                      isNotFeasible ? 'cursor-not-allowed text-slate-500' : ''
                     }`}
                     style={{
                       border: activeCellId === 'targetDate' ? '2px solid #217346' : '1px solid transparent',
@@ -654,9 +685,9 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
                   <div className="font-bold text-xs">Date of Implementation :</div>
                   <input
                     type="date"
-                    disabled={isRejected}
-                    className={`excel-cell-input mt-1 cursor-pointer w-full bg-transparent ${
-                      isRejected ? 'cursor-not-allowed text-slate-500' : ''
+                    disabled={isNotFeasible || isReadOnly}
+                    className={`excel-cell-input mt-1 cursor-pointer w-full bg-transparent text-sm md:text-base font-semibold ${
+                      isNotFeasible ? 'cursor-not-allowed text-slate-500' : ''
                     }`}
                     style={{
                       border: activeCellId === 'implDate' ? '2px solid #217346' : '1px solid transparent',
@@ -673,7 +704,7 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
                 <div className="p-2">
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-xs">Concerned Line Leader Sign.</span>
-                    {formData.dateOfImplementation && !isRejected && (
+                    {formData.dateOfImplementation && !isNotFeasible && (
                       <span className="text-[10px] text-blue-700 font-semibold bg-blue-50 px-1.5 py-0.5 rounded">
                         Auto-filled
                       </span>
@@ -681,9 +712,9 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
                   </div>
                   <input
                     type="text"
-                    disabled={isRejected}
-                    className={`excel-cell-input mt-1 font-semibold ${
-                      isRejected ? 'cursor-not-allowed text-slate-500 bg-transparent' : ''
+                    disabled={isNotFeasible || isReadOnly}
+                    className={`excel-cell-input mt-1 font-semibold text-sm md:text-base ${
+                      isNotFeasible ? 'cursor-not-allowed text-slate-500 bg-transparent' : ''
                     }`}
                     style={{
                       border: activeCellId === 'sign2' ? '2px solid #217346' : '1px solid transparent',
@@ -692,15 +723,15 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
                     onChange={(e) => setFormData({ ...formData, lineLeaderSign2: e.target.value })}
                     onFocus={() => setActiveCellId('sign2')}
                     onBlur={() => setActiveCellId(null)}
-                    placeholder={isRejected ? 'Freezed (Rejected)' : 'Sign / Name'}
+                    placeholder={isNotFeasible ? 'Freezed (Not Feasible)' : 'Sign / Name'}
                   />
                 </div>
               </div>
 
-              {/* Column 4: Benefit Status & Cost Saving (Freezed if REJECTED) */}
+              {/* Column 4: Benefit Status & Cost Saving (Freezed if NOT FEASIBLE) */}
               <div
                 className={`flex flex-col justify-between transition-colors ${
-                  isRejected ? 'bg-slate-100 opacity-75' : 'bg-white'
+                  isNotFeasible ? 'bg-slate-100 opacity-75' : 'bg-white'
                 }`}
                 style={{ minHeight: '170px' }}
               >
@@ -708,7 +739,7 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
                 <div className="flex flex-col flex-1">
                   <div className="border-b border-black p-2 font-bold text-xs md:text-sm flex items-center justify-between">
                     <span>Benefit Status</span>
-                    {isRejected && (
+                    {isNotFeasible && (
                       <span className="inline-flex items-center gap-1 text-[11px] text-slate-500 font-semibold bg-slate-200 px-1.5 py-0.5 rounded">
                         <Lock className="w-3 h-3" /> Freezed
                       </span>
@@ -717,9 +748,9 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
                   <div className="p-2 flex-1 flex items-center">
                     <input
                       type="text"
-                      disabled={isRejected}
-                      className={`excel-cell-input w-full ${
-                        isRejected ? 'cursor-not-allowed text-slate-500 bg-transparent' : ''
+                      disabled={isNotFeasible || isReadOnly}
+                      className={`excel-cell-input w-full text-sm md:text-base ${
+                        isNotFeasible ? 'cursor-not-allowed text-slate-500 bg-transparent' : ''
                       }`}
                       style={{
                         border: activeCellId === 'benefitDetails' ? '2px solid #217346' : '1px solid transparent',
@@ -728,7 +759,7 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
                       onChange={(e) => setFormData({ ...formData, benefitDetails: e.target.value })}
                       onFocus={() => setActiveCellId('benefitDetails')}
                       onBlur={() => setActiveCellId(null)}
-                      placeholder={isRejected ? 'Freezed (Rejected)' : 'Enter Benefit Status...'}
+                      placeholder={isNotFeasible ? 'Freezed (Not Feasible)' : 'Enter Benefit Status...'}
                     />
                   </div>
                 </div>
@@ -737,7 +768,7 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
                 <div className="border-t border-black flex flex-col flex-1">
                   <div className="border-b border-black p-2 font-bold text-xs md:text-sm flex items-center justify-between">
                     <span>Cost Saving</span>
-                    {isRejected && (
+                    {isNotFeasible && (
                       <span className="inline-flex items-center gap-1 text-[11px] text-slate-500 font-semibold bg-slate-200 px-1.5 py-0.5 rounded">
                         <Lock className="w-3 h-3" /> Freezed
                       </span>
@@ -746,9 +777,9 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
                   <div className="p-2 flex-1 flex items-center">
                     <input
                       type="text"
-                      disabled={isRejected}
-                      className={`excel-cell-input w-full font-bold ${
-                        isRejected ? 'cursor-not-allowed text-slate-500 bg-transparent' : 'text-emerald-700'
+                      disabled={isNotFeasible || isReadOnly}
+                      className={`excel-cell-input w-full font-bold text-sm md:text-base ${
+                        isNotFeasible ? 'cursor-not-allowed text-slate-500 bg-transparent' : 'text-emerald-700'
                       }`}
                       style={{
                         border: activeCellId === 'costSaving' ? '2px solid #217346' : '1px solid transparent',
@@ -757,7 +788,7 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave }) {
                       onChange={(e) => setFormData({ ...formData, costSaving: e.target.value })}
                       onFocus={() => setActiveCellId('costSaving')}
                       onBlur={() => setActiveCellId(null)}
-                      placeholder={isRejected ? 'Freezed (Rejected)' : 'Enter Cost Saving (e.g. ₹ 1,20,000 / Year)...'}
+                      placeholder={isNotFeasible ? 'Freezed (Not Feasible)' : 'Enter Cost Saving (e.g. ₹ 1,20,000 / Year)...'}
                     />
                   </div>
                 </div>

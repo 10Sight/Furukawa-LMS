@@ -4,7 +4,6 @@ import { useGetAllDepartmentsQuery } from "@/services/api/DepartmentApi.js";
 import { useGetSectionsByDepartmentQuery } from "@/services/api/SectionApi.js";
 import { useGetLinesBySectionQuery } from "@/services/api/LineApi.js";
 import { useGetAllUsersQuery } from "@/services/api/UserApi.js";
-import { VERIFIED_EMPLOYEE_MASTER } from "@/pages/pdca/data/pdcaEmployees.js";
 
 const FALLBACK_DEPARTMENTS = [
   'Production',
@@ -136,63 +135,57 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
     return [];
   }, [lineData, formData.section]);
 
-  // 4. Fetch employees from database (filtered by unit)
-  const { data: usersData } = useGetAllUsersQuery(
-    { limit: 500, unit: formData.unit !== 'All Units' ? formData.unit : undefined },
+  // 4. Fetch real employees exclusively from database
+  const { data: usersData, isLoading: isLoadingUsers } = useGetAllUsersQuery(
+    { limit: 2000, ignoreShutter: "true", includeTemporary: "true" },
     { skip: !isOpen }
   );
 
   const employeeOptions = useMemo(() => {
     const rawUsers = usersData?.data?.users || usersData?.data || [];
-    let list = [];
-
-    if (Array.isArray(rawUsers) && rawUsers.length > 0) {
-      list = rawUsers.map((u) => {
-        const name = u.fullName || u.name || `${u.firstName || ''} ${u.lastName || ''}`.trim() || 'Employee';
-        const code = u.employeeId || u.staffId || u.userName || u.code || u.empId || '';
-
-        // Resolve department strictly as a clean string!
-        let resolvedDept = '';
-        if (typeof u.deptName === 'string') {
-          resolvedDept = u.deptName;
-        } else if (typeof u.departmentName === 'string') {
-          resolvedDept = u.departmentName;
-        } else if (typeof u.department === 'string') {
-          resolvedDept = u.department;
-        } else if (u.department && typeof u.department === 'object') {
-          resolvedDept = u.department.name || u.department.deptName || u.department.title || '';
-        }
-
-        const deptId = u.actualDeptId || (typeof u.department === 'number' ? u.department : u.departmentId || '');
-
-        return {
-          id: String(u._id || u.id || `emp-${code || Math.random()}`),
-          name: String(name),
-          code: String(code),
-          unit: String(u.unit || 'Bawal'),
-          department: String(resolvedDept || ''),
-          deptId: deptId ? String(deptId) : '',
-          displayText: code ? `${name} (${code})` : String(name),
-        };
-      });
-    } else {
-      // Fallback verified employees
-      list = VERIFIED_EMPLOYEE_MASTER.map((u) => ({
-        id: String(u.id),
-        name: String(u.name),
-        code: String(u.code),
-        unit: String(u.unit || 'Bawal'),
-        department: String(u.department || ''),
-        deptId: '',
-        displayText: `${u.name} (${u.code})`,
-      }));
+    if (!Array.isArray(rawUsers) || rawUsers.length === 0) {
+      return [];
     }
 
-    // Filter by selected unit if set
+    const list = rawUsers.map((u) => {
+      const name = u.fullName || u.name || `${u.firstName || ''} ${u.lastName || ''}`.trim() || 'Employee';
+      const code = u.empId || u.employeeId || u.staffId || u.userName || u.code || '';
+
+      // Resolve department strictly as a clean string!
+      let resolvedDept = '';
+      if (typeof u.deptName === 'string') {
+        resolvedDept = u.deptName;
+      } else if (typeof u.departmentName === 'string') {
+        resolvedDept = u.departmentName;
+      } else if (typeof u.department === 'string') {
+        resolvedDept = u.department;
+      } else if (u.department && typeof u.department === 'object') {
+        resolvedDept = u.department.name || u.department.deptName || u.department.title || '';
+      }
+
+      const deptId = u.actualDeptId || (typeof u.department === 'number' ? u.department : u.departmentId || '');
+
+      return {
+        id: String(u._id || u.id || `emp-${code || Math.random()}`),
+        name: String(name),
+        code: String(code),
+        unit: String(u.unit || ''),
+        department: String(resolvedDept || ''),
+        deptId: deptId ? String(deptId) : '',
+        displayText: code ? `${name} (${code})` : String(name),
+      };
+    });
+
+    // If a specific unit is selected, filter employees matching that unit
     if (formData.unit && formData.unit !== 'All Units') {
-      const uLower = String(formData.unit).toLowerCase();
-      return list.filter((e) => !e.unit || e.unit.toLowerCase() === uLower);
+      const uLower = String(formData.unit).toLowerCase().trim();
+      const filteredByUnit = list.filter((e) => {
+        if (!e.unit) return true; // If user has no unit set in DB, still show them
+        return e.unit.toLowerCase().trim() === uLower;
+      });
+      return filteredByUnit.length > 0 ? filteredByUnit : list;
     }
+
     return list;
   }, [usersData, formData.unit]);
 
@@ -503,7 +496,12 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
 
                       {/* Employee List */}
                       <div className="max-h-56 overflow-y-auto divide-y divide-slate-50">
-                        {filteredEmployeeOptions.length > 0 ? (
+                        {isLoadingUsers ? (
+                          <div className="px-4 py-6 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
+                            <div className="w-3.5 h-3.5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                            <span>Loading employees from database...</span>
+                          </div>
+                        ) : filteredEmployeeOptions.length > 0 ? (
                           filteredEmployeeOptions.map((emp) => {
                             const isSelected = formData.submittedBy === emp.displayText;
                             return (
@@ -531,7 +529,9 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
                           })
                         ) : (
                           <div className="px-4 py-6 text-center text-xs text-slate-400">
-                            No employees found matching &quot;{employeeSearchTerm}&quot;
+                            {employeeSearchTerm
+                              ? `No employees found matching "${employeeSearchTerm}"`
+                              : 'No employees found in database'}
                           </div>
                         )}
 

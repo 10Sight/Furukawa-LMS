@@ -268,8 +268,57 @@ export default function SuggestionChecksheetList({
           </button>
         </div>
 
-        {/* Action Buttons: Add Checksheet only in All Suggestions */}
-        <div className="flex items-center gap-2">
+        {/* Top Right Controls: Unit Selector, Export Excel, Add Checksheet */}
+        <div className="flex items-center gap-2.5">
+          {/* Unit Selector on Top Right Corner */}
+          <div className="relative" ref={unitDropdownRef}>
+            <button
+              type="button"
+              className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-700 text-xs font-semibold flex items-center gap-1.5 shadow-2xs hover:bg-slate-50 hover:border-slate-400 transition-colors cursor-pointer"
+              onClick={() => setIsUnitDropdownOpen((prev) => !prev)}
+            >
+              <MapPin className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+              <span>Unit: {selectedUnit || 'Bawal'}</span>
+              <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-150 shrink-0 ${isUnitDropdownOpen ? 'rotate-180 text-blue-600' : ''}`} />
+            </button>
+
+            {isUnitDropdownOpen && (
+              <div
+                className="absolute right-0 top-full mt-1.5 w-44 bg-white border border-slate-200 rounded-xl shadow-2xl z-50 p-1 flex flex-col gap-0.5 animate-in fade-in zoom-in-95 duration-100"
+                style={{ backgroundColor: '#ffffff', minWidth: '160px' }}
+              >
+                <div className="px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 mb-0.5">
+                  Select Unit
+                </div>
+                {[
+                  { id: 'Bawal', label: 'Bawal' },
+                  { id: 'Gujrat', label: 'Gujrat' },
+                  { id: 'All Units', label: 'All Units' },
+                ].map((u) => {
+                  const isSelected = (selectedUnit || 'Bawal') === u.id;
+                  return (
+                    <button
+                      key={u.id}
+                      type="button"
+                      className={`w-full px-3 py-2 text-left rounded-lg text-xs font-medium flex items-center justify-between transition-colors cursor-pointer ${
+                        isSelected
+                          ? 'bg-blue-50 text-blue-700 font-bold'
+                          : 'text-slate-700 hover:bg-slate-100'
+                      }`}
+                      onClick={() => handleSelectUnit(u.id)}
+                    >
+                      <div className="flex items-center gap-2">
+                        <MapPin className={`w-3.5 h-3.5 ${isSelected ? 'text-blue-600' : 'text-slate-400'}`} />
+                        <span>{u.label}</span>
+                      </div>
+                      {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-blue-600" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           <button
             type="button"
             className="btn-export-excel"
@@ -297,50 +346,6 @@ export default function SuggestionChecksheetList({
       {/* 2. Comprehensive Filter Toolbar (Present in Both Pages) */}
       <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs space-y-3">
         <div className="flex flex-wrap items-center gap-3">
-          {/* Unit Dropdown (Default: Bawal) */}
-          <div className="relative" ref={unitDropdownRef}>
-            <button
-              type="button"
-              className="unit-dropdown-btn font-semibold text-xs"
-              onClick={() => setIsUnitDropdownOpen((prev) => !prev)}
-            >
-              <MapPin className="w-3.5 h-3.5 text-blue-600" />
-              <span>Unit: {selectedUnit || 'Bawal'}</span>
-              {isUnitDropdownOpen ? (
-                <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
-              ) : (
-                <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-              )}
-            </button>
-
-            {isUnitDropdownOpen && (
-              <div className="unit-dropdown-menu">
-                <button
-                  type="button"
-                  className={`unit-option ${selectedUnit === 'Bawal' ? 'selected' : ''}`}
-                  onClick={() => handleSelectUnit('Bawal')}
-                >
-                  <MapPin className="w-3.5 h-3.5" />
-                  <span>Bawal</span>
-                </button>
-                <button
-                  type="button"
-                  className={`unit-option ${selectedUnit === 'Gujrat' ? 'selected' : ''}`}
-                  onClick={() => handleSelectUnit('Gujrat')}
-                >
-                  <MapPin className="w-3.5 h-3.5" />
-                  <span>Gujrat</span>
-                </button>
-                <button
-                  type="button"
-                  className={`unit-option ${selectedUnit === 'All Units' ? 'selected' : ''}`}
-                  onClick={() => handleSelectUnit('All Units')}
-                >
-                  <span>All Units</span>
-                </button>
-              </div>
-            )}
-          </div>
 
           {/* Department Filter */}
           <div className="flex items-center gap-1.5 text-xs">
@@ -466,9 +471,9 @@ export default function SuggestionChecksheetList({
                 <th className="pl-5 py-3 w-[110px]">Date</th>
                 <th className="py-3 w-[90px]">Unit</th>
                 <th className="py-3 w-[150px]">Department</th>
-                <th className="py-3">Suggestion / Checksheet Item</th>
+                <th className="py-3">Created By</th>
                 <th className="py-3 w-[120px]">Category</th>
-                <th className="py-3 w-[160px]">Created By</th>
+                <th className="py-3 w-[180px]">Approved / Rejected By & ID</th>
                 <th className="py-3 w-[130px]">Status</th>
                 <th className="pr-5 py-3 text-right w-[140px]">Action</th>
               </tr>
@@ -493,26 +498,33 @@ export default function SuggestionChecksheetList({
                     <td className="py-3 font-semibold text-slate-800">
                       {item.department || '-'}
                     </td>
+                    {/* Replaced 'Suggestion / check sheet Item' with 'Created By' */}
                     <td className="py-3">
                       <div className="font-semibold text-slate-800 flex items-center gap-1.5">
+                        <User className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                        <span className="truncate max-w-[200px]">{item.submittedBy || 'Anonymous'}</span>
                         {item.isBest && (
                           <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-400 shrink-0" title="Best Suggestion" />
                         )}
-                        <span>{item.title}</span>
                       </div>
-                      <div className="text-slate-500 text-[11px] truncate max-w-sm mt-0.5">
-                        {item.description}
-                      </div>
+                      {item.title && (
+                        <div className="text-slate-500 text-[11px] truncate max-w-sm mt-0.5">
+                          {item.title}
+                        </div>
+                      )}
                     </td>
                     <td className="py-3">
                       <span className="inline-block px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-medium text-[11px]">
                         {item.category || '-'}
                       </span>
                     </td>
-                    <td className="py-3 text-slate-600">
-                      <div className="flex items-center gap-1.5">
-                        <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        <span className="truncate max-w-[140px] font-medium">{item.submittedBy}</span>
+                    {/* At the place of the Created By column: 'Approved / Rejected By and the id' */}
+                    <td className="py-3 text-slate-700">
+                      <div className="font-medium text-slate-800 truncate max-w-[170px]" title={item.lineLeaderSign1 || item.lineLeaderSign2 || '-'}>
+                        {item.lineLeaderSign1 || item.lineLeaderSign2 || item.approvedBy || item.rejectedBy || '-'}
+                      </div>
+                      <div className="text-[10px] font-mono text-blue-600 font-semibold mt-0.5">
+                        ID: {item.id}
                       </div>
                     </td>
                     <td className="py-3">

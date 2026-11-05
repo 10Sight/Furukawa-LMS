@@ -78,7 +78,7 @@ test('7. Unit dropdown in SuggestionChecksheetList defaults to Bawal', () => {
     'Default unit must be initialized to Bawal'
   );
   assert.ok(
-    listFile.includes("handleSelectUnit('Bawal')") && listFile.includes("handleSelectUnit('Gujrat')"),
+    listFile.includes("handleSelectUnit") && listFile.includes("'Bawal'") && listFile.includes("'Gujrat'"),
     'Unit dropdown must support Bawal and Gujrat unit selection'
   );
 });
@@ -223,4 +223,24 @@ test('20. Best Suggestion View-only permission for non-admin and non-creator', (
   assert.ok(pageFile.includes('isReadOnly'), 'Passes isReadOnly flag to detail view');
   assert.ok(detailFile.includes('isReadOnly'), 'Accepts isReadOnly prop');
   assert.ok(detailFile.includes('Best Suggestion (View Only'), 'Displays view-only indicator');
+});
+
+test('21. Add modal contains NO dummy employee data fallback and fetches only real DB users', () => {
+  const addModalFile = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetAddModal.jsx', import.meta.url), 'utf8');
+  assert.ok(!addModalFile.includes('VERIFIED_EMPLOYEE_MASTER'), 'Must NOT import or fallback to VERIFIED_EMPLOYEE_MASTER');
+  assert.ok(addModalFile.includes('useGetAllUsersQuery'), 'Must fetch users from DB');
+  assert.ok(addModalFile.includes('No employees found in database'), 'Must show clean empty state when no DB users');
+});
+
+test('22. Unit selector is on top right corner and dropdown options are cleanly separated', () => {
+  const listFile = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetList.jsx', import.meta.url), 'utf8');
+  assert.ok(listFile.includes('Unit Selector on Top Right Corner'), 'Unit selector must be placed on top right corner');
+  assert.ok(listFile.includes('absolute right-0 top-full mt-1.5 w-44 bg-white border border-slate-200 rounded-xl shadow-2xl z-50'), 'Dropdown menu must have solid z-index, right alignment, and white background');
+});
+
+test('23. Table columns reflect Created By and Approved / Rejected By & ID', () => {
+  const listFile = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetList.jsx', import.meta.url), 'utf8');
+  assert.ok(listFile.includes('<th className="py-3">Created By</th>'), 'Table header must have Created By replacing Suggestion/checksheet item');
+  assert.ok(listFile.includes('<th className="py-3 w-[180px]">Approved / Rejected By & ID</th>'), 'Table header must have Approved / Rejected By & ID at previous Created By position');
+  assert.ok(listFile.includes('ID: {item.id}'), 'Table cell must display sheet ID');
 });

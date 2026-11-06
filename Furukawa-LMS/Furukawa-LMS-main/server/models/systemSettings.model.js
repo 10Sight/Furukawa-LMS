@@ -114,7 +114,7 @@ class SystemSettings {
       }
       // Ensure at least one row exists
       const [rows] = await executeQuery("SELECT COUNT(*) as count FROM system_settings");
-      if (rows[0].count === 0) {
+      if (rows && rows.length > 0 && rows[0]?.count === 0) {
         await executeQuery("INSERT INTO system_settings (createdAt) VALUES (GETDATE())");
       }
     } catch (error) {

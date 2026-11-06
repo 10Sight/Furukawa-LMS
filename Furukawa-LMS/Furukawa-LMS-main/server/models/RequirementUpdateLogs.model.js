@@ -3,6 +3,9 @@ import logger from "../logger/winston.logger.js";
 
 const executeSql = async (queryStr, params = []) => {
     const activeConn = await poolPromise;
+    if (!activeConn) {
+        return [[], { affectedRows: 0, insertId: null }];
+    }
     const request = activeConn.request();
     let formattedQuery = queryStr;
     for (let i = 0; i < params.length; i++) {

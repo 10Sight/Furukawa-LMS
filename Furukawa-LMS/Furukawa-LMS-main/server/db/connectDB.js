@@ -14,12 +14,23 @@ const CONNECTION_TIMEOUT = 120000; // 120 seconds
 const LEAK_WARNING_THRESHOLD_MS = 30000; // flag connections/transactions held longer than this
 const LEAK_SCAN_INTERVAL_MS = 10000;
 
+let rawServer = ENV.DB_HOST || "127.0.0.1";
+let instanceName = process.env.DB_INSTANCE || undefined;
+let dbPort = parseInt(ENV.DB_PORT) || 1433;
+
+if (rawServer.includes("\\")) {
+    const parts = rawServer.split("\\");
+    rawServer = parts[0] || "localhost";
+    instanceName = parts[1];
+    dbPort = undefined;
+}
+
 const baseConfig = {
     user: ENV.DB_USER,
     password: ENV.DB_PASSWORD,
     database: ENV.DB_NAME,
-    server: ENV.DB_HOST,
-    port: parseInt(ENV.DB_PORT) || 1433,
+    server: rawServer,
+    ...(dbPort !== undefined ? { port: dbPort } : {}),
     options: {
         encrypt: false,
         trustServerCertificate: true,
@@ -32,7 +43,8 @@ const baseConfig = {
         // shifting every DATETIME read from the DB by the local UTC offset (+5:30 here).
         // useUTC: false makes it read/write DATETIME values as local time instead, matching
         // what the DB server's clock actually is.
-        useUTC: false
+        useUTC: false,
+        ...(instanceName ? { instanceName } : {})
     }
 };
 

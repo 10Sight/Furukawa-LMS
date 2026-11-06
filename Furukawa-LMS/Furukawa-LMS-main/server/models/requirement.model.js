@@ -4,6 +4,9 @@ import migrationHelper from "../db/migrationHelper.js";
 
 const executeSql = async (queryStr, params = []) => {
     const activeConn = await poolPromise;
+    if (!activeConn) {
+        return [[], { affectedRows: 0 }];
+    }
     const request = activeConn.request();
     let formattedQuery = queryStr;
     for (let i = 0; i < params.length; i++) {
@@ -36,6 +39,8 @@ class Requirement {
 
     static async init() {
         try {
+            const activeConn = await poolPromise;
+            if (!activeConn) return;
             if (!await migrationHelper.tableExists('requirements')) {
                 await executeSql(`
                     CREATE TABLE requirements (

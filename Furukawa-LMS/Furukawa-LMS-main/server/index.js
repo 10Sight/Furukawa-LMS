@@ -559,10 +559,15 @@ const startServer = async () => {
         // Validate DB Connection
         await connectDB();
 
-        // Initialize the users table first and fully await it: its migrations/backfills/index
-        // creation touch `users` heavily, and letting it run unawaited alongside the later
-        // hierarchy/snapshot inits below (which also hit `users`) caused lock-contention timeouts.
-        await User.init();
+        const pool = await poolPromise;
+        if (pool) {
+            // Initialize the users table first and fully await it: its migrations/backfills/index
+            // creation touch `users` heavily, and letting it run unawaited alongside the later
+            // hierarchy/snapshot inits below (which also hit `users`) caused lock-contention timeouts.
+            await User.init();
+        } else {
+            logger.warn("MSSQL database not connected — skipping initial user migrations.");
+        }
 
         server.listen(PORT, "0.0.0.0", () => {
             logger.info(`Server with Socket.IO running at http://localhost:${PORT}`);
@@ -573,6 +578,10 @@ const startServer = async () => {
         // NOTE: routes touching these tables can 404/error until this chain finishes.
         (async () => {
             try {
+                if (!pool) {
+                    logger.warn("MSSQL database not connected — skipping background table migrations and schedulers until DB is online.");
+                    return;
+                }
                 // Initialize Core Tables
                 await HandoverSheet.init();
                 await Requirement.init();

@@ -1,4 +1,5 @@
 import { executeQuery } from "./mssqlHelper.js";
+import { poolPromise, longRunningPoolPromise } from "./connectDB.js";
 import logger from "../logger/winston.logger.js";
 
 /**
@@ -13,6 +14,8 @@ export const migrationHelper = {
      */
     ensureColumnExists: async (tableName, columnName, dataType) => {
         try {
+            const pool = await poolPromise;
+            if (!pool) return false;
             // Check if column exists
             const checkQuery = `
                 SELECT COL_LENGTH('${tableName}', '${columnName}') AS colLen
@@ -43,6 +46,8 @@ export const migrationHelper = {
      */
     tableExists: async (tableName) => {
         try {
+            const pool = await poolPromise;
+            if (!pool) return false;
             const query = `
                 SELECT * FROM sysobjects WHERE name='${tableName}' AND xtype='U'
             `;
@@ -65,6 +70,8 @@ export const migrationHelper = {
      */
     ensureIndexExists: async (tableName, indexName, ddl, options = {}) => {
         try {
+            const pool = await (options.longRunning ? longRunningPoolPromise : poolPromise);
+            if (!pool) return false;
             const [rows] = await executeQuery(
                 `SELECT name FROM sys.indexes WHERE name = ? AND object_id = OBJECT_ID(?)`,
                 [indexName, tableName]
@@ -90,6 +97,8 @@ export const migrationHelper = {
      */
     ensureColumnType: async (tableName, columnName, expectedType) => {
         try {
+            const pool = await poolPromise;
+            if (!pool) return false;
             const checkQuery = `
                 SELECT
                     t.name AS DATA_TYPE,

@@ -43,6 +43,7 @@ const getValue = (obj, key) => {
 
 const getRequest = async (transactionOrPool = null) => {
     const activeConn = transactionOrPool || await poolPromise;
+    if (!activeConn) return null;
     const request = activeConn.request();
     request.timeout = 300000;
     return request;
@@ -71,6 +72,7 @@ const RequirementLog = {
             (!oldValues && newValues ? "INSERT" : oldValues && !newValues ? "DELETE" : "UPDATE");
 
         const request = await getRequest(transactionOrPool);
+        if (!request) return null;
 
         request.input("requirement_id", mssql.Int, data.requirement_id || data.requirementId || null);
         request.input("section_id", mssql.Int, data.section_id || data.sectionId || null);
@@ -150,6 +152,7 @@ const RequirementLog = {
         const offset = Math.max(parseInt(options.offset, 10) || 0, 0);
 
         const request = await getRequest();
+        if (!request) return { total: 0, logs: [] };
 
         request.input("limit", mssql.Int, limit);
         request.input("offset", mssql.Int, offset);

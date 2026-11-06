@@ -67,7 +67,7 @@ class CustomRole {
 
             // Seed default roles if table is empty
             const [rows] = await executeQuery("SELECT COUNT(*) as cnt FROM custom_roles");
-            if (rows[0].cnt === 0) {
+            if (rows && rows.length > 0 && rows[0]?.cnt === 0) {
                 const defaults = [
                     { name: "Operator", description: "Basic operator access", color: "#3B82F6", pages: [], isSystem: 0, permissions: [] },
                     { name: "Trainer", description: "Custom trainer access", color: "#10B981", pages: [], isSystem: 0, permissions: [] },

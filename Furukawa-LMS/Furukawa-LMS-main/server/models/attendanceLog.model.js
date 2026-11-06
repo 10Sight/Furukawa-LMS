@@ -31,6 +31,8 @@ class AttendanceLog {
 
     static async init() {
         try {
+            const pool = await poolPromise;
+            if (!pool) return;
             if (!await migrationHelper.tableExists('attendance_logs')) {
                 const query = `
                     CREATE TABLE attendance_logs (
@@ -59,7 +61,6 @@ class AttendanceLog {
                         CONSTRAINT UC_User_Date UNIQUE (userId, [date])
                     )
                 `;
-                const pool = await poolPromise;
                 await pool.query(query);
                 console.log("AttendanceLog table initialized in MSSQL.");
             }
@@ -82,6 +83,7 @@ class AttendanceLog {
 
     static async create(logData) {
         const pool = await poolPromise;
+        if (!pool) return null;
         const request = pool.request();
 
         // Dynamically build inputs for mssql
@@ -99,6 +101,7 @@ class AttendanceLog {
 
     static async upsert(logData, adminId, adminRole) {
         const pool = await poolPromise;
+        if (!pool) return null;
         const request = pool.request();
 
         // Set up parameters
@@ -148,6 +151,7 @@ class AttendanceLog {
 
     static async findByUserId(userId) {
         const pool = await poolPromise;
+        if (!pool) return [];
         const request = pool.request();
         request.input('userId', sql.Int, userId);
         const result = await request.query("SELECT * FROM attendance_logs WHERE userId = @userId ORDER BY [date] DESC");
@@ -156,6 +160,7 @@ class AttendanceLog {
 
     static async getFullReport(startDate, endDate) {
         const pool = await poolPromise;
+        if (!pool) return [];
         const request = pool.request();
         request.input('start', sql.Date, startDate);
         request.input('end', sql.Date, endDate);

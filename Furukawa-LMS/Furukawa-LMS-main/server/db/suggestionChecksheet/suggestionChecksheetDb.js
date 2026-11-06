@@ -145,36 +145,58 @@ export async function initSuggestionChecksheetTables() {
         'CREATE INDEX idx_suggestion_isBest ON suggestion_checksheets(isBest)'
       );
     } else {
-      // 1. Remove deprecated columns requested: description, category/categories, employeeCode, priority, rejectedAccepted/rejectAccepted
+      // 1. Remove deprecated columns safely by dropping all default constraints, check constraints and indexes first
       await executeQuery(`
-        IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'description')
-          ALTER TABLE suggestion_checksheets DROP COLUMN description;
-        IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'category')
-          ALTER TABLE suggestion_checksheets DROP COLUMN category;
-        IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'categories')
-          ALTER TABLE suggestion_checksheets DROP COLUMN categories;
-        IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'employeeCode')
-          ALTER TABLE suggestion_checksheets DROP COLUMN employeeCode;
-        IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'rejectedAccepted')
-          ALTER TABLE suggestion_checksheets DROP COLUMN rejectedAccepted;
-        IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'rejectAccepted')
-          ALTER TABLE suggestion_checksheets DROP COLUMN rejectAccepted;
-      `).catch(() => {});
+        DECLARE @dropConstraintsSql NVARCHAR(MAX) = N'';
+        SELECT @dropConstraintsSql += N'ALTER TABLE [dbo].[suggestion_checksheets] DROP CONSTRAINT [' + d.name + N'];' + CHAR(10)
+        FROM sys.default_constraints d
+        JOIN sys.columns c ON d.parent_object_id = c.object_id AND d.parent_column_id = c.column_id
+        WHERE d.parent_object_id = OBJECT_ID(N'[dbo].[suggestion_checksheets]')
+          AND c.name IN (N'description', N'employeeCode', N'employee_code', N'priority', N'rejectAccepted', N'rejectedAccepted', N'category', N'categories');
 
-      // Priority column may have default constraint
-      await executeQuery(`
-        IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('suggestion_checksheets') AND name = 'priority')
-        BEGIN
-          DECLARE @priConstraint NVARCHAR(200);
-          SELECT @priConstraint = d.name 
-          FROM sys.default_constraints d 
-          JOIN sys.columns c ON d.parent_object_id = c.object_id AND d.parent_column_id = c.column_id 
-          WHERE d.parent_object_id = OBJECT_ID('suggestion_checksheets') AND c.name = 'priority';
-          IF @priConstraint IS NOT NULL
-            EXEC('ALTER TABLE suggestion_checksheets DROP CONSTRAINT ' + @priConstraint);
-          ALTER TABLE suggestion_checksheets DROP COLUMN priority;
-        END
-      `).catch(() => {});
+        SELECT @dropConstraintsSql += N'ALTER TABLE [dbo].[suggestion_checksheets] DROP CONSTRAINT [' + cc.name + N'];' + CHAR(10)
+        FROM sys.check_constraints cc
+        JOIN sys.columns c ON cc.parent_object_id = c.object_id AND cc.parent_column_id = c.column_id
+        WHERE cc.parent_object_id = OBJECT_ID(N'[dbo].[suggestion_checksheets]')
+          AND c.name IN (N'description', N'employeeCode', N'employee_code', N'priority', N'rejectAccepted', N'rejectedAccepted', N'category', N'categories');
+
+        SELECT @dropConstraintsSql += N'DROP INDEX [' + i.name + N'] ON [dbo].[suggestion_checksheets];' + CHAR(10)
+        FROM sys.indexes i
+        JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+        JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+        WHERE i.object_id = OBJECT_ID(N'[dbo].[suggestion_checksheets]')
+          AND i.is_primary_key = 0
+          AND c.name IN (N'description', N'employeeCode', N'employee_code', N'priority', N'rejectAccepted', N'rejectedAccepted', N'category', N'categories');
+
+        IF @dropConstraintsSql <> N''
+          EXEC sp_executesql @dropConstraintsSql;
+
+        IF COL_LENGTH(N'[dbo].[suggestion_checksheets]', N'description') IS NOT NULL
+          ALTER TABLE [dbo].[suggestion_checksheets] DROP COLUMN [description];
+
+        IF COL_LENGTH(N'[dbo].[suggestion_checksheets]', N'employeeCode') IS NOT NULL
+          ALTER TABLE [dbo].[suggestion_checksheets] DROP COLUMN [employeeCode];
+
+        IF COL_LENGTH(N'[dbo].[suggestion_checksheets]', N'employee_code') IS NOT NULL
+          ALTER TABLE [dbo].[suggestion_checksheets] DROP COLUMN [employee_code];
+
+        IF COL_LENGTH(N'[dbo].[suggestion_checksheets]', N'priority') IS NOT NULL
+          ALTER TABLE [dbo].[suggestion_checksheets] DROP COLUMN [priority];
+
+        IF COL_LENGTH(N'[dbo].[suggestion_checksheets]', N'rejectAccepted') IS NOT NULL
+          ALTER TABLE [dbo].[suggestion_checksheets] DROP COLUMN [rejectAccepted];
+
+        IF COL_LENGTH(N'[dbo].[suggestion_checksheets]', N'rejectedAccepted') IS NOT NULL
+          ALTER TABLE [dbo].[suggestion_checksheets] DROP COLUMN [rejectedAccepted];
+
+        IF COL_LENGTH(N'[dbo].[suggestion_checksheets]', N'category') IS NOT NULL
+          ALTER TABLE [dbo].[suggestion_checksheets] DROP COLUMN [category];
+
+        IF COL_LENGTH(N'[dbo].[suggestion_checksheets]', N'categories') IS NOT NULL
+          ALTER TABLE [dbo].[suggestion_checksheets] DROP COLUMN [categories];
+      `).catch((err) => {
+        logger.warn("Suggestion checksheets column drop notice: " + err.message);
+      });
 
       // 2. Ensure defectPreventionRank, isBest, problemText, suggestionText, and createdBy (at the end) exist
       await migrationHelper.ensureColumnExists('suggestion_checksheets', 'defectPreventionRank', 'INT NULL');

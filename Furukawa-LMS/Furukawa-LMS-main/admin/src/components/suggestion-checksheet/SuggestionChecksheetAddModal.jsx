@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X, FilePlus, Search, ChevronDown, Check } from 'lucide-react';
 import { useGetAllDepartmentsQuery } from "@/services/api/DepartmentApi.js";
 import { useGetSectionsByDepartmentQuery } from "@/services/api/SectionApi.js";
@@ -21,6 +22,17 @@ const FALLBACK_DEPARTMENTS = [
 ];
 
 export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, defaultUnit = 'Bawal' }) {
+  // Lock body scroll while modal is open to prevent page behind modal from scrolling
+  useEffect(() => {
+    if (isOpen && typeof document !== 'undefined') {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [isOpen]);
+
   const [formData, setFormData] = useState({
     unit: defaultUnit && defaultUnit !== 'All Units' ? defaultUnit : 'Bawal',
     submittedBy: '',
@@ -137,7 +149,7 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
 
   // 4. Fetch real employees exclusively from database
   const { data: usersData, isLoading: isLoadingUsers } = useGetAllUsersQuery(
-    { limit: 2000, ignoreShutter: "true", includeTemporary: "true" },
+    { limit: 10000, ignoreShutter: "true", includeTemporary: "true", includeLeft: "true", includeDeleted: "false" },
     { skip: !isOpen }
   );
 
@@ -176,18 +188,9 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
       };
     });
 
-    // If a specific unit is selected, filter employees matching that unit
-    if (formData.unit && formData.unit !== 'All Units') {
-      const uLower = String(formData.unit).toLowerCase().trim();
-      const filteredByUnit = list.filter((e) => {
-        if (!e.unit) return true; // If user has no unit set in DB, still show them
-        return e.unit.toLowerCase().trim() === uLower;
-      });
-      return filteredByUnit.length > 0 ? filteredByUnit : list;
-    }
-
+    // Return all employees from database so every employee is visible and searchable
     return list;
-  }, [usersData, formData.unit]);
+  }, [usersData]);
 
   // Filter employee options by search term
   const filteredEmployeeOptions = useMemo(() => {
@@ -354,13 +357,13 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
     setEmployeeSearchTerm('');
   };
 
-  return (
+  const modalContent = (
     <div
-      className="fixed inset-0 z-[1060] flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in"
+      className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-in fade-in"
       onClick={onClose}
     >
       <div
-        className="relative bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-xl w-full max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95"
+        className="relative bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-xl w-full my-auto max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
@@ -652,4 +655,6 @@ export default function SuggestionChecksheetAddModal({ isOpen, onClose, onAdd, d
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(modalContent, document.body) : modalContent;
 }

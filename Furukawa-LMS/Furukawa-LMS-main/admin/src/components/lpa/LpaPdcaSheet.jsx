@@ -330,7 +330,7 @@ export default function LpaPdcaSheet({
     [topic, effectiveUser, dbEmployees]
   );
   const isCreatorOrSameDept = Boolean(isCreator || isSameDepartmentAsSheet);
-  const isCreatorOrAdmin = Boolean(isAdmin || !topic?.id || isCreatorOrSameDept);
+  const isCreatorOrAdmin = Boolean(isAdmin || !topic?.id || isCreator);
   const canEditEntireSheet = Boolean(!readOnly && isCreatorOrAdmin);
   const canDeleteRow = Boolean(!readOnly && isAdmin);
 
@@ -2299,9 +2299,11 @@ export default function LpaPdcaSheet({
                 {filteredRows.map((row) => {
                   const idx = row.originalIndex;
                   const sNo = idx + 1;
-                  const canEditEntireRow = canEditEntireSheet;
+                  const isResponsiblePerson = isUserResponsibleForRow(row, effectiveUser);
                   const isDeptMember = isUserInResponsibleDepartment(row, effectiveUser);
-                  const canEditActionCols = Boolean(!readOnly && (isCreatorOrAdmin || isDeptMember));
+                  const isRowResponsible = isResponsiblePerson || isDeptMember;
+                  const canEditEntireRow = Boolean(!readOnly && isCreatorOrAdmin);
+                  const canEditActionCols = Boolean(!readOnly && (isCreatorOrAdmin || isRowResponsible));
 
                   return (
                     <tr

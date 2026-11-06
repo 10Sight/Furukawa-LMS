@@ -845,11 +845,9 @@ test('19. Same Department AND Same Section Access Rule: Colleagues must be in sa
   const sameSecPerms = canUserEditPDCARow(sampleRow, sameDeptSameSecColleague, assemblyPdcaRecord);
   assert.deepEqual(sameSecPerms, { canEditEntireRow: true, canEditActionCols: true }, 'Same dept + same section colleague has full row editing');
 
-  // D. Same Department Colleague HAS access
-  assert.equal(isUserInSameDepartmentAsRecord(assemblyPdcaRecord, sameDeptDiffSecColleague), true, 'Same dept colleague has access');
-  assert.equal(canEditRecord(assemblyPdcaRecord, sameDeptDiffSecColleague), true, 'Same dept colleague can edit record');
-  const diffSecPerms = canUserEditPDCARow(sampleRow, sameDeptDiffSecColleague, assemblyPdcaRecord);
-  assert.deepEqual(diffSecPerms, { canEditEntireRow: true, canEditActionCols: true }, 'Same dept colleague has full row editing');
+  // D. Same Department with DIFFERENT Section Colleague CANNOT access (access is DENIED)
+  assert.equal(isUserInSameDepartmentAsRecord(assemblyPdcaRecord, sameDeptDiffSecColleague), false, 'Same dept different section colleague must NOT have access');
+  assert.equal(canEditRecord(assemblyPdcaRecord, sameDeptDiffSecColleague), false, 'Same dept different section colleague must NOT edit record');
 
   // E. Different Department AND Different Section Colleague CANNOT access (access is DENIED)
   assert.equal(isUserInSameDepartmentAsRecord(assemblyPdcaRecord, diffDeptUser), false, 'Different dept and diff sec colleague must NOT have access');
@@ -892,7 +890,41 @@ test('19. Same Department AND Same Section Access Rule: Colleagues must be in sa
   };
 
   assert.equal(isUserInSameDepartmentAsRecord(qualityRecord, sameQualitySecUser), true, 'Same Quality section has access');
-  assert.equal(isUserInSameDepartmentAsRecord(qualityRecord, sameQualityDeptUser), true, 'Same Quality department colleague has access');
+  assert.equal(isUserInSameDepartmentAsRecord(qualityRecord, sameQualityDeptUser), false, 'Different section colleague must NOT have access');
+
+  // G. Responsible Person column access restrictions:
+  // When a user is assigned as Responsible Person (from Staff Name column):
+  // They can ONLY access/edit the 6 columns:
+  // Root cause, Corrective Action, Counter Measure, Image After, Std. Duration in Min, response Date.
+  // They CANNOT edit any other column or the entire row/sheet.
+  const respPersonUser = {
+    id: 'u-qa-resp',
+    code: 'BW099999',
+    name: 'Responsible Staff',
+    department: 'Quality',
+    section: 'Assembly Quality',
+    role: 'EMPLOYEE'
+  };
+  const rowWithRespStaff = {
+    ...sampleRow,
+    staffName: 'Responsible Staff (BW099999)'
+  };
+  const respPerms = canUserEditPDCARow(rowWithRespStaff, respPersonUser, qualityRecord);
+  assert.deepEqual(respPerms, { canEditEntireRow: false, canEditActionCols: true });
+  // Permitted 6 columns
+  assert.equal(canUserEditPDCARow(rowWithRespStaff, respPersonUser, qualityRecord, 'rootCause'), true);
+  assert.equal(canUserEditPDCARow(rowWithRespStaff, respPersonUser, qualityRecord, 'actionTaken'), true);
+  assert.equal(canUserEditPDCARow(rowWithRespStaff, respPersonUser, qualityRecord, 'counterMeasure'), true);
+  assert.equal(canUserEditPDCARow(rowWithRespStaff, respPersonUser, qualityRecord, 'imageAfter'), true);
+  assert.equal(canUserEditPDCARow(rowWithRespStaff, respPersonUser, qualityRecord, 'stdDurationMin'), true);
+  assert.equal(canUserEditPDCARow(rowWithRespStaff, respPersonUser, qualityRecord, 'responseDate'), true);
+  // Denied non-action columns
+  assert.equal(canUserEditPDCARow(rowWithRespStaff, respPersonUser, qualityRecord, 'observation'), false);
+  assert.equal(canUserEditPDCARow(rowWithRespStaff, respPersonUser, qualityRecord, 'date'), false);
+  assert.equal(canUserEditPDCARow(rowWithRespStaff, respPersonUser, qualityRecord, 'shift'), false);
+  assert.equal(canUserEditPDCARow(rowWithRespStaff, respPersonUser, qualityRecord, 'department'), false);
+  assert.equal(canUserEditPDCARow(rowWithRespStaff, respPersonUser, qualityRecord, 'staffName'), false);
+  assert.equal(canUserEditPDCARow(rowWithRespStaff, respPersonUser, qualityRecord, 'confirmation'), false);
 });
 
 test('20. Same Department AND Same Section Employee Access Verification across PDCA Page & LPA Observation PDCA', () => {
@@ -978,14 +1010,14 @@ test('20. Same Department AND Same Section Employee Access Verification across P
 
   assert.equal(isUserInSameDepartmentAsRecord(standardPdcaRecord, creatorEmployee), true, 'Creator has access');
   assert.equal(isUserInSameDepartmentAsRecord(standardPdcaRecord, sameDeptSameSecColleague), true, 'Same dept + same section colleague has access');
-  assert.equal(isUserInSameDepartmentAsRecord(standardPdcaRecord, sameDeptDiffSecColleague), true, 'Same dept colleague has access');
-  assert.equal(isUserInSameDepartmentAsRecord(standardPdcaRecord, sameSecDiffDeptColleague), true, 'Same section colleague has access');
+  assert.equal(isUserInSameDepartmentAsRecord(standardPdcaRecord, sameDeptDiffSecColleague), false, 'Same dept diff section colleague does NOT have access');
+  assert.equal(isUserInSameDepartmentAsRecord(standardPdcaRecord, sameSecDiffDeptColleague), false, 'Diff dept colleague does NOT have access');
   assert.equal(isUserInSameDepartmentAsRecord(standardPdcaRecord, diffDeptDiffSecUser), false, 'Different dept + different section colleague does NOT have access');
   assert.equal(isUserInSameDepartmentAsRecord(standardPdcaRecord, adminUser), true, 'Admin has full access');
 
   assert.equal(canEditRecord(standardPdcaRecord, sameDeptSameSecColleague), true);
-  assert.equal(canEditRecord(standardPdcaRecord, sameDeptDiffSecColleague), true);
-  assert.equal(canEditRecord(standardPdcaRecord, sameSecDiffDeptColleague), true);
+  assert.equal(canEditRecord(standardPdcaRecord, sameDeptDiffSecColleague), false);
+  assert.equal(canEditRecord(standardPdcaRecord, sameSecDiffDeptColleague), false);
   assert.equal(canEditRecord(standardPdcaRecord, diffDeptDiffSecUser), false);
   assert.equal(canEditRecord(standardPdcaRecord, adminUser), true);
 

@@ -582,6 +582,9 @@ export function getRecordSections(record, employeeDatabase = VERIFIED_EMPLOYEE_M
 
 export function areSectionsMatching(userSecs, recordSecs, userDepts = [], recordDepts = []) {
   if (!Array.isArray(userSecs) || !Array.isArray(recordSecs)) return false;
+  if (userSecs.length === 0 && recordSecs.length === 0) {
+    return true;
+  }
   if (userSecs.length === 0 || recordSecs.length === 0) {
     return false;
   }
@@ -600,18 +603,18 @@ export function areSectionsMatching(userSecs, recordSecs, userDepts = [], record
       }
     }
   }
-  // 3. Generic LPA Assembly section match
-  const isAssemblyRecordSec = recordSecs.some(rs => rs === 'assembly' || (typeof rs === 'string' && rs.includes('assembly')));
-  const isAssemblyUserSec = userSecs.some(us => us === 'assembly' || (typeof us === 'string' && us.includes('assembly')));
+  // 3. Generic LPA Assembly section match (only when record has generic 'assembly' category)
+  const isGenericAssemblyRecord = recordSecs.some(rs => rs === 'assembly');
+  const isAssemblyUserSec = userSecs.some(us => us === 'assembly');
   const isAssemblyUserDept = userDepts.includes('assembly');
-  if (isAssemblyRecordSec && (isAssemblyUserSec || isAssemblyUserDept)) {
+  if (isGenericAssemblyRecord && (isAssemblyUserSec || isAssemblyUserDept)) {
     return true;
   }
-  // 4. Generic LPA CC section match
-  const isCcRecordSec = recordSecs.some(rs => rs === 'cc' || (typeof rs === 'string' && (rs.includes('cc') || rs.includes('crimping') || rs.includes('candc') || rs.includes('cutting'))));
-  const isCcUserSec = userSecs.some(us => us === 'cc' || (typeof us === 'string' && (us.includes('cc') || us.includes('crimping') || us.includes('candc') || us.includes('cutting'))));
-  const isCcUserDept = userDepts.includes('c&c');
-  if (isCcRecordSec && (isCcUserSec || isCcUserDept)) {
+  // 4. Generic LPA CC section match (only when record has generic 'cc' category)
+  const isGenericCcRecord = recordSecs.some(rs => rs === 'cc');
+  const isCcUserSec = userSecs.some(us => us === 'cc');
+  const isCcUserDept = userDepts.includes('c&c') || userDepts.includes('cc');
+  if (isGenericCcRecord && (isCcUserSec || isCcUserDept)) {
     return true;
   }
   return false;
@@ -641,20 +644,20 @@ export function isUserInSameDepartmentAsRecord(record, currentUser, employeeData
   const recordSecs = getRecordSections(record, employeeDatabase);
   const isSameSec = areSectionsMatching(userSecs, recordSecs, userDepts, recordDepts);
 
-  if (isSameDept || isSameSec) {
+  // RULE: Employees must be in BOTH the SAME Department AND the SAME Department Section!
+  // If the employee has the same department but different section, access is DENIED.
+  if (isSameDept && isSameSec) {
     return true;
   }
 
-  // 3. Direct Colleague-to-Creator match:
-  // If the record was created by a colleague in the same department OR same section, grant access
+  // 3. Direct Colleague-to-Creator match: must also match BOTH same department AND same section
   const creator = record.createdBy || record.sheet?.createdBy;
   if (creator && typeof creator === 'object') {
     const creatorDepts = getUserDepartments(creator, employeeDatabase);
-    if (userDepts.length > 0 && creatorDepts.length > 0 && userDepts.some(ud => creatorDepts.includes(ud))) {
-      return true;
-    }
     const creatorSecs = getUserSections(creator, employeeDatabase);
-    if (areSectionsMatching(userSecs, creatorSecs, userDepts, creatorDepts)) {
+    const isCreatorSameDept = userDepts.length > 0 && creatorDepts.length > 0 && userDepts.some(ud => creatorDepts.includes(ud));
+    const isCreatorSameSec = areSectionsMatching(userSecs, creatorSecs, userDepts, creatorDepts);
+    if (isCreatorSameDept && isCreatorSameSec) {
       return true;
     }
   }
@@ -1031,8 +1034,13 @@ export function isUserResponsibleForRow(row, user) {
   const staffId = String(row.staffId || row.employeeId || '').trim().toUpperCase();
   if (staffId && userCodes.includes(staffId)) return true;
 
-  const staffName = String(row.staffName || '').trim().toLowerCase();
-  if (staffName && userNames.includes(staffName)) return true;
+  const staffName = String(row.staffName || '').trim();
+  if (staffName) {
+    const sLower = staffName.toLowerCase();
+    const sUpper = staffName.toUpperCase();
+    if (userNames.some(n => sLower === n || sLower.includes(n))) return true;
+    if (userCodes.some(c => sUpper.includes(c))) return true;
+  }
 
   return false;
 }
@@ -1124,15 +1132,36 @@ export function canUserEditPDCARow(row, user, record, targetColumn = null, emplo
   if (targetColumn === 'confirmation' && record) {
     return isRecordCreator(record, user);
   }
-  if (record && (isRecordCreator(record, user) || isUserInSameDepartmentAsRecord(record, user, employeeDatabase))) {
+  // Sheet creator has full edit access across the entire row/sheet
+  const isCreator = record && isRecordCreator(record, user);
+  if (isCreator) {
     if (targetColumn) return true;
     return { canEditEntireRow: true, canEditActionCols: true };
   }
-  const isDeptMember = isUserInResponsibleDepartment(row, user);
-  if (isDeptMember) {
+
+  // 1. Responsible person (assigned from Staff Name column) can ONLY edit the 6 action columns:
+  // Root cause, Corrective Action, Counter Measure, Image After, Std. Duration in Min, Response Date
+  // They CANNOT edit any other column or the entire row/sheet.
+  const isResponsible = isUserResponsibleForRow(row, user);
+  if (isResponsible) {
     if (targetColumn) return EDITABLE_RESPONSIBLE_COLUMNS.includes(targetColumn);
     return { canEditEntireRow: false, canEditActionCols: true };
   }
+
+  // 2. Colleague in the SAME department AND SAME section has access to the sheet
+  const isSameDeptSec = record && isUserInSameDepartmentAsRecord(record, user, employeeDatabase);
+  if (isSameDeptSec) {
+    if (targetColumn) return targetColumn !== 'confirmation';
+    return { canEditEntireRow: true, canEditActionCols: true };
+  }
+
+  // 3. User in responsible department (if designated) can edit action columns
+  const isRespDept = isUserInResponsibleDepartment(row, user);
+  if (isRespDept) {
+    if (targetColumn) return EDITABLE_RESPONSIBLE_COLUMNS.includes(targetColumn);
+    return { canEditEntireRow: false, canEditActionCols: true };
+  }
+
   if (targetColumn) return false;
   return { canEditEntireRow: false, canEditActionCols: false };
 }

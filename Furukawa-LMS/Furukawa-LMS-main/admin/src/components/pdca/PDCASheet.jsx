@@ -888,15 +888,15 @@ export default function PDCASheet({
     [topic, authUser, effectiveUser, dbEmployees]
   );
   const isCreatorOrSameDept = Boolean(isCreator || isSameDepartmentAsSheet);
-  const isCreatorOrAdmin = Boolean(hasFullAccess || !topic?.id || isCreatorOrSameDept);
+  const isCreatorOrAdmin = Boolean(hasFullAccess || !topic?.id || isAdmin || isCreator);
   const canEditEntireSheet = Boolean(!readOnly && isCreatorOrAdmin);
 
   // Granular capability flags
   const canCreateSheet = Boolean(!readOnly && (hasFullAccess || hasPermission('pdca:create') || hasPermission('pdca:create_sheet') || hasPermission('lpa:create')));
   const canDeleteSheet = Boolean(!readOnly && (hasFullAccess || hasPermission('pdca:delete') || hasPermission('pdca:delete_sheet') || hasPermission('lpa:delete')));
-  const canAddRow = Boolean(!readOnly && (hasFullAccess || isCreatorOrSameDept || hasPermission('pdca:add_row') || hasPermission('pdca:add_rows') || hasPermission('lpa:pdca_add_row')));
+  const canAddRow = Boolean(!readOnly && (hasFullAccess || isAdmin || isCreator || hasPermission('pdca:add_row') || hasPermission('pdca:add_rows') || hasPermission('lpa:pdca_add_row')));
   const canDeleteRow = Boolean(!readOnly && (hasFullAccess || hasPermission('pdca:delete') || hasPermission('pdca:delete_row')));
-  const canConfirmDefault = Boolean(!readOnly && (isAdmin || hasFullAccess || isCreator || isCreatorOrSameDept));
+  const canConfirmDefault = Boolean(!readOnly && (isAdmin || hasFullAccess || isCreator));
   const canShowRowActions = Boolean(canEditEntireSheet || canAddRow || canDeleteRow);
   const cftAssignedMembers = topic?.assignedMembers || [];
   const defaultAssignedStr = cftAssignedMembers.length > 0
@@ -5775,15 +5775,20 @@ export default function PDCASheet({
                 const isDone = normalizePDCAStatus(row.status) === 'Done';
                 if (!showDoneRows && isDone) return null;
                 const sNo = idx + 1;
-                const canEditEntireRow = canEditEntireSheet;
+                const isResponsiblePerson = isUserResponsibleForRow(row, effectiveUser);
+                const isDeptMember = isUserInResponsibleDepartment(row, effectiveUser);
+                const isRowResponsible = isResponsiblePerson || isDeptMember;
+                // Responsible Person (assigned from Staff Name) can ONLY edit the 6 action columns:
+                // Root cause, Corrective Action, Counter Measure, Image After, Std. Duration in Min, response Date.
+                // They CANNOT edit the entire row/sheet. Only admin or creator can edit entire row.
+                const canEditEntireRow = Boolean(!readOnly && isCreatorOrAdmin);
                 const unitSelected = usesCheckboxMultiSelects
                   ? (row.units || (row.unit ? [row.unit] : [])).some(unit => PDCA_UNITS.includes(unit))
                   : ['Bawal', 'Gujrat'].includes(row.unit);
                 const responsibleUnitSelected = usesCheckboxMultiSelects
                   ? (row.respUnits || (row.respUnit || row.responsiblePersonUnit ? [row.respUnit || row.responsiblePersonUnit] : [])).some(unit => PDCA_UNITS.includes(unit))
                   : ['Bawal', 'Gujrat'].includes(row.respUnit || row.responsiblePersonUnit);
-                const isDeptMember = isUserInResponsibleDepartment(row, effectiveUser);
-                const canEditActionCols = Boolean(!readOnly && (isCreatorOrAdmin || isDeptMember));
+                const canEditActionCols = Boolean(!readOnly && (isCreatorOrAdmin || isRowResponsible));
 
                 return (
                   <tr

@@ -365,6 +365,9 @@ const getServerRecordSections = (record) => {
 
 const areServerSectionsMatching = (userSecs, recordSecs, userDepts = [], recordDepts = []) => {
     if (!Array.isArray(userSecs) || !Array.isArray(recordSecs)) return false;
+    if (userSecs.length === 0 && recordSecs.length === 0) {
+        return true;
+    }
     if (userSecs.length === 0 || recordSecs.length === 0) {
         return false;
     }
@@ -383,19 +386,19 @@ const areServerSectionsMatching = (userSecs, recordSecs, userDepts = [], recordD
         }
     }
 
-    // 3. Generic LPA Assembly section match
-    const isAssemblyRecordSec = recordSecs.some(rs => rs === 'assembly' || (typeof rs === 'string' && rs.includes('assembly')));
-    const isAssemblyUserSec = userSecs.some(us => us === 'assembly' || (typeof us === 'string' && us.includes('assembly')));
+    // 3. Generic LPA Assembly section match (only when record has generic 'assembly' category)
+    const isGenericAssemblyRecord = recordSecs.some(rs => rs === 'assembly');
+    const isAssemblyUserSec = userSecs.some(us => us === 'assembly');
     const isAssemblyUserDept = userDepts.includes('assembly');
-    if (isAssemblyRecordSec && (isAssemblyUserSec || isAssemblyUserDept)) {
+    if (isGenericAssemblyRecord && (isAssemblyUserSec || isAssemblyUserDept)) {
         return true;
     }
 
-    // 4. Generic LPA CC section match
-    const isCcRecordSec = recordSecs.some(rs => rs === 'cc' || (typeof rs === 'string' && (rs.includes('cc') || rs.includes('crimping') || rs.includes('candc') || rs.includes('cutting'))));
-    const isCcUserSec = userSecs.some(us => us === 'cc' || (typeof us === 'string' && (us.includes('cc') || us.includes('crimping') || us.includes('candc') || us.includes('cutting'))));
-    const isCcUserDept = userDepts.includes('c&c');
-    if (isCcRecordSec && (isCcUserSec || isCcUserDept)) {
+    // 4. Generic LPA CC section match (only when record has generic 'cc' category)
+    const isGenericCcRecord = recordSecs.some(rs => rs === 'cc');
+    const isCcUserSec = userSecs.some(us => us === 'cc');
+    const isCcUserDept = userDepts.includes('c&c') || userDepts.includes('cc');
+    if (isGenericCcRecord && (isCcUserSec || isCcUserDept)) {
         return true;
     }
 
@@ -619,11 +622,13 @@ export const isUserInSameDepartmentAsRecord = (user, record) => {
     const recordSecs = getServerRecordSections(record);
     const secMatch = areServerSectionsMatching(userSecs, recordSecs, Array.from(userDepts), Array.from(recordDepts));
 
-    if (deptMatch || secMatch) {
+    // RULE: Employees must be in BOTH the SAME Department AND the SAME Department Section!
+    // If in the same department but different section, access is DENIED.
+    if (deptMatch && secMatch) {
         return true;
     }
 
-    // 3. Direct Colleague-to-Creator match:
+    // 3. Direct Colleague-to-Creator match: must also match BOTH same department AND same section
     if (createdBy && typeof createdBy === 'object') {
         const creatorDepts = new Set();
         const addCD = (v) => {
@@ -644,11 +649,16 @@ export const isUserInSameDepartmentAsRecord = (user, record) => {
         addCD(createdBy.departmentName);
         addCD(createdBy.departments);
         addCD(lookupEmployeeDept(createdBy));
+        let creatorDeptMatch = false;
         for (const ud of userDepts) {
-            if (creatorDepts.has(ud)) return true;
+            if (creatorDepts.has(ud)) {
+                creatorDeptMatch = true;
+                break;
+            }
         }
         const creatorSecs = getServerUserSections(createdBy);
-        if (areServerSectionsMatching(userSecs, creatorSecs, Array.from(userDepts), Array.from(creatorDepts))) {
+        const creatorSecMatch = areServerSectionsMatching(userSecs, creatorSecs, Array.from(userDepts), Array.from(creatorDepts));
+        if (creatorDeptMatch && creatorSecMatch) {
             return true;
         }
     }

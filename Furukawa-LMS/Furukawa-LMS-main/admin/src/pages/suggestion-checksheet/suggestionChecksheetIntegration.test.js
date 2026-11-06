@@ -315,7 +315,7 @@ test('26. SQL Server table columns (Description, Categories, Employee Code, Prio
   assert.ok(sqlScript.includes('ALTER TABLE suggestion_checksheets DROP COLUMN rejectedAccepted'), 'Migration must drop rejectedAccepted');
 
   // Verify DB initialization migrations
-  assert.ok(dbFile.includes('ALTER TABLE suggestion_checksheets DROP COLUMN description'), 'DB migration must drop description');
+  assert.ok(dbFile.includes('DROP COLUMN [description]') || dbFile.includes('DROP COLUMN description'), 'DB migration must drop description');
   assert.ok(dbFile.includes("ensureColumnExists('suggestion_checksheets', 'createdBy'"), 'DB migration must ensure createdBy column exists');
 
   // Verify Model queries and inserts handle createdBy and omit removed columns

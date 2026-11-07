@@ -553,7 +553,7 @@ export default function SuggestionChecksheetList({
                 <th className="py-3 w-[150px]">Department</th>
                 <th className="py-3">Created By</th>
                 <th className="py-3 w-[120px]">Category</th>
-                <th className="py-3 w-[180px]">Approved / Rejected By & ID</th>
+                <th className="py-3 w-[180px]">Approved / Rejected By</th>
                 <th className="py-3 w-[130px]">Status</th>
                 <th className="pr-5 py-3 text-right w-[140px]">Action</th>
               </tr>
@@ -610,13 +610,10 @@ export default function SuggestionChecksheetList({
                         </span>
                       )}
                     </td>
-                    {/* At the place of the Created By column: 'Approved / Rejected By and the id' */}
+                    {/* Approved / Rejected By column */}
                     <td className="py-3 text-slate-700">
                       <div className="font-medium text-slate-800 truncate max-w-[170px]" title={item.lineLeaderSign1 || item.lineLeaderSign2 || '-'}>
                         {item.lineLeaderSign1 || item.lineLeaderSign2 || item.approvedBy || item.rejectedBy || '-'}
-                      </div>
-                      <div className="text-[10px] font-mono text-blue-600 font-semibold mt-0.5">
-                        ID: {item.id}
                       </div>
                     </td>
                     <td className="py-3">

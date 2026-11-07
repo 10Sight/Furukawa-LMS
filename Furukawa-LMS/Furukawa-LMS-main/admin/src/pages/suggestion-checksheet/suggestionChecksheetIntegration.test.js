@@ -239,11 +239,11 @@ test('22. Unit selector is on top left corner and dropdown options are cleanly s
   assert.ok(listFile.includes("display: 'flex'") && listFile.includes("flexDirection: 'column'"), 'Options must be stacked vertically to prevent overlapping');
 });
 
-test('23. Table columns reflect Created By and Approved / Rejected By & ID', () => {
+test('23. Table columns reflect Created By and Approved / Rejected By (ID removed)', () => {
   const listFile = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetList.jsx', import.meta.url), 'utf8');
   assert.ok(listFile.includes('<th className="py-3">Created By</th>'), 'Table header must have Created By replacing Suggestion/checksheet item');
-  assert.ok(listFile.includes('<th className="py-3 w-[180px]">Approved / Rejected By & ID</th>'), 'Table header must have Approved / Rejected By & ID at previous Created By position');
-  assert.ok(listFile.includes('ID: {item.id}'), 'Table cell must display sheet ID');
+  assert.ok(listFile.includes('<th className="py-3 w-[180px]">Approved / Rejected By</th>'), 'Table header must have Approved / Rejected By (ID removed)');
+  assert.ok(!listFile.includes('ID: {item.id}'), 'Table cell must not display sheet ID in Approved / Rejected By column');
 });
 
 

@@ -456,7 +456,7 @@ test('30. Target Line Popup contains Year selecting dropdown and Months multiple
   assert.ok(targetCode.includes('saveStoredDepartmentTargetsV2'), 'Modal must save department targets across selected months');
 });
 
-test('31. In-chart cumulative bars for past/live months and Overall & Department Overview filter options', () => {
+test('31. In-chart cumulative bars for past/live months and Department Overview filter option (Overall removed)', () => {
   const graphCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetGraph.jsx', import.meta.url), 'utf8');
 
   // In-chart cumulative buckets for past month and current month live
@@ -464,38 +464,39 @@ test('31. In-chart cumulative bars for past/live months and Overall & Department
   assert.ok(graphCode.includes('Live'), 'Graph must render current month Live bucket');
   assert.ok(graphCode.includes('isCumulativeBucket'), 'Cumulative buckets must be flagged');
 
-  // 2. Overall option just after Best Suggestion
-  assert.ok(graphCode.includes('setGraphTab(\'OVERALL\')'), 'Graph must include Overall filter option');
-  assert.ok(graphCode.includes('Overall'), 'Graph must display Overall button');
-
-  // 3. Department Overview option
-  assert.ok(graphCode.includes('setGraphTab(\'DEPARTMENT\')'), 'Graph must include Department Overview option');
+  // Department Overview option exists and Overall button is removed from filter toolbar
   assert.ok(graphCode.includes('Department Overview'), 'Graph must display Department Overview button');
-  assert.ok(graphCode.includes('TARGET_DEPARTMENTS.map'), 'Department Overview must group 4 bar series across all departments');
+  assert.ok(!graphCode.includes('<span>Overall</span>'), 'Overall button must be removed from filters toolbar');
+  assert.ok(graphCode.includes('TARGET_DEPARTMENTS.map'), 'Department Overview must group bar series across all departments');
 });
 
-test('32. Department Overview contains Target Line according to targets set from Target Line popup', () => {
+test('32. Target line removed, only Target Bar Candle used with unselected month target hiding', () => {
   const graphCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetGraph.jsx', import.meta.url), 'utf8');
 
-  // Verify Line is imported from recharts
-  assert.ok(graphCode.includes('Line') && graphCode.includes('recharts'), 'Line must be imported from recharts');
+  // Verify Target Line is removed
+  assert.ok(!graphCode.includes('<Line'), 'Target Line component must be removed from chart');
+  assert.ok(!graphCode.includes('<ReferenceLine'), 'ReferenceLine component must be removed from chart');
 
-  // Verify Target Line is rendered when graphTab === "DEPARTMENT"
-  assert.ok(graphCode.includes("graphTab === 'DEPARTMENT'"), 'Department Overview condition must exist for target line');
-  assert.ok(graphCode.includes('<Line'), 'Line component must be rendered in Department Overview');
-  assert.ok(graphCode.includes('dataKey="target"'), 'Line component must bind dataKey to target');
-  assert.ok(graphCode.includes('name="Target Line"'), 'Line component must have name Target Line');
+  // Verify only Target Bar Candle is rendered
+  assert.ok(graphCode.includes('dataKey="target"'), 'Target bar candle must exist');
+  assert.ok(graphCode.includes('name="Target"'), 'Target bar candle must have name Target');
 
-  // Verify target is populated per department from target popup storage
+  // Verify target is resolved via getTargetForDeptAndMonth
   assert.ok(graphCode.includes('getTargetForDeptAndMonth'), 'Department target must be resolved from target store');
-  assert.ok(graphCode.includes('target: deptTarget'), 'Each department entry in chartData must contain target');
 });
 
-test('33. 5 Bar candles, centered fixed badges with Implemented (Count removed), and Target bar', () => {
+test('33. 5 Bar candles with numbers on top, wider candles, and centered fixed badges with Implemented', () => {
   const graphCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetGraph.jsx', import.meta.url), 'utf8');
 
   // Verify Legend is removed from chart
   assert.ok(!graphCode.includes('<Legend'), 'Recharts <Legend> must be removed from ComposedChart');
+
+  // Verify numbers on bar candles via LabelList
+  assert.ok(graphCode.includes('LabelList'), 'LabelList must be used to show numbers on bar candles');
+  assert.ok(graphCode.includes('renderCustomBarLabel'), 'renderCustomBarLabel must be used on bar candles');
+
+  // Verify wider bar candles
+  assert.ok(graphCode.includes('maxBarSize={32}'), 'Candle width must be increased to 32');
 
   // Verify 5 KPI Badges are centered and fixed
   assert.ok(graphCode.includes('justify-center'), 'KPI badges must be centered');
@@ -513,17 +514,29 @@ test('33. 5 Bar candles, centered fixed badges with Implemented (Count removed),
   assert.ok(graphCode.includes('dataKey="target"') && graphCode.includes('name="Target"'), 'Target bar candle must exist');
 });
 
-test('34. All suggestion / Best suggestion separated from Overall / Department Overview in graph filter toolbar', () => {
+test('34. All suggestion / Best suggestion separated from Department Overview in graph filter toolbar', () => {
   const graphCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetGraph.jsx', import.meta.url), 'utf8');
 
   // Verify Group 1: Suggestion Scope
   assert.ok(graphCode.includes('Group 1: Suggestion Scope'), 'Group 1 for suggestion scope must exist');
   assert.ok(graphCode.includes('All Suggestion') && graphCode.includes('Best Suggestion'), 'All and Best suggestions must be grouped together');
 
-  // Verify Group 2: View Mode is separated
-  assert.ok(graphCode.includes('Group 2: View Mode'), 'Group 2 for view mode must exist separately');
-  assert.ok(graphCode.includes('Overall') && graphCode.includes('Department Overview'), 'Overall and Department Overview must be grouped together');
+  // Verify Group 2: Department Overview is separated
+  assert.ok(graphCode.includes('Group 2: Department Overview'), 'Group 2 for department overview must exist separately');
+  assert.ok(graphCode.includes('Department Overview'), 'Department Overview must be present');
 
   // Verify Unit filter in graph controls
   assert.ok(graphCode.includes('Unit Filter (placed in filters toolbar)'), 'Unit filter must be placed inside filter toolbar');
+});
+
+test('35. Unselected month hides target in graph and X-axis text size is increased to 13px bold', () => {
+  const targetCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionTargetModal.jsx', import.meta.url), 'utf8');
+  const graphCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetGraph.jsx', import.meta.url), 'utf8');
+
+  // Target modal sets unselected: true for unselected months
+  assert.ok(targetCode.includes('unselected: true'), 'Target modal must mark unselected months as unselected: true');
+  assert.ok(targetCode.includes('if (!v2[yStr][mStr] || v2[yStr][mStr].unselected || v2[yStr][mStr][dept] === 0)'), 'getTargetForDeptAndMonth must return 0 for unselected months');
+
+  // Increased X-Axis text
+  assert.ok(graphCode.includes('fontSize: 13, fontWeight: 700'), 'X-Axis text size must be increased to 13px bold');
 });

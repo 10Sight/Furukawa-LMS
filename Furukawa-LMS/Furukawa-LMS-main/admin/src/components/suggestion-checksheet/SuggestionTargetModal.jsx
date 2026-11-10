@@ -104,14 +104,25 @@ export function saveStoredDepartmentTargetsV2(targetsByYearMonth) {
 
 /**
  * Returns target number for a specific department, year, and month.
+ * If user unselects any month, target returns 0 so it will not appear in graph.
  */
 export function getTargetForDeptAndMonth(dept, year = 2026, monthNum = 11, v2Data = null, fallbackTargets = null) {
   const v2 = v2Data || getStoredDepartmentTargetsV2();
   const yStr = String(year);
   const mStr = String(monthNum);
-  if (v2[yStr] && v2[yStr][mStr] && v2[yStr][mStr][dept] !== undefined) {
-    return Number(v2[yStr][mStr][dept]) || 0;
+
+  // If year has configuration in v2
+  if (v2[yStr]) {
+    if (v2[yStr][mStr] !== undefined) {
+      if (!v2[yStr][mStr] || v2[yStr][mStr].unselected || v2[yStr][mStr][dept] === 0) {
+        return 0; // Unselected month -> target does not appear!
+      }
+      return Number(v2[yStr][mStr][dept]) || 0;
+    }
+    // If month is omitted in a configured year, it was unselected by user
+    return 0;
   }
+
   const defaults = fallbackTargets || getStoredDepartmentTargets();
   return Number(defaults[dept]) || 0;
 }
@@ -130,21 +141,29 @@ export default function SuggestionTargetModal({
   const [formTargets, setFormTargets] = useState(() => initialTargets || getStoredDepartmentTargets());
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // Sync targets when opened or when year/month selection changes
+  // Sync targets when opened or when year selection changes
   useEffect(() => {
     if (isOpen) {
       const v2 = getStoredDepartmentTargetsV2();
       const yStr = String(selectedYear);
-      // If we have targets for the first selected month, load them
-      const firstMonth = selectedMonths[0] || currentMonthNum;
-      if (v2[yStr] && v2[yStr][String(firstMonth)]) {
-        setFormTargets({ ...DEFAULT_DEPARTMENT_TARGETS, ...v2[yStr][String(firstMonth)] });
+      if (v2[yStr]) {
+        const active = Object.keys(v2[yStr])
+          .map(Number)
+          .filter((n) => n >= 1 && n <= 12 && v2[yStr][String(n)] && !v2[yStr][String(n)].unselected);
+        setSelectedMonths(active);
+        const firstMonth = active[0] || currentMonthNum;
+        if (v2[yStr][String(firstMonth)] && !v2[yStr][String(firstMonth)].unselected) {
+          setFormTargets({ ...DEFAULT_DEPARTMENT_TARGETS, ...v2[yStr][String(firstMonth)] });
+        } else {
+          setFormTargets(initialTargets || getStoredDepartmentTargets());
+        }
       } else {
+        setSelectedMonths([currentMonthNum]);
         setFormTargets(initialTargets || getStoredDepartmentTargets());
       }
       setSaveSuccess(false);
     }
-  }, [isOpen, selectedYear, selectedMonths]);
+  }, [isOpen, selectedYear]);
 
   // Prevent background scroll when modal is open
   useEffect(() => {
@@ -162,7 +181,6 @@ export default function SuggestionTargetModal({
   const handleMonthToggle = (monthNum) => {
     setSelectedMonths((prev) => {
       if (prev.includes(monthNum)) {
-        if (prev.length === 1) return prev; // keep at least one month
         return prev.filter((m) => m !== monthNum);
       }
       return [...prev, monthNum].sort((a, b) => a - b);
@@ -174,7 +192,7 @@ export default function SuggestionTargetModal({
   };
 
   const handleClearMonths = () => {
-    setSelectedMonths([currentMonthNum]);
+    setSelectedMonths([]);
   };
 
   const handleChange = (dept, val) => {
@@ -199,14 +217,19 @@ export default function SuggestionTargetModal({
     // Save to general storage for fallback
     saveStoredDepartmentTargets(cleanTargets);
 
-    // Save into V2 storage for each selected month of the chosen year
+    // Save into V2 storage for all 12 months:
+    // Selected months get configured targets; unselected months marked as unselected
     const v2 = getStoredDepartmentTargetsV2();
     const yStr = String(selectedYear);
     if (!v2[yStr]) v2[yStr] = {};
 
-    selectedMonths.forEach((m) => {
-      v2[yStr][String(m)] = { ...cleanTargets };
-    });
+    for (let m = 1; m <= 12; m++) {
+      if (selectedMonths.includes(m)) {
+        v2[yStr][String(m)] = { ...cleanTargets, unselected: false };
+      } else {
+        v2[yStr][String(m)] = { unselected: true };
+      }
+    }
     saveStoredDepartmentTargetsV2(v2);
 
     if (typeof onSaveTargets === 'function') {

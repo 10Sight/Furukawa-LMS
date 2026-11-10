@@ -3,12 +3,11 @@ import {
   ResponsiveContainer,
   ComposedChart,
   Bar,
-  Line,
+  LabelList,
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
-  ReferenceLine
+  Tooltip
 } from 'recharts';
 import {
   BarChart3,
@@ -66,6 +65,24 @@ function formatDisplayDate(ymd) {
   } catch {}
   return ymd;
 }
+
+// Custom number renderer displayed on top of bar candles (only renders when value > 0)
+const renderCustomBarLabel = (props) => {
+  const { x, y, width, value } = props;
+  if (!value || Number(value) <= 0) return null;
+  return (
+    <text
+      x={x + width / 2}
+      y={y - 5}
+      fill="#0F172A"
+      textAnchor="middle"
+      fontSize={12}
+      fontWeight={800}
+    >
+      {value}
+    </text>
+  );
+};
 
 export default function SuggestionChecksheetGraph({
   records = [],
@@ -591,32 +608,19 @@ export default function SuggestionChecksheetGraph({
             </button>
           </div>
 
-          {/* Group 2: View Mode (Overall / Department Overview) - Separated from All/Best */}
-          <div className="flex bg-white p-0.5 rounded-lg border border-slate-300 shadow-2xs flex-wrap gap-0.5">
-            <button
-              type="button"
-              onClick={handleToggleOverall}
-              className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
-                graphView === 'OVERALL'
-                  ? 'bg-indigo-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-              }`}
-              title="Toggle Cumulative Overall Progression"
-            >
-              <TrendingUp className="w-3 h-3" />
-              <span>Overall</span>
-            </button>
+          {/* Group 2: Department Overview - Separated from All/Best */}
+          <div className="flex bg-white p-0.5 rounded-lg border border-slate-300 shadow-2xs">
             <button
               type="button"
               onClick={handleToggleDepartment}
-              className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+              className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                 graphView === 'DEPARTMENT'
                   ? 'bg-purple-600 text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
               }`}
               title="Toggle Department Overview Breakdown"
             >
-              <Building2 className="w-3 h-3" />
+              <Building2 className="w-3.5 h-3.5" />
               <span>Department Overview</span>
             </button>
           </div>
@@ -744,17 +748,18 @@ export default function SuggestionChecksheetGraph({
           </div>
         </div>
 
-        <div className="w-full h-[360px]">
+        <div className="w-full h-[390px]">
           {chartData.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart
                 data={chartData}
-                margin={{ top: 10, right: 25, left: -15, bottom: graphTab === 'DEPARTMENT' ? 25 : 10 }}
+                barGap={2}
+                margin={{ top: 22, right: 25, left: -10, bottom: graphTab === 'DEPARTMENT' ? 40 : 18 }}
               >
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
                 <XAxis
                   dataKey="displayLabel"
-                  tick={{ fill: '#64748B', fontSize: 11, fontWeight: 600 }}
+                  tick={{ fill: '#0F172A', fontSize: 13, fontWeight: 700 }}
                   tickLine={false}
                   axisLine={{ stroke: '#CBD5E1' }}
                   interval={0}
@@ -774,68 +779,50 @@ export default function SuggestionChecksheetGraph({
                   name="Total"
                   fill="#3B82F6"
                   radius={[4, 4, 0, 0]}
-                  maxBarSize={20}
-                />
+                  maxBarSize={32}
+                >
+                  <LabelList content={renderCustomBarLabel} />
+                </Bar>
                 {/* 2. Accepted Bar */}
                 <Bar
                   dataKey="accepted"
                   name="Accepted"
                   fill="#10B981"
                   radius={[4, 4, 0, 0]}
-                  maxBarSize={20}
-                />
+                  maxBarSize={32}
+                >
+                  <LabelList content={renderCustomBarLabel} />
+                </Bar>
                 {/* 3. Not - Feasible Bar */}
                 <Bar
                   dataKey="notFeasible"
                   name="Not - Feasible"
                   fill="#EF4444"
                   radius={[4, 4, 0, 0]}
-                  maxBarSize={20}
-                />
+                  maxBarSize={32}
+                >
+                  <LabelList content={renderCustomBarLabel} />
+                </Bar>
                 {/* 4. Implemented Bar (Count removed) */}
                 <Bar
                   dataKey="implementedCount"
                   name="Implemented"
                   fill="#8B5CF6"
                   radius={[4, 4, 0, 0]}
-                  maxBarSize={20}
-                />
-                {/* 5. Target Bar Candle */}
+                  maxBarSize={32}
+                >
+                  <LabelList content={renderCustomBarLabel} />
+                </Bar>
+                {/* 5. Target Bar Candle (Lines removed, only Target Bar Candle) */}
                 <Bar
                   dataKey="target"
                   name="Target"
                   fill="#F97316"
                   radius={[4, 4, 0, 0]}
-                  maxBarSize={20}
-                />
-                {/* Target Line for Department Overview */}
-                {graphTab === 'DEPARTMENT' && (
-                  <Line
-                    type="monotone"
-                    dataKey="target"
-                    name="Target Line"
-                    stroke="#EA580C"
-                    strokeWidth={2.5}
-                    dot={{ r: 3.5, fill: '#EA580C', strokeWidth: 1.5, stroke: '#FFFFFF' }}
-                    activeDot={{ r: 5.5, fill: '#EA580C', stroke: '#FFFFFF', strokeWidth: 2 }}
-                  />
-                )}
-                {/* Target Line Reference (in timeline & overall modes) */}
-                {targetLineValue > 0 && graphTab !== 'DEPARTMENT' && (
-                  <ReferenceLine
-                    y={targetLineValue}
-                    stroke="#F97316"
-                    strokeWidth={2.5}
-                    strokeDasharray="5 5"
-                    label={{
-                      value: `Target Line: ${targetLineValue}`,
-                      position: 'top',
-                      fill: '#EA580C',
-                      fontSize: 11,
-                      fontWeight: 700
-                    }}
-                  />
-                )}
+                  maxBarSize={32}
+                >
+                  <LabelList content={renderCustomBarLabel} />
+                </Bar>
               </ComposedChart>
             </ResponsiveContainer>
           ) : (

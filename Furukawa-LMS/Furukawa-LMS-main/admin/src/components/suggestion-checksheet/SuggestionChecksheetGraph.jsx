@@ -327,8 +327,10 @@ export default function SuggestionChecksheetGraph({
     const pastStats = computeMonthStats(pastYr, pastMonth);
     const curStats = computeMonthStats(curYear, curMonth);
 
-    const cumulativeBuckets = [
-      {
+    // Only include cumulative buckets for months that have data (hide blank month)
+    const cumulativeBuckets = [];
+    if (pastStats.totalCreated > 0) {
+      cumulativeBuckets.push({
         displayLabel: `${pastShort} Cumul`,
         dateKey: '0000-00-01',
         isCumulativeBucket: true,
@@ -337,8 +339,10 @@ export default function SuggestionChecksheetGraph({
         notFeasible: pastStats.notFeasible,
         implementedCount: pastStats.implementedCount,
         target: pastStats.target
-      },
-      {
+      });
+    }
+    if (curStats.totalCreated > 0) {
+      cumulativeBuckets.push({
         displayLabel: `${curShort} Live`,
         dateKey: '0000-00-02',
         isCumulativeBucket: true,
@@ -347,8 +351,8 @@ export default function SuggestionChecksheetGraph({
         notFeasible: curStats.notFeasible,
         implementedCount: curStats.implementedCount,
         target: curStats.target
-      }
-    ];
+      });
+    }
 
     const dateMap = new Map();
     filteredRecords.forEach((item) => {
@@ -722,7 +726,7 @@ export default function SuggestionChecksheetGraph({
           </span>
         </div>
 
-        {/* Centered Fixed KPI Badges (5 Metrics: Total, Accepted, Not-Feasible, Implemented, Target) */}
+        {/* Centered Fixed KPI Badges (4 Metrics: Total, Accept, Not-Feasible, Implemented) */}
         <div className="w-full flex items-center justify-center py-2 px-2 border-b border-slate-100 mb-2 shrink-0">
           <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
             <div className="px-3 py-1.5 rounded-xl bg-blue-50/90 border border-blue-200/90 text-blue-800 flex items-center gap-1.5 text-xs font-semibold shadow-2xs">
@@ -731,7 +735,7 @@ export default function SuggestionChecksheetGraph({
             </div>
             <div className="px-3 py-1.5 rounded-xl bg-emerald-50/90 border border-emerald-200/90 text-emerald-800 flex items-center gap-1.5 text-xs font-semibold shadow-2xs">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Accepted: <strong>{summaryTotals.accepted}</strong></span>
+              <span>Accept: <strong>{summaryTotals.accepted}</strong></span>
             </div>
             <div className="px-3 py-1.5 rounded-xl bg-rose-50/90 border border-rose-200/90 text-rose-800 flex items-center gap-1.5 text-xs font-semibold shadow-2xs">
               <XCircle className="w-3.5 h-3.5 text-rose-600" />
@@ -741,10 +745,6 @@ export default function SuggestionChecksheetGraph({
               <Clock className="w-3.5 h-3.5 text-purple-600" />
               <span>Implemented: <strong>{summaryTotals.implementedCount}</strong></span>
             </div>
-            <div className="px-3 py-1.5 rounded-xl bg-orange-50/90 border border-orange-200/90 text-orange-800 flex items-center gap-1.5 text-xs font-semibold shadow-2xs">
-              <Target className="w-3.5 h-3.5 text-orange-600" />
-              <span>Target: <strong>{targetLineValue}</strong></span>
-            </div>
           </div>
         </div>
 
@@ -753,18 +753,20 @@ export default function SuggestionChecksheetGraph({
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart
                 data={chartData}
-                barGap={2}
-                margin={{ top: 22, right: 25, left: -10, bottom: graphTab === 'DEPARTMENT' ? 40 : 18 }}
+                barGap={0}
+                barCategoryGap={graphTab === 'DEPARTMENT' ? '8%' : '14%'}
+                margin={{ top: 22, right: 25, left: -10, bottom: graphTab === 'DEPARTMENT' ? 16 : 14 }}
               >
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
                 <XAxis
                   dataKey="displayLabel"
-                  tick={{ fill: '#0F172A', fontSize: 13, fontWeight: 700 }}
+                  tick={{ fill: '#0F172A', fontSize: graphTab === 'DEPARTMENT' ? 11 : 13, fontWeight: 700 }}
                   tickLine={false}
                   axisLine={{ stroke: '#CBD5E1' }}
                   interval={0}
-                  angle={graphTab === 'DEPARTMENT' ? -25 : 0}
-                  textAnchor={graphTab === 'DEPARTMENT' ? 'end' : 'middle'}
+                  angle={0}
+                  textAnchor="middle"
+                  height={graphTab === 'DEPARTMENT' ? 32 : 28}
                 />
                 <YAxis
                   allowDecimals={false}
@@ -773,53 +775,53 @@ export default function SuggestionChecksheetGraph({
                   axisLine={{ stroke: '#CBD5E1' }}
                 />
                 <Tooltip content={<CustomTooltip />} />
-                {/* 1. Total Bar */}
-                <Bar
-                  dataKey="totalCreated"
-                  name="Total"
-                  fill="#3B82F6"
-                  radius={[4, 4, 0, 0]}
-                  maxBarSize={32}
-                >
-                  <LabelList content={renderCustomBarLabel} />
-                </Bar>
-                {/* 2. Accepted Bar */}
-                <Bar
-                  dataKey="accepted"
-                  name="Accepted"
-                  fill="#10B981"
-                  radius={[4, 4, 0, 0]}
-                  maxBarSize={32}
-                >
-                  <LabelList content={renderCustomBarLabel} />
-                </Bar>
-                {/* 3. Not - Feasible Bar */}
-                <Bar
-                  dataKey="notFeasible"
-                  name="Not - Feasible"
-                  fill="#EF4444"
-                  radius={[4, 4, 0, 0]}
-                  maxBarSize={32}
-                >
-                  <LabelList content={renderCustomBarLabel} />
-                </Bar>
-                {/* 4. Implemented Bar (Count removed) */}
-                <Bar
-                  dataKey="implementedCount"
-                  name="Implemented"
-                  fill="#8B5CF6"
-                  radius={[4, 4, 0, 0]}
-                  maxBarSize={32}
-                >
-                  <LabelList content={renderCustomBarLabel} />
-                </Bar>
-                {/* 5. Target Bar Candle (Lines removed, only Target Bar Candle) */}
+                {/* 1. Target Bar Candle */}
                 <Bar
                   dataKey="target"
                   name="Target"
                   fill="#F97316"
-                  radius={[4, 4, 0, 0]}
-                  maxBarSize={32}
+                  radius={[3, 3, 0, 0]}
+                  maxBarSize={graphTab === 'DEPARTMENT' ? 44 : 32}
+                >
+                  <LabelList content={renderCustomBarLabel} />
+                </Bar>
+                {/* 2. Total Bar */}
+                <Bar
+                  dataKey="totalCreated"
+                  name="Total"
+                  fill="#3B82F6"
+                  radius={[3, 3, 0, 0]}
+                  maxBarSize={graphTab === 'DEPARTMENT' ? 44 : 32}
+                >
+                  <LabelList content={renderCustomBarLabel} />
+                </Bar>
+                {/* 3. Accept Bar */}
+                <Bar
+                  dataKey="accepted"
+                  name="Accept"
+                  fill="#10B981"
+                  radius={[3, 3, 0, 0]}
+                  maxBarSize={graphTab === 'DEPARTMENT' ? 44 : 32}
+                >
+                  <LabelList content={renderCustomBarLabel} />
+                </Bar>
+                {/* 4. Not- Feasible Bar */}
+                <Bar
+                  dataKey="notFeasible"
+                  name="Not- Feasible"
+                  fill="#EF4444"
+                  radius={[3, 3, 0, 0]}
+                  maxBarSize={graphTab === 'DEPARTMENT' ? 44 : 32}
+                >
+                  <LabelList content={renderCustomBarLabel} />
+                </Bar>
+                {/* 5. Implemented Bar */}
+                <Bar
+                  dataKey="implementedCount"
+                  name="Implemented"
+                  fill="#8B5CF6"
+                  radius={[3, 3, 0, 0]}
+                  maxBarSize={graphTab === 'DEPARTMENT' ? 44 : 32}
                 >
                   <LabelList content={renderCustomBarLabel} />
                 </Bar>

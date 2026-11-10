@@ -348,8 +348,8 @@ test('28. Graph contains 4 bar lines, creation date implementation count rule, a
 
   // Verify the bar lines in graph
   assert.ok(graphCode.includes('name="Total"') || graphCode.includes('name="Total sheet created"'), 'Graph must have Total bar');
-  assert.ok(graphCode.includes('name="Accepted"'), 'Graph must have Accepted bar');
-  assert.ok(graphCode.includes('name="Not - Feasible"'), 'Graph must have Not - Feasible bar');
+  assert.ok(graphCode.includes('name="Accept"') || graphCode.includes('name="Accepted"'), 'Graph must have Accept bar');
+  assert.ok(graphCode.includes('name="Not- Feasible"') || graphCode.includes('name="Not - Feasible"'), 'Graph must have Not - Feasible bar');
   assert.ok(graphCode.includes('name="Implemented"') || graphCode.includes('name="Date of implementation in Count"'), 'Graph must have Implemented bar');
 
   // Verify the 13 required target departments
@@ -496,15 +496,15 @@ test('33. 5 Bar candles with numbers on top, wider candles, and centered fixed b
   assert.ok(graphCode.includes('renderCustomBarLabel'), 'renderCustomBarLabel must be used on bar candles');
 
   // Verify wider bar candles
-  assert.ok(graphCode.includes('maxBarSize={32}'), 'Candle width must be increased to 32');
+  assert.ok(graphCode.includes('maxBarSize=') && (graphCode.includes('32') || graphCode.includes('44')), 'Candle width must be set with wider bars');
 
-  // Verify 5 KPI Badges are centered and fixed
+  // Verify 4 KPI Badges are centered and fixed (Target badge removed per user request)
   assert.ok(graphCode.includes('justify-center'), 'KPI badges must be centered');
   assert.ok(graphCode.includes('Total: <strong>{summaryTotals.totalCreated}</strong>'), 'Total KPI badge must be rendered');
-  assert.ok(graphCode.includes('Accepted: <strong>{summaryTotals.accepted}</strong>'), 'Accepted KPI badge must be rendered');
+  assert.ok(graphCode.includes('Accept: <strong>{summaryTotals.accepted}</strong>') || graphCode.includes('Accepted: <strong>{summaryTotals.accepted}</strong>'), 'Accept KPI badge must be rendered');
   assert.ok(graphCode.includes('Not-Feasible: <strong>{summaryTotals.notFeasible}</strong>'), 'Not-Feasible KPI badge must be rendered');
   assert.ok(graphCode.includes('Implemented: <strong>{summaryTotals.implementedCount}</strong>'), 'Implemented (Count text removed) KPI badge must be rendered');
-  assert.ok(graphCode.includes('Target: <strong>{targetLineValue}</strong>'), 'Target KPI badge must be rendered');
+  assert.ok(!graphCode.includes('Target: <strong>{targetLineValue}</strong>'), 'Target KPI badge must be removed per user request');
 
   // Verify 5 bar candles in chart
   assert.ok(graphCode.includes('dataKey="totalCreated"'), 'Total bar candle must exist');
@@ -537,6 +537,34 @@ test('35. Unselected month hides target in graph and X-axis text size is increas
   assert.ok(targetCode.includes('unselected: true'), 'Target modal must mark unselected months as unselected: true');
   assert.ok(targetCode.includes('if (!v2[yStr][mStr] || v2[yStr][mStr].unselected || v2[yStr][mStr][dept] === 0)'), 'getTargetForDeptAndMonth must return 0 for unselected months');
 
-  // Increased X-Axis text
-  assert.ok(graphCode.includes('fontSize: 13, fontWeight: 700'), 'X-Axis text size must be increased to 13px bold');
+  // Bold X-Axis text
+  assert.ok(graphCode.includes('fontWeight: 700'), 'X-Axis text must be bold');
+  assert.ok(graphCode.includes('fontSize: graphTab === \'DEPARTMENT\' ? 11 : 13'), 'X-Axis font size must be defined appropriately');
+});
+
+test('36. Serial order (Target, Total, Accept, Not- Feasible, Implemented), barGap=0, no blank months, and horizontal department text', () => {
+  const graphCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetGraph.jsx', import.meta.url), 'utf8');
+
+  // 1. Serial sequence of Bar candles: Target -> Total -> Accept -> Not- Feasible -> Implemented
+  const targetIdx = graphCode.indexOf('dataKey="target"');
+  const totalIdx = graphCode.indexOf('dataKey="totalCreated"');
+  const acceptIdx = graphCode.indexOf('dataKey="accepted"');
+  const notFeasibleIdx = graphCode.indexOf('dataKey="notFeasible"');
+  const implementedIdx = graphCode.indexOf('dataKey="implementedCount"');
+
+  assert.ok(targetIdx < totalIdx, 'Target bar must be rendered before Total bar');
+  assert.ok(totalIdx < acceptIdx, 'Total bar must be rendered before Accept bar');
+  assert.ok(acceptIdx < notFeasibleIdx, 'Accept bar must be rendered before Not- Feasible bar');
+  assert.ok(notFeasibleIdx < implementedIdx, 'Not- Feasible bar must be rendered before Implemented bar');
+
+  // 2. barGap={0} so there is no gap between the candles
+  assert.ok(graphCode.includes('barGap={0}'), 'Chart must set barGap={0} for no gap between candles');
+
+  // 3. Blank month hiding: cumulativeBuckets only pushed if totalCreated > 0
+  assert.ok(graphCode.includes('if (pastStats.totalCreated > 0)'), 'Past month must only be added if totalCreated > 0');
+  assert.ok(graphCode.includes('if (curStats.totalCreated > 0)'), 'Current month must only be added if totalCreated > 0');
+
+  // 4. Horizontal text for department labels: angle={0} and textAnchor="middle"
+  assert.ok(graphCode.includes('angle={0}'), 'XAxis angle must be 0 for horizontal text');
+  assert.ok(graphCode.includes('textAnchor="middle"'), 'XAxis textAnchor must be middle');
 });

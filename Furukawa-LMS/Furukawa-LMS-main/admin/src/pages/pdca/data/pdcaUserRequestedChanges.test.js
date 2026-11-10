@@ -2,7 +2,29 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { EDITABLE_RESPONSIBLE_COLUMNS, isUserInResponsibleDepartment, canUserEditPDCARow, canEditRecord, isUserInSameDepartmentAsRecord, canAccessRecord, getUserPrimaryDepartment, PDCA_SHEET_TABLE_STATUSES, getPDCASheetStatusSummary, SAVE_MANDATORY_COLUMNS, CONFIRMATION_MANDATORY_COLUMNS, isRowStartedForSave, getMissingSaveMandatoryFields, getMissingConfirmationMandatoryFields, canUserSelectConfirmation } from './recordFilters.js';
+import {
+  EDITABLE_RESPONSIBLE_COLUMNS,
+  isUserInResponsibleDepartment,
+  canUserEditPDCARow,
+  canEditRecord,
+  isUserInSameDepartmentAsRecord,
+  canAccessRecord,
+  getUserPrimaryDepartment,
+  PDCA_SHEET_TABLE_STATUSES,
+  getPDCASheetStatusSummary,
+  SAVE_MANDATORY_COLUMNS,
+  CONFIRMATION_MANDATORY_COLUMNS,
+  isRowStartedForSave,
+  getMissingSaveMandatoryFields,
+  getMissingConfirmationMandatoryFields,
+  canUserSelectConfirmation,
+  classifyPDCASheetStatus,
+  getPDCAVisibleSheets,
+  filterPDCARecordsBySection,
+  getPDCASectionCounts,
+  getSheetPointsForDepartment,
+  getSheetPointsForUser
+} from './recordFilters.js';
 import { normalizePDCAStatus, getDepartmentsForUnit, UNIT_DEPARTMENT_MAPPING } from './pdcaConstants.js';
 import { createEmptyPdcaRow } from '../../lpa/lpaPdcaUtils.js';
 
@@ -1315,4 +1337,157 @@ test('29. Confirmation dropdown restricted strictly to Admin, Sheet Creator, and
   assert.equal(canUserEditPDCARow(targetRow, diffDeptUser, pdcaSheet, 'date'), false, 'Responsible person CANNOT edit date');
   assert.equal(canUserEditPDCARow(targetRow, diffDeptUser, pdcaSheet, 'observation'), false, 'Responsible person CANNOT edit observation');
   assert.equal(canUserEditPDCARow(targetRow, diffDeptUser, pdcaSheet, 'department'), false, 'Responsible person CANNOT edit department');
+});
+
+test('30. PDCA Page Structure: Ongoing (Not-Started, In-Progress, Delay) and Done (Done) for Plant, Department, and Self PDCA', () => {
+  // Verify DashboardPage.jsx renders Ongoing & Done main sections with sub-sections for Plant, Department, and Self PDCA
+  const dashboardPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/pages/pdca/pages/DashboardPage.jsx');
+  const dashboardContent = fs.readFileSync(dashboardPath, 'utf8');
+
+  // Verify section buttons and counts exist
+  assert.match(dashboardContent, /setActiveSection\('Ongoing'\)/);
+  assert.match(dashboardContent, /setActiveSection\('Done'\)/);
+  assert.match(dashboardContent, /setActiveSubSection\('Not-Started'\)/);
+  assert.match(dashboardContent, /setActiveSubSection\('In-Progress'\)/);
+  assert.match(dashboardContent, /setActiveSubSection\('Delay'\)/);
+  assert.match(dashboardContent, /setActiveSubSection\('Done'\)/);
+  assert.match(dashboardContent, /sectionCounts\.Ongoing/);
+  assert.match(dashboardContent, /sectionCounts\.Done/);
+  assert.match(dashboardContent, /sectionCounts\['Not-Started'\]/);
+  assert.match(dashboardContent, /sectionCounts\['In-Progress'\]/);
+  assert.match(dashboardContent, /sectionCounts\.Delay/);
+
+  // Verify CFT tab remains untouched and does not render the section switcher
+  assert.match(dashboardContent, /activeTab !== 'CFT'/);
+});
+
+test('31. Plant-to-Department and Self PDCA visibility, independent department/self completion rules, and automatic Ongoing/Done transitions', () => {
+  // Sample multi-department Plant sheet with 10 points:
+  // 4 Quality points (all Done)
+  // 3 Assembly/Production points (2 In-Progress, 1 Not-Started)
+  // 3 Maintenance points (2 Delay, 1 In-Progress)
+  const plantSheet = {
+    id: 'PDCA-PLANT-MULTI-101',
+    topic: 'Comprehensive Factory Audit',
+    plant: 'Bawal',
+    scope: 'Company',
+    department: '',
+    sheet: {
+      rows: [
+        { department: 'Quality', observation: 'Q1', confirmation: 'Confirmed', status: 'Done' },
+        { department: 'Quality', observation: 'Q2', confirmation: 'Confirmed', status: 'Done' },
+        { department: 'Quality', observation: 'Q3', confirmation: 'Confirmed', status: 'Done' },
+        { department: 'Quality', observation: 'Q4', confirmation: 'Confirmed', status: 'Done' },
+        { department: 'Assembly', observation: 'A1', confirmation: 'Not-Confirmed', status: 'In- Progress' },
+        { department: 'Assembly', observation: 'A2', confirmation: 'Not-Confirmed', status: 'In- Progress' },
+        { department: 'Assembly', observation: 'A3', status: 'Not-Started' },
+        { department: 'Maintenance', observation: 'M1', responseDate: '2020-01-01', status: 'Delay' },
+        { department: 'Maintenance', observation: 'M2', responseDate: '2020-01-01', status: 'Delay' },
+        { department: 'Maintenance', observation: 'M3', confirmation: 'Not-Confirmed', status: 'In- Progress' }
+      ]
+    }
+  };
+
+  // 1. Plant view: overall sheet is not completed because Assembly & Maintenance have pending/delayed points
+  const plantClassification = classifyPDCASheetStatus(plantSheet, 'Company');
+  assert.equal(plantClassification.section, 'Ongoing', 'Plant sheet overall must be Ongoing');
+  assert.equal(plantClassification.subSection, 'Delay', 'Plant sheet overall subSection must be Delay because of delayed points');
+  assert.equal(plantClassification.relevantPointsCount, 10, 'Plant sheet evaluates all 10 points');
+
+  // 2. Quality employee view in Department page:
+  // All 4 Quality points are Done -> sheet must appear in Done -> Done section for Quality!
+  const qualityUser = { name: 'Quality Officer', department: 'Quality', role: 'student' };
+  const qualityClassification = classifyPDCASheetStatus(plantSheet, 'Department', {
+    targetDept: 'Quality',
+    currentUser: qualityUser
+  });
+  assert.equal(qualityClassification.section, 'Done', 'Quality department must classify sheet as Done');
+  assert.equal(qualityClassification.subSection, 'Done', 'Quality department subSection must be Done');
+  assert.equal(qualityClassification.relevantPointsCount, 4, 'Quality department evaluates ONLY its 4 points');
+
+  // 3. Visibility test: Quality employee sees the Plant-created sheet in Department page
+  const visibleForQuality = getPDCAVisibleSheets([plantSheet], 'Bawal', 'Department', { currentUser: qualityUser });
+  assert.equal(visibleForQuality.length, 1, 'Quality employee must see the Plant-created sheet in Department page');
+  assert.equal(visibleForQuality[0].id, 'PDCA-PLANT-MULTI-101');
+
+  // 4. Assembly view in Department page:
+  // Points are incomplete -> sheet must remain in Ongoing -> In-Progress
+  const assemblyClassification = classifyPDCASheetStatus(plantSheet, 'Department', {
+    targetDept: 'Assembly'
+  });
+  assert.equal(assemblyClassification.section, 'Ongoing', 'Assembly department must classify sheet as Ongoing');
+  assert.equal(assemblyClassification.subSection, 'In-Progress', 'Assembly department subSection must be In-Progress');
+  assert.equal(assemblyClassification.relevantPointsCount, 3, 'Assembly department evaluates ONLY its 3 points');
+
+  // 5. Maintenance view in Department page:
+  // Has delayed points -> sheet must remain in Ongoing -> Delay
+  const maintenanceClassification = classifyPDCASheetStatus(plantSheet, 'Department', {
+    targetDept: 'Maintenance'
+  });
+  assert.equal(maintenanceClassification.section, 'Ongoing', 'Maintenance department must classify sheet as Ongoing');
+  assert.equal(maintenanceClassification.subSection, 'Delay', 'Maintenance department subSection must be Delay');
+  assert.equal(maintenanceClassification.relevantPointsCount, 3, 'Maintenance department evaluates ONLY its 3 points');
+
+  // 6. Department with NO points (e.g. Store):
+  // Must NOT see the Plant sheet in their department page
+  const storeUser = { name: 'Store Person', department: 'Store', role: 'student' };
+  const visibleForStore = getPDCAVisibleSheets([plantSheet], 'Bawal', 'Department', { currentUser: storeUser });
+  assert.equal(visibleForStore.length, 0, 'Store department must NOT see Plant sheet with no Store points');
+
+  // 7. Reopening a point: if 1 Quality point is reopened/unconfirmed, sheet immediately moves back to Ongoing
+  const reopenedSheet = JSON.parse(JSON.stringify(plantSheet));
+  reopenedSheet.sheet.rows[0].confirmation = 'Not-Confirmed';
+  reopenedSheet.sheet.rows[0].status = 'In- Progress';
+  const reopenedQualityClass = classifyPDCASheetStatus(reopenedSheet, 'Department', {
+    targetDept: 'Quality',
+    currentUser: qualityUser
+  });
+  assert.equal(reopenedQualityClass.section, 'Ongoing', 'Reopened Quality point must move sheet back to Ongoing');
+  assert.equal(reopenedQualityClass.subSection, 'In-Progress', 'Quality subSection must be In-Progress');
+
+  // 8. Self PDCA Completion & Visibility:
+  // Multi-user sheet with points assigned to Employee A and Employee B
+  const userA = { name: 'Aditya Sharma', empId: 'AS081170', role: 'student' };
+  const userB = { name: 'Joy Dastidar', empId: 'ST080014', role: 'student' };
+
+  const multiUserSheet = {
+    id: 'PDCA-SELF-TEST-202',
+    topic: 'Line Improvement Activity',
+    plant: 'Bawal',
+    scope: 'Company',
+    sheet: {
+      rows: [
+        // 4 points assigned to User A (all Done)
+        { observation: 'A1', staffName: 'Aditya Sharma (AS081170)', confirmation: 'Confirmed', status: 'Done' },
+        { observation: 'A2', staffEmployee: 'Aditya Sharma', confirmation: 'Confirmed', status: 'Done' },
+        { observation: 'A3', staffId: 'AS081170', confirmation: 'Confirmed', status: 'Done' },
+        { observation: 'A4', staffEmployees: [{ name: 'Aditya Sharma', code: 'AS081170' }], confirmation: 'Confirmed', status: 'Done' },
+        // 3 points assigned to User B (In-Progress)
+        { observation: 'B1', staffName: 'Joy Dastidar (ST080014)', confirmation: 'Not-Confirmed', status: 'In- Progress' },
+        { observation: 'B2', staffEmployee: 'Joy Dastidar', confirmation: 'Not-Confirmed', status: 'In- Progress' },
+        { observation: 'B3', staffId: 'ST080014', status: 'Not-Started' }
+      ]
+    }
+  };
+
+  // User A view in Self PDCA: all User A's 4 points are Done -> sheet appears in Self PDCA -> Done -> Done!
+  const userAClassification = classifyPDCASheetStatus(multiUserSheet, 'Self PDCA', { currentUser: userA });
+  assert.equal(userAClassification.section, 'Done', 'User A must see sheet under Done');
+  assert.equal(userAClassification.subSection, 'Done', 'User A subSection must be Done');
+  assert.equal(userAClassification.relevantPointsCount, 4, 'User A evaluates only their own 4 points');
+
+  // User B's pending work does not affect User A:
+  const userBClassification = classifyPDCASheetStatus(multiUserSheet, 'Self PDCA', { currentUser: userB });
+  assert.equal(userBClassification.section, 'Ongoing', 'User B must see sheet under Ongoing');
+  assert.equal(userBClassification.subSection, 'In-Progress', 'User B subSection must be In-Progress');
+  assert.equal(userBClassification.relevantPointsCount, 3, 'User B evaluates only their own 3 points');
+
+  // Self PDCA filtering: getSheetPointsForUser returns only the logged-in employee's points
+  const userAPoints = getSheetPointsForUser(multiUserSheet, userA);
+  assert.equal(userAPoints.length, 4, 'User A receives only their 4 assigned points');
+  assert.ok(userAPoints.every(p => p.observation.startsWith('A')), 'User A does not see User B points');
+
+  const userBPoints = getSheetPointsForUser(multiUserSheet, userB);
+  assert.equal(userBPoints.length, 3, 'User B receives only their 3 assigned points');
+  assert.ok(userBPoints.every(p => p.observation.startsWith('B')), 'User B does not see User A points');
 });

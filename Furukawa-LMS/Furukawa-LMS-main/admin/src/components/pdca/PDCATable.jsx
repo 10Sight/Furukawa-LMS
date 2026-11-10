@@ -1,6 +1,6 @@
 import React from 'react';
 import { Download, Copy, Trash2, Building2, UserPlus, Users, Edit3 } from 'lucide-react';
-import { isRecordCreator, isUserInSameDepartmentAsRecord, getPDCASheetStatusSummary } from '../../pages/pdca/data/recordFilters.js';
+import { isRecordCreator, isUserInSameDepartmentAsRecord, getPDCASheetStatusSummary, classifyPDCASheetStatus } from '../../pages/pdca/data/recordFilters.js';
 
 export default function PDCATable({
   items,
@@ -12,6 +12,7 @@ export default function PDCATable({
   onOpenAddMember,
   onEdit,
   activeTab = 'Company',
+  selectedDepartment = '',
   pageStartIndex = 0,
   selectedPlant = 'Unit',
   selectedDate = '',
@@ -186,10 +187,14 @@ export default function PDCATable({
                   </td>
                 )}
 
-                {/* Status: In-progress, Done, Delay, Not-Started */}
+                {/* Status: In-progress, Done, Delay, Not-Started (calculated per scope: Plant / Department points / Self points) */}
                 <td className="py-3 px-2 min-w-0">
                   {(() => {
-                    const statusSummary = getPDCASheetStatusSummary(row);
+                    const classification = classifyPDCASheetStatus(row, activeTab, {
+                      targetDept: activeTab === 'Department' ? selectedDepartment : '',
+                      currentUser
+                    });
+                    const statusSummary = classification.statusSummary;
                     return (
                       <div className="grid grid-cols-2 gap-1 w-full">
                         <span className="inline-flex items-center justify-between gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap">

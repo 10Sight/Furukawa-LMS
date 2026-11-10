@@ -779,6 +779,7 @@ export default function PDCASheet({
   isCreator: propIsCreator = undefined,
   isAdmin: propIsAdmin = undefined,
   currentUser = null,
+  isSelfView = false,
   emailPdcaSheets = undefined,
   onDelete = undefined
 }) {
@@ -5254,6 +5255,14 @@ export default function PDCASheet({
         topic={topic}
       />
 
+      {/* Self PDCA Notice Banner */}
+      {isSelfView && (
+        <div className="w-full px-4 py-2 bg-blue-50 border border-blue-200 rounded-xl text-blue-800 text-xs font-semibold flex items-center justify-between shadow-2xs">
+          <span>Self PDCA View: Displaying only points assigned to <strong>{effectiveUser?.name || 'you'}</strong></span>
+          <span className="text-[11px] bg-blue-100/80 text-blue-900 px-2 py-0.5 rounded-md font-bold">Personal Work Queue</span>
+        </div>
+      )}
+
       {/* Spreadsheet Matrix Table Grid */}
       <div ref={setSheetScrollEl} className="w-full min-w-0 flex-auto shrink-0 min-h-[320px] bg-white border border-[#B0BEC5] shadow-xs overflow-auto max-h-[calc(100vh-62px)]">
         <table className="w-full min-w-max text-left table-fixed border-separate border-spacing-0 border-t border-l border-[#B0BEC5] text-[11px]">
@@ -5774,6 +5783,14 @@ export default function PDCASheet({
               const renderedRows = rows.map((row, idx) => {
                 const isDone = normalizePDCAStatus(row.status) === 'Done';
                 if (!showDoneRows && isDone) return null;
+
+                // Self PDCA visibility rule: display ONLY points relevant to the logged-in employee
+                if (isSelfView) {
+                  const isAssigned = isUserResponsibleForRow(row, effectiveUser);
+                  const isCreatorUnassigned = isCreatorOrAdmin && (topic?.scope === 'Self PDCA' || topic?.isSelf) && !row.staffName && !row.staffEmployee;
+                  if (!isAssigned && !isCreatorUnassigned) return null;
+                }
+
                 const sNo = idx + 1;
                 const isResponsiblePerson = isUserResponsibleForRow(row, effectiveUser);
                 const isDeptMember = isUserInResponsibleDepartment(row, effectiveUser);
@@ -7113,6 +7130,15 @@ export default function PDCASheet({
                           Show Hidden Done Rows ({rows.filter(r => normalizePDCAStatus(r.status) === 'Done').length})
                         </button>
                       </div>
+                    </td>
+                  </tr>
+                );
+              }
+              if (isSelfView && renderedRows.filter(Boolean).length === 0) {
+                return (
+                  <tr>
+                    <td colSpan={canShowRowActions ? 17 : 16} className="py-10 text-center text-xs text-slate-500 font-medium bg-slate-50/50">
+                      No assigned PDCA points for {effectiveUser?.name || 'this user'} in this sheet.
                     </td>
                   </tr>
                 );

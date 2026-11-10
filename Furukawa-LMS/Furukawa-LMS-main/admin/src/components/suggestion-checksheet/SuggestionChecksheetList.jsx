@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import SuggestionChecksheetAddModal from './SuggestionChecksheetAddModal';
 import SuggestionChecksheetViewModal from './SuggestionChecksheetViewModal';
+import SuggestionChecksheetGraph from './SuggestionChecksheetGraph';
 import { useGetAllDepartmentsQuery } from '@/services/api/DepartmentApi.js';
 
 export default function SuggestionChecksheetList({
@@ -150,6 +151,23 @@ export default function SuggestionChecksheetList({
       return true;
     });
   }, [records, activeTab, selectedUnit, departmentFilter, fromDate, toDate, statusFilter, searchQuery]);
+
+  // Pagination state: Limit is 15 sheets per page
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 15;
+
+  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / PAGE_SIZE));
+
+  // Reset to page 1 whenever filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, selectedUnit, departmentFilter, fromDate, toDate, statusFilter, searchQuery]);
+
+  // Paginated records for table view
+  const paginatedRecords = useMemo(() => {
+    const startIndex = (currentPage - 1) * PAGE_SIZE;
+    return filteredRecords.slice(startIndex, startIndex + PAGE_SIZE);
+  }, [filteredRecords, currentPage]);
 
   const handleSelectUnit = (unit) => {
     setSelectedUnit(unit);
@@ -351,6 +369,13 @@ export default function SuggestionChecksheetList({
         </div>
       </div>
 
+      {/* 0.5. Top Graph Section: 4 Bar lines + Target Line Popup */}
+      <SuggestionChecksheetGraph
+        records={records}
+        selectedUnit={selectedUnit}
+        departmentList={departmentList}
+      />
+
       {/* 1. Page Header Tabs: All Suggestions & Best Suggestions */}
       <div className="flex flex-wrap items-center justify-between border-b border-slate-200 pb-2 gap-3 bg-white px-4 py-2 rounded-xl shadow-2xs">
         <div className="flex items-center gap-2">
@@ -532,7 +557,7 @@ export default function SuggestionChecksheetList({
               {activeTab === 'BEST' ? '⭐ Best Suggestions' : 'All Suggestions'}
             </span>
             <span className="text-slate-500 text-xs">
-              Showing {filteredRecords.length} records (Unit: {selectedUnit || 'Bawal'})
+              Showing {paginatedRecords.length} of {filteredRecords.length} records (Unit: {selectedUnit || 'Bawal'})
             </span>
           </div>
 
@@ -559,8 +584,8 @@ export default function SuggestionChecksheetList({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredRecords.length > 0 ? (
-                filteredRecords.map((item) => (
+              {paginatedRecords.length > 0 ? (
+                paginatedRecords.map((item) => (
                   <tr
                     key={item.id}
                     className="hover:bg-slate-50/80 transition-colors cursor-pointer group"
@@ -698,17 +723,39 @@ export default function SuggestionChecksheetList({
           </table>
         </div>
 
-        {/* Table Footer */}
-        <div className="px-5 py-3 border-t border-slate-100 flex justify-between items-center text-slate-500 text-xs bg-slate-50/50 rounded-b-2xl">
+        {/* Table Footer with 15 sheets per page limit and working Next/Previous */}
+        <div className="px-5 py-3 border-t border-slate-100 flex flex-wrap justify-between items-center text-slate-500 text-xs bg-slate-50/50 rounded-b-2xl gap-2">
           <div>
-            Showing {filteredRecords.length} records in{' '}
+            Showing {filteredRecords.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1} to{' '}
+            {Math.min(currentPage * PAGE_SIZE, filteredRecords.length)} of {filteredRecords.length} records in{' '}
             <strong>{activeTab === 'BEST' ? 'Best Suggestions' : 'All Suggestions'}</strong>
           </div>
-          <div className="flex gap-2">
-            <button className="px-3 py-1 rounded-md border border-slate-200 bg-white text-slate-400 text-xs" disabled>
+          <div className="flex items-center gap-2">
+            <span className="text-slate-400 font-medium mr-1 text-xs">
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage <= 1}
+              className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all cursor-pointer ${
+                currentPage <= 1
+                  ? 'border-slate-200 bg-white text-slate-300 cursor-not-allowed opacity-50'
+                  : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-400 shadow-2xs'
+              }`}
+            >
               Previous
             </button>
-            <button className="px-3 py-1 rounded-md border border-slate-200 bg-white text-slate-400 text-xs" disabled>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage >= totalPages}
+              className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all cursor-pointer ${
+                currentPage >= totalPages
+                  ? 'border-slate-200 bg-white text-slate-300 cursor-not-allowed opacity-50'
+                  : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-400 shadow-2xs'
+              }`}
+            >
               Next
             </button>
           </div>

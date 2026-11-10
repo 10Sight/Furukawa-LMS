@@ -1,7 +1,7 @@
-import { PDCA_DEPARTMENTS, PDCA_SHEET_TABLE_STATUSES, isActivePDCARow, getEffectivePDCARowStatus, resolvePDCASheetRows, getPDCASheetStatusSummary } from './pdcaConstants.js';
+import { PDCA_DEPARTMENTS, PDCA_SHEET_TABLE_STATUSES, isActivePDCARow, getEffectivePDCARowStatus, resolvePDCASheetRows, getPDCASheetStatusSummary, normalizePDCAStatus } from './pdcaConstants.js';
 import { findEmployeeDepartment, VERIFIED_EMPLOYEE_MASTER } from './pdcaEmployees.js';
 import { VERIFIED_SECTION_MASTER } from './pdcaSections.js';
-export { PDCA_DEPARTMENTS, PDCA_SHEET_TABLE_STATUSES, isActivePDCARow, getEffectivePDCARowStatus, resolvePDCASheetRows, getPDCASheetStatusSummary };
+export { PDCA_DEPARTMENTS, PDCA_SHEET_TABLE_STATUSES, isActivePDCARow, getEffectivePDCARowStatus, resolvePDCASheetRows, getPDCASheetStatusSummary, normalizePDCAStatus };
 export const PDCA_PLANTS = ['Bawal', 'Gujrat'];
 export const ALL_UNITS_OPTION = 'All Unit';
 
@@ -1276,4 +1276,365 @@ export function canAccessRecord(record, currentUser, employeeDatabase = VERIFIED
   );
   if (isAdmin) return true;
   return isRecordCreator(record, currentUser) || isUserInSameDepartmentAsRecord(record, currentUser, employeeDatabase);
+}
+
+/**
+ * Checks whether a specific PDCA row belongs to a given department.
+ * Checks observation department, responsible person department, unit mappings,
+ * and assigned staff employee departments.
+ */
+export function doesRowBelongToDepartment(row, deptName, employeeDatabase = VERIFIED_EMPLOYEE_MASTER) {
+  if (!row || !deptName) return false;
+  const target = String(deptName).trim().toLowerCase();
+  if (!target || target === 'all departments' || target === 'all department') return true;
+
+  // 1. Observation department
+  if (row.department && String(row.department).trim().toLowerCase() === target) {
+    return true;
+  }
+  if (Array.isArray(row.departments)) {
+    if (row.departments.some(d => String(d).trim().toLowerCase() === target)) return true;
+  }
+
+  // 2. Responsible Person Dept (single string or comma/semicolon separated)
+  const respDept = row.responsiblePersonDept || row.respDept;
+  if (respDept && typeof respDept === 'string') {
+    const parts = respDept.split(/[,;]/).map(d => d.trim().toLowerCase());
+    if (parts.includes(target)) return true;
+  }
+
+  // 3. respDeptsByUnit object
+  if (row.respDeptsByUnit && typeof row.respDeptsByUnit === 'object') {
+    for (const depts of Object.values(row.respDeptsByUnit)) {
+      if (Array.isArray(depts) && depts.some(d => String(d).trim().toLowerCase() === target)) {
+        return true;
+      }
+    }
+  }
+
+  // 4. staffEmployees list
+  if (Array.isArray(row.staffEmployees)) {
+    for (const emp of row.staffEmployees) {
+      if (emp?.department && String(emp.department).trim().toLowerCase() === target) {
+        return true;
+      }
+    }
+  }
+
+  // 5. Check staffName / staffEmployee in employeeDatabase
+  const staffStr = String(row.staffName || row.staffEmployee || '').trim();
+  if (staffStr) {
+    const sLower = staffStr.toLowerCase();
+    const listToSearch = Array.isArray(employeeDatabase) && employeeDatabase.length > 0
+      ? employeeDatabase
+      : VERIFIED_EMPLOYEE_MASTER;
+    const matched = listToSearch.find(e => {
+      const eName = String(e?.name || '').trim().toLowerCase();
+      const eCode = String(e?.code || e?.empId || '').trim().toLowerCase();
+      return (eName && (sLower === eName || sLower.includes(eName))) ||
+             (eCode && (sLower === eCode || sLower.includes(eCode)));
+    });
+    if (matched?.department && String(matched.department).trim().toLowerCase() === target) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Returns all active rows in a PDCA sheet that belong to a specific department.
+ */
+export function getSheetPointsForDepartment(sheet, deptName, employeeDatabase = VERIFIED_EMPLOYEE_MASTER) {
+  if (!sheet) return [];
+  const rows = resolvePDCASheetRows(sheet);
+  const activeRows = rows.filter(isActivePDCARow);
+  if (!deptName || String(deptName).trim().toLowerCase() === 'all departments') {
+    return activeRows;
+  }
+
+  const target = String(deptName).trim().toLowerCase();
+  const matchingRows = activeRows.filter(r => doesRowBelongToDepartment(r, target, employeeDatabase));
+
+  // If sheet was created in Department page with sheet.department === target,
+  // and some active rows have no explicit department, they also belong to this department
+  if (matchingRows.length === 0 && String(sheet.department || '').trim().toLowerCase() === target) {
+    return activeRows;
+  }
+
+  return matchingRows;
+}
+
+/**
+ * Returns all active rows in a PDCA sheet that are assigned to a specific user.
+ */
+export function getSheetPointsForUser(sheet, user) {
+  if (!sheet || !user) return [];
+  const rows = resolvePDCASheetRows(sheet);
+  const activeRows = rows.filter(isActivePDCARow);
+
+  // Return points where user is responsible
+  const userRows = activeRows.filter(r => isUserResponsibleForRow(r, user));
+
+  // If the sheet itself was created by user as Self PDCA and has active rows without other staff
+  if (userRows.length === 0 && (sheet.isSelf || sheet.scope === 'Self PDCA') && isRecordCreator(sheet, user)) {
+    return activeRows;
+  }
+
+  return userRows;
+}
+
+/**
+ * Classifies a PDCA sheet into Section ('Ongoing' | 'Done') and Sub-Section
+ * ('Not-Started' | 'In-Progress' | 'Delay' | 'Done') based on scope and visibility rules.
+ *
+ * Rules:
+ * - Plant: based on ALL points of the sheet.
+ * - Department: based ONLY on points assigned to the target department.
+ * - Self PDCA: based ONLY on points assigned to the logged-in employee.
+ * - If all relevant points are Done -> Section is 'Done' (SubSection: 'Done').
+ * - If not all relevant points are Done -> Section is 'Ongoing':
+ *   - Any point is Delay -> 'Delay'
+ *   - Any point is In-Progress (or Done with pending) -> 'In-Progress'
+ *   - All points are Not-Started -> 'Not-Started'
+ */
+export function classifyPDCASheetStatus(sheet, scope = 'Company', options = {}) {
+  const { targetDept, currentUser, currentDateStr, employeeDatabase = VERIFIED_EMPLOYEE_MASTER } = options;
+
+  let relevantRows = [];
+  if (scope === 'Self PDCA') {
+    relevantRows = getSheetPointsForUser(sheet, currentUser);
+  } else if (scope === 'Department') {
+    const deptToUse = targetDept || getUserPrimaryDepartment(currentUser, employeeDatabase) || sheet.department;
+    relevantRows = getSheetPointsForDepartment(sheet, deptToUse, employeeDatabase);
+  } else {
+    // Plant / Company scope: evaluate all active rows
+    const allRows = resolvePDCASheetRows(sheet);
+    relevantRows = allRows.filter(isActivePDCARow);
+  }
+
+  let done = 0;
+  let delay = 0;
+  let inProgress = 0;
+  let notStarted = 0;
+
+  if (relevantRows.length === 0) {
+    const sheetStatus = normalizePDCAStatus(sheet.status);
+    if (sheetStatus === 'Done') done = 1;
+    else if (sheetStatus === 'Delay') delay = 1;
+    else if (sheetStatus === 'In- Progress') inProgress = 1;
+    else notStarted = 1;
+  } else {
+    relevantRows.forEach(r => {
+      const st = getEffectivePDCARowStatus(r, currentDateStr);
+      if (st === 'Done') done++;
+      else if (st === 'Delay') delay++;
+      else if (st === 'In- Progress') inProgress++;
+      else notStarted++;
+    });
+  }
+
+  const total = relevantRows.length || 1;
+
+  let section = 'Ongoing';
+  let subSection = 'Not-Started';
+
+  // Rule: If all points are Done -> Done section
+  if (done === total && total > 0) {
+    section = 'Done';
+    subSection = 'Done';
+  } else {
+    section = 'Ongoing';
+    if (delay > 0) {
+      subSection = 'Delay';
+    } else if (inProgress > 0 || done > 0) {
+      subSection = 'In-Progress';
+    } else {
+      subSection = 'Not-Started';
+    }
+  }
+
+  return {
+    section,
+    subSection,
+    statusSummary: {
+      inProgress,
+      done,
+      delay,
+      notStarted,
+      total: done + delay + inProgress + notStarted
+    },
+    relevantPointsCount: relevantRows.length
+  };
+}
+
+/**
+ * Returns the list of sheets visible in a given scope (Plant, Department, Self PDCA, CFT),
+ * adhering to visibility rules and preventing duplicates.
+ */
+export function getPDCAVisibleSheets(data, plant, scope, options = {}) {
+  const {
+    department = '',
+    currentUser = null,
+    search = '',
+    dateFilter = '',
+    fromDate = '',
+    toDate = '',
+    employeeDatabase = VERIFIED_EMPLOYEE_MASTER
+  } = options;
+
+  if (!Array.isArray(data)) return [];
+
+  const query = (search || '').toLowerCase().trim();
+  const deptFilter = (department || '').toLowerCase().trim();
+
+  // 1. Filter by plant, dates, search query
+  const plantMatches = data.filter(item => {
+    if (!matchesPlant(item, plant)) return false;
+    if (!matchesDate(item, dateFilter)) return false;
+    if (!matchesDateRange(item, fromDate, toDate)) return false;
+    if (query) {
+      const matchQuery = [item.topic, item.description, item.id, item.department, item.createdBy?.name, item.createdBy?.code]
+        .some(val => String(val || '').toLowerCase().includes(query));
+      if (!matchQuery) return false;
+    }
+    return true;
+  });
+
+  // 2. Filter by scope with visibility & plant-to-dept rules
+  const results = [];
+  const seenIds = new Set();
+
+  if (scope === 'Company') {
+    // Plant page: show sheets created under Plant (Company) scope
+    plantMatches.forEach(item => {
+      if (item.scope === 'Company' || (!item.scope && !item.isSelf)) {
+        if (!seenIds.has(item.id)) {
+          seenIds.add(item.id);
+          results.push(item);
+        }
+      }
+    });
+  } else if (scope === 'Department') {
+    // Department page:
+    // User sees Department sheets AND Plant sheets containing points for the department
+    const userPrimaryDept = getUserPrimaryDepartment(currentUser, employeeDatabase);
+    const targetDept = deptFilter || (userPrimaryDept ? userPrimaryDept.toLowerCase() : '');
+
+    plantMatches.forEach(item => {
+      const itemDept = String(item.department || '').trim().toLowerCase();
+
+      // Case A: Sheet was created in Department page
+      const isDeptSheet = item.scope === 'Department';
+      const matchesDeptDirectly = isDeptSheet && (!targetDept || itemDept === targetDept);
+
+      // Case B: Sheet was created in Plant page (Company) and contains points for target department
+      const isPlantSheet = item.scope === 'Company';
+      let hasPointsForDept = false;
+      if (isPlantSheet && targetDept) {
+        const deptPoints = getSheetPointsForDepartment(item, targetDept, employeeDatabase);
+        hasPointsForDept = deptPoints.length > 0;
+      }
+
+      if (matchesDeptDirectly || hasPointsForDept) {
+        if (!seenIds.has(item.id)) {
+          seenIds.add(item.id);
+          results.push(item);
+        }
+      }
+    });
+  } else if (scope === 'Self PDCA') {
+    // Self PDCA page:
+    // Display only sheets relevant to the logged-in employee:
+    // Case A: Sheet created under Self PDCA scope by currentUser
+    // Case B: Any sheet containing points assigned to currentUser
+    plantMatches.forEach(item => {
+      const isSelfSheet = (item.scope === 'Self PDCA' || item.isSelf) && currentUser && isRecordCreator(item, currentUser);
+      const userPoints = currentUser ? getSheetPointsForUser(item, currentUser) : [];
+      const hasAssignedPoints = userPoints.length > 0;
+
+      if (isSelfSheet || hasAssignedPoints) {
+        if (!seenIds.has(item.id)) {
+          seenIds.add(item.id);
+          results.push(item);
+        }
+      }
+    });
+  } else if (scope === 'CFT') {
+    plantMatches.forEach(item => {
+      if (item.scope === 'CFT') {
+        if (!seenIds.has(item.id)) {
+          seenIds.add(item.id);
+          results.push(item);
+        }
+      }
+    });
+  } else {
+    plantMatches.forEach(item => {
+      if (item.scope === scope) {
+        if (!seenIds.has(item.id)) {
+          seenIds.add(item.id);
+          results.push(item);
+        }
+      }
+    });
+  }
+
+  return results;
+}
+
+/**
+ * Filters visible sheets by active section ('Ongoing' | 'Done') and sub-section
+ * ('Not-Started' | 'In-Progress' | 'Delay' | 'Done' | 'All').
+ */
+export function filterPDCARecordsBySection(sheets, scope, activeSection, activeSubSection, options = {}) {
+  if (!Array.isArray(sheets)) return [];
+  if (scope === 'CFT') return sheets;
+
+  return sheets.filter(sheet => {
+    const classification = classifyPDCASheetStatus(sheet, scope, options);
+
+    // Section matching: 'Ongoing' or 'Done'
+    if (activeSection && classification.section !== activeSection) {
+      return false;
+    }
+
+    // SubSection matching: 'Not-Started' | 'In-Progress' | 'Delay' | 'Done' | 'All'
+    if (activeSubSection && activeSubSection !== 'All') {
+      if (classification.subSection !== activeSubSection) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+}
+
+/**
+ * Calculates counts of sheets in Ongoing, Done, Not-Started, In-Progress, Delay.
+ */
+export function getPDCASectionCounts(sheets, scope, options = {}) {
+  const counts = {
+    Ongoing: 0,
+    Done: 0,
+    'Not-Started': 0,
+    'In-Progress': 0,
+    Delay: 0
+  };
+
+  if (!Array.isArray(sheets) || scope === 'CFT') return counts;
+
+  sheets.forEach(sheet => {
+    const { section, subSection } = classifyPDCASheetStatus(sheet, scope, options);
+    if (section === 'Ongoing') {
+      counts.Ongoing++;
+      if (subSection === 'Not-Started') counts['Not-Started']++;
+      else if (subSection === 'In-Progress') counts['In-Progress']++;
+      else if (subSection === 'Delay') counts.Delay++;
+    } else if (section === 'Done') {
+      counts.Done++;
+    }
+  });
+
+  return counts;
 }

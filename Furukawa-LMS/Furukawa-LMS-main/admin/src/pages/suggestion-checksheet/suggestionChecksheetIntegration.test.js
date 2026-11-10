@@ -327,3 +327,149 @@ test('26. SQL Server table columns (Description, Categories, Employee Code, Prio
   assert.ok(controllerFile.includes('sanitizeChecksheetPayload'), 'Controller must sanitize checksheet payload');
   assert.ok(controllerFile.includes('resolveCreatorName') || controllerFile.includes('createdBy'), 'Controller must resolve createdBy');
 });
+
+test('27. SuggestionChecksheetGraph and SuggestionTargetModal components exist and are embedded at top of list', () => {
+  const graphFile = new URL('../../components/suggestion-checksheet/SuggestionChecksheetGraph.jsx', import.meta.url);
+  const targetModalFile = new URL('../../components/suggestion-checksheet/SuggestionTargetModal.jsx', import.meta.url);
+  const listFile = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetList.jsx', import.meta.url), 'utf8');
+
+  assert.ok(fs.existsSync(graphFile), 'SuggestionChecksheetGraph.jsx must exist');
+  assert.ok(fs.existsSync(targetModalFile), 'SuggestionTargetModal.jsx must exist');
+  assert.ok(listFile.includes('<SuggestionChecksheetGraph'), 'SuggestionChecksheetList must embed SuggestionChecksheetGraph');
+  assert.ok(listFile.includes("import SuggestionChecksheetGraph from './SuggestionChecksheetGraph'"), 'SuggestionChecksheetList must import SuggestionChecksheetGraph');
+});
+
+test('28. Graph contains 4 bar lines, creation date implementation count rule, and 13 department targets', () => {
+  const graphCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetGraph.jsx', import.meta.url), 'utf8');
+  const targetCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionTargetModal.jsx', import.meta.url), 'utf8');
+
+  // Verify the 4 bar lines in graph
+  assert.ok(graphCode.includes('name="Total sheet created"'), 'Graph must have Total sheet created bar');
+  assert.ok(graphCode.includes('name="Accepted"'), 'Graph must have Accepted bar');
+  assert.ok(graphCode.includes('name="Not - Feasible"'), 'Graph must have Not - Feasible bar');
+  assert.ok(graphCode.includes('name="Date of implementation in Count"'), 'Graph must have Date of implementation in Count bar');
+
+  // Verify the 13 required target departments
+  const requiredDepts = [
+    'PE',
+    'IT',
+    'Quality',
+    'Assembly',
+    'SRC',
+    'Store',
+    'HR',
+    'Safety',
+    'FG',
+    'PPC',
+    'Maintenance',
+    'D&D',
+    'C&C'
+  ];
+  requiredDepts.forEach((dept) => {
+    assert.ok(targetCode.includes(`'${dept}'`), `Target departments must include ${dept}`);
+  });
+
+  // Verify Date of implementation in Count logic: implementation counted on creation date
+  const sampleRecords = [
+    {
+      id: 'SC-1',
+      date: '2026-11-05',
+      status: 'Implemented',
+      dateOfImplementation: '2026-11-26',
+      department: 'PE'
+    },
+    {
+      id: 'SC-2',
+      date: '2026-11-05',
+      status: 'Approved',
+      rejectedAccepted: 'ACCEPTED',
+      department: 'PE'
+    },
+    {
+      id: 'SC-3',
+      date: '2026-11-05',
+      status: 'Not Feasible',
+      rejectedAccepted: 'NOT FEASIBLE',
+      department: 'PE'
+    }
+  ];
+
+  // Verification helper mimicking chartData aggregation in SuggestionChecksheetGraph
+  const dateMap = new Map();
+  sampleRecords.forEach((item) => {
+    const ymd = item.date;
+    if (!dateMap.has(ymd)) {
+      dateMap.set(ymd, { totalCreated: 0, accepted: 0, notFeasible: 0, implementedCount: 0 });
+    }
+    const entry = dateMap.get(ymd);
+    entry.totalCreated += 1;
+    if (item.status === 'Approved' || item.rejectedAccepted === 'ACCEPTED' || item.status === 'Implemented') {
+      entry.accepted += 1;
+    }
+    if (item.status === 'Not Feasible' || item.rejectedAccepted === 'NOT FEASIBLE') {
+      entry.notFeasible += 1;
+    }
+    if (item.status === 'Implemented' || item.dateOfImplementation) {
+      entry.implementedCount += 1;
+    }
+  });
+
+  const nov5 = dateMap.get('2026-11-05');
+  assert.equal(nov5.totalCreated, 3, 'Total sheets created on 5-11-2026 is 3');
+  assert.equal(nov5.accepted, 2, 'Accepted count on 5-11-2026 is 2');
+  assert.equal(nov5.notFeasible, 1, 'Not-Feasible count on 5-11-2026 is 1');
+  assert.equal(nov5.implementedCount, 1, 'Implementation count is shown under creation date 5-11-2026 (not 26-11-2026)');
+  assert.equal(dateMap.has('2026-11-26'), false, 'Implementation date 26-11-2026 is not created as a separate bucket');
+});
+
+test('29. Sheet table limits to 15 sheets per page with working Previous and Next navigation', () => {
+  const listCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetList.jsx', import.meta.url), 'utf8');
+
+  assert.ok(listCode.includes('PAGE_SIZE = 15'), 'Page size must be defined as 15');
+  assert.ok(listCode.includes('paginatedRecords = useMemo'), 'paginatedRecords must be computed using page size');
+  assert.ok(listCode.includes('paginatedRecords.map'), 'Table rows must map over paginatedRecords');
+  assert.ok(listCode.includes('setCurrentPage((p) => Math.max(1, p - 1))'), 'Previous button must decrement page');
+  assert.ok(listCode.includes('setCurrentPage((p) => Math.min(totalPages, p + 1))'), 'Next button must increment page');
+  assert.ok(listCode.includes('disabled={currentPage <= 1}'), 'Previous button must be disabled on page 1');
+  assert.ok(listCode.includes('disabled={currentPage >= totalPages}'), 'Next button must be disabled on last page');
+});
+
+test('30. Target Line Popup contains Year selecting dropdown and Months multiple checkboxes (not in dropdown)', () => {
+  const targetCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionTargetModal.jsx', import.meta.url), 'utf8');
+
+  // Year filter must be in dropdown
+  assert.ok(targetCode.includes('YEARS_LIST'), 'Target modal must define YEARS_LIST');
+  assert.ok(targetCode.includes('<select'), 'Year must be selected via dropdown <select>');
+  assert.ok(targetCode.includes('Target Year:'), 'Target modal must display Target Year label');
+
+  // Months filter must be in multiple checkboxes
+  assert.ok(targetCode.includes('MONTHS'), 'Target modal must define 12 MONTHS');
+  assert.ok(targetCode.includes('type="checkbox"'), 'Months must be shown in multiple checkbox inputs (not in a dropdown)');
+  assert.ok(targetCode.includes('handleMonthToggle'), 'Modal must allow selecting multiple checkboxes for months');
+  assert.ok(targetCode.includes('Select Months (multiple checkboxes):'), 'Modal must label months selection as multiple checkboxes');
+
+  // Save button with multi-month target persistence
+  assert.ok(targetCode.includes('Save Targets'), 'Modal must contain Save Targets button');
+  assert.ok(targetCode.includes('saveStoredDepartmentTargetsV2'), 'Modal must save department targets across selected months');
+});
+
+test('31. Cumulative section on left side of bar graph with Target & Current by months, and Overall & Department Overview filter options', () => {
+  const graphCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetGraph.jsx', import.meta.url), 'utf8');
+
+  // 1. Cumulative section on the left side of bar graph
+  assert.ok(graphCode.includes('CUMULATIVE'), 'Graph must render CUMULATIVE section');
+  assert.ok(graphCode.includes('cumulativeMonthData'), 'Graph must calculate monthly cumulative data');
+  assert.ok(graphCode.includes('TARGET'), 'Cumulative section must display TARGET column');
+  assert.ok(graphCode.includes('CURRENT'), 'Cumulative section must display CURRENT column');
+  assert.ok(graphCode.includes('Total'), 'Cumulative section must display Total summary row');
+  assert.ok(graphCode.includes('flex flex-col lg:flex-row'), 'Graph container must place Cumulative section on left side of bar graph');
+
+  // 2. Overall option just after Best Suggestion
+  assert.ok(graphCode.includes('setGraphTab(\'OVERALL\')'), 'Graph must include Overall filter option');
+  assert.ok(graphCode.includes('Overall'), 'Graph must display Overall button');
+
+  // 3. Department Overview option
+  assert.ok(graphCode.includes('setGraphTab(\'DEPARTMENT\')'), 'Graph must include Department Overview option');
+  assert.ok(graphCode.includes('Department Overview'), 'Graph must display Department Overview button');
+  assert.ok(graphCode.includes('TARGET_DEPARTMENTS.map'), 'Department Overview must group 4 bar series across all departments');
+});

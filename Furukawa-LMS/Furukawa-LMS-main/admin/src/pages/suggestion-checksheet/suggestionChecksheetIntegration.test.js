@@ -232,11 +232,14 @@ test('21. Add modal contains NO dummy employee data fallback and fetches only re
   assert.ok(addModalFile.includes('No employees found in database'), 'Must show clean empty state when no DB users');
 });
 
-test('22. Unit selector is on top left corner and dropdown options are cleanly separated', () => {
+test('22. Unit selector is placed in the filters toolbar and removed from top of page', () => {
   const listFile = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetList.jsx', import.meta.url), 'utf8');
-  assert.ok(listFile.includes('Unit Selecting Option on the Top Left Corner'), 'Unit selector must be placed on top left corner');
-  assert.ok(listFile.includes('Bawal') && listFile.includes('Gujrat') && listFile.includes('All Units'), 'Dropdown must include Bawal, Gujrat, All Units');
-  assert.ok(listFile.includes("display: 'flex'") && listFile.includes("flexDirection: 'column'"), 'Options must be stacked vertically to prevent overlapping');
+  const graphFile = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetGraph.jsx', import.meta.url), 'utf8');
+
+  // Verify Unit selector is placed in the filters toolbar
+  assert.ok(graphFile.includes('Unit Filter (placed in filters toolbar)'), 'Unit selector must be placed in Graph filter controls');
+  assert.ok(listFile.includes('Unit Filter (in the filter toolbar)'), 'Unit selector must be placed in List filter toolbar');
+  assert.ok(graphFile.includes('Bawal') && graphFile.includes('Gujrat') && graphFile.includes('All Units'), 'Unit filter must include Bawal, Gujrat, All Units');
 });
 
 test('23. Table columns reflect Created By and Approved / Rejected By (ID removed)', () => {
@@ -343,11 +346,11 @@ test('28. Graph contains 4 bar lines, creation date implementation count rule, a
   const graphCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetGraph.jsx', import.meta.url), 'utf8');
   const targetCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionTargetModal.jsx', import.meta.url), 'utf8');
 
-  // Verify the 4 bar lines in graph
-  assert.ok(graphCode.includes('name="Total sheet created"'), 'Graph must have Total sheet created bar');
+  // Verify the bar lines in graph
+  assert.ok(graphCode.includes('name="Total"') || graphCode.includes('name="Total sheet created"'), 'Graph must have Total bar');
   assert.ok(graphCode.includes('name="Accepted"'), 'Graph must have Accepted bar');
   assert.ok(graphCode.includes('name="Not - Feasible"'), 'Graph must have Not - Feasible bar');
-  assert.ok(graphCode.includes('name="Date of implementation in Count"'), 'Graph must have Date of implementation in Count bar');
+  assert.ok(graphCode.includes('name="Implemented"') || graphCode.includes('name="Date of implementation in Count"'), 'Graph must have Implemented bar');
 
   // Verify the 13 required target departments
   const requiredDepts = [
@@ -453,16 +456,13 @@ test('30. Target Line Popup contains Year selecting dropdown and Months multiple
   assert.ok(targetCode.includes('saveStoredDepartmentTargetsV2'), 'Modal must save department targets across selected months');
 });
 
-test('31. Cumulative section on left side of bar graph with Target & Current by months, and Overall & Department Overview filter options', () => {
+test('31. In-chart cumulative bars for past/live months and Overall & Department Overview filter options', () => {
   const graphCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetGraph.jsx', import.meta.url), 'utf8');
 
-  // 1. Cumulative section on the left side of bar graph
-  assert.ok(graphCode.includes('CUMULATIVE'), 'Graph must render CUMULATIVE section');
-  assert.ok(graphCode.includes('cumulativeMonthData'), 'Graph must calculate monthly cumulative data');
-  assert.ok(graphCode.includes('TARGET'), 'Cumulative section must display TARGET column');
-  assert.ok(graphCode.includes('CURRENT'), 'Cumulative section must display CURRENT column');
-  assert.ok(graphCode.includes('Total'), 'Cumulative section must display Total summary row');
-  assert.ok(graphCode.includes('flex flex-col lg:flex-row'), 'Graph container must place Cumulative section on left side of bar graph');
+  // In-chart cumulative buckets for past month and current month live
+  assert.ok(graphCode.includes('Cumul'), 'Graph must render past month Cumul bucket');
+  assert.ok(graphCode.includes('Live'), 'Graph must render current month Live bucket');
+  assert.ok(graphCode.includes('isCumulativeBucket'), 'Cumulative buckets must be flagged');
 
   // 2. Overall option just after Best Suggestion
   assert.ok(graphCode.includes('setGraphTab(\'OVERALL\')'), 'Graph must include Overall filter option');
@@ -491,16 +491,39 @@ test('32. Department Overview contains Target Line according to targets set from
   assert.ok(graphCode.includes('target: deptTarget'), 'Each department entry in chartData must contain target');
 });
 
-test('33. Recharts Legend removed and KPI badges placed above chart area', () => {
+test('33. 5 Bar candles, centered fixed badges with Implemented (Count removed), and Target bar', () => {
   const graphCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetGraph.jsx', import.meta.url), 'utf8');
 
   // Verify Legend is removed from chart
   assert.ok(!graphCode.includes('<Legend'), 'Recharts <Legend> must be removed from ComposedChart');
 
-  // Verify KPI Badges are placed in chart box
-  assert.ok(graphCode.includes('Quick KPI Badges placed here'), 'KPI badges must be placed in chart box');
-  assert.ok(graphCode.includes('Total: <strong>{summaryTotals.totalCreated}</strong>'), 'Total KPI badge must be rendered in chart area');
-  assert.ok(graphCode.includes('Accepted: <strong>{summaryTotals.accepted}</strong>'), 'Accepted KPI badge must be rendered in chart area');
-  assert.ok(graphCode.includes('Not-Feasible: <strong>{summaryTotals.notFeasible}</strong>'), 'Not-Feasible KPI badge must be rendered in chart area');
-  assert.ok(graphCode.includes('Implemented Count: <strong>{summaryTotals.implementedCount}</strong>'), 'Implemented Count KPI badge must be rendered in chart area');
+  // Verify 5 KPI Badges are centered and fixed
+  assert.ok(graphCode.includes('justify-center'), 'KPI badges must be centered');
+  assert.ok(graphCode.includes('Total: <strong>{summaryTotals.totalCreated}</strong>'), 'Total KPI badge must be rendered');
+  assert.ok(graphCode.includes('Accepted: <strong>{summaryTotals.accepted}</strong>'), 'Accepted KPI badge must be rendered');
+  assert.ok(graphCode.includes('Not-Feasible: <strong>{summaryTotals.notFeasible}</strong>'), 'Not-Feasible KPI badge must be rendered');
+  assert.ok(graphCode.includes('Implemented: <strong>{summaryTotals.implementedCount}</strong>'), 'Implemented (Count text removed) KPI badge must be rendered');
+  assert.ok(graphCode.includes('Target: <strong>{targetLineValue}</strong>'), 'Target KPI badge must be rendered');
+
+  // Verify 5 bar candles in chart
+  assert.ok(graphCode.includes('dataKey="totalCreated"'), 'Total bar candle must exist');
+  assert.ok(graphCode.includes('dataKey="accepted"'), 'Accepted bar candle must exist');
+  assert.ok(graphCode.includes('dataKey="notFeasible"'), 'Not-Feasible bar candle must exist');
+  assert.ok(graphCode.includes('dataKey="implementedCount"') && graphCode.includes('name="Implemented"'), 'Implemented bar candle must exist without Count');
+  assert.ok(graphCode.includes('dataKey="target"') && graphCode.includes('name="Target"'), 'Target bar candle must exist');
+});
+
+test('34. All suggestion / Best suggestion separated from Overall / Department Overview in graph filter toolbar', () => {
+  const graphCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetGraph.jsx', import.meta.url), 'utf8');
+
+  // Verify Group 1: Suggestion Scope
+  assert.ok(graphCode.includes('Group 1: Suggestion Scope'), 'Group 1 for suggestion scope must exist');
+  assert.ok(graphCode.includes('All Suggestion') && graphCode.includes('Best Suggestion'), 'All and Best suggestions must be grouped together');
+
+  // Verify Group 2: View Mode is separated
+  assert.ok(graphCode.includes('Group 2: View Mode'), 'Group 2 for view mode must exist separately');
+  assert.ok(graphCode.includes('Overall') && graphCode.includes('Department Overview'), 'Overall and Department Overview must be grouped together');
+
+  // Verify Unit filter in graph controls
+  assert.ok(graphCode.includes('Unit Filter (placed in filters toolbar)'), 'Unit filter must be placed inside filter toolbar');
 });

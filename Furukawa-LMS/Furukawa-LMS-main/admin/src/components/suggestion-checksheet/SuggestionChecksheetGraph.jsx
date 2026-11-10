@@ -22,7 +22,8 @@ import {
   XCircle,
   Clock,
   TrendingUp,
-  Building2
+  Building2,
+  MapPin
 } from 'lucide-react';
 import SuggestionTargetModal, {
   TARGET_DEPARTMENTS,
@@ -69,6 +70,7 @@ function formatDisplayDate(ymd) {
 export default function SuggestionChecksheetGraph({
   records = [],
   selectedUnit = 'Bawal',
+  onSelectUnit,
   departmentList = TARGET_DEPARTMENTS
 }) {
   const currentYear = new Date().getFullYear() || 2026;
@@ -77,6 +79,8 @@ export default function SuggestionChecksheetGraph({
   // Graph Filters state:
   // Modes: 'ALL' | 'BEST' | 'OVERALL' | 'DEPARTMENT'
   const [graphTab, setGraphTab] = useState('ALL');
+  const [suggestionScope, setSuggestionScope] = useState('ALL'); // 'ALL' | 'BEST'
+  const [graphView, setGraphView] = useState('TIMELINE'); // 'TIMELINE' | 'OVERALL' | 'DEPARTMENT'
   const [graphDept, setGraphDept] = useState('All');
   const [graphFromDate, setGraphFromDate] = useState('');
   const [graphToDate, setGraphToDate] = useState('');
@@ -87,13 +91,13 @@ export default function SuggestionChecksheetGraph({
   // Filter records according to graph filter controls
   const filteredRecords = useMemo(() => {
     return records.filter((item) => {
-      // 1. Tab filter
+      // 1. Suggestion Scope filter (All vs Best)
       const isBestItem = Boolean(
         item.isBest ||
         Number(item.defectPreventionRank) === 5 ||
         Number(item.defectPreventionRank) === 4
       );
-      if (graphTab === 'BEST') {
+      if (suggestionScope === 'BEST') {
         if (!isBestItem) return false;
       }
 
@@ -102,7 +106,7 @@ export default function SuggestionChecksheetGraph({
         return false;
       }
 
-      // 3. Department match (applies in ALL, BEST, OVERALL modes)
+      // 3. Department match (applies when not in Department Overview)
       if (graphTab !== 'DEPARTMENT' && graphDept !== 'All') {
         const itemDept = String(item.department || '').trim().toLowerCase();
         const targetDept = String(graphDept).trim().toLowerCase();
@@ -120,7 +124,7 @@ export default function SuggestionChecksheetGraph({
 
       return true;
     });
-  }, [records, graphTab, selectedUnit, graphDept, graphFromDate, graphToDate]);
+  }, [records, suggestionScope, selectedUnit, graphDept, graphFromDate, graphToDate, graphTab]);
 
   // Aggregate data for the Bar Chart:
   // - 'ALL' / 'BEST': Date-wise 4 bars
@@ -235,7 +239,100 @@ export default function SuggestionChecksheetGraph({
       });
     }
 
-    // Default mode: 'ALL' or 'BEST' -> date-wise 4 bars
+    // Timeline mode: 'ALL' or 'BEST' -> Cumulative past/current month buckets followed by daily entries
+    const now = new Date();
+    const curYear = now.getFullYear() || 2026;
+    const curMonth = (now.getMonth() + 1) || 11;
+    const pastMonth = curMonth === 1 ? 12 : curMonth - 1;
+    const pastYr = curMonth === 1 ? curYear - 1 : curYear;
+
+    const pastMonthObj = MONTHS.find((m) => m.num === pastMonth);
+    const curMonthObj = MONTHS.find((m) => m.num === curMonth);
+    const pastShort = pastMonthObj ? pastMonthObj.short : 'Past';
+    const curShort = curMonthObj ? curMonthObj.short : 'Current';
+
+    const v2Store = getStoredDepartmentTargetsV2();
+
+    const computeMonthStats = (yr, mo) => {
+      let totalCreated = 0;
+      let accepted = 0;
+      let notFeasible = 0;
+      let implementedCount = 0;
+
+      records.forEach((item) => {
+        if (selectedUnit && selectedUnit !== 'All Units' && item.unit && item.unit !== selectedUnit) {
+          return;
+        }
+        if (graphDept !== 'All') {
+          const itemDept = String(item.department || '').trim().toLowerCase();
+          if (itemDept !== String(graphDept).trim().toLowerCase()) return;
+        }
+        if (graphTab === 'BEST') {
+          const isBestItem = Boolean(
+            item.isBest ||
+            Number(item.defectPreventionRank) === 5 ||
+            Number(item.defectPreventionRank) === 4
+          );
+          if (!isBestItem) return;
+        }
+        const ymd = normalizeDateToYMD(item.date);
+        if (!ymd) return;
+        const parts = ymd.split('-');
+        if (parts.length === 3 && parseInt(parts[0], 10) === yr && parseInt(parts[1], 10) === mo) {
+          totalCreated += 1;
+          const statusStr = String(item.status || '').trim().toLowerCase();
+          const decisionStr = String(item.rejectedAccepted || '').trim().toLowerCase();
+          if (statusStr === 'approved' || statusStr === 'accepted' || decisionStr === 'accepted' || statusStr === 'implemented') {
+            accepted += 1;
+          }
+          if (statusStr === 'not feasible' || statusStr === 'rejected' || decisionStr === 'not feasible' || decisionStr === 'rejected') {
+            notFeasible += 1;
+          }
+          if (statusStr === 'implemented' || (item.dateOfImplementation && String(item.dateOfImplementation).trim() !== '')) {
+            implementedCount += 1;
+          }
+        }
+      });
+
+      let targetVal = 0;
+      if (graphDept !== 'All') {
+        targetVal = getTargetForDeptAndMonth(graphDept, yr, mo, v2Store, targets);
+      } else {
+        targetVal = TARGET_DEPARTMENTS.reduce(
+          (sum, d) => sum + getTargetForDeptAndMonth(d, yr, mo, v2Store, targets),
+          0
+        );
+      }
+
+      return { totalCreated, accepted, notFeasible, implementedCount, target: targetVal };
+    };
+
+    const pastStats = computeMonthStats(pastYr, pastMonth);
+    const curStats = computeMonthStats(curYear, curMonth);
+
+    const cumulativeBuckets = [
+      {
+        displayLabel: `${pastShort} Cumul`,
+        dateKey: '0000-00-01',
+        isCumulativeBucket: true,
+        totalCreated: pastStats.totalCreated,
+        accepted: pastStats.accepted,
+        notFeasible: pastStats.notFeasible,
+        implementedCount: pastStats.implementedCount,
+        target: pastStats.target
+      },
+      {
+        displayLabel: `${curShort} Live`,
+        dateKey: '0000-00-02',
+        isCumulativeBucket: true,
+        totalCreated: curStats.totalCreated,
+        accepted: curStats.accepted,
+        notFeasible: curStats.notFeasible,
+        implementedCount: curStats.implementedCount,
+        target: curStats.target
+      }
+    ];
+
     const dateMap = new Map();
     filteredRecords.forEach((item) => {
       const ymd = normalizeDateToYMD(item.date) || 'Undated';
@@ -247,7 +344,8 @@ export default function SuggestionChecksheetGraph({
           totalCreated: 0,
           accepted: 0,
           notFeasible: 0,
-          implementedCount: 0
+          implementedCount: 0,
+          target: 0
         });
       }
       const entry = dateMap.get(ymd);
@@ -265,11 +363,13 @@ export default function SuggestionChecksheetGraph({
       }
     });
 
-    return Array.from(dateMap.values()).sort((a, b) => {
+    const dailySorted = Array.from(dateMap.values()).sort((a, b) => {
       if (a.dateKey === 'Undated') return 1;
       if (b.dateKey === 'Undated') return -1;
       return a.dateKey.localeCompare(b.dateKey);
     });
+
+    return [...cumulativeBuckets, ...dailySorted];
   }, [filteredRecords, graphTab, targets, cumulativeYear, graphFromDate, currentMonthNum]);
 
   // Overall totals for quick summary badges
@@ -363,17 +463,45 @@ export default function SuggestionChecksheetGraph({
     );
   }, [cumulativeMonthData]);
 
+  const handleToggleOverall = () => {
+    const next = graphView === 'OVERALL' ? 'TIMELINE' : 'OVERALL';
+    setGraphView(next);
+    if (next === 'OVERALL') {
+      setGraphTab('OVERALL');
+    } else {
+      setGraphTab(suggestionScope);
+    }
+  };
+
+  const handleToggleDepartment = () => {
+    const next = graphView === 'DEPARTMENT' ? 'TIMELINE' : 'DEPARTMENT';
+    setGraphView(next);
+    if (next === 'DEPARTMENT') {
+      setGraphTab('DEPARTMENT');
+    } else {
+      setGraphTab(suggestionScope);
+    }
+  };
+
   const handleResetFilters = () => {
     setGraphTab('ALL');
+    setSuggestionScope('ALL');
+    setGraphView('TIMELINE');
     setGraphDept('All');
     setGraphFromDate('');
     setGraphToDate('');
+    if (onSelectUnit) onSelectUnit('Bawal');
   };
 
   // Custom Tooltip component
   const CustomTooltip = ({ active, payload, label }) => {
     if (!active || !payload || !payload.length) return null;
-    const titlePrefix = graphTab === 'DEPARTMENT' ? 'Department' : (graphTab === 'OVERALL' ? 'Cumulative Date' : 'Date');
+    const isCumul = payload[0]?.payload?.isCumulativeBucket;
+    const titlePrefix = isCumul
+      ? 'Cumulative'
+      : (graphTab === 'DEPARTMENT'
+        ? 'Department'
+        : (graphTab === 'OVERALL' ? 'Cumulative Date' : 'Date'));
     return (
       <div className="bg-white/95 backdrop-blur-xs p-3.5 rounded-xl border border-slate-200 shadow-xl text-xs space-y-2 min-w-[210px]">
         <div className="font-bold text-slate-800 border-b border-slate-100 pb-1.5 flex items-center justify-between">
@@ -395,15 +523,6 @@ export default function SuggestionChecksheetGraph({
               <span className="font-bold text-slate-900">{entry.value}</span>
             </div>
           ))}
-          {targetLineValue > 0 && graphTab !== 'DEPARTMENT' && (
-            <div className="flex items-center justify-between gap-3 pt-1 border-t border-slate-100 text-orange-600">
-              <div className="flex items-center gap-1.5 font-bold">
-                <span className="w-2.5 h-0.5 bg-orange-500 shrink-0" />
-                <span>Target Line:</span>
-              </div>
-              <span className="font-bold">{targetLineValue}</span>
-            </div>
-          )}
         </div>
       </div>
     );
@@ -439,13 +558,16 @@ export default function SuggestionChecksheetGraph({
       {/* 2. Graph Filter Controls */}
       <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50/70 p-3 rounded-xl border border-slate-200 text-xs">
         <div className="flex flex-wrap items-center gap-2.5">
-          {/* View Modes: All Suggestion / Best Suggestion / Overall / Department Overview */}
+          {/* Group 1: Suggestion Scope (All Suggestion / Best Suggestion) */}
           <div className="flex bg-white p-0.5 rounded-lg border border-slate-300 shadow-2xs flex-wrap gap-0.5">
             <button
               type="button"
-              onClick={() => setGraphTab('ALL')}
+              onClick={() => {
+                setSuggestionScope('ALL');
+                if (graphView === 'TIMELINE') setGraphTab('ALL');
+              }}
               className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
-                graphTab === 'ALL'
+                suggestionScope === 'ALL'
                   ? 'bg-blue-600 text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
               }`}
@@ -454,9 +576,12 @@ export default function SuggestionChecksheetGraph({
             </button>
             <button
               type="button"
-              onClick={() => setGraphTab('BEST')}
+              onClick={() => {
+                setSuggestionScope('BEST');
+                if (graphView === 'TIMELINE') setGraphTab('BEST');
+              }}
               className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
-                graphTab === 'BEST'
+                suggestionScope === 'BEST'
                   ? 'bg-amber-500 text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
               }`}
@@ -464,37 +589,56 @@ export default function SuggestionChecksheetGraph({
               <Sparkles className="w-3 h-3" />
               <span>Best Suggestion</span>
             </button>
+          </div>
+
+          {/* Group 2: View Mode (Overall / Department Overview) - Separated from All/Best */}
+          <div className="flex bg-white p-0.5 rounded-lg border border-slate-300 shadow-2xs flex-wrap gap-0.5">
             <button
               type="button"
-              onClick={() => setGraphTab('OVERALL')}
+              onClick={handleToggleOverall}
               className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
-                graphTab === 'OVERALL'
+                graphView === 'OVERALL'
                   ? 'bg-indigo-600 text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
               }`}
-              title="Cumulative Overall Overview"
+              title="Toggle Cumulative Overall Progression"
             >
               <TrendingUp className="w-3 h-3" />
               <span>Overall</span>
             </button>
             <button
               type="button"
-              onClick={() => setGraphTab('DEPARTMENT')}
+              onClick={handleToggleDepartment}
               className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
-                graphTab === 'DEPARTMENT'
+                graphView === 'DEPARTMENT'
                   ? 'bg-purple-600 text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
               }`}
-              title="Department-wise Breakdown"
+              title="Toggle Department Overview Breakdown"
             >
               <Building2 className="w-3 h-3" />
               <span>Department Overview</span>
             </button>
           </div>
 
+          {/* Unit Filter (placed in filters toolbar) */}
+          <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-lg border border-slate-300 shadow-2xs">
+            <MapPin className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+            <span className="font-semibold text-slate-500">Unit:</span>
+            <select
+              value={selectedUnit || 'Bawal'}
+              onChange={(e) => onSelectUnit && onSelectUnit(e.target.value)}
+              className="bg-transparent text-slate-800 font-bold focus:outline-none cursor-pointer"
+            >
+              <option value="Bawal">Bawal</option>
+              <option value="Gujrat">Gujrat</option>
+              <option value="All Units">All Units</option>
+            </select>
+          </div>
+
           {/* Department Filter (Visible when not in Department Overview) */}
-          {graphTab !== 'DEPARTMENT' && (
-            <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-lg border border-slate-300">
+          {graphView !== 'DEPARTMENT' && (
+            <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-lg border border-slate-300 shadow-2xs">
               <Filter className="w-3.5 h-3.5 text-slate-400 shrink-0" />
               <span className="font-semibold text-slate-500">Dept:</span>
               <select
@@ -513,7 +657,7 @@ export default function SuggestionChecksheetGraph({
           )}
 
           {/* From - To Calendar Filter */}
-          <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-lg border border-slate-300">
+          <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-lg border border-slate-300 shadow-2xs">
             <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
             <span className="font-semibold text-slate-500">From:</span>
             <input
@@ -532,7 +676,7 @@ export default function SuggestionChecksheetGraph({
           </div>
 
           {/* Reset Filters Button */}
-          {(graphTab !== 'ALL' || graphDept !== 'All' || graphFromDate || graphToDate) && (
+          {(suggestionScope !== 'ALL' || graphView !== 'TIMELINE' || graphDept !== 'All' || graphFromDate || graphToDate || (selectedUnit && selectedUnit !== 'Bawal')) && (
             <button
               type="button"
               onClick={handleResetFilters}
@@ -561,203 +705,147 @@ export default function SuggestionChecksheetGraph({
         </button>
       </div>
 
-      {/* 3. Main Content: Cumulative Section (Left) + Bar Chart (Right) */}
-      <div className="flex flex-col lg:flex-row gap-4 items-stretch">
-        {/* Left Side: CUMULATIVE Card (as shown in reference screenshot) */}
-        <div className="w-full lg:w-60 xl:w-64 shrink-0 bg-slate-50/70 rounded-2xl border border-slate-200 p-3.5 flex flex-col justify-between text-xs shadow-2xs">
-          <div>
-            {/* Cumulative Header with Year Selector */}
-            <div className="flex items-center justify-between border-b border-slate-200 pb-2 mb-2">
-              <span className="font-black text-slate-800 tracking-wider text-xs flex items-center gap-1.5">
-                <Target className="w-3.5 h-3.5 text-blue-600" />
-                <span>CUMULATIVE</span>
-              </span>
-              <select
-                value={cumulativeYear}
-                onChange={(e) => setCumulativeYear(Number(e.target.value) || currentYear)}
-                className="px-2 py-0.5 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 font-black text-xs cursor-pointer focus:outline-none shadow-2xs"
-                title="Select Year for Cumulative Data"
-              >
-                {YEARS_LIST.map((yr) => (
-                  <option key={yr} value={yr}>
-                    {yr}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Table Header: MONTH, TARGET, CURRENT */}
-            <div className="grid grid-cols-3 text-[10px] font-black text-slate-500 uppercase tracking-wider border-b border-slate-200/80 pb-1.5 px-1.5">
-              <span>MONTH</span>
-              <span className="text-right">TARGET</span>
-              <span className="text-right">CURRENT</span>
-            </div>
-
-            {/* Month Rows (Jan to Dec) */}
-            <div className="divide-y divide-slate-100/90 max-h-[300px] overflow-y-auto">
-              {cumulativeMonthData.map((m) => (
-                <div
-                  key={m.monthNum}
-                  className={`grid grid-cols-3 py-1.5 px-1.5 text-xs transition-colors rounded-lg ${
-                    m.isCurrentMonth
-                      ? 'bg-blue-50/90 font-bold text-blue-900 border-l-2 border-blue-600'
-                      : 'text-slate-600 hover:bg-slate-100/60'
-                  }`}
-                >
-                  <span className={m.isCurrentMonth ? 'font-black text-slate-900' : 'font-medium'}>
-                    {m.monthShort}
-                  </span>
-                  <span className="text-right text-slate-500 font-semibold">{m.target}</span>
-                  <span className={`text-right font-extrabold ${m.current > 0 ? 'text-blue-700' : 'text-slate-400'}`}>
-                    {m.current}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Cumulative Total Row at Bottom */}
-          <div className="border-t-2 border-slate-200 pt-2.5 mt-2 grid grid-cols-3 px-1.5 text-xs font-black text-slate-900 bg-white/60 rounded-lg p-1.5">
-            <span>Total</span>
-            <span className="text-right text-slate-600">{cumulativeTotals.target}</span>
-            <span className="text-right text-blue-700">{cumulativeTotals.current}</span>
-          </div>
+      {/* 3. Main Content: Bar Chart (Full Width, Centered Fixed KPI Badges, 5 Bar Candles) */}
+      <div className="w-full bg-white rounded-2xl border border-slate-200 p-3.5 pt-2.5 flex flex-col justify-between shadow-2xs">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs px-1 pb-1 text-slate-500 font-medium">
+          <span>
+            {graphTab === 'DEPARTMENT'
+              ? 'Department Overview (Total, Accepted, Not-Feasible, Implemented, Target per Dept)'
+              : (graphTab === 'OVERALL' ? 'Overall Cumulative Progression' : 'Timeline with Past/Live Cumulative (5 Bar Series)')}
+          </span>
+          <span className="text-[11px] font-bold text-slate-400">
+            {filteredRecords.length} records
+          </span>
         </div>
 
-        {/* Right Side: Recharts Bar Chart */}
-        <div className="flex-1 min-w-0 bg-white rounded-2xl border border-slate-200 p-3 pt-2 flex flex-col justify-between shadow-2xs">
-          <div className="flex flex-wrap items-center justify-between gap-2 text-xs px-1 pb-1 text-slate-500 font-medium">
-            <span>
-              {graphTab === 'DEPARTMENT'
-                ? 'Department Overview (Total, Accepted, Not-Feasible, Implemented per Dept)'
-                : (graphTab === 'OVERALL' ? 'Overall Cumulative Progression' : 'Current Date Timeline (4 Bar Series)')}
-            </span>
-            <span className="text-[11px] font-bold text-slate-400">
-              {filteredRecords.length} records
-            </span>
-          </div>
-
-          {/* Quick KPI Badges placed here (replacing former Legend in chart) */}
-          <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2 px-1 pt-1 pb-2">
-            <div className="px-2.5 py-1 rounded-lg bg-blue-50/80 border border-blue-200/80 text-blue-800 flex items-center gap-1.5 text-xs font-semibold">
+        {/* Centered Fixed KPI Badges (5 Metrics: Total, Accepted, Not-Feasible, Implemented, Target) */}
+        <div className="w-full flex items-center justify-center py-2 px-2 border-b border-slate-100 mb-2 shrink-0">
+          <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
+            <div className="px-3 py-1.5 rounded-xl bg-blue-50/90 border border-blue-200/90 text-blue-800 flex items-center gap-1.5 text-xs font-semibold shadow-2xs">
               <Layers className="w-3.5 h-3.5 text-blue-600" />
               <span>Total: <strong>{summaryTotals.totalCreated}</strong></span>
             </div>
-            <div className="px-2.5 py-1 rounded-lg bg-emerald-50/80 border border-emerald-200/80 text-emerald-800 flex items-center gap-1.5 text-xs font-semibold">
+            <div className="px-3 py-1.5 rounded-xl bg-emerald-50/90 border border-emerald-200/90 text-emerald-800 flex items-center gap-1.5 text-xs font-semibold shadow-2xs">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
               <span>Accepted: <strong>{summaryTotals.accepted}</strong></span>
             </div>
-            <div className="px-2.5 py-1 rounded-lg bg-rose-50/80 border border-rose-200/80 text-rose-800 flex items-center gap-1.5 text-xs font-semibold">
+            <div className="px-3 py-1.5 rounded-xl bg-rose-50/90 border border-rose-200/90 text-rose-800 flex items-center gap-1.5 text-xs font-semibold shadow-2xs">
               <XCircle className="w-3.5 h-3.5 text-rose-600" />
               <span>Not-Feasible: <strong>{summaryTotals.notFeasible}</strong></span>
             </div>
-            <div className="px-2.5 py-1 rounded-lg bg-purple-50/80 border border-purple-200/80 text-purple-800 flex items-center gap-1.5 text-xs font-semibold">
+            <div className="px-3 py-1.5 rounded-xl bg-purple-50/90 border border-purple-200/90 text-purple-800 flex items-center gap-1.5 text-xs font-semibold shadow-2xs">
               <Clock className="w-3.5 h-3.5 text-purple-600" />
-              <span>Implemented Count: <strong>{summaryTotals.implementedCount}</strong></span>
+              <span>Implemented: <strong>{summaryTotals.implementedCount}</strong></span>
             </div>
-            {targetLineValue > 0 && (
-              <div className="px-2.5 py-1 rounded-lg bg-orange-50/80 border border-orange-200/80 text-orange-800 flex items-center gap-1.5 text-xs font-semibold">
-                <Target className="w-3.5 h-3.5 text-orange-600" />
-                <span>Target: <strong>{targetLineValue}</strong></span>
-              </div>
-            )}
+            <div className="px-3 py-1.5 rounded-xl bg-orange-50/90 border border-orange-200/90 text-orange-800 flex items-center gap-1.5 text-xs font-semibold shadow-2xs">
+              <Target className="w-3.5 h-3.5 text-orange-600" />
+              <span>Target: <strong>{targetLineValue}</strong></span>
+            </div>
           </div>
+        </div>
 
-          <div className="w-full h-[330px]">
-            {chartData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart
-                  data={chartData}
-                  margin={{ top: 10, right: 25, left: -15, bottom: graphTab === 'DEPARTMENT' ? 25 : 10 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
-                  <XAxis
-                    dataKey="displayLabel"
-                    tick={{ fill: '#64748B', fontSize: 11, fontWeight: 600 }}
-                    tickLine={false}
-                    axisLine={{ stroke: '#CBD5E1' }}
-                    interval={0}
-                    angle={graphTab === 'DEPARTMENT' ? -25 : 0}
-                    textAnchor={graphTab === 'DEPARTMENT' ? 'end' : 'middle'}
+        <div className="w-full h-[360px]">
+          {chartData.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart
+                data={chartData}
+                margin={{ top: 10, right: 25, left: -15, bottom: graphTab === 'DEPARTMENT' ? 25 : 10 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
+                <XAxis
+                  dataKey="displayLabel"
+                  tick={{ fill: '#64748B', fontSize: 11, fontWeight: 600 }}
+                  tickLine={false}
+                  axisLine={{ stroke: '#CBD5E1' }}
+                  interval={0}
+                  angle={graphTab === 'DEPARTMENT' ? -25 : 0}
+                  textAnchor={graphTab === 'DEPARTMENT' ? 'end' : 'middle'}
+                />
+                <YAxis
+                  allowDecimals={false}
+                  tick={{ fill: '#64748B', fontSize: 11, fontWeight: 600 }}
+                  tickLine={false}
+                  axisLine={{ stroke: '#CBD5E1' }}
+                />
+                <Tooltip content={<CustomTooltip />} />
+                {/* 1. Total Bar */}
+                <Bar
+                  dataKey="totalCreated"
+                  name="Total"
+                  fill="#3B82F6"
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={20}
+                />
+                {/* 2. Accepted Bar */}
+                <Bar
+                  dataKey="accepted"
+                  name="Accepted"
+                  fill="#10B981"
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={20}
+                />
+                {/* 3. Not - Feasible Bar */}
+                <Bar
+                  dataKey="notFeasible"
+                  name="Not - Feasible"
+                  fill="#EF4444"
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={20}
+                />
+                {/* 4. Implemented Bar (Count removed) */}
+                <Bar
+                  dataKey="implementedCount"
+                  name="Implemented"
+                  fill="#8B5CF6"
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={20}
+                />
+                {/* 5. Target Bar Candle */}
+                <Bar
+                  dataKey="target"
+                  name="Target"
+                  fill="#F97316"
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={20}
+                />
+                {/* Target Line for Department Overview */}
+                {graphTab === 'DEPARTMENT' && (
+                  <Line
+                    type="monotone"
+                    dataKey="target"
+                    name="Target Line"
+                    stroke="#EA580C"
+                    strokeWidth={2.5}
+                    dot={{ r: 3.5, fill: '#EA580C', strokeWidth: 1.5, stroke: '#FFFFFF' }}
+                    activeDot={{ r: 5.5, fill: '#EA580C', stroke: '#FFFFFF', strokeWidth: 2 }}
                   />
-                  <YAxis
-                    allowDecimals={false}
-                    tick={{ fill: '#64748B', fontSize: 11, fontWeight: 600 }}
-                    tickLine={false}
-                    axisLine={{ stroke: '#CBD5E1' }}
+                )}
+                {/* Target Line Reference (in timeline & overall modes) */}
+                {targetLineValue > 0 && graphTab !== 'DEPARTMENT' && (
+                  <ReferenceLine
+                    y={targetLineValue}
+                    stroke="#F97316"
+                    strokeWidth={2.5}
+                    strokeDasharray="5 5"
+                    label={{
+                      value: `Target Line: ${targetLineValue}`,
+                      position: 'top',
+                      fill: '#EA580C',
+                      fontSize: 11,
+                      fontWeight: 700
+                    }}
                   />
-                  <Tooltip content={<CustomTooltip />} />
-                  {/* 1. Total sheet created Bar */}
-                  <Bar
-                    dataKey="totalCreated"
-                    name="Total sheet created"
-                    fill="#3B82F6"
-                    radius={[4, 4, 0, 0]}
-                    maxBarSize={28}
-                  />
-                  {/* 2. Accepted Bar */}
-                  <Bar
-                    dataKey="accepted"
-                    name="Accepted"
-                    fill="#10B981"
-                    radius={[4, 4, 0, 0]}
-                    maxBarSize={28}
-                  />
-                  {/* 3. Not - Feasible Bar */}
-                  <Bar
-                    dataKey="notFeasible"
-                    name="Not - Feasible"
-                    fill="#EF4444"
-                    radius={[4, 4, 0, 0]}
-                    maxBarSize={28}
-                  />
-                  {/* 4. Date of implementation in Count */}
-                  <Bar
-                    dataKey="implementedCount"
-                    name="Date of implementation in Count"
-                    fill="#8B5CF6"
-                    radius={[4, 4, 0, 0]}
-                    maxBarSize={28}
-                  />
-                  {/* 5. Target Line for Department Overview (connecting department targets) */}
-                  {graphTab === 'DEPARTMENT' && (
-                    <Line
-                      type="monotone"
-                      dataKey="target"
-                      name="Target Line"
-                      stroke="#EA580C"
-                      strokeWidth={3}
-                      dot={{ r: 4, fill: '#EA580C', strokeWidth: 1.5, stroke: '#FFFFFF' }}
-                      activeDot={{ r: 6, fill: '#EA580C', stroke: '#FFFFFF', strokeWidth: 2 }}
-                    />
-                  )}
-                  {/* Target Line Reference (in timeline & overall modes) */}
-                  {targetLineValue > 0 && graphTab !== 'DEPARTMENT' && (
-                    <ReferenceLine
-                      y={targetLineValue}
-                      stroke="#F97316"
-                      strokeWidth={2.5}
-                      strokeDasharray="5 5"
-                      label={{
-                        value: `Target Line: ${targetLineValue}`,
-                        position: 'top',
-                        fill: '#EA580C',
-                        fontSize: 11,
-                        fontWeight: 700
-                      }}
-                    />
-                  )}
-                </ComposedChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50/50 rounded-xl border border-dashed border-slate-200 text-slate-400 gap-2">
-                <TrendingUp className="w-8 h-8 opacity-40 text-slate-400" />
-                <p className="text-xs font-semibold text-slate-500">
-                  No suggestion checksheet records found for the selected filters.
-                </p>
-              </div>
-            )}
-          </div>
+                )}
+              </ComposedChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50/50 rounded-xl border border-dashed border-slate-200 text-slate-400 gap-2">
+              <TrendingUp className="w-8 h-8 opacity-40 text-slate-400" />
+              <p className="text-xs font-semibold text-slate-500">
+                No suggestion checksheet records found for the selected filters.
+              </p>
+            </div>
+          )}
         </div>
       </div>
 

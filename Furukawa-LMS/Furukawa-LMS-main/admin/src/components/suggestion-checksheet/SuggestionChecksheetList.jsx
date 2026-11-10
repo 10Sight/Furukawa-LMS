@@ -252,127 +252,11 @@ export default function SuggestionChecksheetList({
 
   return (
     <div className="suggestion-checksheet-root flex flex-col gap-3.5 w-full">
-      {/* 0. Topmost Section: Unit Selecting Option on the Top Left Corner (Everything else is down) */}
-      <div className="flex items-center justify-between w-full">
-        {/* Top Left Corner: Unit Selector */}
-        <div className="relative inline-block" ref={unitDropdownRef}>
-          <button
-            type="button"
-            className="px-4 py-2 bg-white border border-slate-300 rounded-xl text-slate-800 text-xs font-bold flex items-center gap-2 shadow-xs hover:bg-slate-50 hover:border-slate-400 transition-colors cursor-pointer"
-            onClick={() => setIsUnitDropdownOpen((prev) => !prev)}
-            title="Select Unit"
-          >
-            <MapPin className="w-4 h-4 text-blue-600 shrink-0" />
-            <span>Unit: {selectedUnit || 'Bawal'}</span>
-            <ChevronDown
-              className={`w-4 h-4 text-slate-400 transition-transform duration-150 shrink-0 ${
-                isUnitDropdownOpen ? 'rotate-180 text-blue-600' : ''
-              }`}
-            />
-          </button>
-
-          {isUnitDropdownOpen && (
-            <div
-              className="absolute left-0 top-full mt-1.5 w-48 bg-white border border-slate-200 rounded-xl shadow-2xl z-[9999] p-1.5 flex flex-col gap-1"
-              style={{
-                position: 'absolute',
-                top: 'calc(100% + 6px)',
-                left: '0px',
-                width: '190px',
-                minWidth: '190px',
-                backgroundColor: '#ffffff',
-                border: '1px solid #e2e8f0',
-                borderRadius: '12px',
-                boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
-                zIndex: 9999,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '4px',
-                padding: '6px',
-              }}
-            >
-              <div
-                style={{
-                  padding: '6px 10px 4px 10px',
-                  fontSize: '10px',
-                  fontWeight: 700,
-                  color: '#94a3b8',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                  borderBottom: '1px solid #f1f5f9',
-                  marginBottom: '2px',
-                }}
-              >
-                Select Unit
-              </div>
-              {[
-                { id: 'Bawal', label: 'Bawal' },
-                { id: 'Gujrat', label: 'Gujrat' },
-                { id: 'All Units', label: 'All Units' },
-              ].map((u) => {
-                const isSelected = (selectedUnit || 'Bawal') === u.id;
-                return (
-                  <button
-                    key={u.id}
-                    type="button"
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: '8px',
-                      fontSize: '12px',
-                      fontWeight: isSelected ? '700' : '500',
-                      color: isSelected ? '#1d4ed8' : '#334155',
-                      backgroundColor: isSelected ? '#eff6ff' : 'transparent',
-                      border: 'none',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      transition: 'background-color 0.15s',
-                      boxSizing: 'border-box',
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!isSelected) e.currentTarget.style.backgroundColor = '#f8fafc';
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent';
-                    }}
-                    onClick={() => handleSelectUnit(u.id)}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <MapPin
-                        style={{
-                          width: '14px',
-                          height: '14px',
-                          color: isSelected ? '#2563eb' : '#94a3b8',
-                          flexShrink: 0,
-                        }}
-                      />
-                      <span>{u.label}</span>
-                    </div>
-                    {isSelected && (
-                      <span
-                        style={{
-                          width: '6px',
-                          height: '6px',
-                          borderRadius: '9999px',
-                          backgroundColor: '#2563eb',
-                        }}
-                      />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 0.5. Top Graph Section: 4 Bar lines + Target Line Popup */}
+      {/* 0.5. Top Graph Section with Filters (Unit Filter placed in filters, All/Best separated from Overall/Dept Overview) */}
       <SuggestionChecksheetGraph
         records={records}
         selectedUnit={selectedUnit}
+        onSelectUnit={handleSelectUnit}
         departmentList={departmentList}
       />
 
@@ -451,6 +335,24 @@ export default function SuggestionChecksheetList({
       {/* 2. Comprehensive Filter Toolbar (Present in Both Pages) */}
       <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs space-y-3">
         <div className="flex flex-wrap items-center gap-3">
+
+          {/* Unit Filter (in the filter toolbar) */}
+          <div className="flex items-center gap-1.5 text-xs">
+            <span className="text-slate-500 font-semibold flex items-center gap-1">
+              <MapPin className="w-3.5 h-3.5 text-blue-600" /> Unit:
+            </span>
+            <select
+              className="px-2.5 py-1.5 border border-slate-300 rounded-lg text-slate-800 bg-white font-medium focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-xs cursor-pointer"
+              value={selectedUnit || 'Bawal'}
+              onChange={(e) => handleSelectUnit(e.target.value)}
+            >
+              {['Bawal', 'Gujrat', 'All Units'].map((u) => (
+                <option key={u} value={u}>
+                  {u}
+                </option>
+              ))}
+            </select>
+          </div>
 
           {/* Department Filter */}
           <div className="flex items-center gap-1.5 text-xs">

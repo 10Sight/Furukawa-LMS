@@ -3,6 +3,7 @@ import {
   ResponsiveContainer,
   ComposedChart,
   Bar,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -128,6 +129,17 @@ export default function SuggestionChecksheetGraph({
   // - 'DEPARTMENT': Grouped by all 13 departments!
   const chartData = useMemo(() => {
     if (graphTab === 'DEPARTMENT') {
+      const v2Store = getStoredDepartmentTargetsV2();
+      let targetMonth = currentMonthNum;
+      let targetYear = cumulativeYear;
+      if (graphFromDate) {
+        const parts = graphFromDate.split('-');
+        if (parts.length === 3) {
+          targetYear = parseInt(parts[0], 10) || targetYear;
+          targetMonth = parseInt(parts[1], 10) || targetMonth;
+        }
+      }
+
       // Group by Department across all 13 departments
       return TARGET_DEPARTMENTS.map((dept) => {
         let totalCreated = 0;
@@ -153,7 +165,7 @@ export default function SuggestionChecksheetGraph({
           }
         });
 
-        const deptTarget = Number(targets[dept]) || 0;
+        const deptTarget = getTargetForDeptAndMonth(dept, targetYear, targetMonth, v2Store, targets);
 
         return {
           displayLabel: dept,
@@ -259,7 +271,7 @@ export default function SuggestionChecksheetGraph({
       if (b.dateKey === 'Undated') return -1;
       return a.dateKey.localeCompare(b.dateKey);
     });
-  }, [filteredRecords, graphTab, targets]);
+  }, [filteredRecords, graphTab, targets, cumulativeYear, graphFromDate, currentMonthNum]);
 
   // Overall totals for quick summary badges
   const summaryTotals = useMemo(() => {
@@ -718,6 +730,18 @@ export default function SuggestionChecksheetGraph({
                     radius={[4, 4, 0, 0]}
                     maxBarSize={28}
                   />
+                  {/* 5. Target Line for Department Overview (connecting department targets) */}
+                  {graphTab === 'DEPARTMENT' && (
+                    <Line
+                      type="monotone"
+                      dataKey="target"
+                      name="Target Line"
+                      stroke="#EA580C"
+                      strokeWidth={3}
+                      dot={{ r: 4, fill: '#EA580C', strokeWidth: 1.5, stroke: '#FFFFFF' }}
+                      activeDot={{ r: 6, fill: '#EA580C', stroke: '#FFFFFF', strokeWidth: 2 }}
+                    />
+                  )}
                   {/* Target Line Reference (in timeline & overall modes) */}
                   {targetLineValue > 0 && graphTab !== 'DEPARTMENT' && (
                     <ReferenceLine

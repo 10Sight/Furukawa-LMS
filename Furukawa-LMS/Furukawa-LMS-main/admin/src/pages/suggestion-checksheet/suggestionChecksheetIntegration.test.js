@@ -473,3 +473,20 @@ test('31. Cumulative section on left side of bar graph with Target & Current by 
   assert.ok(graphCode.includes('Department Overview'), 'Graph must display Department Overview button');
   assert.ok(graphCode.includes('TARGET_DEPARTMENTS.map'), 'Department Overview must group 4 bar series across all departments');
 });
+
+test('32. Department Overview contains Target Line according to targets set from Target Line popup', () => {
+  const graphCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetGraph.jsx', import.meta.url), 'utf8');
+
+  // Verify Line is imported from recharts
+  assert.ok(graphCode.includes('Line') && graphCode.includes('recharts'), 'Line must be imported from recharts');
+
+  // Verify Target Line is rendered when graphTab === "DEPARTMENT"
+  assert.ok(graphCode.includes("graphTab === 'DEPARTMENT'"), 'Department Overview condition must exist for target line');
+  assert.ok(graphCode.includes('<Line'), 'Line component must be rendered in Department Overview');
+  assert.ok(graphCode.includes('dataKey="target"'), 'Line component must bind dataKey to target');
+  assert.ok(graphCode.includes('name="Target Line"'), 'Line component must have name Target Line');
+
+  // Verify target is populated per department from target popup storage
+  assert.ok(graphCode.includes('getTargetForDeptAndMonth'), 'Department target must be resolved from target store');
+  assert.ok(graphCode.includes('target: deptTarget'), 'Each department entry in chartData must contain target');
+});

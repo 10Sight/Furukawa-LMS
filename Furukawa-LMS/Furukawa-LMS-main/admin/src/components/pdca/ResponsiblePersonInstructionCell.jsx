@@ -70,7 +70,7 @@ export default function ResponsiblePersonInstructionCell({
   };
 
   const selectTitle = readOnly
-    ? 'Only the sheet creator or Admin has access to select Confirmation'
+    ? 'Only the sheet creator, employees of the same department & section, or Admin have access to select Confirmation'
     : (isConfirmed
         ? `Confirmed by ${confirmedBy || 'User'}`
         : isNotConfirmed

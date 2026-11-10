@@ -96,6 +96,11 @@ import revisionRecordRoutes from "./routes/revisionRecord.routes.js";
 import pdcaRoutes from "./routes/pdca/pdca.routes.js";
 import suggestionChecksheetRoutes from "./routes/suggestionChecksheet/suggestionChecksheet.routes.js";
 import lpaRoutes from "./routes/lpa/lpa.routes.js";
+import ptmRoutes from "./ptm/routes/ptmRoutes.js";
+import sheetRoutes from "./ptm/routes/sheetRoutes.js";
+import apqpRoutes from "./ptm/routes/apqpRoutes.js";
+import ptmAuthRoutes from "./ptm/routes/authRoutes.js";
+import { initDatabase as initPtmDatabase } from "./ptm/db/database.js";
 import PDCAModel from "./models/pdca/pdca.model.js";
 import LpaRecord from "./models/lpa/lpaRecord.model.js";
 import SuggestionChecksheetModel from "./models/suggestionChecksheet/suggestionChecksheet.model.js";
@@ -385,6 +390,11 @@ app.use("/api/v1/suggestion-checksheet", suggestionChecksheetRoutes);
 app.use("/api/suggestion-checksheet", suggestionChecksheetRoutes);
 app.use("/api/v1/lpa", lpaRoutes);
 app.use("/api/lpa", lpaRoutes);
+app.use("/api/ptm/auth", ptmAuthRoutes);
+app.use("/api/ptm-auth", ptmAuthRoutes);
+app.use("/api/ptm", ptmRoutes);
+app.use("/api/sheets", sheetRoutes);
+app.use("/api/apqp", apqpRoutes);
 
 
 // Initialize Socket.IO service
@@ -572,6 +582,14 @@ const startServer = async () => {
         server.listen(PORT, "0.0.0.0", () => {
             logger.info(`Server with Socket.IO running at http://localhost:${PORT}`);
         });
+
+        // Initialize PTM SQLite database
+        try {
+            initPtmDatabase();
+            logger.info("PTM SQLite database initialized successfully.");
+        } catch (ptmDbErr) {
+            logger.error("Failed to initialize PTM SQLite database:", ptmDbErr);
+        }
 
         // Every other table/migration init, plus the schedulers, run in the background after
         // the server is already accepting connections — only the users table blocks startup.

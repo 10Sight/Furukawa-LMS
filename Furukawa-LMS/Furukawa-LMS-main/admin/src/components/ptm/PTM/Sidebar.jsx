@@ -4,8 +4,7 @@ import {
   LogOut, 
   ArrowLeft,
   ChevronLeft,
-  ChevronRight,
-  ClipboardCheck
+  ChevronRight
 } from 'lucide-react';
 
 export default function Sidebar({ 
@@ -73,19 +72,6 @@ export default function Sidebar({
             )}
           </button>
         </div>
-        <button
-          type="button"
-          onClick={() => setCurrentView && setCurrentView('process-audit')}
-          className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all text-sm font-semibold tracking-tight ${
-            currentView === 'process-audit'
-              ? 'text-white bg-[#2563EB] shadow-md shadow-blue-500/25'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-          } ${collapsed ? 'justify-center px-2' : ''}`}
-          title="Process Audit"
-        >
-          <ClipboardCheck className="w-4 h-4 flex-shrink-0 stroke-[2.2]" />
-          {!collapsed && <span className="text-[13px] font-bold">Process Audit</span>}
-        </button>
       </div>
 
       {/* Sidebar Footer: Logout */}

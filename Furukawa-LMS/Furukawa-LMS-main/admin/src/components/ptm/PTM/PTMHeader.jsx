@@ -32,7 +32,7 @@ export default function PTMHeader({ headerInfo, setHeaderInfo, projectLeaderOpti
               <tr className="border-b border-[#64748B]" style={{height:'26px'}}>
                 <td colSpan={4} className="bg-white px-2.5 align-middle">
                   <span className="font-extrabold text-slate-800 tracking-wide font-mono text-[13px]">
-                    {headerInfo.formTitle || 'FRM-WH-DD-006 Project Tracking Matrix Rev. 17 (YHB MC25)'}
+                    {(headerInfo.formTitle || 'FRM-WH-DD-006 Project Tracking Matrix Rev. 17').replace(/\s*\([^)]*\)\s*$/, '') || 'FRM-WH-DD-006 Project Tracking Matrix Rev. 17'}
                   </span>
                 </td>
               </tr>
@@ -55,13 +55,18 @@ export default function PTMHeader({ headerInfo, setHeaderInfo, projectLeaderOpti
                   <span className="font-bold text-[#975A16] text-[10.5px] whitespace-nowrap">Rank:</span>
                 </td>
                 <td className="px-2 py-1.5 align-middle bg-white">
-                  <input
-                    type="text"
+                  <select
                     value={headerInfo.rank ?? ''}
                     onChange={(e) => handleChange('rank', e.target.value)}
-                    className="w-full select-text cursor-text font-bold text-[#975A16] outline-none bg-transparent text-[11px] px-1 py-0.5 rounded focus:bg-white focus:ring-1 focus:ring-amber-400"
-                    placeholder="C1"
-                  />
+                    aria-label="Rank"
+                    className="w-full cursor-pointer font-bold text-[#975A16] outline-none bg-transparent text-[11px] px-1 py-0.5 rounded focus:bg-white focus:ring-1 focus:ring-amber-400"
+                  >
+                    <option value="">—</option>
+                    <option value="A">A</option>
+                    <option value="B">B</option>
+                    <option value="C1">C1</option>
+                    <option value="C2">C2</option>
+                  </select>
                 </td>
               </tr>
 

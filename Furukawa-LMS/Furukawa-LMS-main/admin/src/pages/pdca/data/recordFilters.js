@@ -953,7 +953,7 @@ export function getMissingConfirmationMandatoryFields(row) {
   return missing;
 }
 
-export function canUserSelectConfirmation(row, recordOrIsCreator, currentUser = null, readOnly = false) {
+export function canUserSelectConfirmation(row, recordOrIsCreator, currentUser = null, readOnly = false, employeeDatabase = VERIFIED_EMPLOYEE_MASTER) {
   const isAdmin = Boolean(
     currentUser?.isAdmin ||
     currentUser?.isAdmin === 1 ||
@@ -963,12 +963,15 @@ export function canUserSelectConfirmation(row, recordOrIsCreator, currentUser = 
   const isCreator = typeof recordOrIsCreator === 'boolean'
     ? recordOrIsCreator
     : isRecordCreator(recordOrIsCreator, currentUser);
-  const hasAccess = Boolean(isAdmin || isCreator);
+  const isSameDeptSec = typeof recordOrIsCreator === 'object' && recordOrIsCreator
+    ? isUserInSameDepartmentAsRecord(recordOrIsCreator, currentUser, employeeDatabase)
+    : false;
+  const hasAccess = Boolean(isAdmin || isCreator || isSameDeptSec);
   const missingFields = getMissingConfirmationMandatoryFields(row);
   if (readOnly || !hasAccess) {
     return {
       allowed: false,
-      isCreator: Boolean(!readOnly && isCreator),
+      isCreator: Boolean(!readOnly && (isCreator || isSameDeptSec)),
       isAdmin,
       reason: 'creator_only',
       missingFields
@@ -977,7 +980,7 @@ export function canUserSelectConfirmation(row, recordOrIsCreator, currentUser = 
   if (missingFields.length > 0) {
     return {
       allowed: false,
-      isCreator: Boolean(isCreator),
+      isCreator: Boolean(isCreator || isSameDeptSec),
       isAdmin,
       reason: 'missing_mandatory_fields',
       missingFields
@@ -985,7 +988,7 @@ export function canUserSelectConfirmation(row, recordOrIsCreator, currentUser = 
   }
   return {
     allowed: true,
-    isCreator: Boolean(isCreator),
+    isCreator: Boolean(isCreator || isSameDeptSec),
     isAdmin,
     reason: null,
     missingFields: []
@@ -1129,29 +1132,26 @@ export function canUserEditPDCARow(row, user, record, targetColumn = null, emplo
     if (targetColumn) return true;
     return { canEditEntireRow: true, canEditActionCols: true };
   }
-  if (targetColumn === 'confirmation' && record) {
-    return isRecordCreator(record, user);
-  }
-  // Sheet creator has full edit access across the entire row/sheet
+  // 1. Sheet creator has full edit access across the entire row/sheet (including Confirmation)
   const isCreator = record && isRecordCreator(record, user);
   if (isCreator) {
     if (targetColumn) return true;
     return { canEditEntireRow: true, canEditActionCols: true };
   }
 
-  // 1. Responsible person (assigned from Staff Name column) can ONLY edit the 6 action columns:
+  // 2. Responsible person (assigned from Staff Name column) can ONLY edit the 6 action columns:
   // Root cause, Corrective Action, Counter Measure, Image After, Std. Duration in Min, Response Date
-  // They CANNOT edit any other column or the entire row/sheet.
+  // They CANNOT edit any other column or the entire row/sheet, and CANNOT select Confirmation.
   const isResponsible = isUserResponsibleForRow(row, user);
   if (isResponsible) {
     if (targetColumn) return EDITABLE_RESPONSIBLE_COLUMNS.includes(targetColumn);
     return { canEditEntireRow: false, canEditActionCols: true };
   }
 
-  // 2. Colleague in the SAME department AND SAME section has access to the sheet
+  // 3. Colleague in the SAME department AND SAME section has the SAME access as sheet creator (full access of the sheet including Confirmation)
   const isSameDeptSec = record && isUserInSameDepartmentAsRecord(record, user, employeeDatabase);
   if (isSameDeptSec) {
-    if (targetColumn) return targetColumn !== 'confirmation';
+    if (targetColumn) return true;
     return { canEditEntireRow: true, canEditActionCols: true };
   }
 

@@ -636,7 +636,7 @@ test('16. Separate Save Mandatory Columns (7) from Confirmation Mandatory Column
   }
 });
 
-test('17. Same-department users have full access to edit the whole PDCA Sheet, while Confirmation dropdown remains restricted to sheet creator', () => {
+test('17. Same-department & same-section users have full access to edit the whole PDCA Sheet including Confirmation dropdown, while other users cannot', () => {
   const qualityCreator = {
     id: 'u-qa-1',
     code: 'BW051211',
@@ -692,9 +692,10 @@ test('17. Same-department users have full access to edit the whole PDCA Sheet, w
   assert.equal(canUserEditPDCARow(sampleRow, qualityColleague, qualitySheetRecord, 'observation'), true);
   assert.equal(canUserEditPDCARow(sampleRow, qualityColleague, qualitySheetRecord, 'rootCause'), true);
 
-  // Confirmation dropdown remains restricted strictly to the sheet creator
+  // Confirmation dropdown is accessible to the sheet creator and same dept/section colleague
   assert.equal(canUserEditPDCARow(sampleRow, qualityCreator, qualitySheetRecord, 'confirmation'), true);
-  assert.equal(canUserEditPDCARow(sampleRow, qualityColleague, qualitySheetRecord, 'confirmation'), false);
+  assert.equal(canUserEditPDCARow(sampleRow, qualityColleague, qualitySheetRecord, 'confirmation'), true);
+  assert.equal(canUserEditPDCARow(sampleRow, maintenanceUser, qualitySheetRecord, 'confirmation'), false);
 
   // Different-department user (Maintenance) is NOT in same department as the sheet
   assert.equal(isUserInSameDepartmentAsRecord(qualitySheetRecord, maintenanceUser), false);

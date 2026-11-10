@@ -322,7 +322,7 @@ export default function LpaPdcaSheet({
 
   const isCreator = propIsCreator !== undefined
     ? Boolean(propIsCreator)
-    : Boolean(topic?.id ? isRecordCreator(topic, effectiveUser) : true);
+    : Boolean(topic?.id ? isRecordCreator(topic, effectiveUser) : false);
   // Database-backed employee master records (initialized above)
   const [dbEmployees, setDbEmployees] = useState(VERIFIED_EMPLOYEE_MASTER);
   const isSameDepartmentAsSheet = useMemo(
@@ -330,9 +330,10 @@ export default function LpaPdcaSheet({
     [topic, effectiveUser, dbEmployees]
   );
   const isCreatorOrSameDept = Boolean(isCreator || isSameDepartmentAsSheet);
-  const isCreatorOrAdmin = Boolean(isAdmin || !topic?.id || isCreator);
+  const isCreatorOrAdmin = Boolean(isAdmin || isCreator || isSameDepartmentAsSheet);
   const canEditEntireSheet = Boolean(!readOnly && isCreatorOrAdmin);
   const canDeleteRow = Boolean(!readOnly && isAdmin);
+  const canConfirmDefault = Boolean(!readOnly && (isAdmin || isCreator || isSameDepartmentAsSheet));
 
   const cftAssignedMembers = topic?.assignedMembers || [];
   const defaultAssignedStr = cftAssignedMembers.length > 0
@@ -1607,8 +1608,8 @@ export default function LpaPdcaSheet({
 
   const handleConfirmationChange = (rowIndex, value, userName = '') => {
     const targetRow = rows[rowIndex];
-    if (readOnly || !isCreator) {
-      if (typeof showToast === 'function') showToast('Only the sheet creator has access to select Confirmation.');
+    if (readOnly || !(isAdmin || isCreator || isSameDepartmentAsSheet)) {
+      if (typeof showToast === 'function') showToast('Only the sheet creator, employees of the same department & section, or Admin have access to select Confirmation.');
       return false;
     }
     const isSelectingConfirmation = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((value || '').trim());
@@ -3000,7 +3001,7 @@ export default function LpaPdcaSheet({
                             }}
                             reasonRequired={missingConfirmationReasonIndices.includes(idx)}
                             currentUser={effectiveUser}
-                            readOnly={!(!readOnly && isCreator)}
+                            readOnly={!canConfirmDefault}
                             missingMandatoryFields={getMissingConfirmationMandatoryFields(row)}
                             onConfirmationChange={(val, uName) => handleConfirmationChange(idx, val, uName)}
                             onInstructionChange={(text) => handleInstructionChange(idx, text)}

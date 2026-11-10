@@ -6,6 +6,8 @@ export default function ManualInputBox({
   value = '',
   onChange,
   onKeyDown,
+  onOptionSelect,
+  onDisabledClick,
   placeholder = '',
   className = '',
   dataRow,
@@ -14,6 +16,7 @@ export default function ManualInputBox({
   'data-col': dataColAttr,
   defaultHeight = 34,
   options: providedOptions,
+  noDropdown = false,
   ...props
 }) {
   const textareaRef = useRef(null);
@@ -43,6 +46,7 @@ export default function ManualInputBox({
 
   const chooseOption = (option) => {
     onChange?.({ target: { value: option } });
+    onOptionSelect?.(option);
     setQuery('');
     setIsOpen(false);
     requestAnimationFrame(growToFit);
@@ -79,13 +83,17 @@ export default function ManualInputBox({
         onKeyDown={handleKeyDownInternal}
         onInput={growToFit}
         onFocus={() => {
-          if (!props.readOnly) {
+          if (!props.readOnly && !noDropdown) {
             setQuery('');
             setIsOpen(true);
           }
         }}
         onClick={() => {
-          if (!props.readOnly) setIsOpen(true);
+          if (!props.readOnly) {
+            if (!noDropdown) setIsOpen(true);
+          } else {
+            onDisabledClick?.();
+          }
         }}
         data-row={rowAttr}
         data-col={colAttr}
@@ -99,12 +107,12 @@ export default function ManualInputBox({
           whiteSpace: 'pre-wrap',
           overflowWrap: 'anywhere',
         }}
-        role={!props.readOnly ? 'combobox' : undefined}
-        aria-autocomplete={!props.readOnly ? 'list' : undefined}
-        aria-expanded={isOpen}
+        role={!props.readOnly && !noDropdown ? 'combobox' : undefined}
+        aria-autocomplete={!props.readOnly && !noDropdown ? 'list' : undefined}
+        aria-expanded={!noDropdown ? isOpen : undefined}
         {...props}
       />
-      {isOpen && !props.readOnly && (
+      {!noDropdown && isOpen && !props.readOnly && (
         <div className="absolute left-0 top-full z-50 mt-1 w-full min-w-56 rounded-md border border-slate-300 bg-white p-1.5 shadow-lg">
           <input
             type="search"

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Download, Copy, Trash2, Building2 } from 'lucide-react';
 
 export default function PTMDashboardTable({
@@ -10,7 +10,17 @@ export default function PTMDashboardTable({
   pageStartIndex = 0,
   unitSelected = true,
 }) {
-  const handleDeleteClick = (id) => onDelete?.(id);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+
+  const handleDeleteClick = (id) => {
+    if (confirmDeleteId === id) {
+      onDelete(id);
+      setConfirmDeleteId(null);
+    } else {
+      setConfirmDeleteId(id);
+      setTimeout(() => setConfirmDeleteId(null), 3000);
+    }
+  };
 
   if (items.length === 0) {
     return (
@@ -153,8 +163,12 @@ export default function PTMDashboardTable({
                     {/* Delete */}
                     <button
                       onClick={() => handleDeleteClick(row.id)}
-                      title="Delete PTM Item"
-                      className={`p-1 rounded transition-colors text-slate-400 hover:text-rose-600`}
+                      title={confirmDeleteId === row.id ? 'Click again to confirm delete' : 'Delete PTM Item'}
+                      className={`p-1 rounded transition-colors ${
+                        confirmDeleteId === row.id
+                          ? 'text-rose-600 scale-110 font-bold'
+                          : 'text-slate-400 hover:text-rose-600'
+                      }`}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>

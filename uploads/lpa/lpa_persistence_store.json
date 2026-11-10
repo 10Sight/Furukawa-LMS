@@ -1,0 +1,94 @@
+{
+  "records": [],
+  "templates": [
+    {
+      "id": 1,
+      "section": "assembly",
+      "name": "Assembly LPA Check Sheet.xls",
+      "docNo": "FRM-WH-QA-246",
+      "revNo": "06",
+      "issueDate": "31.01.22",
+      "sheets": [
+        {
+          "name": "Assy QC & Pro REV 06",
+          "columnCount": 7,
+          "columns": [
+            {
+              "wpx": 38
+            },
+            {
+              "wpx": 50
+            },
+            {
+              "wpx": 490
+            },
+            {
+              "wpx": 40
+            },
+            {
+              "wpx": 45
+            },
+            {
+              "wpx": 75
+            },
+            {
+              "wpx": 50
+            }
+          ],
+          "rows": []
+        }
+      ],
+      "createdAt": "2026-11-05T17:11:58.323Z",
+      "updatedAt": "2026-11-05T17:11:58.323Z"
+    },
+    {
+      "id": 2,
+      "section": "cc",
+      "name": "C&C LPA Check Sheet",
+      "docNo": "FRM-CC-QA-102",
+      "revNo": "03",
+      "issueDate": "15.04.22",
+      "sheets": [
+        {
+          "name": "C&C Inspection",
+          "columnCount": 9,
+          "columns": [
+            {
+              "wpx": 38
+            },
+            {
+              "wpx": 60
+            },
+            {
+              "wpx": 120
+            },
+            {
+              "wpx": 120
+            },
+            {
+              "wpx": 400
+            },
+            {
+              "wpx": 45
+            },
+            {
+              "wpx": 120
+            },
+            {
+              "wpx": 75
+            },
+            {
+              "wpx": 50
+            }
+          ],
+          "rows": []
+        }
+      ],
+      "createdAt": "2026-11-05T17:11:58.323Z",
+      "updatedAt": "2026-11-05T17:11:58.323Z"
+    }
+  ],
+  "revisions": [],
+  "auditors": [],
+  "observations": []
+}

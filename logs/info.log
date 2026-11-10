@@ -44,3 +44,304 @@
 [03 Nov, 2026 - 16:31:41:3141] [31merror[39m: [31mMSSQL long-running pool connection failed: Failed to connect to 127.0.0.1:1433 - Could not connect (sequence)[39m
 [04 Nov, 2026 - 11:23:59:2359] [31merror[39m: [31mMSSQL Connection Failed: Failed to connect to 127.0.0.1:1433 - Could not connect (sequence)[39m
 [04 Nov, 2026 - 11:23:59:2359] [31merror[39m: [31mMSSQL long-running pool connection failed: Failed to connect to 127.0.0.1:1433 - Could not connect (sequence)[39m
+[05 Nov, 2026 - 22:41:49:4149] [31merror[39m: [31mMSSQL Connection Failed: Failed to connect to 127.0.0.1:1433 - Could not connect (sequence)[39m
+[05 Nov, 2026 - 22:41:49:4149] [34minfo[39m: [34mcustom_roles table created in MSSQL[39m
+[05 Nov, 2026 - 22:41:49:4149] [31merror[39m: [31mFailed to initialize custom_roles table:[39m
+[05 Nov, 2026 - 22:41:49:4149] [34minfo[39m: [34mMigration: Creating index 'IX_daily_morning_meetings_section_meetingDate' on table 'daily_morning_meetings'...[39m
+[05 Nov, 2026 - 22:41:49:4149] [34minfo[39m: [34mMigration: Successfully created index 'IX_daily_morning_meetings_section_meetingDate' on 'daily_morning_meetings'.[39m
+[05 Nov, 2026 - 22:41:49:4149] [34minfo[39m: [34mMigration: Creating index 'IX_daily_morning_meetings_section_m365ItemId' on table 'daily_morning_meetings'...[39m
+[05 Nov, 2026 - 22:41:49:4149] [34minfo[39m: [34mMigration: Successfully created index 'IX_daily_morning_meetings_section_m365ItemId' on 'daily_morning_meetings'.[39m
+[05 Nov, 2026 - 22:41:49:4149] [34minfo[39m: [34mChecked/Created daily_morning_meetings table in MSSQL[39m
+[05 Nov, 2026 - 22:41:49:4149] [34minfo[39m: [34mMigration: Creating index 'IX_sheet_comment_threads_meeting' on table 'sheet_comment_threads'...[39m
+[05 Nov, 2026 - 22:41:49:4149] [34minfo[39m: [34mMigration: Successfully created index 'IX_sheet_comment_threads_meeting' on 'sheet_comment_threads'.[39m
+[05 Nov, 2026 - 22:41:49:4149] [34minfo[39m: [34mMigration: Creating index 'IX_sheet_comment_messages_thread' on table 'sheet_comment_messages'...[39m
+[05 Nov, 2026 - 22:41:49:4149] [34minfo[39m: [34mMigration: Successfully created index 'IX_sheet_comment_messages_thread' on 'sheet_comment_messages'.[39m
+[05 Nov, 2026 - 22:41:49:4149] [34minfo[39m: [34mChecked/Created sheet comment tables in MSSQL[39m
+[05 Nov, 2026 - 22:41:49:4149] [31merror[39m: [31mMSSQL long-running pool connection failed: Failed to connect to 127.0.0.1:1433 - Could not connect (sequence)[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mSocket.IO service initialized[39m
+[05 Nov, 2026 - 22:41:58:4158] [31merror[39m: [31mMSSQL Connection Failed: Failed to connect to 127.0.0.1:1433 - Could not connect (sequence)[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34m[Holiday Model] Checked/Created dashboard_holidays table[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34msection_heads table initialized successfully.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mcustom_roles table created in MSSQL[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mChecked/Created daily_meeting_sheets table in MSSQL[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mChecked/Created monthly_report_configs table in MSSQL[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mChecked/Created contractors table in MSSQL[39m
+[05 Nov, 2026 - 22:41:58:4158] [31merror[39m: [31mFailed to initialize Requirement table:[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_audits_createdAt' on table 'audits'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_unique_attempt' on table 'attempted_quizzes'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_status' on table 'departments'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_skill_upgrad_dept' on table 'skill_upgradation_plans'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_category' on table 'courses'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_course_module' on table 'modules'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_student_progress' on table 'progress'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_assignment_submission' on table 'submissions'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_quiz_course' on table 'quizzes'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_extra_quiz_student' on table 'extra_attempt_allowances'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_quiz_student_status' on table 'attempt_extension_requests'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_module_lessons' on table 'lessons'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_student' on table 'certificates'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_student' on table 'enrollments'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_active_handover_override' on table 'handover_eligibility_overrides'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'IX_monthly_report_folders_section' on table 'monthly_report_folders'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'IX_monthly_report_records_folder' on table 'monthly_report_records'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_student' on table 'on_job_trainings'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_course_dept' on table 'module_timelines'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_left_requests_status' on table 'left_requests'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_operator_observances_studentId' on table 'operator_observances'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_dept_role' on table 'daily_5m_assignments'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_sixteen_day_monitorings_status_updatedAt' on table 'sixteen_day_monitorings'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_ten_cycle_sheets_dept' on table 'ten_cycle_sheets'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [31merror[39m: [31mFailed to initialize SystemSettings table Cannot read properties of undefined (reading 'count')[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_resource_scope' on table 'resources'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_multi_skill_dept' on table 'multi_skilling_plans'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_unique_attempt' on 'attempted_quizzes'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_status' on 'departments'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_skill_upgrad_dept' on 'skill_upgradation_plans'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_category' on 'courses'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_course_module' on 'modules'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_student_progress' on 'progress'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_assignment_submission' on 'submissions'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_quiz_course' on 'quizzes'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_extra_quiz_student' on 'extra_attempt_allowances'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_quiz_student_status' on 'attempt_extension_requests'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_module_lessons' on 'lessons'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_student' on 'certificates'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_student' on 'enrollments'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_active_handover_override' on 'handover_eligibility_overrides'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'IX_monthly_report_folders_section' on 'monthly_report_folders'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'IX_monthly_report_records_folder' on 'monthly_report_records'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_student' on 'on_job_trainings'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_course_dept' on 'module_timelines'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_left_requests_status' on 'left_requests'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_operator_observances_studentId' on 'operator_observances'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_dept_role' on 'daily_5m_assignments'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_sixteen_day_monitorings_status_updatedAt' on 'sixteen_day_monitorings'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_ten_cycle_sheets_dept' on 'ten_cycle_sheets'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_resource_scope' on 'resources'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_multi_skill_dept' on 'multi_skilling_plans'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMSSQL handover_eligibility_overrides table initialized successfully.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mChecked/Created monthly_report_folders table in MSSQL[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_statusUpdatedAt' on table 'departments'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_skill_upgrad_sect' on table 'skill_upgradation_plans'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_course_progress' on table 'progress'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_student_submission' on table 'submissions'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_quiz_module' on table 'quizzes'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_slug_lessons' on table 'lessons'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_course' on table 'certificates'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_course' on table 'enrollments'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'IX_monthly_report_records_month_year' on table 'monthly_report_records'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_department' on table 'on_job_trainings'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_deadline_active' on table 'module_timelines'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_left_requests_user_status' on table 'left_requests'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_dept_history' on table 'daily_5m_config_history'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_dpr_dept_history' on table 'daily_production_report_config_history'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_resource_courseId' on table 'resources'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_multi_skill_sect' on table 'multi_skilling_plans'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_su_dept_history' on table 'skill_upgradation_plan_config_history'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_statusUpdatedAt' on 'departments'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_skill_upgrad_sect' on 'skill_upgradation_plans'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_course_progress' on 'progress'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_student_submission' on 'submissions'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_quiz_module' on 'quizzes'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_slug_lessons' on 'lessons'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_course' on 'certificates'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_course' on 'enrollments'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mChecked/Created daily_meeting_configs table in MSSQL[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'IX_monthly_report_records_month_year' on 'monthly_report_records'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_department' on 'on_job_trainings'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_deadline_active' on 'module_timelines'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_left_requests_user_status' on 'left_requests'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_dept_history' on 'daily_5m_config_history'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_dpr_dept_history' on 'daily_production_report_config_history'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_resource_courseId' on 'resources'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_multi_skill_sect' on 'multi_skilling_plans'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_su_dept_history' on 'skill_upgradation_plan_config_history'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mChecked/Created departments table in MSSQL[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mChecked/Created monthly_report_records table in MSSQL[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_ojt_shareToken' on table 'on_job_trainings'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_dept_deadline' on table 'module_timelines'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_left_requests_dept_sect' on table 'left_requests'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_resource_moduleId' on table 'resources'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_3day_student_attempt' on table 'three_day_monitorings'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_ojt_shareToken' on 'on_job_trainings'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_dept_deadline' on 'module_timelines'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_left_requests_dept_sect' on 'left_requests'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_resource_moduleId' on 'resources'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mChecked/Created on_job_trainings table in MSSQL[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_lastProcessedAt' on table 'module_timelines'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_left_requests_dept_sect_line' on table 'left_requests'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_resource_lessonId' on table 'resources'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_lastProcessedAt' on 'module_timelines'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_left_requests_dept_sect_line' on 'left_requests'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_resource_lessonId' on 'resources'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [31merror[39m: [31mFailed to initialize custom_roles table:[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mChecked/Backfilled shareToken column on on_job_trainings[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mCourse table initialized successfully[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_left_requests_notif' on table 'left_requests'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_left_requests_notif' on 'left_requests'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_left_requests_created' on table 'left_requests'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_attempted_quizzes_student' on table 'attempted_quizzes'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_left_requests_created' on 'left_requests'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'IX_daily_morning_meetings_section_meetingDate' on table 'daily_morning_meetings'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'IX_daily_morning_meetings_section_meetingDate' on 'daily_morning_meetings'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'IX_daily_morning_meetings_section_m365ItemId' on table 'daily_morning_meetings'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'IX_daily_morning_meetings_section_m365ItemId' on 'daily_morning_meetings'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mChecked/Created daily_morning_meetings table in MSSQL[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'IX_sheet_comment_threads_meeting' on table 'sheet_comment_threads'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'IX_sheet_comment_threads_meeting' on 'sheet_comment_threads'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'IX_sheet_comment_messages_thread' on table 'sheet_comment_messages'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mQuiz table initialized successfully[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'IX_sheet_comment_messages_thread' on 'sheet_comment_messages'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mChecked/Created sheet comment tables in MSSQL[39m
+[05 Nov, 2026 - 22:41:58:4158] [31merror[39m: [31mMSSQL long-running pool connection failed: Failed to connect to 127.0.0.1:1433 - Could not connect (sequence)[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_audits_createdAt' on 'audits'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_3day_student_attempt' on 'three_day_monitorings'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_attempted_quizzes_student' on 'attempted_quizzes'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_users_dept_sec_active' on table 'users'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_users_dept_sec_active' on 'users'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_handover_sheets_departmentId' on table 'handover_sheets'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_handover_sheets_departmentId' on 'handover_sheets'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_handover_sheets_date' on table 'handover_sheets'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_handover_sheets_date' on 'handover_sheets'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [31merror[39m: [31mFailed to initialize Requirement table:[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34msection_heads table initialized successfully.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_sme_student_active' on table 'skill_matrix_evaluations'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_sme_student_active' on 'skill_matrix_evaluations'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_hs_dept_history' on table 'handover_sheet_config_history'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_hs_dept_history' on 'handover_sheet_config_history'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_ms_dept_history' on table 'multi_skilling_plan_config_history'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_ms_dept_history' on 'multi_skilling_plan_config_history'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_skill_upgrad_dept' on table 'skill_upgradation_plans'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_skill_upgrad_dept' on 'skill_upgradation_plans'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_skill_upgrad_sect' on table 'skill_upgradation_plans'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_skill_upgrad_sect' on 'skill_upgradation_plans'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_su_dept_history' on table 'skill_upgradation_plan_config_history'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_su_dept_history' on 'skill_upgradation_plan_config_history'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_sm_dash_dept_history' on table 'skill_matrix_dashboard_config_history'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_sm_dash_dept_history' on 'skill_matrix_dashboard_config_history'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_category' on table 'courses'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_category' on 'courses'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mCourse table initialized successfully[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_quiz_course' on table 'quizzes'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_quiz_course' on 'quizzes'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_quiz_module' on table 'quizzes'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_quiz_module' on 'quizzes'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mQuiz table initialized successfully[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMSSQL evaluation_tests table initialized successfully.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMSSQL evaluation_test_attempts table initialized successfully.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_eval_test_attempts_user' on table 'evaluation_test_attempts'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_eval_test_attempts_user' on 'evaluation_test_attempts'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_eval_test_attempts_test' on table 'evaluation_test_attempts'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_eval_test_attempts_test' on 'evaluation_test_attempts'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_dept_section' on table 'sections'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_dept_section' on 'sections'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_unique_section_unicode' on table 'sections'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_unique_section_unicode' on 'sections'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mChecked/Created sections table and migrated columns in MSSQL[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_section' on table 'lines'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_section' on 'lines'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_department' on table 'lines'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_department' on 'lines'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_section' on table 'lines'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_section' on 'lines'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_department' on table 'lines'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_department' on 'lines'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mLine table initialized successfully[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mInitializing SubSection table and cleaning up schema...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'IX_SubSections_LineId' on table 'sub_sections'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'IX_SubSections_LineId' on 'sub_sections'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mSubSection table initialized successfully[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mInitializing Machine table and cleaning up schema...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_line' on table 'machines'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_line' on 'machines'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_subsection' on table 'machines'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_subsection' on 'machines'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_machine' on table 'machine_assignments'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_machine' on 'machine_assignments'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_user' on table 'machine_assignments'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_user' on 'machine_assignments'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_line' on table 'machines'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_line' on 'machines'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_subsection' on table 'machines'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_subsection' on 'machines'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_machine' on table 'machine_assignments'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_machine' on 'machine_assignments'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_user' on table 'machine_assignments'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_user' on 'machine_assignments'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMachine tables initialized successfully[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_line_req' on table 'line_requirements'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_line_req' on 'line_requirements'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_date_req' on table 'line_requirements'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_date_req' on 'line_requirements'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mLineRequirement table initialized successfully[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_line_history' on table 'line_requirement_history'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_line_history' on 'line_requirement_history'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mLineRequirementHistory table initialized successfully[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mChecked/Created revision_records table in MSSQL[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mSeeded 15 default revision_records rows[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_revision_history_record' on table 'revision_history'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_revision_history_record' on 'revision_history'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mChecked/Created revision_history table in MSSQL[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_report_club_dept' on table 'report_clubs'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_report_club_dept' on 'report_clubs'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mChecked/Created report_clubs table in MSSQL[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_snapshot_employeeid' on table 'user_hierarchy_snapshots'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_snapshot_employeeid' on 'user_hierarchy_snapshots'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mChecked/Created user_hierarchy_snapshots table in MSSQL[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mAutomatically populated user_hierarchy_snapshots table[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mChecked/Created designation_shutters table[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'UX_dojo_stage_history_date_dept' on table 'dojo_stage_history'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'UX_dojo_stage_history_date_dept' on 'dojo_stage_history'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'IX_dojo_stage_history_date' on table 'dojo_stage_history'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'IX_dojo_stage_history_date' on 'dojo_stage_history'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mChecked/Created dojo_stage_history table in MSSQL[39m
+[05 Nov, 2026 - 22:41:58:4158] [33mwarn[39m: [33mMSSQL not connected; LPA module will use robust persistent disk store.[39m
+[05 Nov, 2026 - 22:41:58:4158] [33mwarn[39m: [33mMSSQL not connected; Suggestion Checksheet module will use fallback persistent disk store.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mCreated daily_manpower_report_configs table in MSSQL[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_dmr_configs_group' on table 'daily_manpower_report_configs'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_dmr_configs_group' on 'daily_manpower_report_configs'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mCreated daily_manpower_attendance_dept_map table in MSSQL[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mCreated daily_manpower_training_monthly table in MSSQL[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mCreated daily_manpower_manual_entries table in MSSQL[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mCreated daily_hr_meeting_manpower_daily table in MSSQL[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Creating index 'idx_dhrm_daily_date' on table 'daily_hr_meeting_manpower_daily'...[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mMigration: Successfully created index 'idx_dhrm_daily_date' on 'daily_hr_meeting_manpower_daily'.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mCreated daily_hr_meeting_daily_meta table in MSSQL[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34m[HandoverNotificationScheduler] Initialized — checking every minute for scheduled handover notifications.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34m[SixteenDayMonitoringScheduler] Initialized — checking every minute for scheduled 16-Day monitoring notifications.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34m[LeftRequestNotificationScheduler] Initialized — checking every minute for scheduled left request digests.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34m[SixteenDayEligibilityScheduler] Initialized — checking every 5 minutes for newly-eligible 16-Day Monitoring candidates.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34m[PlanNotificationScheduler] Initialized — checking every minute for plan date notifications.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34m[HeadcountReportScheduler] Initialized — checking every minute for scheduled headcount report emails.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34m[DojoStageHistoryScheduler] Initialized — daily settle at 23:59/00:05 IST, hourly refresh 06:00-22:00 IST.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34m[SheetStorageMaintenance] Initialized — runs at startup and nightly at 02:30 IST.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34m[AuditRetention] Initialized — keeps 30 days, runs at startup and nightly at 03:15 IST.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34m[DailyHrMeeting] Scheduler initialized — catches up at startup and nightly at 02:30 IST.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mBackground table initialization complete — all tables and schedulers ready.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34m[AuditRetention] startup: deleted 0 audit log(s) older than 30 days.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34m[SheetStorageMaintenance] startup: nothing to do.[39m
+[05 Nov, 2026 - 22:41:58:4158] [34minfo[39m: [34mServer with Socket.IO running at http://localhost:3000[39m
+[05 Nov, 2026 - 22:42:00:420] [34minfo[39m: [34m[HandoverNotificationScheduler] Tick — IST time: 22:42, date: 2026-11-05[39m
+[05 Nov, 2026 - 22:42:00:420] [34minfo[39m: [34m[HandoverNotificationScheduler] No config scheduled for 22:42.[39m
+[05 Nov, 2026 - 22:42:00:420] [34minfo[39m: [34m[SixteenDayMonitoringScheduler] Tick — IST time: 22:42[39m
+[05 Nov, 2026 - 22:42:00:420] [34minfo[39m: [34m[PlanNotificationScheduler] Tick — IST: 22:42, date: 2026-11-05[39m
+[05 Nov, 2026 - 22:42:00:420] [34minfo[39m: [34m[PlanNotificationScheduler] No configs scheduled for 22:42.[39m
+[05 Nov, 2026 - 22:46:57:4657] [31merror[39m: [31mMSSQL Connection Failed: Failed to connect to 127.0.0.1:1433 - Could not connect (sequence)[39m
+[05 Nov, 2026 - 22:46:57:4657] [34minfo[39m: [34mcustom_roles table created in MSSQL[39m
+[05 Nov, 2026 - 22:46:57:4657] [34minfo[39m: [34mMigration: Creating index 'idx_audits_createdAt' on table 'audits'...[39m
+[05 Nov, 2026 - 22:46:57:4657] [34minfo[39m: [34mMigration: Creating index 'idx_unique_attempt' on table 'attempted_quizzes'...[39m
+[05 Nov, 2026 - 22:46:57:4657] [34minfo[39m: [34mMigration: Creating index 'idx_status' on table 'departments'...[39m
+[05 Nov, 2026 - 22:46:57:4657] [34minfo[39m: [34mMigration: Creating index 'idx_skill_upgrad_dept' on table 'skill_upgradation_plans'...[39m
+[05 Nov, 2026 - 22:46:57:4657] [34minfo[39m: [34mMigration: Successfully created index 'idx_unique_attempt' on 'attempted_quizzes'.[39m
+[05 Nov, 2026 - 22:46:57:4657] [34minfo[39m: [34mMigration: Successfully created index 'idx_status' on 'departments'.[39m
+[05 Nov, 2026 - 22:46:57:4657] [34minfo[39m: [34mMigration: Successfully created index 'idx_skill_upgrad_dept' on 'skill_upgradation_plans'.[39m
+[05 Nov, 2026 - 22:46:57:4657] [34minfo[39m: [34mMigration: Creating index 'idx_statusUpdatedAt' on table 'departments'...[39m
+[05 Nov, 2026 - 22:46:57:4657] [34minfo[39m: [34mMigration: Creating index 'idx_skill_upgrad_sect' on table 'skill_upgradation_plans'...[39m
+[05 Nov, 2026 - 22:46:57:4657] [34minfo[39m: [34mMigration: Successfully created index 'idx_statusUpdatedAt' on 'departments'.[39m
+[05 Nov, 2026 - 22:46:57:4657] [34minfo[39m: [34mMigration: Successfully created index 'idx_skill_upgrad_sect' on 'skill_upgradation_plans'.[39m
+[05 Nov, 2026 - 22:46:57:4657] [34minfo[39m: [34mChecked/Created departments table in MSSQL[39m
+[05 Nov, 2026 - 22:46:57:4657] [31merror[39m: [31mFailed to initialize custom_roles table:[39m
+[05 Nov, 2026 - 22:46:57:4657] [34minfo[39m: [34mMigration: Creating index 'idx_attempted_quizzes_student' on table 'attempted_quizzes'...[39m
+[05 Nov, 2026 - 22:46:57:4657] [31merror[39m: [31mMSSQL long-running pool connection failed: Failed to connect to 127.0.0.1:1433 - Could not connect (sequence)[39m
+[05 Nov, 2026 - 22:46:57:4657] [34minfo[39m: [34mMigration: Successfully created index 'idx_audits_createdAt' on 'audits'.[39m
+[05 Nov, 2026 - 22:46:57:4657] [34minfo[39m: [34mMigration: Successfully created index 'idx_attempted_quizzes_student' on 'attempted_quizzes'.[39m

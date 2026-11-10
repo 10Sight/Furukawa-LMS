@@ -1,40 +1,59 @@
-import { readSaved, useFormAutosave } from '@components/shared/formPersistence';
-import React, { useState } from 'react';
-import { X, Check } from 'lucide-react';
-import { safeRandomUUID } from '../../../utils/uuid.js';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Check, CalendarDays, UserCheck } from 'lucide-react';
 
-export default function AddPTMModal({ isOpen, onClose, onAdd, editData, onUpdate }) {
+const getTodayIso = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const toIsoDateValue = (dateText) => {
+  if (!dateText) return getTodayIso();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateText)) return dateText;
+  const parsed = new Date(dateText);
+  if (!Number.isNaN(parsed.getTime())) {
+    const year = parsed.getFullYear();
+    const month = String(parsed.getMonth() + 1).padStart(2, '0');
+    const day = String(parsed.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  return getTodayIso();
+};
+
+const formatDisplayDate = (isoDate) => {
+  if (!isoDate) {
+    return new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+  const parsed = new Date(`${isoDate}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return isoDate;
+  return parsed.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+
+export default function AddPTMModal({ isOpen, onClose, onAdd, editData, onUpdate, defaultUnit, currentUser }) {
   const isEditMode = Boolean(editData);
+  const dateInputRef = useRef(null);
 
-  const defaultForm = {
-    topic: '',
-    description: '',
-    plant: 'Bawal',
-    scope: 'Company',
-    department: '',
-    time: '09:00 AM',
-    ownerName: '',
-    ownerCode: '',
-    ownerEmail: '',
-  };
+  const getInitialForm = () => ({
+    topic: editData?.topic || '',
+    description: editData?.description || '',
+    plant: editData?.plant || (defaultUnit && defaultUnit !== 'All Units' ? defaultUnit : 'Bawal'),
+    scope: editData?.scope || 'Company',
+    department: editData?.department || (currentUser?.department || ''),
+    date: editData?.date ? toIsoDateValue(editData.date) : getTodayIso(),
+    time: editData?.time || '09:00 AM',
+    ownerName: editData?.createdBy?.name || (currentUser?.name || currentUser?.username || ''),
+    ownerCode: editData?.createdBy?.code || (currentUser?.employeeId || ''),
+  });
 
-  const [formData, setFormData] = useState(
-    editData
-      ? {
-          topic: editData.topic || '',
-          description: editData.description || '',
-          plant: editData.plant || 'Bawal',
-          scope: editData.scope || 'Company',
-          department: editData.department || '',
-          time: editData.time || '09:00 AM',
-          ownerName: editData.createdBy?.name || '',
-          ownerCode: editData.createdBy?.code || '',
-          ownerEmail: editData.createdBy?.email || '',
-        }
-      : readSaved('ptm_create_draft', defaultForm)
-  );
+  const [formData, setFormData] = useState(getInitialForm);
 
-  useFormAutosave(formData, value => localStorage.setItem('ptm_create_draft', JSON.stringify(value)), isOpen && !isEditMode, message => window.alert(message));
+  useEffect(() => {
+    if (isOpen) {
+      setFormData(getInitialForm());
+    }
+  }, [isOpen, editData, defaultUnit, currentUser]);
 
   if (!isOpen) return null;
 
@@ -51,7 +70,7 @@ export default function AddPTMModal({ isOpen, onClose, onAdd, editData, onUpdate
   const randomAvatarBg = avatarColors[Math.floor(Math.random() * avatarColors.length)];
 
   const getInitials = (name) => {
-    return name
+    return (name || 'SP')
       .trim()
       .split(' ')
       .filter(Boolean)
@@ -62,11 +81,9 @@ export default function AddPTMModal({ isOpen, onClose, onAdd, editData, onUpdate
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!formData.topic.trim()) { window.alert('Please enter a topic.'); return; }
-    try {
+    if (!formData.topic.trim()) return;
 
-    const now = new Date();
-    const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const dateStr = formatDisplayDate(formData.date);
 
     if (isEditMode) {
       onUpdate({
@@ -74,13 +91,13 @@ export default function AddPTMModal({ isOpen, onClose, onAdd, editData, onUpdate
         topic: formData.topic,
         description: formData.description,
         plant: formData.plant,
-        scope: formData.scope,
+        scope: formData.scope || 'Company',
         department: formData.department,
-        time: formData.time,
+        date: dateStr,
+        time: formData.time || '09:00 AM',
         createdBy: {
           name: formData.ownerName.toUpperCase(),
           code: formData.ownerCode,
-          email: formData.ownerEmail,
           avatarBg: editData.createdBy?.avatarBg || randomAvatarBg,
           initials: getInitials(formData.ownerName),
         },
@@ -88,42 +105,39 @@ export default function AddPTMModal({ isOpen, onClose, onAdd, editData, onUpdate
       });
     } else {
       onAdd({
-        id: `PTM-${formData.plant === 'Gujrat' ? 'GJ' : 'BW'}-${safeRandomUUID()}`,
+        id: `PTM-${formData.plant === 'Gujrat' ? 'GJ' : 'BW'}-${Math.floor(100 + Math.random() * 900)}`,
         topic: formData.topic,
         description: formData.description,
         plant: formData.plant,
-        scope: formData.scope,
+        scope: 'Company',
         department: formData.department,
         date: dateStr,
-        time: formData.time,
+        time: formData.time || '09:00 AM',
         createdBy: {
           name: formData.ownerName.toUpperCase(),
           code: formData.ownerCode,
-          email: formData.ownerEmail,
           avatarBg: randomAvatarBg,
-          initials: getInitials(formData.ownerName || 'NA'),
+          initials: getInitials(formData.ownerName || 'SP'),
         },
-        isSelf: formData.scope === 'Self PTM',
+        isSelf: false,
       });
     }
 
-    try { localStorage.removeItem('ptm_create_draft'); } catch { /* Saved record is already durable. */ }
-    setFormData(defaultForm);
     onClose();
-    } catch (error) {
-      window.alert(error.message || 'Could not save the form. Please try again.');
-    }
   };
 
-  const field = (label, key, type = 'text', placeholder = '') => (
+  const field = (label, key, type = 'text', placeholder = '', helpText = '') => (
     <div>
-      <label className="block text-xs font-semibold text-slate-700 mb-1">{label}</label>
+      <div className="flex items-center justify-between mb-1">
+        <label className="block text-xs font-semibold text-slate-700">{label}</label>
+        {helpText && <span className="text-[10px] text-blue-600 font-medium">{helpText}</span>}
+      </div>
       <input
         type={type}
         value={formData[key]}
         onChange={(e) => setFormData({ ...formData, [key]: e.target.value })}
         placeholder={placeholder}
-        className="w-full text-sm border border-slate-300 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none placeholder-slate-400"
+        className="w-full text-sm border border-slate-300 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none placeholder-slate-400 font-medium"
       />
     </div>
   );
@@ -134,7 +148,7 @@ export default function AddPTMModal({ isOpen, onClose, onAdd, editData, onUpdate
       <select
         value={formData[key]}
         onChange={(e) => setFormData({ ...formData, [key]: e.target.value })}
-        className="w-full text-sm border border-slate-300 rounded-xl px-3 py-2.5 bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none"
+        className="w-full text-sm border border-slate-300 rounded-xl px-3 py-2.5 bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none font-medium"
       >
         {options.map((o) => (
           <option key={o} value={o}>{o}</option>
@@ -164,6 +178,16 @@ export default function AddPTMModal({ isOpen, onClose, onAdd, editData, onUpdate
           </button>
         </div>
 
+        {/* Info banner confirming login data autofill */}
+        {currentUser && !isEditMode && (
+          <div className="px-6 py-2 bg-blue-50/70 border-b border-blue-100 flex items-center gap-2 text-xs text-blue-700">
+            <UserCheck className="w-4 h-4 text-blue-600 shrink-0" />
+            <span>
+              Auto-filled with login credentials: <strong>{currentUser.name || currentUser.username}</strong> ({currentUser.employeeId}) — {currentUser.department}
+            </span>
+          </div>
+        )}
+
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
           {/* Topic */}
@@ -175,7 +199,7 @@ export default function AddPTMModal({ isOpen, onClose, onAdd, editData, onUpdate
               value={formData.topic}
               onChange={(e) => setFormData({ ...formData, topic: e.target.value })}
               placeholder="e.g. Reduction of Solder Bridge Defects in ECU Assembly"
-              className="w-full text-sm border border-slate-300 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none placeholder-slate-400"
+              className="w-full text-sm border border-slate-300 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none placeholder-slate-400 font-medium"
             />
           </div>
 
@@ -187,26 +211,44 @@ export default function AddPTMModal({ isOpen, onClose, onAdd, editData, onUpdate
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               placeholder="Describe the activity, issue, or scope..."
-              className="w-full text-sm border border-slate-300 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none placeholder-slate-400 resize-none"
+              className="w-full text-sm border border-slate-300 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none placeholder-slate-400 resize-none font-medium"
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            {selectField('Plant *', 'plant', ['Gujrat', 'Bawal'])}
-            {selectField('PTM Scope', 'scope', ['Company', 'Department', 'Self PTM'])}
+          <div>
+            {selectField('Unit *', 'plant', ['Bawal', 'Gujrat'])}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            {field('Department', 'department', 'text', 'e.g. SRC Quality')}
-            {field('Time', 'time', 'text', 'e.g. 09:45 AM')}
+            {field('Department', 'department', 'text', 'e.g. C&C Quality', currentUser ? 'From Login' : '')}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Date</label>
+              <div className="relative">
+                <input
+                  ref={dateInputRef}
+                  type="date"
+                  value={formData.date}
+                  onClick={(e) => e.currentTarget.showPicker?.()}
+                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                  className="w-full text-sm border border-slate-300 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-slate-700 cursor-pointer font-medium"
+                />
+                <button
+                  type="button"
+                  onClick={() => dateInputRef.current?.showPicker?.()}
+                  tabIndex={-1}
+                  aria-label="Open calendar"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 pointer-events-none"
+                >
+                  <CalendarDays className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            {field('Owner Name *', 'ownerName', 'text', 'Full Name')}
-            {field('Employee Code', 'ownerCode', 'text', 'e.g. AS081215')}
+            {field('Owner Name *', 'ownerName', 'text', 'Full Name', currentUser ? 'From Login' : '')}
+            {field('Employee Code', 'ownerCode', 'text', 'e.g. EMP0089', currentUser ? 'From Login' : '')}
           </div>
-
-          {field('Owner Email', 'ownerEmail', 'email', 'name@fme-minda.co.in')}
 
           {/* Footer */}
           <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">

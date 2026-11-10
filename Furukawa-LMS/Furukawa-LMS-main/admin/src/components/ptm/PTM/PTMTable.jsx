@@ -2,16 +2,21 @@ import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from '
 import ManualInputBox, { ManualInputOptionsContext } from './ManualInputBox';
 import SearchableManualTextInput from './SearchableManualTextInput';
 import CalendarDateInput from './CalendarDateInput';
-import { 
-  Plus, 
-  Trash2, 
-  Copy, 
-  ChevronDown, 
-  Check, 
-  Square, 
-  CheckSquare, 
+import StdDurationWatchModal from './StdDurationWatchModal';
+import SearchableApqpDropdown from './SearchableApqpDropdown';
+import { apqpApi } from '../../services/api';
+import {
+  Plus,
+  Trash2,
+  Copy,
+  ChevronDown,
+  Check,
+  Square,
+  CheckSquare,
   Eye,
-  EyeOff
+  EyeOff,
+  Clock,
+  X
 } from 'lucide-react';
 
 const DEPARTMENTS = [
@@ -78,13 +83,79 @@ const revisedDateFromDuration = (startDate, duration) => {
   return `${day}-${month}-${start.getUTCFullYear()}`;
 };
 
-const DEFAULT_ACTION_COLUMN_WIDTH = 144;
-const MIN_ACTION_COLUMN_WIDTH = 130;
-const STATUS_COLUMN_WIDTH = 150;
+const DEFAULT_ACTION_COLUMN_WIDTH = 120;
+const MIN_ACTION_COLUMN_WIDTH = 100;
+const STATUS_COLUMN_WIDTH = 80;
 const PHASE_NAME_COLUMN_WIDTH = 180;
 const DEFAULT_ROW_HEIGHT = 34;
 const MIN_ROW_HEIGHT = 34;
 const KEYBOARD_RESIZE_STEP = 10;
+
+const DEFAULT_REVISION_OPTIONS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
+const DEFAULT_FAILURE_REASONS = [
+  'Customer input / drawing delay',
+  'Design change / revision from customer',
+  'Tooling / fixture readiness delay',
+  'Supplier material / sample delay',
+  'Testing / validation failure',
+  'Resource / capacity constraint',
+];
+
+const isRevisedTaken = (value) => {
+  const text = String(value ?? '').trim();
+  return text !== '' && text !== '0';
+};
+
+const toTimePickerValue = (value) => {
+  const text = String(value ?? '').trim();
+  if (/^\d{2}:\d{2}$/.test(text)) return text;
+  const shortMatch = text.match(/^(\d{1}):(\d{2})$/);
+  if (shortMatch) return `0${shortMatch[1]}:${shortMatch[2]}`;
+  const num = Number(text);
+  if (text && Number.isInteger(num) && num >= 0 && num <= 23) {
+    return `${String(num).padStart(2, '0')}:00`;
+  }
+  return '';
+};
+
+function WatchTimeInput({
+  value = '',
+  onChange,
+  className = '',
+  containerClassName = '',
+  ...props
+}) {
+  const pickerRef = useRef(null);
+
+  return (
+    <div className={`relative min-w-0 ${containerClassName || 'flex-1'}`}>
+      <input
+        type="text"
+        value={value}
+        onChange={onChange}
+        className={`${className} pr-6`}
+        {...props}
+      />
+      <Clock
+        aria-hidden="true"
+        className="pointer-events-none absolute right-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
+      />
+      <input
+        ref={pickerRef}
+        type="time"
+        value={toTimePickerValue(value)}
+        onClick={(event) => event.currentTarget.showPicker?.()}
+        onChange={(event) =>
+          onChange({ target: { value: event.target.value } })
+        }
+        aria-label="Choose duration time in hours"
+        title="Select time in hours"
+        className="absolute right-0 top-1/2 h-6 w-6 -translate-y-1/2 cursor-pointer opacity-0"
+        tabIndex={-1}
+      />
+    </div>
+  );
+}
 
 function CriticalActivityCell({ value, onChange }) {
   const [isEditing, setIsEditing] = useState(false);
@@ -150,7 +221,20 @@ export default function PTMTable({
 }) {
   const tableRef = useRef(null);
   const activeResizeRef = useRef(null);
-  const [actionColumnWidth, setActionColumnWidth] = useState(DEFAULT_ACTION_COLUMN_WIDTH);
+  const [colWidths, setColWidths] = useState({
+    phaseName: 140,
+    customerEvent: 120,
+    activity: 260,
+    deliverable: 180,
+    actionTaken: 140,
+    remarks: 140,
+    actions: DEFAULT_ACTION_COLUMN_WIDTH,
+  });
+  const [watchModal, setWatchModal] = useState({
+    isOpen: false,
+    rowIndex: null,
+    value: '',
+  });
   const [rowHeights, setRowHeights] = useState({});
 
   const recordManualRowHeight = useCallback((rowIndex, measuredHeight) => {
@@ -213,23 +297,39 @@ export default function PTMTable({
 
   const manualOptionsByColumn = useMemo(() => {
     const columns = ['phaseName', 'reqNo', 'customerEvent', 'activity', 'deliverable', 'duration', 'noOfTimesRevised', 'reasonOfFailure', 'actionTaken', 'remarks'];
-    return Object.fromEntries(columns.map((column) => [
+    const baseOptions = Object.fromEntries(columns.map((column) => [
       column,
       [...new Set(rows.map((row) => String(row[column] ?? '').trim()).filter(Boolean))],
     ]));
+    baseOptions.noOfTimesRevised = [
+      ...new Set([
+        ...DEFAULT_REVISION_OPTIONS,
+        ...baseOptions.noOfTimesRevised.filter((v) => v !== '0'),
+      ]),
+    ];
+    baseOptions.reasonOfFailure = [
+      ...new Set([
+        ...DEFAULT_FAILURE_REASONS,
+        ...baseOptions.reasonOfFailure,
+      ]),
+    ];
+    return baseOptions;
   }, [rows]);
 
-  const startColumnResize = (event) => {
+  const startColResize = (event, colKey) => {
     event.preventDefault();
     event.stopPropagation();
     activeResizeRef.current = {
-      type: 'column',
+      type: 'col',
+      colKey,
       pointerId: event.pointerId,
       startX: event.clientX,
-      startWidth: actionColumnWidth,
+      startWidth: colWidths[colKey] || 120,
     };
     event.currentTarget.setPointerCapture?.(event.pointerId);
   };
+
+  const startColumnResize = (event) => startColResize(event, 'actions');
 
   const startRowResize = (event, rowId) => {
     if (!rowId) return;
@@ -251,12 +351,24 @@ export default function PTMTable({
     if (!activeResize || activeResize.pointerId !== event.pointerId) return;
     event.preventDefault();
 
+    if (activeResize.type === 'col') {
+      const minW = activeResize.colKey === 'actions' ? MIN_ACTION_COLUMN_WIDTH : 60;
+      const nextWidth = Math.max(
+        minW,
+        activeResize.startWidth + (event.clientX - activeResize.startX)
+      );
+      setColWidths((prev) => ({
+        ...prev,
+        [activeResize.colKey]: nextWidth,
+      }));
+      return;
+    }
     if (activeResize.type === 'column') {
       const nextWidth = clampDimension(
         activeResize.startWidth + event.clientX - activeResize.startX,
         MIN_ACTION_COLUMN_WIDTH
       );
-      setActionColumnWidth(nextWidth);
+      setColWidths((prev) => ({ ...prev, actions: nextWidth }));
       return;
     }
 
@@ -289,13 +401,22 @@ export default function PTMTable({
     const step = event.shiftKey ? KEYBOARD_RESIZE_STEP * 3 : KEYBOARD_RESIZE_STEP;
     const direction = event.key === decreaseKey ? -step : event.key === increaseKey ? step : 0;
 
+    if (type === 'col' && rowId) {
+      const minW = rowId === 'actions' ? MIN_ACTION_COLUMN_WIDTH : 60;
+      setColWidths((prev) => ({
+        ...prev,
+        [rowId]: Math.max(minW, (prev[rowId] || 120) + direction),
+      }));
+      return;
+    }
     if (type === 'column') {
-      setActionColumnWidth((currentWidth) =>
-        clampDimension(
-          event.key === 'Home' ? MIN_ACTION_COLUMN_WIDTH : currentWidth + direction,
+      setColWidths((prev) => ({
+        ...prev,
+        actions: clampDimension(
+          event.key === 'Home' ? MIN_ACTION_COLUMN_WIDTH : (prev.actions || DEFAULT_ACTION_COLUMN_WIDTH) + direction,
           MIN_ACTION_COLUMN_WIDTH
-        )
-      );
+        ),
+      }));
       return;
     }
 
@@ -353,9 +474,26 @@ export default function PTMTable({
 
   /* ── Cell text/value update ── */
   const handleCellChange = (rowIndex, field, val) => {
+    const prevRow = rows[rowIndex];
+    if (field === 'reasonOfFailure' && !isRevisedTaken(prevRow?.noOfTimesRevised)) {
+      if (showToast) showToast('⚠️ Please select No. of Times Revised first');
+      return;
+    }
+
+    if (field === 'noOfTimesRevised') {
+      const wasTaken = isRevisedTaken(prevRow?.noOfTimesRevised);
+      const nowTaken = isRevisedTaken(val);
+      if (nowTaken && !wasTaken && !String(prevRow?.reasonOfFailure || '').trim()) {
+        if (showToast) showToast('⚠️ Please provide Reason of Failure');
+      }
+    }
+
     setRows((prev) => {
       const updated = [...prev];
       const row = { ...updated[rowIndex], [field]: val };
+      if (field === 'noOfTimesRevised' && !isRevisedTaken(val)) {
+        row.reasonOfFailure = '';
+      }
       if (field === 'duration' || field === 'startDatePlan') {
         const calculatedDate = revisedDateFromDuration(
           field === 'startDatePlan' ? val : row.startDatePlan,
@@ -371,6 +509,19 @@ export default function PTMTable({
       updated[rowIndex] = row;
       return updated;
     });
+  };
+
+  const clearRevision = (rowIndex) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      updated[rowIndex] = {
+        ...updated[rowIndex],
+        noOfTimesRevised: '',
+        reasonOfFailure: '',
+      };
+      return updated;
+    });
+    if (showToast) showToast('No. of Times Revised removed');
   };
 
   const isChildRow = (row) => row.rowType === 'child' || (
@@ -596,7 +747,7 @@ export default function PTMTable({
   const filteredRows = rows.filter((r) => {
     const parentId = getParentRowId(r);
     if (isChildRow(r) && (r.isHidden || hiddenParentIds.has(parentId))) return false;
-    if (selectedUnit && r.unit && r.unit !== 'Both' && r.unit !== selectedUnit) return false;
+    if (selectedUnit && selectedUnit !== 'All Units' && r.unit && r.unit !== 'Both' && r.unit !== selectedUnit) return false;
     // Keep the parent's Unhide control reachable even when the hidden group's values don't match filters.
     if (isParentRow(r) && areChildrenHidden(r)) return true;
     if (phaseFilter && phaseFilter !== 'all' && r.phaseNo !== phaseFilter) return false;
@@ -622,697 +773,914 @@ export default function PTMTable({
     <div className={`ptm-data-table bg-white select-none ${isMerged ? '' : 'rounded-xl border border-[#64748B] shadow-sm overflow-hidden'}`}>
       <div className={isMerged ? 'w-full' : 'overflow-x-auto max-h-[calc(100vh-140px)]'} ref={tableRef} onInput={handleTableInput}>
         <ManualInputOptionsContext.Provider value={manualOptionsByColumn}>
-        <table className="w-full border-collapse text-xs">
-          <colgroup>
-            <col span={32} />
-            <col
-              style={{
-                width: `${actionColumnWidth}px`,
-                minWidth: `${MIN_ACTION_COLUMN_WIDTH}px`,
-              }}
-            />
-          </colgroup>
-          {/* ══════════════════════════════════════════════════════════════════
-              HEADER ROW: INDIVIDUAL COLUMN TITLES WITH MATCHING TINTS
-              ══════════════════════════════════════════════════════════════════ */}
-          <thead className="sticky top-0 z-20 shadow-xs border-b border-[#64748B]">
-            {/* ══════════════════════════════════════════════════════════════════
-                COLUMN TITLES
-                ══════════════════════════════════════════════════════════════════ */}
-            <tr className="divide-x divide-[#64748B] text-[10px] font-bold text-center border-b-2 border-slate-400">
-              {/* Group 1 Columns (Ice Blue tint) */}
-              <th className="py-2 px-1.5 w-14 bg-[#EEF4FA] text-[#2C5282] whitespace-nowrap">
-                S.No
-              </th>
-              <th className="py-2 px-1.5 w-24 bg-[#EEF4FA] text-[#2C5282] whitespace-nowrap">
-                Phase No.
-              </th>
-              <th
-                className="py-2 px-2.5 bg-[#EEF4FA] text-[#2C5282] text-left whitespace-nowrap"
+          <table className="w-full border-collapse text-xs">
+            <colgroup>
+              <col span={32} />
+              <col
                 style={{
-                  width: `${PHASE_NAME_COLUMN_WIDTH}px`,
-                  minWidth: `${PHASE_NAME_COLUMN_WIDTH}px`,
-                }}
-              >
-                Phase Name
-              </th>
-              <th className="py-2 px-2.5 min-w-[320px] w-44 bg-[#EEF4FA] text-[#2C5282] text-left whitespace-nowrap">
-                AIAG APQP Requirements
-              </th>
-              <th className="py-2 px-2 w-32 bg-[#EEF4FA] text-[#2C5282] text-left whitespace-nowrap">
-                Custom Event Name
-              </th>
-
-              {/* Group 2 Columns (Pale Yellow tint) */}
-              <th className="py-2 px-1.5 w-14 bg-[#FFF9E6] text-[#975A16] whitespace-nowrap">
-                Rank A
-              </th>
-              <th className="py-2 px-1.5 w-14 bg-[#FFF9E6] text-[#975A16] whitespace-nowrap">
-                Rank B
-              </th>
-              <th className="py-2 px-1.5 w-16 bg-[#FFF9E6] text-[#975A16] whitespace-nowrap">
-                Rank C1 & C2
-              </th>
-
-              {/* Group 3 Columns (Slate tint) */}
-              <th className="py-2 px-1.5 w-20 bg-[#F8F9FA] text-[#4A5568] whitespace-nowrap">
-                Critical Activity
-              </th>
-              <th className="py-2 px-3 min-w-[320px] max-w-[480px] bg-[#F8F9FA] text-[#4A5568] text-left whitespace-nowrap">
-                Activity (New)
-              </th>
-
-              {/* Group 4 Columns: Depts (Mint Green tint) */}
-              {DEPARTMENTS.map((dept) => (
-                <th
-                  key={dept.key}
-                  className="py-2 px-1 w-12 bg-[#EAF5EC] text-[#276749] text-center whitespace-nowrap"
-                >
-                  {dept.label}
-                </th>
-              ))}
-
-              {/* Group 5 Columns (Lavender tint) */}
-              <th className="py-2 px-2.5 min-w-[170px] bg-[#F1F5F9] text-[#2D3748] text-left whitespace-nowrap">
-                Deliverable Required Yes / No (if yes than put Format no.)
-              </th>
-              <th className="py-2 px-1.5 w-20 bg-[#F1F5F9] text-[#2D3748] whitespace-nowrap">
-                Std. Duration in days
-              </th>
-
-              {/* Group 6 Columns (Ice Blue tint) */}
-              <th className="py-2 px-1.5 w-28 bg-[#EFF3FA] text-[#2B6CB0] whitespace-nowrap">
-                Start Date (Plan)
-              </th>
-              <th className="py-2 px-1.5 w-28 bg-[#EFF3FA] text-[#2B6CB0] whitespace-nowrap">
-                Start Date (Actual)
-              </th>
-              <th className="py-2 px-1.5 w-28 bg-[#EFF3FA] text-[#2B6CB0] whitespace-nowrap">
-                End Date (Plan)
-              </th>
-              <th className="py-2 px-1.5 w-28 bg-[#EFF3FA] text-[#2B6CB0] whitespace-nowrap">
-                End Date (Actual)
-              </th>
-
-              {/* Group 7 Columns (Mint Green tint) */}
-              <th className="py-2 px-1.5 w-28 min-w-[112px] bg-[#EAF5EC] text-[#276749] whitespace-nowrap">
-                HIT/MISS
-              </th>
-              <th className="py-2 px-1.5 w-24 bg-[#EAF5EC] text-[#276749] whitespace-nowrap">
-                Revised Date (If MISS)
-              </th>
-
-              {/* Group 8 Columns (Pastel Rose tint) */}
-              <th className="py-2 px-1.5 w-18 bg-[#FDF2F2] text-[#9B1C1C] whitespace-nowrap">
-                No. of Times Revised
-              </th>
-              <th className="py-2 px-2.5 min-w-[130px] bg-[#FDF2F2] text-[#9B1C1C] text-left whitespace-nowrap">
-                Reason of Failure
-              </th>
-              <th className="py-2 px-2.5 min-w-[140px] bg-[#FDF2F2] text-[#9B1C1C] text-left whitespace-nowrap">
-                Action Taken Against Failure
-              </th>
-
-              {/* Group 9 Columns (Slate tint) */}
-              <th
-                className="py-2 px-1.5 bg-[#F8F9FA] text-[#4A5568] whitespace-nowrap"
-                style={{
-                  width: `${STATUS_COLUMN_WIDTH}px`,
-                  minWidth: `${STATUS_COLUMN_WIDTH}px`,
-                }}
-              >
-                Status
-              </th>
-              <th className="py-2 px-2.5 min-w-[150px] bg-[#F8F9FA] text-[#4A5568] text-left whitespace-nowrap">
-                Remarks
-              </th>
-              <th
-                className="relative overflow-visible py-2 px-1.5 w-20 bg-[#F8F9FA] text-slate-500 whitespace-nowrap sticky right-0 z-20 shadow-[-2px_0_4px_rgba(0,0,0,0.03)]"
-                style={{
-                  width: `${actionColumnWidth}px`,
+                  width: `${colWidths.actions}px`,
                   minWidth: `${MIN_ACTION_COLUMN_WIDTH}px`,
                 }}
-              >
-                Actions
-                <span
-                  role="separator"
-                  aria-label="Resize Actions column"
-                  aria-orientation="vertical"
-                  aria-valuemin={MIN_ACTION_COLUMN_WIDTH}
-                  aria-valuenow={actionColumnWidth}
-                  tabIndex={0}
-                  title="Drag horizontally to resize the Actions column"
-                  onPointerDown={startColumnResize}
-                  onPointerMove={continueResize}
-                  onPointerUp={finishResize}
-                  onPointerCancel={finishResize}
-                  onLostPointerCapture={finishResize}
-                  onKeyDown={(event) => handleResizeKeyDown(event, 'column')}
-                  className="group absolute inset-y-0 left-0 z-20 flex w-2 cursor-col-resize touch-none items-center justify-center focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500"
+              />
+            </colgroup>
+            {/* ══════════════════════════════════════════════════════════════════
+              HEADER ROW: INDIVIDUAL COLUMN TITLES WITH MATCHING TINTS
+              ══════════════════════════════════════════════════════════════════ */}
+            <thead className="sticky top-0 z-20 shadow-xs border-b border-[#64748B]">
+              {/* ══════════════════════════════════════════════════════════════════
+                COLUMN TITLES
+                ══════════════════════════════════════════════════════════════════ */}
+              <tr className="divide-x divide-[#64748B] text-[10px] font-bold text-center border-b-2 border-slate-400">
+                {/* Group 1 Columns (Ice Blue tint) */}
+                <th className="py-2 px-1 w-10 min-w-[36px] max-w-[42px] bg-[#EEF4FA] text-[#2C5282] whitespace-normal leading-tight text-center">
+                  S.No
+                </th>
+                <th className="py-2 px-1 w-16 min-w-[58px] max-w-[64px] bg-[#EEF4FA] text-[#2C5282] whitespace-normal leading-tight text-center">
+                  Phase No.
+                </th>
+                <th
+                  className="relative py-2 px-2 bg-[#EEF4FA] text-[#2C5282] text-left whitespace-normal leading-tight"
+                  style={{
+                    width: `${colWidths.phaseName}px`,
+                    minWidth: `${colWidths.phaseName}px`,
+                  }}
                 >
-                  <span className="h-4 w-0.5 rounded-full bg-slate-300 transition-colors group-hover:bg-blue-500" />
-                </span>
-              </th>
-            </tr>
-          </thead>
+                  <div className="flex items-center justify-between pr-2">
+                    <span>Phase Name</span>
+                  </div>
+                  
+                  <span
+                    role="separator"
+                    aria-label="Resize Phase Name column"
+                    title="Drag to resize Phase Name column"
+                    onPointerDown={(event) => startColResize(event, 'phaseName')}
+                    onPointerMove={continueResize}
+                    onPointerUp={finishResize}
+                    onPointerCancel={finishResize}
+                    className="group absolute inset-y-0 right-0 z-20 flex w-2 cursor-col-resize touch-none items-center justify-center focus:outline-none"
+                  >
+                    <span className="h-4 w-0.5 rounded-full bg-slate-300 group-hover:bg-blue-500" />
+                  </span>
+                </th>
+                <th className="py-2 px-2 min-w-[190px] w-48 bg-[#EEF4FA] text-[#2C5282] text-left whitespace-normal leading-tight">
+                  AIAG APQP Requirements
+                </th>
+                <th
+                  className="relative py-2 px-2 bg-[#EEF4FA] text-[#2C5282] text-left whitespace-normal leading-tight"
+                  style={{
+                    width: `${colWidths.customerEvent}px`,
+                    minWidth: `${colWidths.customerEvent}px`,
+                  }}
+                >
+                  <div className="flex items-center justify-between pr-2">
+                    <span>Custom Event Name</span>
+                  </div>
+                  
+                  <span
+                    role="separator"
+                    aria-label="Resize Custom Event Name column"
+                    title="Drag to resize Custom Event Name column"
+                    onPointerDown={(event) => startColResize(event, 'customerEvent')}
+                    onPointerMove={continueResize}
+                    onPointerUp={finishResize}
+                    onPointerCancel={finishResize}
+                    className="group absolute inset-y-0 right-0 z-20 flex w-2 cursor-col-resize touch-none items-center justify-center focus:outline-none"
+                  >
+                    <span className="h-4 w-0.5 rounded-full bg-slate-300 group-hover:bg-blue-500" />
+                  </span>
+                </th>
 
-          {/* ══════════════════════════════════════════════════════════════════
+                {/* Group 2 Columns (Pale Yellow tint) - compact */}
+                <th className="py-2 px-1 w-9 min-w-[34px] max-w-[38px] bg-[#FFF9E6] text-[#975A16] whitespace-normal leading-tight text-center">
+                  Rank A
+                </th>
+                <th className="py-2 px-1 w-9 min-w-[34px] max-w-[38px] bg-[#FFF9E6] text-[#975A16] whitespace-normal leading-tight text-center">
+                  Rank B
+                </th>
+                <th className="py-2 px-1 w-11 min-w-[42px] max-w-[48px] bg-[#FFF9E6] text-[#975A16] whitespace-normal leading-tight text-center">
+                  Rank C1 & C2
+                </th>
+
+                {/* Group 3 Columns (Slate tint) */}
+                <th className="py-2 px-1 w-14 min-w-[50px] max-w-[56px] bg-[#F8F9FA] text-[#4A5568] whitespace-normal leading-tight text-center">
+                  Critical Activity
+                </th>
+                <th
+                  className="relative py-2 px-2.5 bg-[#F8F9FA] text-[#4A5568] text-left whitespace-normal leading-tight"
+                  style={{
+                    width: `${colWidths.activity}px`,
+                    minWidth: `${colWidths.activity}px`,
+                  }}
+                >
+                  <div className="flex items-center justify-between pr-2">
+                    <span>Activity (New)</span>
+                  </div>
+                  
+                  <span
+                    role="separator"
+                    aria-label="Resize Activity (New) column"
+                    title="Drag to resize Activity (New) column"
+                    onPointerDown={(event) => startColResize(event, 'activity')}
+                    onPointerMove={continueResize}
+                    onPointerUp={finishResize}
+                    onPointerCancel={finishResize}
+                    className="group absolute inset-y-0 right-0 z-20 flex w-2 cursor-col-resize touch-none items-center justify-center focus:outline-none"
+                  >
+                    <span className="h-4 w-0.5 rounded-full bg-slate-300 group-hover:bg-blue-500" />
+                  </span>
+                </th>
+
+                {/* Group 4 Columns: Depts (Mint Green tint) - compact */}
+                {DEPARTMENTS.map((dept) => (
+                  <th
+                    key={dept.key}
+                    className="py-2 px-0.5 w-8 min-w-[30px] max-w-[34px] bg-[#EAF5EC] text-[#276749] text-center whitespace-nowrap text-[9.5px]"
+                  >
+                    {dept.label}
+                  </th>
+                ))}
+
+                {/* Group 5 Columns (Lavender tint) */}
+                <th
+                  className="relative py-2 px-2 bg-[#F1F5F9] text-[#2D3748] text-left whitespace-normal leading-tight"
+                  style={{
+                    width: `${colWidths.deliverable}px`,
+                    minWidth: `${colWidths.deliverable}px`,
+                  }}
+                >
+                  <div className="flex items-center justify-between pr-2">
+                    <span>Deliverable Required Yes / No (if yes than put Format no.)</span>
+                  </div>
+                  
+                  <span
+                    role="separator"
+                    aria-label="Resize Deliverable column"
+                    title="Drag to resize Deliverable column"
+                    onPointerDown={(event) => startColResize(event, 'deliverable')}
+                    onPointerMove={continueResize}
+                    onPointerUp={finishResize}
+                    onPointerCancel={finishResize}
+                    className="group absolute inset-y-0 right-0 z-20 flex w-2 cursor-col-resize touch-none items-center justify-center focus:outline-none"
+                  >
+                    <span className="h-4 w-0.5 rounded-full bg-slate-300 group-hover:bg-blue-500" />
+                  </span>
+                </th>
+                <th className="py-2 px-1.5 w-20 min-w-[76px] bg-[#F1F5F9] text-[#2D3748] whitespace-normal leading-tight text-center">
+                  Std. Duration in Hours
+                </th>
+
+                {/* Group 6 Columns (Ice Blue tint) */}
+                <th className="py-2 px-1 w-22 min-w-[84px] max-w-[90px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center">
+                  Start Date (Plan)
+                </th>
+                <th className="py-2 px-1 w-22 min-w-[84px] max-w-[90px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center">
+                  Start Date (Actual)
+                </th>
+                <th className="py-2 px-1 w-22 min-w-[84px] max-w-[90px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center">
+                  End Date (Plan)
+                </th>
+                <th className="py-2 px-1 w-22 min-w-[84px] max-w-[90px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center">
+                  End Date (Actual)
+                </th>
+
+                {/* Group 7 Columns (Mint Green tint) */}
+                <th className="py-2 px-1 w-16 min-w-[64px] max-w-[70px] bg-[#EAF5EC] text-[#276749] whitespace-normal leading-tight text-center">
+                  HIT/MISS
+                </th>
+                <th className="py-2 px-1 w-20 min-w-[78px] bg-[#EAF5EC] text-[#276749] whitespace-normal leading-tight text-center">
+                  Revised Date (If MISS)
+                </th>
+
+                {/* Group 8 Columns (Pastel Rose tint) */}
+                <th className="py-2 px-1 w-14 min-w-[50px] bg-[#FDF2F2] text-[#9B1C1C] whitespace-normal leading-tight text-center">
+                  No. of Times Revised
+                </th>
+                <th className="py-2 px-2 min-w-[120px] bg-[#FDF2F2] text-[#9B1C1C] text-left whitespace-normal leading-tight">
+                  Reason of Failure
+                </th>
+                <th
+                  className="relative py-2 px-2 bg-[#FDF2F2] text-[#9B1C1C] text-left whitespace-normal leading-tight"
+                  style={{
+                    width: `${colWidths.actionTaken}px`,
+                    minWidth: `${colWidths.actionTaken}px`,
+                  }}
+                >
+                  <div className="flex items-center justify-between pr-2">
+                    <span>Action Taken Against Failure</span>
+                  </div>
+                  
+                  <span
+                    role="separator"
+                    aria-label="Resize Action Taken Against Failure column"
+                    title="Drag to resize Action Taken Against Failure column"
+                    onPointerDown={(event) => startColResize(event, 'actionTaken')}
+                    onPointerMove={continueResize}
+                    onPointerUp={finishResize}
+                    onPointerCancel={finishResize}
+                    className="group absolute inset-y-0 right-0 z-20 flex w-2 cursor-col-resize touch-none items-center justify-center focus:outline-none"
+                  >
+                    <span className="h-4 w-0.5 rounded-full bg-slate-300 group-hover:bg-blue-500" />
+                  </span>
+                </th>
+
+                {/* Group 9 Columns (Slate tint) */}
+                <th
+                  className="py-2 px-1 bg-[#F8F9FA] text-[#4A5568] whitespace-normal leading-tight text-center"
+                  style={{
+                    width: `${STATUS_COLUMN_WIDTH}px`,
+                    minWidth: `${STATUS_COLUMN_WIDTH}px`,
+                  }}
+                >
+                  Status
+                </th>
+                <th
+                  className="relative py-2 px-2 bg-[#F8F9FA] text-[#4A5568] text-left whitespace-normal leading-tight"
+                  style={{
+                    width: `${colWidths.remarks}px`,
+                    minWidth: `${colWidths.remarks}px`,
+                  }}
+                >
+                  <div className="flex items-center justify-between pr-2">
+                    <span>Remarks</span>
+                  </div>
+                  
+                  <span
+                    role="separator"
+                    aria-label="Resize Remarks column"
+                    title="Drag to resize Remarks column"
+                    onPointerDown={(event) => startColResize(event, 'remarks')}
+                    onPointerMove={continueResize}
+                    onPointerUp={finishResize}
+                    onPointerCancel={finishResize}
+                    className="group absolute inset-y-0 right-0 z-20 flex w-2 cursor-col-resize touch-none items-center justify-center focus:outline-none"
+                  >
+                    <span className="h-4 w-0.5 rounded-full bg-slate-300 group-hover:bg-blue-500" />
+                  </span>
+                </th>
+
+                {/* Actions Column: Visually separated at the end */}
+                <th
+                  className="relative overflow-visible py-2 px-2 bg-slate-200 text-slate-800 font-extrabold uppercase text-[10px] tracking-wider text-center sticky right-0 z-20 border-l-4 border-slate-300 shadow-[-6px_0_12px_rgba(0,0,0,0.06)]"
+                  style={{
+                    width: `${colWidths.actions}px`,
+                    minWidth: `${MIN_ACTION_COLUMN_WIDTH}px`,
+                  }}
+                >
+                  <div className="flex items-center justify-center">
+                    <span>Actions</span>
+                  </div>
+                  <span
+                    role="separator"
+                    aria-label="Resize Actions column"
+                    title="Drag horizontally to resize the Actions column"
+                    onPointerDown={(event) => startColResize(event, 'actions')}
+                    onPointerMove={continueResize}
+                    onPointerUp={finishResize}
+                    onPointerCancel={finishResize}
+                    className="group absolute inset-y-0 left-0 z-20 flex w-2 cursor-col-resize touch-none items-center justify-center focus:outline-none"
+                  >
+                    <span className="h-4 w-0.5 rounded-full bg-slate-400 group-hover:bg-blue-500" />
+                  </span>
+                </th>
+              </tr>
+            </thead>
+
+            {/* ══════════════════════════════════════════════════════════════════
               TABLE BODY: EVERY CELL HAS DROPDOWN / MANUAL INPUT AS SHOWN IN IMAGE
               ══════════════════════════════════════════════════════════════════ */}
-          <tbody className="divide-y divide-[#64748B] bg-white">
-            {filteredRows.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={24 + DEPARTMENTS.length}
-                  className="py-12 text-center text-slate-400 font-medium"
-                >
-                  No matching rows found.
-                </td>
-              </tr>
-            ) : (
-              filteredRows.map((row, idx) => {
-                const originalIndex = rows.findIndex((r) => r.id === row.id);
-                const childrenHidden = areChildrenHidden(row);
-                const previousRow = filteredRows[idx - 1];
-                const nextRow = filteredRows[idx + 1];
-                const sameParentChild = (candidate) =>
-                  Boolean(candidate) && isChildRow(row) && isChildRow(candidate) && getParentRowId(row) === getParentRowId(candidate);
-                const hideChildTopLine = sameParentChild(previousRow);
-                const hideChildBottomLine = sameParentChild(nextRow);
-
-                return (
-                  <React.Fragment key={row.id}>
-                  <tr
-                    className={`divide-x divide-[#64748B] hover:bg-[#F8FAFC] transition-colors group ${isChildRow(row) ? 'bg-slate-50/60' : ''}`}
-                    style={Math.max(rowHeights[row.id] || 0, row.manualRowHeight || 0) > 0
-                      ? { height: `${Math.max(rowHeights[row.id] || 0, row.manualRowHeight || 0)}px` }
-                      : undefined}
+            <tbody className="divide-y divide-[#64748B] bg-white">
+              {filteredRows.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={24 + DEPARTMENTS.length}
+                    className="py-12 text-center text-slate-400 font-medium"
                   >
-                    {isChildRow(row) ? (
-                      <td
-                        colSpan={3}
-                        className="bg-slate-50/60"
-                        style={{
-                          borderTopStyle: hideChildTopLine ? 'hidden' : undefined,
-                          borderBottomStyle: hideChildBottomLine ? 'hidden' : undefined,
-                        }}
-                        aria-label="Child row; parent and phase fields are shown above"
-                      />
-                    ) : (
-                      <>
-                        {/* S.No */}
-                        <td className="py-2 px-1 text-center font-semibold text-slate-500 text-xs bg-slate-50/40">
-                          {getRowSerial(row, originalIndex)}
-                        </td>
+                    No matching rows found.
+                  </td>
+                </tr>
+              ) : (
+                filteredRows.map((row, idx) => {
+                  const originalIndex = rows.findIndex((r) => r.id === row.id);
+                  const childrenHidden = areChildrenHidden(row);
+                  const previousRow = filteredRows[idx - 1];
+                  const nextRow = filteredRows[idx + 1];
+                  const sameParentChild = (candidate) =>
+                    Boolean(candidate) && isChildRow(row) && isChildRow(candidate) && getParentRowId(row) === getParentRowId(candidate);
+                  const hideChildTopLine = sameParentChild(previousRow);
+                  const hideChildBottomLine = sameParentChild(nextRow);
 
-                        {/* 1. Phase No. — DROPDOWN with chevron */}
-                        <td className="p-0 text-center relative bg-slate-50/20">
-                          <div className="relative flex items-center justify-center">
-                            <select
-                              value={row.addedFrom === 'filters' && !row.phaseNo ? '' : row.phaseNo || '1'}
-                              onChange={(e) => handleCellChange(originalIndex, 'phaseNo', e.target.value)}
-                              className="appearance-none w-full bg-transparent text-center font-bold text-slate-800 pr-5 pl-2 py-2 text-xs outline-none cursor-pointer hover:bg-blue-50/50 transition-colors"
+                  return (
+                    <React.Fragment key={row.id}>
+                      <tr
+                        className={`divide-x divide-[#64748B] hover:bg-[#F8FAFC] transition-colors group ${isChildRow(row) ? 'bg-slate-50/60' : ''}`}
+                        style={Math.max(rowHeights[row.id] || 0, row.manualRowHeight || 0) > 0
+                          ? { height: `${Math.max(rowHeights[row.id] || 0, row.manualRowHeight || 0)}px` }
+                          : undefined}
+                      >
+                        {isChildRow(row) ? (
+                          <td
+                            colSpan={3}
+                            className="bg-slate-50/60"
+                            style={{
+                              borderTopStyle: hideChildTopLine ? 'hidden' : undefined,
+                              borderBottomStyle: hideChildBottomLine ? 'hidden' : undefined,
+                            }}
+                            aria-label="Child row; parent and phase fields are shown above"
+                          />
+                        ) : (
+                          <>
+                            {/* S.No */}
+                            <td className="py-2 px-1 text-center font-semibold text-slate-500 text-xs bg-slate-50/40">
+                              {getRowSerial(row, originalIndex)}
+                            </td>
+
+                            {/* 1. Phase No. — DROPDOWN with chevron */}
+                            <td className="p-0 text-center relative bg-slate-50/20">
+                              <div className="relative flex items-center justify-center">
+                                <select
+                                  value={row.addedFrom === 'filters' && !row.phaseNo ? '' : row.phaseNo || '1'}
+                                  onChange={(e) => handleCellChange(originalIndex, 'phaseNo', e.target.value)}
+                                  className="appearance-none w-full bg-transparent text-center font-bold text-slate-800 pr-5 pl-2 py-2 text-xs outline-none cursor-pointer hover:bg-blue-50/50 transition-colors"
+                                >
+                                  {row.addedFrom === 'filters' && !row.phaseNo && <option value="">—</option>}
+                                  {Array.from({ length: 25 }, (_, phaseIndex) => {
+                                    const phaseNumber = String(phaseIndex + 1);
+                                    return <option key={phaseNumber} value={phaseNumber}>{phaseNumber}</option>;
+                                  })}
+                                </select>
+                                <ChevronDown className="w-3 h-3 text-slate-400 absolute right-1.5 pointer-events-none" />
+                              </div>
+                            </td>
+
+                            {/* 2. Phase Name — manual input (no search dropdown, resizable width) */}
+                            <td
+                              className="p-0 relative"
+                              style={{
+                                width: `${colWidths.phaseName}px`,
+                                minWidth: `${colWidths.phaseName}px`,
+                              }}
                             >
-                              {row.addedFrom === 'filters' && !row.phaseNo && <option value="">—</option>}
-                              {Array.from({ length: 25 }, (_, phaseIndex) => {
-                                const phaseNumber = String(phaseIndex + 1);
-                                return <option key={phaseNumber} value={phaseNumber}>{phaseNumber}</option>;
-                              })}
-                            </select>
-                            <ChevronDown className="w-3 h-3 text-slate-400 absolute right-1.5 pointer-events-none" />
+                              <ManualInputBox
+                                value={row.phaseName || ''}
+                                noDropdown={true}
+                                onChange={(event) => handleCellChange(originalIndex, 'phaseName', event.target.value)}
+                                onKeyDown={(event) => handleKeyDown(event, originalIndex, 'phaseName')}
+                                data-row={originalIndex}
+                                data-col="phaseName"
+                                placeholder="Phase Name..."
+                                className="w-full py-2 px-2 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs"
+                              />
+                            </td>
+                          </>
+                        )}
+
+                        {/* 3. AIAG APQP Requirements — Searchable dropdown with suggestion history */}
+                        <td className="relative h-full min-w-[190px] w-48 p-0 align-top">
+                          <div
+                            aria-hidden="true"
+                            className="pointer-events-none absolute inset-y-0 left-10 z-[1] border-l border-[#64748B]"
+                          />
+                          <div className="flex h-full min-h-full min-w-0 items-stretch">
+                            <div className="h-full w-10 shrink-0">
+                              {isChildRow(row) ? (
+                                <ManualInputBox
+                                  value={getRowSerial(row, originalIndex)}
+                                  onKeyDown={(e) => handleKeyDown(e, originalIndex, 'reqNo')}
+                                  data-row={originalIndex}
+                                  data-col="reqNo"
+                                  readOnly
+                                  noDropdown={true}
+                                  aria-label={`Child row number ${getRowSerial(row, originalIndex)}`}
+                                  className="w-full text-center py-2 px-1 text-slate-700 font-mono bg-transparent outline-none focus:bg-slate-50 text-xs cursor-default"
+                                />
+                              ) : (
+                                <ManualInputBox
+                                  value={row.reqNo || ''}
+                                  noDropdown={true}
+                                  onChange={(e) => handleCellChange(originalIndex, 'reqNo', e.target.value)}
+                                  onKeyDown={(e) => handleKeyDown(e, originalIndex, 'reqNo')}
+                                  data-row={originalIndex}
+                                  data-col="reqNo"
+                                  placeholder="No."
+                                  className="w-full text-center py-2 px-1 text-slate-700 font-mono bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs"
+                                />
+                              )}
+                            </div>
+                            <div className="h-full min-w-0 flex-1">
+                              <SearchableApqpDropdown
+                                value={row.reqName || ''}
+                                suggestions={requirementOptions}
+                                onAddNewSuggestion={(newReq) => {
+                                  apqpApi.addSuggestion(newReq).catch(console.warn);
+                                }}
+                                onChange={(event) => handleCellChange(originalIndex, 'reqName', event.target.value)}
+                                onKeyDown={(event) => handleKeyDown(event, originalIndex, 'reqName')}
+                                dataRow={originalIndex}
+                                dataCol="reqName"
+                              />
+                            </div>
                           </div>
                         </td>
 
-                        {/* 2. Phase Name — manual input */}
+                        {/* 4. Custom Event Name — Manual input (no search dropdown, resizable width) */}
                         <td
-                          className="p-0 relative"
+                          className="p-0"
                           style={{
-                            width: `${PHASE_NAME_COLUMN_WIDTH}px`,
-                            minWidth: `${PHASE_NAME_COLUMN_WIDTH}px`,
+                            width: `${colWidths.customerEvent}px`,
+                            minWidth: `${colWidths.customerEvent}px`,
                           }}
                         >
                           <ManualInputBox
-                            value={row.phaseName || ''}
-                            onChange={(event) => handleCellChange(originalIndex, 'phaseName', event.target.value)}
-                            onKeyDown={(event) => handleKeyDown(event, originalIndex, 'phaseName')}
+                            value={row.customerEvent || ''}
+                            noDropdown={true}
+                            onChange={(e) => handleCellChange(originalIndex, 'customerEvent', e.target.value)}
+                            onKeyDown={(e) => handleKeyDown(e, originalIndex, 'customerEvent')}
                             data-row={originalIndex}
-                            data-col="phaseName"
-                            placeholder="Phase Name..."
+                            data-col="customerEvent"
+                            placeholder="Event name..."
                             className="w-full py-2 px-2 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs"
                           />
                         </td>
-                      </>
-                    )}
 
-                    {/* 3. AIAG APQP Requirements — Requirement dropdown */}
-                    <td className="relative h-full min-w-[320px] p-0 align-top">
-                      <div
-                        aria-hidden="true"
-                        className="pointer-events-none absolute inset-y-0 left-12 z-[1] border-l border-[#64748B]"
-                      />
-                      <div className="flex h-full min-h-full min-w-0 items-stretch">
-                        <div className="h-full w-12 shrink-0">
-                          {isChildRow(row) ? (
-                            <ManualInputBox
-                              value={getRowSerial(row, originalIndex)}
-                              onKeyDown={(e) => handleKeyDown(e, originalIndex, 'reqNo')}
-                              data-row={originalIndex}
-                              data-col="reqNo"
-                              readOnly
-                              aria-label={`Child row number ${getRowSerial(row, originalIndex)}`}
-                              className="w-full text-center py-2 px-1 text-slate-700 font-mono bg-transparent outline-none focus:bg-slate-50 text-xs cursor-default"
-                            />
-                          ) : (
-                            <ManualInputBox
-                              value={row.reqNo || ''}
-                              onChange={(e) => handleCellChange(originalIndex, 'reqNo', e.target.value)}
-                              onKeyDown={(e) => handleKeyDown(e, originalIndex, 'reqNo')}
-                              data-row={originalIndex}
-                              data-col="reqNo"
-                              placeholder="No."
-                              className="w-full text-center py-2 px-1 text-slate-700 font-mono bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs"
-                            />
-                          )}
-                        </div>
-                        <div className="h-full min-w-0 flex-1">
-                          <select
-                            value={row.reqName || ''}
-                            onChange={(event) => handleCellChange(originalIndex, 'reqName', event.target.value)}
-                            onKeyDown={(event) => handleKeyDown(event, originalIndex, 'reqName')}
-                            data-row={originalIndex}
-                            data-col="reqName"
-                            aria-label="AIAG APQP Requirement"
-                            title={row.reqName || 'Select an AIAG APQP requirement'}
-                            className="w-full min-h-[34px] appearance-none py-2 px-2 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-inset focus:ring-blue-500 text-xs"
-                          >
-                            <option value="">Select requirement...</option>
-                            {requirementOptions.map((option) => (
-                              <option key={option} value={option}>{option}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                    </td>
-
-                    {/* 4. Custom Event Name — Manual input */}
-                    <td className="p-0">
-                      <ManualInputBox
-                        value={row.customerEvent || ''}
-                        onChange={(e) => handleCellChange(originalIndex, 'customerEvent', e.target.value)}
-                        onKeyDown={(e) => handleKeyDown(e, originalIndex, 'customerEvent')}
-                        data-row={originalIndex}
-                        data-col="customerEvent"
-                        placeholder="Event name..."
-                        className="w-full py-2 px-2 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs"
-                      />
-                    </td>
-
-                    {/* 5. Rank A — Interactive checkbox */}
-                    <td
-                      onClick={() => cycleRank(originalIndex, 'rankA')}
-                      className="py-1 px-1 text-center cursor-pointer hover:bg-amber-50/50 transition-colors select-none"
-                      title="Click: ■ Applicable / □ If Required / Clear"
-                    >
-                      <div className="flex items-center justify-center">
-                        {row.rankA === 'applicable' && (
-                          <div className="w-5 h-5 bg-black rounded-xs flex items-center justify-center"></div>
-                        )}
-                        {row.rankA === 'if_required' && (
-                          <div className="w-5 h-5 border-[2.5px] border-black bg-white rounded-xs flex items-center justify-center"></div>
-                        )}
-                        {!row.rankA && <span className="text-slate-300 text-xs">—</span>}
-                      </div>
-                    </td>
-
-                    {/* 6. Rank B — Interactive checkbox */}
-                    <td
-                      onClick={() => cycleRank(originalIndex, 'rankB')}
-                      className="py-1 px-1 text-center cursor-pointer hover:bg-amber-50/50 transition-colors select-none"
-                      title="Click: ■ Applicable / □ If Required / Clear"
-                    >
-                      <div className="flex items-center justify-center">
-                        {row.rankB === 'applicable' && (
-                          <div className="w-5 h-5 bg-black rounded-xs flex items-center justify-center"></div>
-                        )}
-                        {row.rankB === 'if_required' && (
-                          <div className="w-5 h-5 border-[2.5px] border-black bg-white rounded-xs flex items-center justify-center"></div>
-                        )}
-                        {!row.rankB && <span className="text-slate-300 text-xs">—</span>}
-                      </div>
-                    </td>
-
-                    {/* 7. Rank C1 & C2 — Interactive checkbox */}
-                    <td
-                      onClick={() => cycleRank(originalIndex, 'rankC')}
-                      className="py-1 px-1 text-center cursor-pointer hover:bg-amber-50/50 transition-colors select-none"
-                      title="Click: ■ Applicable / □ If Required / Clear"
-                    >
-                      <div className="flex items-center justify-center">
-                        {row.rankC === 'applicable' && (
-                          <div className="w-5 h-5 bg-black rounded-xs flex items-center justify-center"></div>
-                        )}
-                        {row.rankC === 'if_required' && (
-                          <div className="w-5 h-5 border-[2.5px] border-black bg-white rounded-xs flex items-center justify-center"></div>
-                        )}
-                        {!row.rankC && <span className="text-slate-300 text-xs">—</span>}
-                      </div>
-                    </td>
-
-                    {/* 8. Critical Activity — Yes/No dropdown with automatic symbol */}
-                    <td className="p-1 text-center">
-                      <CriticalActivityCell
-                        value={row.critical}
-                        onChange={(value) => handleCellChange(originalIndex, 'critical', value)}
-                      />
-                    </td>
-
-                    {/* 9. Activity (New) — Multiline manual input box with auto-resize */}
-                    <td className="p-0">
-                      <ManualInputBox
-                        value={row.activity || ''}
-                        onChange={(e) => handleCellChange(originalIndex, 'activity', e.target.value)}
-                        onKeyDown={(e) => handleKeyDown(e, originalIndex, 'activity')}
-                        data-row={originalIndex}
-                        data-col="activity"
-                        placeholder="Type activity description..."
-                        className="w-full py-2 px-2.5 text-slate-900 text-xs font-normal leading-relaxed bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500"
-                      />
-                    </td>
-
-                    {/* 10–18. Departments: F&A, HR, MKT, D&D, PE, PPC, PROD, SCM, Quality */}
-                    {DEPARTMENTS.map((dept) => {
-                      const val = row.departments?.[dept.key];
-                      const isHighlighted = row.highlight && row.highlight[dept.key];
-                      return (
+                        {/* 5. Rank A — Interactive checkbox */}
                         <td
-                          key={dept.key}
-                          onClick={() => cycleDept(originalIndex, dept.key)}
-                          className={`py-1.5 px-1 text-center cursor-pointer select-none transition-colors ${
-                            isHighlighted
-                              ? 'bg-[#FFFF00] hover:bg-[#FACC15]'
-                              : 'hover:bg-emerald-50/50'
-                          }`}
-                          title={`${dept.label}: Click to toggle ● Owner / ○ Support / Clear`}
+                          onClick={() => cycleRank(originalIndex, 'rankA')}
+                          className="py-1 px-1 text-center cursor-pointer hover:bg-amber-50/50 transition-colors select-none"
+                          title="Click: ■ Applicable / □ If Required / Clear"
                         >
-                          <span className="text-[26px] font-bold text-slate-900 leading-none inline-flex items-center justify-center">
-                            {val === 'owner' && <span className="w-4 h-4 rounded-full bg-slate-950 inline-block shadow-xs"></span>}
-                            {val === 'support' && <span className="w-4 h-4 rounded-full border-[2px] border-slate-950 bg-transparent inline-block"></span>}
-                            {!val && <span className="text-transparent">·</span>}
+                          <div className="flex items-center justify-center">
+                            {row.rankA === 'applicable' && (
+                              <div className="w-5 h-5 bg-black rounded-xs flex items-center justify-center"></div>
+                            )}
+                            {row.rankA === 'if_required' && (
+                              <div className="w-5 h-5 border-[2.5px] border-black bg-white rounded-xs flex items-center justify-center"></div>
+                            )}
+                            {!row.rankA && <span className="text-slate-300 text-xs">—</span>}
+                          </div>
+                        </td>
+
+                        {/* 6. Rank B — Interactive checkbox */}
+                        <td
+                          onClick={() => cycleRank(originalIndex, 'rankB')}
+                          className="py-1 px-1 text-center cursor-pointer hover:bg-amber-50/50 transition-colors select-none"
+                          title="Click: ■ Applicable / □ If Required / Clear"
+                        >
+                          <div className="flex items-center justify-center">
+                            {row.rankB === 'applicable' && (
+                              <div className="w-5 h-5 bg-black rounded-xs flex items-center justify-center"></div>
+                            )}
+                            {row.rankB === 'if_required' && (
+                              <div className="w-5 h-5 border-[2.5px] border-black bg-white rounded-xs flex items-center justify-center"></div>
+                            )}
+                            {!row.rankB && <span className="text-slate-300 text-xs">—</span>}
+                          </div>
+                        </td>
+
+                        {/* 7. Rank C1 & C2 — Interactive checkbox */}
+                        <td
+                          onClick={() => cycleRank(originalIndex, 'rankC')}
+                          className="py-1 px-1 text-center cursor-pointer hover:bg-amber-50/50 transition-colors select-none"
+                          title="Click: ■ Applicable / □ If Required / Clear"
+                        >
+                          <div className="flex items-center justify-center">
+                            {row.rankC === 'applicable' && (
+                              <div className="w-5 h-5 bg-black rounded-xs flex items-center justify-center"></div>
+                            )}
+                            {row.rankC === 'if_required' && (
+                              <div className="w-5 h-5 border-[2.5px] border-black bg-white rounded-xs flex items-center justify-center"></div>
+                            )}
+                            {!row.rankC && <span className="text-slate-300 text-xs">—</span>}
+                          </div>
+                        </td>
+
+                        {/* 8. Critical Activity — Yes/No dropdown with automatic symbol */}
+                        <td className="p-1 text-center">
+                          <CriticalActivityCell
+                            value={row.critical}
+                            onChange={(value) => handleCellChange(originalIndex, 'critical', value)}
+                          />
+                        </td>
+
+                        {/* 9. Activity (New) — Manual input (no search dropdown, resizable width) */}
+                        <td
+                          className="p-0"
+                          style={{
+                            width: `${colWidths.activity}px`,
+                            minWidth: `${colWidths.activity}px`,
+                          }}
+                        >
+                          <ManualInputBox
+                            value={row.activity || ''}
+                            noDropdown={true}
+                            onChange={(e) => handleCellChange(originalIndex, 'activity', e.target.value)}
+                            onKeyDown={(e) => handleKeyDown(e, originalIndex, 'activity')}
+                            data-row={originalIndex}
+                            data-col="activity"
+                            placeholder="Type activity description..."
+                            className="w-full py-2 px-2.5 text-slate-900 text-xs font-normal leading-relaxed bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500"
+                          />
+                        </td>
+
+                        {/* 10–18. Departments: F&A, HR, MKT, D&D, PE, PPC, PROD, SCM, Quality */}
+                        {DEPARTMENTS.map((dept) => {
+                          const val = row.departments?.[dept.key];
+                          const isHighlighted = row.highlight && row.highlight[dept.key];
+                          return (
+                            <td
+                              key={dept.key}
+                              onClick={() => cycleDept(originalIndex, dept.key)}
+                              className={`py-1.5 px-1 text-center cursor-pointer select-none transition-colors ${isHighlighted
+                                ? 'bg-[#FFFF00] hover:bg-[#FACC15]'
+                                : 'hover:bg-emerald-50/50'
+                                }`}
+                              title={`${dept.label}: Click to toggle ● Owner / ○ Support / Clear`}
+                            >
+                              <span className="text-[26px] font-bold text-slate-900 leading-none inline-flex items-center justify-center">
+                                {val === 'owner' && <span className="w-4 h-4 rounded-full bg-slate-950 inline-block shadow-xs"></span>}
+                                {val === 'support' && <span className="w-4 h-4 rounded-full border-[2px] border-slate-950 bg-transparent inline-block"></span>}
+                                {!val && <span className="text-transparent">·</span>}
+                              </span>
+                            </td>
+                          );
+                        })}
+
+                        {/* 19. Deliverable Required — Yes/No selector & manual format number without search dropdown */}
+                        <td
+                          className="p-0"
+                          style={{
+                            width: `${colWidths.deliverable}px`,
+                            minWidth: `${colWidths.deliverable}px`,
+                          }}
+                        >
+                          <div className="flex min-w-0 items-center gap-1 px-1">
+                            <select
+                              value={row.deliverableRequired || (row.deliverable ? 'Yes' : 'No')}
+                              onChange={(e) => handleCellChange(originalIndex, 'deliverableRequired', e.target.value)}
+                              aria-label="Deliverable required"
+                              className="w-[54px] shrink-0 rounded border border-[#64748B] bg-white px-1 py-1 text-center text-[11px] font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                            >
+                              <option value="Yes">Yes</option>
+                              <option value="No">No</option>
+                            </select>
+                            <ManualInputBox
+                              value={row.deliverable || ''}
+                              noDropdown={true}
+                              onChange={(e) => handleCellChange(originalIndex, 'deliverable', e.target.value)}
+                              onKeyDown={(e) => handleKeyDown(e, originalIndex, 'deliverable')}
+                              data-row={originalIndex}
+                              data-col="deliverable"
+                              placeholder="Format No."
+                              disabled={(row.deliverableRequired || (row.deliverable ? 'Yes' : 'No')) === 'No'}
+                              className={`min-w-0 flex-1 py-1.5 px-1.5 text-slate-800 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs truncate ${(row.deliverableRequired || (row.deliverable ? 'Yes' : 'No')) === 'No' ? 'cursor-not-allowed opacity-50' : ''}`}
+                            />
+                          </div>
+                        </td>
+
+                        {/* 20. Std. Duration in Hours — Watch popup modal trigger matching screenshot */}
+                        <td
+                          className="p-0 text-center cursor-pointer hover:bg-blue-50/50 transition-colors group/duration"
+                          onClick={() => setWatchModal({ isOpen: true, rowIndex: originalIndex, value: row.duration || '' })}
+                          title="Click to open Std. Duration Watch"
+                        >
+                          <div className="flex items-center justify-center gap-1.5 py-1.5 px-2">
+                            <Clock className="w-3.5 h-3.5 text-blue-500 group-hover/duration:text-blue-600 shrink-0" />
+                            <span className="font-mono text-xs font-semibold text-slate-800">
+                              {row.duration || '—'}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* 21. Start Date (Plan) */}
+                        <td className="p-0 text-center">
+                          <CalendarDateInput
+                            value={row.startDatePlan || ''}
+                            onChange={(e) => handleCellChange(originalIndex, 'startDatePlan', e.target.value)}
+                            onKeyDown={(e) => handleKeyDown(e, originalIndex, 'startDatePlan')}
+                            data-row={originalIndex}
+                            data-col="startDatePlan"
+                            placeholder="N/A"
+                            className="w-full text-center py-2 px-1 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs font-mono"
+                          />
+                        </td>
+
+                        {/* 22. Start Date (Actual) */}
+                        <td className="p-0 text-center">
+                          <CalendarDateInput
+                            value={row.startDateActual || ''}
+                            onChange={(e) => handleCellChange(originalIndex, 'startDateActual', e.target.value)}
+                            onKeyDown={(e) => handleKeyDown(e, originalIndex, 'startDateActual')}
+                            data-row={originalIndex}
+                            data-col="startDateActual"
+                            placeholder="N/A"
+                            className="w-full text-center py-2 px-1 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs font-mono"
+                          />
+                        </td>
+
+                        {/* 23. End Date (Plan) */}
+                        <td className="p-0 text-center">
+                          <CalendarDateInput
+                            value={row.endDatePlan || ''}
+                            onChange={(e) => handleCellChange(originalIndex, 'endDatePlan', e.target.value)}
+                            onKeyDown={(e) => handleKeyDown(e, originalIndex, 'endDatePlan')}
+                            data-row={originalIndex}
+                            data-col="endDatePlan"
+                            placeholder="N/A"
+                            className="w-full text-center py-2 px-1 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs font-mono"
+                          />
+                        </td>
+
+                        {/* 24. End Date (Actual) */}
+                        <td className="p-0 text-center">
+                          <CalendarDateInput
+                            value={row.endDateActual || ''}
+                            onChange={(e) => handleCellChange(originalIndex, 'endDateActual', e.target.value)}
+                            onKeyDown={(e) => handleKeyDown(e, originalIndex, 'endDateActual')}
+                            data-row={originalIndex}
+                            data-col="endDateActual"
+                            placeholder="N/A"
+                            className="w-full text-center py-2 px-1 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs font-mono"
+                          />
+                        </td>
+
+                        {/* 25. HIT/MISS — Compact width dropdown */}
+                        <td className="p-0.5 text-center relative w-16 min-w-[64px] max-w-[70px]">
+                          <div className="relative flex items-center justify-center">
+                            <select
+                              value={row.hitMiss || ''}
+                              onChange={(e) => handleCellChange(originalIndex, 'hitMiss', e.target.value)}
+                              className={`appearance-none w-full py-1 pr-3.5 pl-1 rounded text-center text-[11px] font-bold transition-all cursor-pointer outline-none ${row.hitMiss === 'HIT'
+                                ? 'bg-[#86EFAC] text-[#14532D] shadow-xs'
+                                : row.hitMiss === 'MISS'
+                                  ? 'bg-[#FCA5A5] text-[#7F1D1D] shadow-xs'
+                                  : 'bg-transparent text-slate-500 hover:bg-slate-100'
+                                }`}
+                            >
+                              <option value="" className="bg-white text-slate-700 font-normal">—</option>
+                              <option value="HIT" className="bg-[#86EFAC] text-[#14532D] font-bold">HIT</option>
+                              <option value="MISS" className="bg-[#FCA5A5] text-[#7F1D1D] font-bold">MISS</option>
+                            </select>
+                            <ChevronDown className="w-2.5 h-2.5 absolute right-0.5 pointer-events-none text-slate-500" />
+                          </div>
+                        </td>
+
+                        {/* 26. Revised Date (If MISS) */}
+                        <td className="p-0 text-center">
+                          <CalendarDateInput
+                            value={row.revisedDate || ''}
+                            onChange={(e) => handleCellChange(originalIndex, 'revisedDate', e.target.value)}
+                            onKeyDown={(e) => handleKeyDown(e, originalIndex, 'revisedDate')}
+                            data-row={originalIndex}
+                            data-col="revisedDate"
+                            placeholder="—"
+                            className="w-full text-center py-2 px-1 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs"
+                          />
+                        </td>
+
+                        {/* 27. No. of Times Revised */}
+                        <td className="p-0 text-center relative">
+                          <div className="relative flex items-center">
+                            <div className="min-w-0 flex-1">
+                              <ManualInputBox
+                                value={row.noOfTimesRevised || ''}
+                                onChange={(e) => handleCellChange(originalIndex, 'noOfTimesRevised', e.target.value)}
+                                onOptionSelect={(selectedVal) => {
+                                  if (isRevisedTaken(selectedVal)) {
+                                    setTimeout(() => {
+                                      const reasonEl = document.querySelector(
+                                        `[data-row="${originalIndex}"][data-col="reasonOfFailure"]`
+                                      );
+                                      reasonEl?.focus();
+                                    }, 50);
+                                  }
+                                }}
+                                onKeyDown={(e) => {
+                                  if (
+                                    e.key === 'Enter' &&
+                                    !e.shiftKey &&
+                                    isRevisedTaken(row.noOfTimesRevised) &&
+                                    !String(row.reasonOfFailure || '').trim()
+                                  ) {
+                                    e.preventDefault();
+                                    const reasonEl = document.querySelector(
+                                      `[data-row="${originalIndex}"][data-col="reasonOfFailure"]`
+                                    );
+                                    reasonEl?.focus();
+                                    return;
+                                  }
+                                  handleKeyDown(e, originalIndex, 'noOfTimesRevised');
+                                }}
+                                data-row={originalIndex}
+                                data-col="noOfTimesRevised"
+                                placeholder="0"
+                                className={`w-full text-center py-2 ${isRevisedTaken(row.noOfTimesRevised) ? 'pl-1 pr-5 font-semibold text-rose-800' : 'px-1 text-slate-700'} bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs`}
+                              />
+                            </div>
+                            {isRevisedTaken(row.noOfTimesRevised) && (
+                              <button
+                                type="button"
+                                onClick={() => clearRevision(originalIndex)}
+                                title="Remove No. of Times Revised"
+                                aria-label="Remove No. of Times Revised"
+                                className="absolute right-0.5 top-1/2 -translate-y-1/2 z-10 flex h-4 w-4 items-center justify-center rounded-full bg-rose-100 text-rose-700 hover:bg-rose-600 hover:text-white transition-colors cursor-pointer"
+                              >
+                                <X className="h-3 w-3 stroke-[2.5]" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* 28. Reason of Failure */}
+                        <td className="p-0">
+                          <ManualInputBox
+                            value={row.reasonOfFailure || ''}
+                            onChange={(e) => handleCellChange(originalIndex, 'reasonOfFailure', e.target.value)}
+                            onKeyDown={(e) => handleKeyDown(e, originalIndex, 'reasonOfFailure')}
+                            readOnly={!isRevisedTaken(row.noOfTimesRevised)}
+                            onDisabledClick={() => {
+                              if (showToast) {
+                                showToast('⚠️ Reason of Failure can only be selected when No. of Times Revised is taken');
+                              }
+                            }}
+                            data-row={originalIndex}
+                            data-col="reasonOfFailure"
+                            placeholder={
+                              isRevisedTaken(row.noOfTimesRevised)
+                                ? 'Enter Reason of Failure *'
+                                : 'Select No. of Times Revised first'
+                            }
+                            title={
+                              isRevisedTaken(row.noOfTimesRevised)
+                                ? 'Select or enter Reason of Failure'
+                                : 'Select No. of Times Revised first to enable Reason of Failure'
+                            }
+                            className={`w-full py-2 px-2 text-xs outline-none ${!isRevisedTaken(row.noOfTimesRevised)
+                              ? 'bg-slate-50/70 text-slate-400 cursor-not-allowed placeholder:text-slate-400'
+                              : !String(row.reasonOfFailure || '').trim()
+                                ? 'bg-rose-50/70 text-slate-800 ring-1 ring-inset ring-rose-400 placeholder:text-rose-600 placeholder:font-semibold focus:bg-amber-50 focus:ring-blue-500'
+                                : 'bg-transparent text-slate-700 focus:bg-amber-50 focus:ring-1 focus:ring-blue-500'
+                              }`}
+                          />
+                        </td>
+
+                        {/* 29. Action Taken Against Failure — Manual input (no search dropdown, resizable width) */}
+                        <td
+                          className="p-0"
+                          style={{
+                            width: `${colWidths.actionTaken}px`,
+                            minWidth: `${colWidths.actionTaken}px`,
+                          }}
+                        >
+                          <ManualInputBox
+                            value={row.actionTaken || ''}
+                            noDropdown={true}
+                            onChange={(e) => handleCellChange(originalIndex, 'actionTaken', e.target.value)}
+                            onKeyDown={(e) => handleKeyDown(e, originalIndex, 'actionTaken')}
+                            data-row={originalIndex}
+                            data-col="actionTaken"
+                            placeholder="Action taken..."
+                            className="w-full py-2 px-2 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs"
+                          />
+                        </td>
+
+                        {/* 30. Status (Open/Closed) — Compact width */}
+                        <td
+                          className="p-0.5 text-center relative"
+                          style={{
+                            width: `${STATUS_COLUMN_WIDTH}px`,
+                            minWidth: `${STATUS_COLUMN_WIDTH}px`,
+                          }}
+                        >
+                          <div className="relative flex items-center justify-center">
+                            <select
+                              value={row.addedFrom === 'filters' && !row.status ? '' : row.status || 'Open'}
+                              onChange={(e) => handleCellChange(originalIndex, 'status', e.target.value)}
+                              className={`appearance-none w-full py-1 pr-3.5 pl-1 rounded text-center text-[11px] font-semibold cursor-pointer outline-none transition-colors ${row.addedFrom === 'filters' && !row.status
+                                ? 'bg-transparent text-slate-500 border border-transparent'
+                                : row.status === 'Closed'
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : row.status === 'In Progress'
+                                    ? 'bg-yellow-50 text-yellow-800 border border-yellow-200'
+                                    : row.status === 'Delay'
+                                      ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                      : 'bg-blue-50 text-blue-800 border border-blue-300'
+                                }`}
+                            >
+                              {row.addedFrom === 'filters' && !row.status && <option value="">—</option>}
+                              <option value="Open">Open</option>
+                              <option value="In Progress" className="bg-yellow-50 text-yellow-800">In Progress</option>
+                              <option value="Closed">Closed</option>
+                              <option value="Delay" className="bg-rose-50 text-rose-700">Delay</option>
+                            </select>
+                            <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 pointer-events-none" />
+                          </div>
+                        </td>
+
+                        {/* 31. Remarks — Manual input (no search dropdown, resizable width) */}
+                        <td
+                          className="p-0"
+                          style={{
+                            width: `${colWidths.remarks}px`,
+                            minWidth: `${colWidths.remarks}px`,
+                          }}
+                        >
+                          <ManualInputBox
+                            value={row.remarks || ''}
+                            noDropdown={true}
+                            onChange={(e) => handleCellChange(originalIndex, 'remarks', e.target.value)}
+                            onKeyDown={(e) => handleKeyDown(e, originalIndex, 'remarks')}
+                            data-row={originalIndex}
+                            data-col="remarks"
+                            placeholder="Remarks..."
+                            className="w-full py-2 px-2 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs"
+                          />
+                        </td>
+
+                        {/* Actions: Visually separated at the end of the sheet */}
+                        <td
+                          className="relative overflow-visible py-1.5 px-2 text-center sticky right-0 bg-[#F1F5F9] border-l-4 border-slate-300 shadow-[-6px_0_12px_rgba(0,0,0,0.06)] z-10"
+                          style={{
+                            width: `${colWidths.actions}px`,
+                            minWidth: `${MIN_ACTION_COLUMN_WIDTH}px`,
+                          }}
+                        >
+                          <div className="inline-flex items-center justify-center gap-1 p-1 bg-white rounded-xl border border-slate-200/90 shadow-xs">
+                            <button
+                              onClick={() => addNewRow(originalIndex + 1, 'activity')}
+                              title="Insert row below"
+                              aria-label="Insert child row below"
+                              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-slate-600 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                            >
+                              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                            </button>
+                            <button
+                              onClick={() => duplicateRow(originalIndex)}
+                              title="Duplicate this row"
+                              aria-label="Duplicate row"
+                              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 transition-colors cursor-pointer"
+                            >
+                              <Copy className="w-3.5 h-3.5 stroke-[2]" />
+                            </button>
+                            <button
+                              onClick={() => deleteRow(originalIndex)}
+                              title="Delete this row"
+                              aria-label="Delete row"
+                              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 stroke-[2]" />
+                            </button>
+                            {isParentRow(row) && (
+                              <button
+                                onClick={() => toggleRowHidden(originalIndex)}
+                                title={`${childrenHidden ? 'Unhide' : 'Hide'} child rows for this parent`}
+                                aria-label={`${childrenHidden ? 'Unhide' : 'Hide'} child rows`}
+                                className="inline-flex h-6 shrink-0 items-center justify-center gap-0.5 whitespace-nowrap rounded px-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                              >
+                                {childrenHidden
+                                  ? <Eye className="h-3.5 w-3.5" />
+                                  : <EyeOff className="h-3.5 w-3.5" />}
+                              </button>
+                            )}
+                          </div>
+                          <span
+                            role="separator"
+                            aria-label={`Resize row ${idx + 1}`}
+                            aria-orientation="horizontal"
+                            aria-valuemin={MIN_ROW_HEIGHT}
+                            aria-valuenow={rowHeights[row.id] ?? DEFAULT_ROW_HEIGHT}
+                            tabIndex={0}
+                            title="Drag vertically to resize the entire row"
+                            onPointerDown={(event) => startRowResize(event, row.id)}
+                            onPointerMove={continueResize}
+                            onPointerUp={finishResize}
+                            onPointerCancel={finishResize}
+                            onLostPointerCapture={finishResize}
+                            onKeyDown={(event) => handleResizeKeyDown(event, 'row', row.id)}
+                            className="group absolute bottom-0 right-0 z-20 flex h-3 w-5 cursor-row-resize touch-none items-center justify-center focus:outline-none"
+                          >
+                            <span className="h-0.5 w-3 rounded-full bg-slate-300 transition-colors group-hover:bg-blue-500" />
                           </span>
                         </td>
-                      );
-                    })}
-
-                    {/* 19. Deliverable Required — Yes/No selector and manual format number */}
-                    <td className="p-0">
-                      <div className="flex min-w-0 items-center gap-1 px-1">
-                        <select
-                          value={row.deliverableRequired || (row.deliverable ? 'Yes' : 'No')}
-                          onChange={(e) => handleCellChange(originalIndex, 'deliverableRequired', e.target.value)}
-                          aria-label="Deliverable required"
-                          className="w-[58px] shrink-0 rounded border border-[#64748B] bg-white px-1 py-1.5 text-center text-[11px] font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                        >
-                          <option value="Yes">Yes</option>
-                          <option value="No">No</option>
-                        </select>
-                        <SearchableManualTextInput
-                          type="text"
-                          value={row.deliverable || ''}
-                          onChange={(e) => handleCellChange(originalIndex, 'deliverable', e.target.value)}
-                          onKeyDown={(e) => handleKeyDown(e, originalIndex, 'deliverable')}
-                          data-row={originalIndex}
-                          data-col="deliverable"
-                          dataCol="deliverable"
-                          placeholder="Format No."
-                          disabled={(row.deliverableRequired || (row.deliverable ? 'Yes' : 'No')) === 'No'}
-                          className={`min-w-0 flex-1 py-2 px-1.5 text-slate-800 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs truncate ${(row.deliverableRequired || (row.deliverable ? 'Yes' : 'No')) === 'No' ? 'cursor-not-allowed opacity-50' : ''}`}
-                        />
-                      </div>
-                    </td>
-
-                    {/* 20. Std. Duration in days — Manual input */}
-                    <td className="p-0 text-center">
-                      <ManualInputBox
-                        value={row.duration || ''}
-                        onChange={(e) => handleCellChange(originalIndex, 'duration', e.target.value)}
-                        onKeyDown={(e) => handleKeyDown(e, originalIndex, 'duration')}
-                        data-row={originalIndex}
-                        data-col="duration"
-                        placeholder="—"
-                        className="w-full text-center py-2 px-1 text-slate-800 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs"
-                      />
-                    </td>
-
-                    {/* 21. Start Date (Plan) */}
-                    <td className="p-0 text-center">
-                      <CalendarDateInput
-                        value={row.startDatePlan || ''}
-                        onChange={(e) => handleCellChange(originalIndex, 'startDatePlan', e.target.value)}
-                        onKeyDown={(e) => handleKeyDown(e, originalIndex, 'startDatePlan')}
-                        data-row={originalIndex}
-                        data-col="startDatePlan"
-                        placeholder="N/A"
-                        className="w-full text-center py-2 px-1 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs font-mono"
-                      />
-                    </td>
-
-                    {/* 22. Start Date (Actual) */}
-                    <td className="p-0 text-center">
-                      <CalendarDateInput
-                        value={row.startDateActual || ''}
-                        onChange={(e) => handleCellChange(originalIndex, 'startDateActual', e.target.value)}
-                        onKeyDown={(e) => handleKeyDown(e, originalIndex, 'startDateActual')}
-                        data-row={originalIndex}
-                        data-col="startDateActual"
-                        placeholder="N/A"
-                        className="w-full text-center py-2 px-1 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs font-mono"
-                      />
-                    </td>
-
-                    {/* 23. End Date (Plan) */}
-                    <td className="p-0 text-center">
-                      <CalendarDateInput
-                        value={row.endDatePlan || ''}
-                        onChange={(e) => handleCellChange(originalIndex, 'endDatePlan', e.target.value)}
-                        onKeyDown={(e) => handleKeyDown(e, originalIndex, 'endDatePlan')}
-                        data-row={originalIndex}
-                        data-col="endDatePlan"
-                        placeholder="N/A"
-                        className="w-full text-center py-2 px-1 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs font-mono"
-                      />
-                    </td>
-
-                    {/* 24. End Date (Actual) */}
-                    <td className="p-0 text-center">
-                      <CalendarDateInput
-                        value={row.endDateActual || ''}
-                        onChange={(e) => handleCellChange(originalIndex, 'endDateActual', e.target.value)}
-                        onKeyDown={(e) => handleKeyDown(e, originalIndex, 'endDateActual')}
-                        data-row={originalIndex}
-                        data-col="endDateActual"
-                        placeholder="N/A"
-                        className="w-full text-center py-2 px-1 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs font-mono"
-                      />
-                    </td>
-
-                    {/* 25. HIT/MISS — DROPDOWN with vibrant green for HIT and red for MISS */}
-                    <td className="p-1 text-center relative">
-                      <div className="relative flex items-center justify-center">
-                        <select
-                          value={row.hitMiss || ''}
-                          onChange={(e) => handleCellChange(originalIndex, 'hitMiss', e.target.value)}
-                          className={`appearance-none w-full py-1 pr-4 pl-1.5 rounded text-center text-xs font-bold transition-all cursor-pointer outline-none ${
-                            row.hitMiss === 'HIT'
-                              ? 'bg-[#86EFAC] text-[#14532D] shadow-xs'
-                              : row.hitMiss === 'MISS'
-                              ? 'bg-[#FCA5A5] text-[#7F1D1D] shadow-xs'
-                              : 'bg-transparent text-slate-500 hover:bg-slate-100'
-                          }`}
-                        >
-                          <option value="" className="bg-white text-slate-700 font-normal">—</option>
-                          <option value="HIT" className="bg-[#86EFAC] text-[#14532D] font-bold">HIT</option>
-                          <option value="MISS" className="bg-[#FCA5A5] text-[#7F1D1D] font-bold">MISS</option>
-                        </select>
-                        <ChevronDown className={`w-3 h-3 absolute right-1 pointer-events-none ${
-                          row.hitMiss === 'HIT' || row.hitMiss === 'MISS' ? 'text-white' : 'text-slate-400'
-                        }`} />
-                      </div>
-                    </td>
-
-                    {/* 26. Revised Date (If MISS) */}
-                    <td className="p-0 text-center">
-                      <CalendarDateInput
-                        value={row.revisedDate || ''}
-                        onChange={(e) => handleCellChange(originalIndex, 'revisedDate', e.target.value)}
-                        onKeyDown={(e) => handleKeyDown(e, originalIndex, 'revisedDate')}
-                        data-row={originalIndex}
-                        data-col="revisedDate"
-                        placeholder="—"
-                        className="w-full text-center py-2 px-1 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs"
-                      />
-                    </td>
-
-                    {/* 27. No. of Times Revised */}
-                    <td className="p-0 text-center">
-                      <ManualInputBox
-                        value={row.noOfTimesRevised || ''}
-                        onChange={(e) => handleCellChange(originalIndex, 'noOfTimesRevised', e.target.value)}
-                        onKeyDown={(e) => handleKeyDown(e, originalIndex, 'noOfTimesRevised')}
-                        data-row={originalIndex}
-                        data-col="noOfTimesRevised"
-                        placeholder="0"
-                        className="w-full text-center py-2 px-1 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs"
-                      />
-                    </td>
-
-                    {/* 28. Reason of Failure */}
-                    <td className="p-0">
-                      <ManualInputBox
-                        value={row.reasonOfFailure || ''}
-                        onChange={(e) => handleCellChange(originalIndex, 'reasonOfFailure', e.target.value)}
-                        onKeyDown={(e) => handleKeyDown(e, originalIndex, 'reasonOfFailure')}
-                        data-row={originalIndex}
-                        data-col="reasonOfFailure"
-                        placeholder="Reason..."
-                        className="w-full py-2 px-2 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs"
-                      />
-                    </td>
-
-                    {/* 29. Action Taken Against Failure */}
-                    <td className="p-0">
-                      <ManualInputBox
-                        value={row.actionTaken || ''}
-                        onChange={(e) => handleCellChange(originalIndex, 'actionTaken', e.target.value)}
-                        onKeyDown={(e) => handleKeyDown(e, originalIndex, 'actionTaken')}
-                        data-row={originalIndex}
-                        data-col="actionTaken"
-                        placeholder="Action taken..."
-                        className="w-full py-2 px-2 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs"
-                      />
-                    </td>
-
-                    {/* 30. Status (Open/Closed) — DROPDOWN with color badge and chevron */}
-                    <td
-                      className="p-1 text-center relative"
-                      style={{
-                        width: `${STATUS_COLUMN_WIDTH}px`,
-                        minWidth: `${STATUS_COLUMN_WIDTH}px`,
-                      }}
-                    >
-                      <div className="relative flex items-center justify-center">
-                        <select
-                          value={row.addedFrom === 'filters' && !row.status ? '' : row.status || 'Open'}
-                          onChange={(e) => handleCellChange(originalIndex, 'status', e.target.value)}
-                          className={`appearance-none w-full py-1 pr-4 pl-2 rounded text-center text-xs font-semibold cursor-pointer outline-none transition-colors ${
-                            row.addedFrom === 'filters' && !row.status
-                              ? 'bg-transparent text-slate-500 border border-transparent'
-                              : row.status === 'Closed'
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              : row.status === 'In Progress'
-                              ? 'bg-yellow-50 text-yellow-800 border border-yellow-200'
-                              : row.status === 'Delay'
-                              ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                              : 'bg-blue-50 text-blue-800 border border-blue-300'
-                          }`}
-                        >
-                          {row.addedFrom === 'filters' && !row.status && <option value="">—</option>}
-                          <option value="Open">Open</option>
-                          <option value="In Progress" className="bg-yellow-50 text-yellow-800">In Progress</option>
-                          <option value="Closed">Closed</option>
-                          <option value="Delay" className="bg-rose-50 text-rose-700">Delay</option>
-                        </select>
-                        <ChevronDown className="w-3 h-3 text-slate-400 absolute right-1 pointer-events-none" />
-                      </div>
-                    </td>
-
-                    {/* 31. Remarks */}
-                    <td className="p-0">
-                      <ManualInputBox
-                        value={row.remarks || ''}
-                        onChange={(e) => handleCellChange(originalIndex, 'remarks', e.target.value)}
-                        onKeyDown={(e) => handleKeyDown(e, originalIndex, 'remarks')}
-                        data-row={originalIndex}
-                        data-col="remarks"
-                        placeholder="Remarks..."
-                        className="w-full py-2 px-2 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs"
-                      />
-                    </td>
-
-                    {/* Actions: Insert below (+), Duplicate, Delete */}
-                    <td
-                      className={`relative overflow-visible py-1 px-1 text-center sticky right-0 ${isChildRow(row) ? 'bg-slate-50' : 'bg-white'} group-hover:bg-[#F8FAFC] z-10 shadow-[-2px_0_4px_rgba(0,0,0,0.06)]`}
-                      style={{
-                        width: `${actionColumnWidth}px`,
-                        minWidth: `${MIN_ACTION_COLUMN_WIDTH}px`,
-                      }}
-                    >
-                      <div className="flex w-full flex-nowrap items-center justify-center gap-1">
-                        <button
-                          onClick={() => addNewRow(originalIndex + 1, 'activity')}
-                          title="Insert row below"
-                          aria-label="Insert child row below"
-                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => duplicateRow(originalIndex)}
-                          title="Duplicate this row"
-                          aria-label="Duplicate row"
-                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => deleteRow(originalIndex)}
-                          title="Delete this row"
-                          aria-label="Delete row"
-                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                        {isParentRow(row) && (
-                          <button
-                            onClick={() => toggleRowHidden(originalIndex)}
-                            title={`${childrenHidden ? 'Unhide' : 'Hide'} child rows for this parent`}
-                            aria-label={`${childrenHidden ? 'Unhide' : 'Hide'} child rows`}
-                            className="inline-flex h-6 shrink-0 items-center justify-center gap-0.5 whitespace-nowrap rounded px-0.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                          >
-                            {childrenHidden
-                              ? <Eye className="h-3.5 w-3.5" />
-                              : <EyeOff className="h-3.5 w-3.5" />}
-                            {childrenHidden ? 'Unhide' : 'Hide'}
-                          </button>
-                        )}
-                      </div>
-                      <span
-                        role="separator"
-                        aria-label={`Resize row ${idx + 1}`}
-                        aria-orientation="horizontal"
-                        aria-valuemin={MIN_ROW_HEIGHT}
-                        aria-valuenow={rowHeights[row.id] ?? DEFAULT_ROW_HEIGHT}
-                        tabIndex={0}
-                        title="Drag vertically to resize the entire row"
-                        onPointerDown={(event) => startRowResize(event, row.id)}
-                        onPointerMove={continueResize}
-                        onPointerUp={finishResize}
-                        onPointerCancel={finishResize}
-                        onLostPointerCapture={finishResize}
-                        onKeyDown={(event) => handleResizeKeyDown(event, 'row', row.id)}
-                        className="group absolute bottom-0 right-0 z-20 flex h-3 w-5 cursor-row-resize touch-none items-center justify-center focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500"
-                      >
-                        <span className="h-0.5 w-3 rounded-full bg-slate-300 transition-colors group-hover:bg-blue-500" />
-                      </span>
-                    </td>
-                  </tr>
-                  </React.Fragment>
-                );
-              })
-            )}
-          </tbody>
-        </table>
+                      </tr>
+                    </React.Fragment>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </ManualInputOptionsContext.Provider>
       </div>
+
+      {/* Std Duration Watch Modal */}
+      <StdDurationWatchModal
+        isOpen={watchModal.isOpen}
+        initialValue={watchModal.value}
+        onClose={() => setWatchModal({ isOpen: false, rowIndex: null, value: '' })}
+        onSave={(newTime) => {
+          if (watchModal.rowIndex !== null) {
+            handleCellChange(watchModal.rowIndex, 'duration', newTime);
+          }
+        }}
+      />
 
       {/* Table Footer: Total Rows & Add Row button */}
       <div className="bg-[#FAFBFD] border-t border-[#64748B] p-2 px-4 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">

@@ -32,3 +32,15 @@
 [03 Nov, 2026 - 16:31:41:3141] [31merror[39m: [31mMSSQL long-running pool connection failed: Failed to connect to 127.0.0.1:1433 - Could not connect (sequence)[39m
 [04 Nov, 2026 - 11:23:59:2359] [31merror[39m: [31mMSSQL Connection Failed: Failed to connect to 127.0.0.1:1433 - Could not connect (sequence)[39m
 [04 Nov, 2026 - 11:23:59:2359] [31merror[39m: [31mMSSQL long-running pool connection failed: Failed to connect to 127.0.0.1:1433 - Could not connect (sequence)[39m
+[05 Nov, 2026 - 22:41:49:4149] [31merror[39m: [31mMSSQL Connection Failed: Failed to connect to 127.0.0.1:1433 - Could not connect (sequence)[39m
+[05 Nov, 2026 - 22:41:49:4149] [31merror[39m: [31mFailed to initialize custom_roles table:[39m
+[05 Nov, 2026 - 22:41:49:4149] [31merror[39m: [31mMSSQL long-running pool connection failed: Failed to connect to 127.0.0.1:1433 - Could not connect (sequence)[39m
+[05 Nov, 2026 - 22:41:58:4158] [31merror[39m: [31mMSSQL Connection Failed: Failed to connect to 127.0.0.1:1433 - Could not connect (sequence)[39m
+[05 Nov, 2026 - 22:41:58:4158] [31merror[39m: [31mFailed to initialize Requirement table:[39m
+[05 Nov, 2026 - 22:41:58:4158] [31merror[39m: [31mFailed to initialize SystemSettings table Cannot read properties of undefined (reading 'count')[39m
+[05 Nov, 2026 - 22:41:58:4158] [31merror[39m: [31mFailed to initialize custom_roles table:[39m
+[05 Nov, 2026 - 22:41:58:4158] [31merror[39m: [31mMSSQL long-running pool connection failed: Failed to connect to 127.0.0.1:1433 - Could not connect (sequence)[39m
+[05 Nov, 2026 - 22:41:58:4158] [31merror[39m: [31mFailed to initialize Requirement table:[39m
+[05 Nov, 2026 - 22:46:57:4657] [31merror[39m: [31mMSSQL Connection Failed: Failed to connect to 127.0.0.1:1433 - Could not connect (sequence)[39m
+[05 Nov, 2026 - 22:46:57:4657] [31merror[39m: [31mFailed to initialize custom_roles table:[39m
+[05 Nov, 2026 - 22:46:57:4657] [31merror[39m: [31mMSSQL long-running pool connection failed: Failed to connect to 127.0.0.1:1433 - Could not connect (sequence)[39m

@@ -888,15 +888,15 @@ export default function PDCASheet({
     [topic, authUser, effectiveUser, dbEmployees]
   );
   const isCreatorOrSameDept = Boolean(isCreator || isSameDepartmentAsSheet);
-  const isCreatorOrAdmin = Boolean(hasFullAccess || isAdmin || isCreator || isSameDepartmentAsSheet);
+  const isCreatorOrAdmin = Boolean(isAdmin || isCreator || isSameDepartmentAsSheet);
   const canEditEntireSheet = Boolean(!readOnly && isCreatorOrAdmin);
 
   // Granular capability flags
   const canCreateSheet = Boolean(!readOnly && (hasFullAccess || hasPermission('pdca:create') || hasPermission('pdca:create_sheet') || hasPermission('lpa:create')));
   const canDeleteSheet = Boolean(!readOnly && (hasFullAccess || hasPermission('pdca:delete') || hasPermission('pdca:delete_sheet') || hasPermission('lpa:delete')));
-  const canAddRow = Boolean(!readOnly && (hasFullAccess || isAdmin || isCreator || isSameDepartmentAsSheet || hasPermission('pdca:add_row') || hasPermission('pdca:add_rows') || hasPermission('lpa:pdca_add_row')));
+  const canAddRow = Boolean(!readOnly && (isAdmin || isCreator || isSameDepartmentAsSheet || hasPermission('pdca:add_row') || hasPermission('pdca:add_rows') || hasPermission('lpa:pdca_add_row')));
   const canDeleteRow = Boolean(!readOnly && (hasFullAccess || hasPermission('pdca:delete') || hasPermission('pdca:delete_row')));
-  const canConfirmDefault = Boolean(!readOnly && (isAdmin || hasFullAccess || isCreator || isSameDepartmentAsSheet));
+  const canConfirmDefault = Boolean(!readOnly && (isAdmin || isCreator || isSameDepartmentAsSheet));
   const canShowRowActions = Boolean(canEditEntireSheet || canAddRow || canDeleteRow);
   const cftAssignedMembers = topic?.assignedMembers || [];
   const defaultAssignedStr = cftAssignedMembers.length > 0
@@ -4129,7 +4129,7 @@ export default function PDCASheet({
   // Section A: Responsible Person Instruction, etc. Confirmation change handler
   const handleConfirmationChange = (rowIndex, value, userName = '') => {
     const targetRow = rows[rowIndex];
-    const canConfirmThisRow = Boolean(!readOnly && (isAdmin || hasFullAccess || isCreator || isSameDepartmentAsSheet));
+    const canConfirmThisRow = Boolean(!readOnly && (isAdmin || isCreator || isSameDepartmentAsSheet));
     if (!canConfirmThisRow) {
       if (typeof showToast === 'function') showToast('Only the sheet creator, employees of the same department & section, or Admin have access to select Confirmation.');
       return false;
@@ -4202,7 +4202,7 @@ export default function PDCASheet({
   // Instruction change handler for Responsible Person Instruction, etc. column
   const handleInstructionChange = (rowIndex, text) => {
     const targetRow = rows[rowIndex];
-    const canConfirmThisRow = Boolean(!readOnly && (isAdmin || hasFullAccess || isCreator || isSameDepartmentAsSheet));
+    const canConfirmThisRow = Boolean(!readOnly && (isAdmin || isCreator || isSameDepartmentAsSheet));
     if (!canConfirmThisRow) {
       if (typeof showToast === 'function') showToast('You do not have permission to change instruction.');
       return;

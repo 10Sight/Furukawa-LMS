@@ -64,7 +64,7 @@ export default function PDCASheetPage() {
       <PDCASheet
         key={selectedTopic?.id || id}
         topic={selectedTopic || (id ? { id, topic: 'PDCA Audit Sheet' } : null)}
-        isCreator={canEdit}
+        isCreator={isCreator}
         currentUser={userContext?.user}
         onBack={() => {
           window.parent?.postMessage?.({

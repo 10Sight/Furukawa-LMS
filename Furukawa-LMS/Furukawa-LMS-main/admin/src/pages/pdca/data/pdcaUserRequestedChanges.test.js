@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { EDITABLE_RESPONSIBLE_COLUMNS, isUserInResponsibleDepartment, canUserEditPDCARow, canEditRecord, isUserInSameDepartmentAsRecord, canAccessRecord, getUserPrimaryDepartment, PDCA_SHEET_TABLE_STATUSES, getPDCASheetStatusSummary, SAVE_MANDATORY_COLUMNS, CONFIRMATION_MANDATORY_COLUMNS, isRowStartedForSave, getMissingSaveMandatoryFields, getMissingConfirmationMandatoryFields } from './recordFilters.js';
+import { EDITABLE_RESPONSIBLE_COLUMNS, isUserInResponsibleDepartment, canUserEditPDCARow, canEditRecord, isUserInSameDepartmentAsRecord, canAccessRecord, getUserPrimaryDepartment, PDCA_SHEET_TABLE_STATUSES, getPDCASheetStatusSummary, SAVE_MANDATORY_COLUMNS, CONFIRMATION_MANDATORY_COLUMNS, isRowStartedForSave, getMissingSaveMandatoryFields, getMissingConfirmationMandatoryFields, canUserSelectConfirmation } from './recordFilters.js';
 import { normalizePDCAStatus, getDepartmentsForUnit, UNIT_DEPARTMENT_MAPPING } from './pdcaConstants.js';
 import { createEmptyPdcaRow } from '../../lpa/lpaPdcaUtils.js';
 
@@ -1200,4 +1200,119 @@ test('28. Image upload deletion access granted to all employees editing the shee
   assert.ok(pdcaSheetCode.includes("const canDeleteSheet = Boolean(!readOnly && (hasFullAccess || hasPermission('pdca:delete') || hasPermission('pdca:delete_sheet') || hasPermission('lpa:delete')));"), 'Sheet deletion remains protected');
   assert.ok(pdcaSheetCode.includes("const canDeleteRow = Boolean(!readOnly && (hasFullAccess || hasPermission('pdca:delete') || hasPermission('pdca:delete_row')));"), 'Row deletion remains protected');
   assert.ok(!pdcaSheetCode.includes("isCreatorOrSameDept || hasPermission('pdca:delete')"), 'canDeleteRow must not grant row deletion to non-admin creator or department employees');
+});
+
+test('29. Confirmation dropdown restricted strictly to Admin, Sheet Creator, and Same Department & Section Colleague', () => {
+  const adminUser = { id: 1, role: 'ADMIN', isAdmin: true };
+
+  const qaCreator = {
+    id: 'user-qa-10',
+    empId: 'BW051211',
+    name: 'Ramesh Sharma',
+    department: 'Quality',
+    section: 'Quality Assurance'
+  };
+
+  const sameDeptSameSecColleague = {
+    id: 'user-qa-11',
+    empId: 'BW051212',
+    name: 'Suresh Patel',
+    department: 'Quality',
+    section: 'Quality Assurance'
+  };
+
+  const sameDeptDiffSecColleague = {
+    id: 'user-qa-12',
+    empId: 'BW051213',
+    name: 'Vikas Gupta',
+    department: 'Quality',
+    section: 'Supplier Quality Assurance'
+  };
+
+  const diffDeptUser = {
+    id: 'user-maint-10',
+    empId: 'BW081290',
+    name: 'Rajesh Kumar',
+    department: 'Maintenance',
+    section: 'Electrical'
+  };
+
+  const pdcaSheet = {
+    id: 'PDCA-SHEET-TEST-99',
+    topic: 'QA Check Sheet',
+    department: 'Quality',
+    section: 'Quality Assurance',
+    createdBy: qaCreator,
+    createdById: qaCreator.id,
+    sheet: {
+      rows: [
+        {
+          date: '2026-11-02',
+          shift: 'A',
+          status: 'In- Progress',
+          unit: 'Bawal',
+          department: 'Maintenance',
+          staffName: 'Rajesh Kumar',
+          staffEmployee: 'Rajesh Kumar (BW081290)'
+        }
+      ]
+    }
+  };
+
+  const targetRow = {
+    date: '2026-11-02',
+    shift: 'A',
+    status: 'In- Progress',
+    unit: 'Bawal',
+    department: 'Quality',
+    lineArea: 'Line 1',
+    observation: 'Inspection check',
+    rootCause: 'Improper calibration',
+    actionTaken: 'Recalibrated sensor',
+    counterMeasure: 'Daily calibration check',
+    stdDurationMin: '00:15',
+    responseDate: '2026-11-05',
+    respUnit: 'Bawal',
+    respDept: 'Maintenance',
+    staffName: 'Rajesh Kumar',
+    staffEmployee: 'Rajesh Kumar (BW081290)'
+  };
+
+  pdcaSheet.sheet.rows = [targetRow];
+
+  // 1. Admin has access
+  assert.equal(canUserEditPDCARow(targetRow, adminUser, pdcaSheet, 'confirmation'), true, 'Admin can select confirmation');
+  const adminCheck = canUserSelectConfirmation(targetRow, pdcaSheet, adminUser);
+  assert.equal(adminCheck.allowed, true, 'Admin confirmation check allowed');
+
+  // 2. Sheet creator has access
+  assert.equal(canUserEditPDCARow(targetRow, qaCreator, pdcaSheet, 'confirmation'), true, 'Creator can select confirmation');
+  const creatorCheck = canUserSelectConfirmation(targetRow, pdcaSheet, qaCreator);
+  assert.equal(creatorCheck.allowed, true, 'Creator confirmation check allowed');
+
+  // 3. Same dept AND same sec colleague has access
+  assert.equal(canUserEditPDCARow(targetRow, sameDeptSameSecColleague, pdcaSheet, 'confirmation'), true, 'Same dept & section colleague can select confirmation');
+  const colleagueCheck = canUserSelectConfirmation(targetRow, pdcaSheet, sameDeptSameSecColleague);
+  assert.equal(colleagueCheck.allowed, true, 'Same dept & sec confirmation check allowed');
+
+  // 4. Same dept but DIFFERENT sec colleague does NOT have access
+  assert.equal(canUserEditPDCARow(targetRow, sameDeptDiffSecColleague, pdcaSheet, 'confirmation'), false, 'Different section colleague CANNOT select confirmation');
+  const diffSecCheck = canUserSelectConfirmation(targetRow, pdcaSheet, sameDeptDiffSecColleague);
+  assert.equal(diffSecCheck.allowed, false, 'Different section confirmation check blocked');
+
+  // 5. Different dept user (even though assigned as Responsible Person in row!) does NOT have confirmation access
+  assert.equal(canUserEditPDCARow(targetRow, diffDeptUser, pdcaSheet, 'confirmation'), false, 'Responsible person CANNOT select confirmation');
+  const respCheck = canUserSelectConfirmation(targetRow, pdcaSheet, diffDeptUser);
+  assert.equal(respCheck.allowed, false, 'Responsible person confirmation check blocked');
+
+  // 6. Responsible person can ONLY edit the 6 action columns
+  assert.equal(canUserEditPDCARow(targetRow, diffDeptUser, pdcaSheet, 'rootCause'), true, 'Responsible person can edit rootCause');
+  assert.equal(canUserEditPDCARow(targetRow, diffDeptUser, pdcaSheet, 'actionTaken'), true, 'Responsible person can edit actionTaken');
+  assert.equal(canUserEditPDCARow(targetRow, diffDeptUser, pdcaSheet, 'counterMeasure'), true, 'Responsible person can edit counterMeasure');
+  assert.equal(canUserEditPDCARow(targetRow, diffDeptUser, pdcaSheet, 'imageAfter'), true, 'Responsible person can edit imageAfter');
+  assert.equal(canUserEditPDCARow(targetRow, diffDeptUser, pdcaSheet, 'stdDurationMin'), true, 'Responsible person can edit stdDurationMin');
+  assert.equal(canUserEditPDCARow(targetRow, diffDeptUser, pdcaSheet, 'responseDate'), true, 'Responsible person can edit responseDate');
+  assert.equal(canUserEditPDCARow(targetRow, diffDeptUser, pdcaSheet, 'date'), false, 'Responsible person CANNOT edit date');
+  assert.equal(canUserEditPDCARow(targetRow, diffDeptUser, pdcaSheet, 'observation'), false, 'Responsible person CANNOT edit observation');
+  assert.equal(canUserEditPDCARow(targetRow, diffDeptUser, pdcaSheet, 'department'), false, 'Responsible person CANNOT edit department');
 });

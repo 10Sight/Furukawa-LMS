@@ -324,14 +324,8 @@ export function getRecordDepartments(record, employeeDatabase = VERIFIED_EMPLOYE
     addDept(dbDept);
   }
 
-  // Also extract departments from active rows if available
-  const rows = record.sheet?.rows || record.rows;
-  if (Array.isArray(rows)) {
-    for (const r of rows) {
-      if (r?.department) addDept(r.department);
-      if (r?.departments) addDept(r.departments);
-    }
-  }
+  // NOTE: We do NOT extract departments from record.sheet?.rows because those are
+  // responsible departments assigned to individual action rows, NOT the sheet creator's department!
 
   // Fallback to section or category ONLY if no department found
   if (depts.size === 0) {
@@ -342,16 +336,6 @@ export function getRecordDepartments(record, employeeDatabase = VERIFIED_EMPLOYE
     if (createdBy && typeof createdBy === 'object') {
       addDept(createdBy.section);
       addDept(createdBy.sectionName);
-    }
-  }
-
-  if (depts.size === 0) {
-    const idLower = String(record.id || record.recordId || '').toLowerCase();
-    const topicLower = String(record.topic || '').toLowerCase();
-    if (idLower.includes('pdca-lpa-assembly') || topicLower.includes('assembly')) {
-      depts.add('assembly');
-    } else if (idLower.includes('pdca-lpa-cc') || topicLower.includes('c&c')) {
-      depts.add('c&c');
     }
   }
 
@@ -588,36 +572,8 @@ export function areSectionsMatching(userSecs, recordSecs, userDepts = [], record
   if (userSecs.length === 0 || recordSecs.length === 0) {
     return false;
   }
-  // 1. Direct equality (e.g. 'assembly' === 'assembly', 'id:70' === 'id:70')
-  if (userSecs.some(us => recordSecs.includes(us))) {
-    return true;
-  }
-  // 2. Substring matching for section tokens
-  for (const us of userSecs) {
-    if (!us || us.startsWith('id:')) continue;
-    for (const rs of recordSecs) {
-      if (!rs || rs.startsWith('id:')) continue;
-      if (us === rs) return true;
-      if (us.length >= 3 && rs.length >= 3) {
-        if (us.includes(rs) || rs.includes(us)) return true;
-      }
-    }
-  }
-  // 3. Generic LPA Assembly section match (only when record has generic 'assembly' category)
-  const isGenericAssemblyRecord = recordSecs.some(rs => rs === 'assembly');
-  const isAssemblyUserSec = userSecs.some(us => us === 'assembly');
-  const isAssemblyUserDept = userDepts.includes('assembly');
-  if (isGenericAssemblyRecord && (isAssemblyUserSec || isAssemblyUserDept)) {
-    return true;
-  }
-  // 4. Generic LPA CC section match (only when record has generic 'cc' category)
-  const isGenericCcRecord = recordSecs.some(rs => rs === 'cc');
-  const isCcUserSec = userSecs.some(us => us === 'cc');
-  const isCcUserDept = userDepts.includes('c&c') || userDepts.includes('cc');
-  if (isGenericCcRecord && (isCcUserSec || isCcUserDept)) {
-    return true;
-  }
-  return false;
+  // Direct token match (exact clean section name, clean code, or section ID)
+  return userSecs.some(us => recordSecs.includes(us));
 }
 
 export function isUserInSameDepartmentAsRecord(record, currentUser, employeeDatabase = VERIFIED_EMPLOYEE_MASTER) {
@@ -634,23 +590,24 @@ export function isUserInSameDepartmentAsRecord(record, currentUser, employeeData
     return true;
   }
 
-  // 1. Department match: User and Record belong to the same department
-  const userDepts = getUserDepartments(currentUser, employeeDatabase);
-  const recordDepts = getRecordDepartments(record, employeeDatabase);
-  const isSameDept = userDepts.length > 0 && recordDepts.length > 0 && userDepts.some(ud => recordDepts.includes(ud));
-
-  // 2. Section match: User and Record belong to the same section
-  const userSecs = getUserSections(currentUser, employeeDatabase);
-  const recordSecs = getRecordSections(record, employeeDatabase);
-  const isSameSec = areSectionsMatching(userSecs, recordSecs, userDepts, recordDepts);
-
-  // RULE: Employees must be in BOTH the SAME Department AND the SAME Department Section!
-  // If the employee has the same department but different section, access is DENIED.
-  if (isSameDept && isSameSec) {
-    return true;
+  // A record without a known creator or explicit department/section has no creator department
+  const hasOwnershipOrDept = Boolean(
+    record.createdBy ||
+    record.createdById ||
+    record.sheet?.createdBy ||
+    record.sheet?.createdById ||
+    record.sheet?.headerInfo?.preparedBy ||
+    record.department ||
+    record.sheet?.department
+  );
+  if (!hasOwnershipOrDept) {
+    return false;
   }
 
-  // 3. Direct Colleague-to-Creator match: must also match BOTH same department AND same section
+  const userDepts = getUserDepartments(currentUser, employeeDatabase);
+  const userSecs = getUserSections(currentUser, employeeDatabase);
+
+  // 1. Direct Colleague-to-Creator match: check creator's department and section first
   const creator = record.createdBy || record.sheet?.createdBy;
   if (creator && typeof creator === 'object') {
     const creatorDepts = getUserDepartments(creator, employeeDatabase);
@@ -660,6 +617,20 @@ export function isUserInSameDepartmentAsRecord(record, currentUser, employeeData
     if (isCreatorSameDept && isCreatorSameSec) {
       return true;
     }
+  }
+
+  // 2. Department match: User and Record belong to the same department
+  const recordDepts = getRecordDepartments(record, employeeDatabase);
+  const isSameDept = userDepts.length > 0 && recordDepts.length > 0 && userDepts.some(ud => recordDepts.includes(ud));
+
+  // 3. Section match: User and Record belong to the same section
+  const recordSecs = getRecordSections(record, employeeDatabase);
+  const isSameSec = areSectionsMatching(userSecs, recordSecs, userDepts, recordDepts);
+
+  // RULE: Employees must be in BOTH the SAME Department AND the SAME Department Section!
+  // If the employee has the same department but different section, access is DENIED.
+  if (isSameDept && isSameSec) {
+    return true;
   }
 
   return false;

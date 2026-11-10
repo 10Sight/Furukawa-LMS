@@ -1355,7 +1355,7 @@ function LpaPageContent({ viewContext }) {
           onDateChange={setPdcaDate}
           currentUser={effectiveAuthUser}
           isAdmin={isAdmin}
-          isCreator={canEditPdcaSheet}
+          isCreator={isRecordCreator(pdcaTopic, effectiveAuthUser)}
           emailPdcaSheets={[{
             id: pdcaTopic.id,
             title: pdcaTopic.topic,

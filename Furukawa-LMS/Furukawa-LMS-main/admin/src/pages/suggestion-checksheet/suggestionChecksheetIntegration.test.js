@@ -490,3 +490,17 @@ test('32. Department Overview contains Target Line according to targets set from
   assert.ok(graphCode.includes('getTargetForDeptAndMonth'), 'Department target must be resolved from target store');
   assert.ok(graphCode.includes('target: deptTarget'), 'Each department entry in chartData must contain target');
 });
+
+test('33. Recharts Legend removed and KPI badges placed above chart area', () => {
+  const graphCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetGraph.jsx', import.meta.url), 'utf8');
+
+  // Verify Legend is removed from chart
+  assert.ok(!graphCode.includes('<Legend'), 'Recharts <Legend> must be removed from ComposedChart');
+
+  // Verify KPI Badges are placed in chart box
+  assert.ok(graphCode.includes('Quick KPI Badges placed here'), 'KPI badges must be placed in chart box');
+  assert.ok(graphCode.includes('Total: <strong>{summaryTotals.totalCreated}</strong>'), 'Total KPI badge must be rendered in chart area');
+  assert.ok(graphCode.includes('Accepted: <strong>{summaryTotals.accepted}</strong>'), 'Accepted KPI badge must be rendered in chart area');
+  assert.ok(graphCode.includes('Not-Feasible: <strong>{summaryTotals.notFeasible}</strong>'), 'Not-Feasible KPI badge must be rendered in chart area');
+  assert.ok(graphCode.includes('Implemented Count: <strong>{summaryTotals.implementedCount}</strong>'), 'Implemented Count KPI badge must be rendered in chart area');
+});

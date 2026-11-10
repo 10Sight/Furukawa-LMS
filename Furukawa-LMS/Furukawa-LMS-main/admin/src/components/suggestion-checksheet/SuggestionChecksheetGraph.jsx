@@ -8,7 +8,6 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ReferenceLine
 } from 'recharts';
 import {
@@ -417,7 +416,7 @@ export default function SuggestionChecksheetGraph({
 
   return (
     <div className="w-full bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 flex flex-col gap-4">
-      {/* 1. Header & Quick Summary Badges */}
+      {/* 1. Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3.5">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-md shadow-blue-500/20">
@@ -434,32 +433,6 @@ export default function SuggestionChecksheetGraph({
               Monthly Cumulative tracking + 4-bar series & target lines
             </p>
           </div>
-        </div>
-
-        {/* Quick KPI Badges */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="px-3 py-1.5 rounded-xl bg-blue-50/80 border border-blue-200/80 text-blue-800 flex items-center gap-1.5 text-xs font-semibold">
-            <Layers className="w-3.5 h-3.5 text-blue-600" />
-            <span>Total: <strong>{summaryTotals.totalCreated}</strong></span>
-          </div>
-          <div className="px-3 py-1.5 rounded-xl bg-emerald-50/80 border border-emerald-200/80 text-emerald-800 flex items-center gap-1.5 text-xs font-semibold">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Accepted: <strong>{summaryTotals.accepted}</strong></span>
-          </div>
-          <div className="px-3 py-1.5 rounded-xl bg-rose-50/80 border border-rose-200/80 text-rose-800 flex items-center gap-1.5 text-xs font-semibold">
-            <XCircle className="w-3.5 h-3.5 text-rose-600" />
-            <span>Not-Feasible: <strong>{summaryTotals.notFeasible}</strong></span>
-          </div>
-          <div className="px-3 py-1.5 rounded-xl bg-purple-50/80 border border-purple-200/80 text-purple-800 flex items-center gap-1.5 text-xs font-semibold">
-            <Clock className="w-3.5 h-3.5 text-purple-600" />
-            <span>Implemented Count: <strong>{summaryTotals.implementedCount}</strong></span>
-          </div>
-          {targetLineValue > 0 && (
-            <div className="px-3 py-1.5 rounded-xl bg-orange-50/80 border border-orange-200/80 text-orange-800 flex items-center gap-1.5 text-xs font-semibold">
-              <Target className="w-3.5 h-3.5 text-orange-600" />
-              <span>Target: <strong>{targetLineValue}</strong></span>
-            </div>
-          )}
         </div>
       </div>
 
@@ -653,7 +626,7 @@ export default function SuggestionChecksheetGraph({
 
         {/* Right Side: Recharts Bar Chart */}
         <div className="flex-1 min-w-0 bg-white rounded-2xl border border-slate-200 p-3 pt-2 flex flex-col justify-between shadow-2xs">
-          <div className="flex items-center justify-between text-xs px-1 pb-1 text-slate-500 font-medium">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs px-1 pb-1 text-slate-500 font-medium">
             <span>
               {graphTab === 'DEPARTMENT'
                 ? 'Department Overview (Total, Accepted, Not-Feasible, Implemented per Dept)'
@@ -664,12 +637,38 @@ export default function SuggestionChecksheetGraph({
             </span>
           </div>
 
+          {/* Quick KPI Badges placed here (replacing former Legend in chart) */}
+          <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2 px-1 pt-1 pb-2">
+            <div className="px-2.5 py-1 rounded-lg bg-blue-50/80 border border-blue-200/80 text-blue-800 flex items-center gap-1.5 text-xs font-semibold">
+              <Layers className="w-3.5 h-3.5 text-blue-600" />
+              <span>Total: <strong>{summaryTotals.totalCreated}</strong></span>
+            </div>
+            <div className="px-2.5 py-1 rounded-lg bg-emerald-50/80 border border-emerald-200/80 text-emerald-800 flex items-center gap-1.5 text-xs font-semibold">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Accepted: <strong>{summaryTotals.accepted}</strong></span>
+            </div>
+            <div className="px-2.5 py-1 rounded-lg bg-rose-50/80 border border-rose-200/80 text-rose-800 flex items-center gap-1.5 text-xs font-semibold">
+              <XCircle className="w-3.5 h-3.5 text-rose-600" />
+              <span>Not-Feasible: <strong>{summaryTotals.notFeasible}</strong></span>
+            </div>
+            <div className="px-2.5 py-1 rounded-lg bg-purple-50/80 border border-purple-200/80 text-purple-800 flex items-center gap-1.5 text-xs font-semibold">
+              <Clock className="w-3.5 h-3.5 text-purple-600" />
+              <span>Implemented Count: <strong>{summaryTotals.implementedCount}</strong></span>
+            </div>
+            {targetLineValue > 0 && (
+              <div className="px-2.5 py-1 rounded-lg bg-orange-50/80 border border-orange-200/80 text-orange-800 flex items-center gap-1.5 text-xs font-semibold">
+                <Target className="w-3.5 h-3.5 text-orange-600" />
+                <span>Target: <strong>{targetLineValue}</strong></span>
+              </div>
+            )}
+          </div>
+
           <div className="w-full h-[330px]">
             {chartData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart
                   data={chartData}
-                  margin={{ top: 20, right: 25, left: -15, bottom: graphTab === 'DEPARTMENT' ? 25 : 10 }}
+                  margin={{ top: 10, right: 25, left: -15, bottom: graphTab === 'DEPARTMENT' ? 25 : 10 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
                   <XAxis
@@ -688,16 +687,6 @@ export default function SuggestionChecksheetGraph({
                     axisLine={{ stroke: '#CBD5E1' }}
                   />
                   <Tooltip content={<CustomTooltip />} />
-                  <Legend
-                    verticalAlign="top"
-                    align="right"
-                    height={36}
-                    wrapperStyle={{
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      paddingBottom: '12px'
-                    }}
-                  />
                   {/* 1. Total sheet created Bar */}
                   <Bar
                     dataKey="totalCreated"

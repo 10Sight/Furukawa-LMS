@@ -73,10 +73,10 @@ const renderCustomBarLabel = (props) => {
   return (
     <text
       x={x + width / 2}
-      y={y - 5}
+      y={y - 6}
       fill="#0F172A"
       textAnchor="middle"
-      fontSize={12}
+      fontSize={14}
       fontWeight={800}
     >
       {value}
@@ -484,6 +484,15 @@ export default function SuggestionChecksheetGraph({
     );
   }, [cumulativeMonthData]);
 
+  // Calculate minimum chart width for horizontal scrollable bar candles container
+  const minChartWidth = useMemo(() => {
+    const itemCount = chartData.length;
+    if (graphTab === 'DEPARTMENT') {
+      return Math.max(1280, itemCount * 120);
+    }
+    return Math.max(1050, itemCount * 95);
+  }, [chartData.length, graphTab]);
+
   const handleToggleOverall = () => {
     const next = graphView === 'OVERALL' ? 'TIMELINE' : 'OVERALL';
     setGraphView(next);
@@ -748,85 +757,91 @@ export default function SuggestionChecksheetGraph({
           </div>
         </div>
 
-        <div className="w-full h-[390px]">
+        {/* Scrollable Bar Candles Container (only chart scrolls, page does not scroll) */}
+        <div
+          className="w-full h-[400px] overflow-x-auto overflow-y-hidden pb-1"
+          style={{ scrollbarWidth: 'thin', scrollbarColor: '#94A3B8 #F1F5F9' }}
+        >
           {chartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart
-                data={chartData}
-                barGap={0}
-                barCategoryGap={graphTab === 'DEPARTMENT' ? '8%' : '14%'}
-                margin={{ top: 22, right: 25, left: -10, bottom: graphTab === 'DEPARTMENT' ? 16 : 14 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
-                <XAxis
-                  dataKey="displayLabel"
-                  tick={{ fill: '#0F172A', fontSize: graphTab === 'DEPARTMENT' ? 11 : 13, fontWeight: 700 }}
-                  tickLine={false}
-                  axisLine={{ stroke: '#CBD5E1' }}
-                  interval={0}
-                  angle={0}
-                  textAnchor="middle"
-                  height={graphTab === 'DEPARTMENT' ? 32 : 28}
-                />
-                <YAxis
-                  allowDecimals={false}
-                  tick={{ fill: '#64748B', fontSize: 11, fontWeight: 600 }}
-                  tickLine={false}
-                  axisLine={{ stroke: '#CBD5E1' }}
-                />
-                <Tooltip content={<CustomTooltip />} />
-                {/* 1. Target Bar Candle */}
-                <Bar
-                  dataKey="target"
-                  name="Target"
-                  fill="#F97316"
-                  radius={[3, 3, 0, 0]}
-                  maxBarSize={graphTab === 'DEPARTMENT' ? 44 : 32}
+            <div style={{ minWidth: `${minChartWidth}px`, width: '100%', height: '100%' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart
+                  data={chartData}
+                  barGap={0}
+                  barCategoryGap={graphTab === 'DEPARTMENT' ? '12%' : '14%'}
+                  margin={{ top: 24, right: 30, left: -10, bottom: 20 }}
                 >
-                  <LabelList content={renderCustomBarLabel} />
-                </Bar>
-                {/* 2. Total Bar */}
-                <Bar
-                  dataKey="totalCreated"
-                  name="Total"
-                  fill="#3B82F6"
-                  radius={[3, 3, 0, 0]}
-                  maxBarSize={graphTab === 'DEPARTMENT' ? 44 : 32}
-                >
-                  <LabelList content={renderCustomBarLabel} />
-                </Bar>
-                {/* 3. Accept Bar */}
-                <Bar
-                  dataKey="accepted"
-                  name="Accept"
-                  fill="#10B981"
-                  radius={[3, 3, 0, 0]}
-                  maxBarSize={graphTab === 'DEPARTMENT' ? 44 : 32}
-                >
-                  <LabelList content={renderCustomBarLabel} />
-                </Bar>
-                {/* 4. Not- Feasible Bar */}
-                <Bar
-                  dataKey="notFeasible"
-                  name="Not- Feasible"
-                  fill="#EF4444"
-                  radius={[3, 3, 0, 0]}
-                  maxBarSize={graphTab === 'DEPARTMENT' ? 44 : 32}
-                >
-                  <LabelList content={renderCustomBarLabel} />
-                </Bar>
-                {/* 5. Implemented Bar */}
-                <Bar
-                  dataKey="implementedCount"
-                  name="Implemented"
-                  fill="#8B5CF6"
-                  radius={[3, 3, 0, 0]}
-                  maxBarSize={graphTab === 'DEPARTMENT' ? 44 : 32}
-                >
-                  <LabelList content={renderCustomBarLabel} />
-                </Bar>
-              </ComposedChart>
-            </ResponsiveContainer>
+                  <CartesianGrid strokeDasharray="3 3" vertical={true} horizontal={true} stroke="#CBD5E1" />
+                  <XAxis
+                    dataKey="displayLabel"
+                    tick={{ fill: '#0F172A', fontSize: 14, fontWeight: 800 }}
+                    tickLine={false}
+                    axisLine={{ stroke: '#CBD5E1' }}
+                    interval={0}
+                    angle={0}
+                    textAnchor="middle"
+                    height={36}
+                  />
+                  <YAxis
+                    allowDecimals={false}
+                    tick={{ fill: '#64748B', fontSize: 12, fontWeight: 700 }}
+                    tickLine={false}
+                    axisLine={{ stroke: '#CBD5E1' }}
+                  />
+                  <Tooltip content={<CustomTooltip />} />
+                  {/* 1. Target Bar Candle */}
+                  <Bar
+                    dataKey="target"
+                    name="Target"
+                    fill="#F97316"
+                    radius={[3, 3, 0, 0]}
+                    maxBarSize={52}
+                  >
+                    <LabelList content={renderCustomBarLabel} />
+                  </Bar>
+                  {/* 2. Total Bar */}
+                  <Bar
+                    dataKey="totalCreated"
+                    name="Total"
+                    fill="#3B82F6"
+                    radius={[3, 3, 0, 0]}
+                    maxBarSize={52}
+                  >
+                    <LabelList content={renderCustomBarLabel} />
+                  </Bar>
+                  {/* 3. Accept Bar */}
+                  <Bar
+                    dataKey="accepted"
+                    name="Accept"
+                    fill="#10B981"
+                    radius={[3, 3, 0, 0]}
+                    maxBarSize={52}
+                  >
+                    <LabelList content={renderCustomBarLabel} />
+                  </Bar>
+                  {/* 4. Not- Feasible Bar */}
+                  <Bar
+                    dataKey="notFeasible"
+                    name="Not- Feasible"
+                    fill="#EF4444"
+                    radius={[3, 3, 0, 0]}
+                    maxBarSize={52}
+                  >
+                    <LabelList content={renderCustomBarLabel} />
+                  </Bar>
+                  {/* 5. Implemented Bar */}
+                  <Bar
+                    dataKey="implementedCount"
+                    name="Implemented"
+                    fill="#8B5CF6"
+                    radius={[3, 3, 0, 0]}
+                    maxBarSize={52}
+                  >
+                    <LabelList content={renderCustomBarLabel} />
+                  </Bar>
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
           ) : (
             <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50/50 rounded-xl border border-dashed border-slate-200 text-slate-400 gap-2">
               <TrendingUp className="w-8 h-8 opacity-40 text-slate-400" />

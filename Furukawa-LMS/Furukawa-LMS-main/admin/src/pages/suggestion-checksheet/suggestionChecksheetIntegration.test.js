@@ -538,8 +538,8 @@ test('35. Unselected month hides target in graph and X-axis text size is increas
   assert.ok(targetCode.includes('if (!v2[yStr][mStr] || v2[yStr][mStr].unselected || v2[yStr][mStr][dept] === 0)'), 'getTargetForDeptAndMonth must return 0 for unselected months');
 
   // Bold X-Axis text
-  assert.ok(graphCode.includes('fontWeight: 700'), 'X-Axis text must be bold');
-  assert.ok(graphCode.includes('fontSize: graphTab === \'DEPARTMENT\' ? 11 : 13'), 'X-Axis font size must be defined appropriately');
+  assert.ok(graphCode.includes('fontWeight: 800') || graphCode.includes('fontWeight: 700'), 'X-Axis text must be bold');
+  assert.ok(graphCode.includes('fontSize: 14') || graphCode.includes('fontSize: 13'), 'X-Axis font size must be defined appropriately');
 });
 
 test('36. Serial order (Target, Total, Accept, Not- Feasible, Implemented), barGap=0, no blank months, and horizontal department text', () => {
@@ -567,4 +567,23 @@ test('36. Serial order (Target, Total, Accept, Not- Feasible, Implemented), barG
   // 4. Horizontal text for department labels: angle={0} and textAnchor="middle"
   assert.ok(graphCode.includes('angle={0}'), 'XAxis angle must be 0 for horizontal text');
   assert.ok(graphCode.includes('textAnchor="middle"'), 'XAxis textAnchor must be middle');
+});
+
+test('37. Horizontal scroll on bar candles only (no page scroll), wider bar candles, date boundaries (vertical grid), and increased X-axis/label font size', () => {
+  const graphCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetGraph.jsx', import.meta.url), 'utf8');
+
+  // 1. Only chart bar candles scroll horizontally, page does not scroll
+  assert.ok(graphCode.includes('overflow-x-auto overflow-y-hidden'), 'Chart wrapper must have horizontal scroll only');
+  assert.ok(graphCode.includes('minChartWidth'), 'Chart inner width must use minChartWidth for generous candle spacing');
+
+  // 2. Date boundaries via vertical CartesianGrid lines
+  assert.ok(graphCode.includes('vertical={true}'), 'CartesianGrid must have vertical={true} for date boundaries');
+  assert.ok(graphCode.includes('horizontal={true}'), 'CartesianGrid must have horizontal={true}');
+
+  // 3. Increased font size for X-Axis text (marked green) and bar numbers
+  assert.ok(graphCode.includes('fontSize: 14'), 'X-Axis department labels must have increased font size 14');
+  assert.ok(graphCode.includes('fontSize={14}'), 'Bar candle labels must have font size 14');
+
+  // 4. Wider bar candles
+  assert.ok(graphCode.includes('maxBarSize={52}'), 'Candle width must be increased up to 52px');
 });

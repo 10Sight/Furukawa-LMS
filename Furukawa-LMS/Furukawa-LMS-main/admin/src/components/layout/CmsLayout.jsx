@@ -292,7 +292,7 @@ export function CmsLayout() {
 
             {/* Main Content */}
             <div
-                className={`flex-1 transition-all duration-300 ${isFormView ? "ml-0" : collapsed ? "ml-16" : "ml-64"
+                className={`flex-1 min-w-0 transition-all duration-300 ${isFormView ? "ml-0" : collapsed ? "ml-16" : "ml-64"
                     }`}
             >
                 {!isFormView && <header
@@ -330,8 +330,8 @@ export function CmsLayout() {
                     </div>
                 </header>}
 
-                <div className={isFormView ? "h-dvh overflow-hidden" : "pt-20 pb-6 px-2 sm:px-4 min-h-screen"}>
-                    <div className={isFormView ? "h-full" : `${theme.card} backdrop-blur-sm rounded-xl shadow-sm border ${theme.border} p-2 sm:p-4`}>
+                <div className={isFormView ? "h-dvh overflow-hidden" : "pt-20 pb-6 px-2 sm:px-4 min-h-screen min-w-0 overflow-x-hidden"}>
+                    <div className={isFormView ? "h-full" : `${theme.card} backdrop-blur-sm rounded-xl shadow-sm border ${theme.border} p-2 sm:p-4 min-w-0 max-w-full overflow-hidden`}>
                         <Suspense fallback={
                             <div className="flex items-center justify-center py-20 min-h-[400px]">
                                 <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>

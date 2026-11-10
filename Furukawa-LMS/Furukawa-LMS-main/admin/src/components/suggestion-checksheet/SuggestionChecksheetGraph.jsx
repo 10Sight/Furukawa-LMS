@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useSelector } from 'react-redux';
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -73,10 +74,10 @@ const renderCustomBarLabel = (props) => {
   return (
     <text
       x={x + width / 2}
-      y={y - 6}
+      y={y - 5}
       fill="#0F172A"
       textAnchor="middle"
-      fontSize={14}
+      fontSize={12}
       fontWeight={800}
     >
       {value}
@@ -88,8 +89,19 @@ export default function SuggestionChecksheetGraph({
   records = [],
   selectedUnit = 'Bawal',
   onSelectUnit,
-  departmentList = TARGET_DEPARTMENTS
+  departmentList = TARGET_DEPARTMENTS,
+  isAdmin: controlledIsAdmin
 }) {
+  const authUser = useSelector((state) => state.auth?.user);
+  const isAdmin = controlledIsAdmin !== undefined ? controlledIsAdmin : Boolean(
+    authUser?.isAdmin ||
+    authUser?.role === 'ADMIN' ||
+    authUser?.role === 'SUPERADMIN' ||
+    authUser?.isSuperAdmin ||
+    authUser?.customRole?.permissions?.includes('admin') ||
+    authUser?.customRoleName?.toLowerCase()?.includes('admin')
+  );
+
   const currentYear = new Date().getFullYear() || 2026;
   const currentMonthNum = (new Date().getMonth() + 1) || 11;
 
@@ -484,15 +496,6 @@ export default function SuggestionChecksheetGraph({
     );
   }, [cumulativeMonthData]);
 
-  // Calculate minimum chart width for horizontal scrollable bar candles container
-  const minChartWidth = useMemo(() => {
-    const itemCount = chartData.length;
-    if (graphTab === 'DEPARTMENT') {
-      return Math.max(1280, itemCount * 120);
-    }
-    return Math.max(1050, itemCount * 95);
-  }, [chartData.length, graphTab]);
-
   const handleToggleOverall = () => {
     const next = graphView === 'OVERALL' ? 'TIMELINE' : 'OVERALL';
     setGraphView(next);
@@ -562,6 +565,21 @@ export default function SuggestionChecksheetGraph({
     const set = new Set([...TARGET_DEPARTMENTS, ...(departmentList || [])]);
     return Array.from(set).sort();
   }, [departmentList]);
+
+  // Custom vertical coordinates generator for CartesianGrid so boundary lines are drawn
+  // BETWEEN departments, rather than cutting through the center of department names/candles.
+  const customVerticalCoordinates = ({ xAxis, offset }) => {
+    if (!xAxis || !xAxis.ticks || xAxis.ticks.length === 0) return [];
+    const ticks = xAxis.ticks.map((t) => t.coordinate);
+    if (ticks.length <= 1) return [offset.left, offset.left + offset.width];
+    const halfStep = (ticks[1] - ticks[0]) / 2;
+    const boundaries = [Math.max(offset.left, ticks[0] - halfStep)];
+    for (let i = 0; i < ticks.length - 1; i++) {
+      boundaries.push((ticks[i] + ticks[i + 1]) / 2);
+    }
+    boundaries.push(Math.min(offset.left + offset.width, ticks[ticks.length - 1] + halfStep));
+    return boundaries;
+  };
 
   return (
     <div className="w-full bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 flex flex-col gap-4">
@@ -705,25 +723,27 @@ export default function SuggestionChecksheetGraph({
           )}
         </div>
 
-        {/* Target Line Popup Trigger Button */}
-        <button
-          type="button"
-          onClick={() => setIsTargetModalOpen(true)}
-          className="px-3.5 py-1.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm shadow-orange-500/20 transition-all cursor-pointer"
-          title="Open Target Line Selection Popup (Year & Months)"
-        >
-          <Target className="w-4 h-4 shrink-0" />
-          <span>Target Line</span>
-          {targetLineValue > 0 && (
-            <span className="ml-1 px-1.5 py-0.2 rounded-full bg-white/25 text-[10px] font-extrabold">
-              {targetLineValue}
-            </span>
-          )}
-        </button>
+        {/* Target Line Popup Trigger Button (Admin only can view and set targets) */}
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => setIsTargetModalOpen(true)}
+            className="px-3.5 py-1.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm shadow-orange-500/20 transition-all cursor-pointer"
+            title="Open Target Line Selection Popup (Admin Only)"
+          >
+            <Target className="w-4 h-4 shrink-0" />
+            <span>Target Line</span>
+            {targetLineValue > 0 && (
+              <span className="ml-1 px-1.5 py-0.2 rounded-full bg-white/25 text-[10px] font-extrabold">
+                {targetLineValue}
+              </span>
+            )}
+          </button>
+        )}
       </div>
 
       {/* 3. Main Content: Bar Chart (Full Width, Centered Fixed KPI Badges, 5 Bar Candles) */}
-      <div className="w-full bg-white rounded-2xl border border-slate-200 p-3.5 pt-2.5 flex flex-col justify-between shadow-2xs">
+      <div className="w-full bg-white rounded-2xl border border-slate-200 p-3.5 pt-2.5 flex flex-col justify-between shadow-2xs overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs px-1 pb-1 text-slate-500 font-medium">
           <span>
             {graphTab === 'DEPARTMENT'
@@ -735,7 +755,7 @@ export default function SuggestionChecksheetGraph({
           </span>
         </div>
 
-        {/* Centered Fixed KPI Badges (4 Metrics: Total, Accept, Not-Feasible, Implemented) */}
+        {/* Centered Fixed KPI Badges (5 Metrics: Total, Accept, Not-Feasible, Implemented, Target) */}
         <div className="w-full flex items-center justify-center py-2 px-2 border-b border-slate-100 mb-2 shrink-0">
           <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
             <div className="px-3 py-1.5 rounded-xl bg-blue-50/90 border border-blue-200/90 text-blue-800 flex items-center gap-1.5 text-xs font-semibold shadow-2xs">
@@ -754,29 +774,52 @@ export default function SuggestionChecksheetGraph({
               <Clock className="w-3.5 h-3.5 text-purple-600" />
               <span>Implemented: <strong>{summaryTotals.implementedCount}</strong></span>
             </div>
+            <div className="px-3 py-1.5 rounded-xl bg-orange-50/90 border border-orange-200/90 text-orange-800 flex items-center gap-1.5 text-xs font-semibold shadow-2xs">
+              <Target className="w-3.5 h-3.5 text-orange-600" />
+              <span>Target: <strong>{targetLineValue}</strong></span>
+            </div>
           </div>
         </div>
 
-        {/* Scrollable Bar Candles Container (only chart scrolls, page does not scroll) */}
+        {/* Scrollable Graph Container (Horizontal scroll strictly inside graph, not on entire screen) */}
         <div
-          className="w-full h-[400px] overflow-x-auto overflow-y-hidden pb-1"
-          style={{ scrollbarWidth: 'thin', scrollbarColor: '#94A3B8 #F1F5F9' }}
+          className="w-full max-w-full min-w-0 overflow-x-auto overflow-y-hidden pb-3 custom-chart-scrollbar"
+          style={{
+            scrollbarWidth: 'auto',
+            scrollbarColor: '#94A3B8 #F1F5F9'
+          }}
         >
-          {chartData.length > 0 ? (
-            <div style={{ minWidth: `${minChartWidth}px`, width: '100%', height: '100%' }}>
+          <div
+            style={{
+              width: graphTab === 'DEPARTMENT'
+                ? '2800px'
+                : (chartData.length > 8 ? `${Math.max(1100, chartData.length * 130)}px` : '100%'),
+              minWidth: graphTab === 'DEPARTMENT'
+                ? '2800px'
+                : (chartData.length > 8 ? `${Math.max(1100, chartData.length * 130)}px` : '100%'),
+              height: '420px'
+            }}
+          >
+            {chartData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart
                   data={chartData}
                   barGap={0}
-                  barCategoryGap={graphTab === 'DEPARTMENT' ? '12%' : '14%'}
-                  margin={{ top: 24, right: 30, left: -10, bottom: 20 }}
+                  barCategoryGap={graphTab === 'DEPARTMENT' ? '6%' : '14%'}
+                  margin={{ top: 24, right: 25, left: -10, bottom: 20 }}
                 >
-                  <CartesianGrid strokeDasharray="3 3" vertical={true} horizontal={true} stroke="#CBD5E1" />
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    vertical={true}
+                    horizontal={true}
+                    stroke="#E2E8F0"
+                    verticalCoordinatesGenerator={customVerticalCoordinates}
+                  />
                   <XAxis
                     dataKey="displayLabel"
-                    tick={{ fill: '#0F172A', fontSize: 14, fontWeight: 800 }}
+                    tick={{ fill: '#0F172A', fontSize: graphTab === 'DEPARTMENT' ? 14 : 13, fontWeight: 800 }}
                     tickLine={false}
-                    axisLine={{ stroke: '#CBD5E1' }}
+                    axisLine={{ stroke: '#94A3B8', strokeWidth: 1.5 }}
                     interval={0}
                     angle={0}
                     textAnchor="middle"
@@ -784,9 +827,9 @@ export default function SuggestionChecksheetGraph({
                   />
                   <YAxis
                     allowDecimals={false}
-                    tick={{ fill: '#64748B', fontSize: 12, fontWeight: 700 }}
+                    tick={{ fill: '#64748B', fontSize: 11, fontWeight: 600 }}
                     tickLine={false}
-                    axisLine={{ stroke: '#CBD5E1' }}
+                    axisLine={{ stroke: '#94A3B8', strokeWidth: 1.5 }}
                   />
                   <Tooltip content={<CustomTooltip />} />
                   {/* 1. Target Bar Candle */}
@@ -795,7 +838,8 @@ export default function SuggestionChecksheetGraph({
                     name="Target"
                     fill="#F97316"
                     radius={[3, 3, 0, 0]}
-                    maxBarSize={52}
+                    maxBarSize={64}
+                    barSize={graphTab === 'DEPARTMENT' ? 36 : undefined}
                   >
                     <LabelList content={renderCustomBarLabel} />
                   </Bar>
@@ -805,7 +849,8 @@ export default function SuggestionChecksheetGraph({
                     name="Total"
                     fill="#3B82F6"
                     radius={[3, 3, 0, 0]}
-                    maxBarSize={52}
+                    maxBarSize={64}
+                    barSize={graphTab === 'DEPARTMENT' ? 36 : undefined}
                   >
                     <LabelList content={renderCustomBarLabel} />
                   </Bar>
@@ -815,7 +860,8 @@ export default function SuggestionChecksheetGraph({
                     name="Accept"
                     fill="#10B981"
                     radius={[3, 3, 0, 0]}
-                    maxBarSize={52}
+                    maxBarSize={64}
+                    barSize={graphTab === 'DEPARTMENT' ? 36 : undefined}
                   >
                     <LabelList content={renderCustomBarLabel} />
                   </Bar>
@@ -825,7 +871,8 @@ export default function SuggestionChecksheetGraph({
                     name="Not- Feasible"
                     fill="#EF4444"
                     radius={[3, 3, 0, 0]}
-                    maxBarSize={52}
+                    maxBarSize={64}
+                    barSize={graphTab === 'DEPARTMENT' ? 36 : undefined}
                   >
                     <LabelList content={renderCustomBarLabel} />
                   </Bar>
@@ -835,21 +882,22 @@ export default function SuggestionChecksheetGraph({
                     name="Implemented"
                     fill="#8B5CF6"
                     radius={[3, 3, 0, 0]}
-                    maxBarSize={52}
+                    maxBarSize={64}
+                    barSize={graphTab === 'DEPARTMENT' ? 36 : undefined}
                   >
                     <LabelList content={renderCustomBarLabel} />
                   </Bar>
                 </ComposedChart>
               </ResponsiveContainer>
-            </div>
-          ) : (
-            <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50/50 rounded-xl border border-dashed border-slate-200 text-slate-400 gap-2">
-              <TrendingUp className="w-8 h-8 opacity-40 text-slate-400" />
-              <p className="text-xs font-semibold text-slate-500">
-                No suggestion checksheet records found for the selected filters.
-              </p>
-            </div>
-          )}
+            ) : (
+              <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50/50 rounded-xl border border-dashed border-slate-200 text-slate-400 gap-2">
+                <TrendingUp className="w-8 h-8 opacity-40 text-slate-400" />
+                <p className="text-xs font-semibold text-slate-500">
+                  No suggestion checksheet records found for the selected filters.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

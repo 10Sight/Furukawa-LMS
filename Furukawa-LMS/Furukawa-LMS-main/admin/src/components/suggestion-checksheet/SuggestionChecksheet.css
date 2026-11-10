@@ -219,6 +219,32 @@
   font-size: 0.9rem;
 }
 
+/* Custom prominent horizontal scrollbar inside the graph */
+.custom-chart-scrollbar {
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+}
+
+.custom-chart-scrollbar::-webkit-scrollbar {
+  height: 12px !important;
+}
+
+.custom-chart-scrollbar::-webkit-scrollbar-track {
+  background: #f1f5f9 !important;
+  border-radius: 8px !important;
+  margin: 0 4px !important;
+}
+
+.custom-chart-scrollbar::-webkit-scrollbar-thumb {
+  background: #94a3b8 !important;
+  border-radius: 8px !important;
+  border: 2px solid #f1f5f9 !important;
+}
+
+.custom-chart-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #64748b !important;
+}
+
 /* Print Rules for Checksheet */
 @media print {
   .no-print {

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useSelector } from 'react-redux';
 import { ArrowLeft, CheckCircle2, Printer, Lock, Check, AlertCircle, Calendar, Eye } from 'lucide-react';
 import fmeLogo from './assets/suggestionChecksheetLogo.png';
+import SuggestionChecksheetAlertModal from './SuggestionChecksheetAlertModal';
 
 function normalizeDateToYMD(val) {
   if (!val) return '';
@@ -77,6 +78,8 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave, isRea
   const [activeCellId, setActiveCellId] = useState(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [missingSections, setMissingSections] = useState([]);
+  const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);
 
   // Freezing states
   const isAccepted = formData.rejectedAccepted === 'ACCEPTED';
@@ -162,24 +165,81 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave, isRea
     }
     setErrorMessage('');
 
-    // Rule 1: Accepted -> Target Date is MANDATORY
+    // Mandatory sections validation
+    const missing = [];
+
+    // Section 1: Category Selection (P, Q, C, D, M, S, 5'S)
+    const hasCategory = Boolean(
+      formData.categoryP ||
+      formData.categoryQ ||
+      formData.categoryC ||
+      formData.categoryD ||
+      formData.categoryM ||
+      formData.categoryS ||
+      formData.category5S
+    );
+    if (!hasCategory) {
+      missing.push({
+        id: 'category',
+        name: "Category Selection (P, Q, C, D, M, S, 5'S)",
+        desc: "Please select at least one suggestion category checkbox (P, Q, C, D, M, S, 5'S)."
+      });
+    }
+
+    // Section 2: Problem Name / Problem in Current Process or Method
+    if (!formData.problemText || !formData.problemText.trim()) {
+      missing.push({
+        id: 'problemText',
+        name: "Problem Name / Problem in Current Process or Method",
+        desc: "Please describe the problem in current process or method."
+      });
+    }
+
+    // Section 3: Your Valuable Suggestion to Improve the Current Situation
+    if (!formData.suggestionText || !formData.suggestionText.trim()) {
+      missing.push({
+        id: 'suggestionText',
+        name: "Your Valuable Suggestion to Improve Current Situation",
+        desc: "Please enter your valuable suggestion to improve the current situation."
+      });
+    }
+
+    // Section 4: Suggestion related Defect Prevention (Rank 1 - 5)
+    if (!formData.defectPreventionRank || Number(formData.defectPreventionRank) < 1 || Number(formData.defectPreventionRank) > 5) {
+      missing.push({
+        id: 'defectPreventionRank',
+        name: "Suggestion related Defect Prevention",
+        desc: "Please select one of the rank options (Rank 1 to 5) in Defect Prevention table."
+      });
+    }
+
+    // Conditional rule 1: Accepted -> Target Date is MANDATORY
     if (isAccepted) {
       if (!formData.targetDate || !formData.targetDate.trim()) {
-        const msg = 'Implementation Status Target Date is mandatory when Suggestion is Accepted.';
-        setErrorMessage(msg);
-        alert(msg);
-        return;
+        missing.push({
+          id: 'targetDate',
+          name: "Implementation Status Target Date",
+          desc: "Implementation Status Target Date is mandatory when Suggestion is Accepted."
+        });
       }
     }
 
-    // Rule 2: Not Feasible -> Reason if Not Feasible is MANDATORY
+    // Conditional rule 2: Not Feasible -> Reason if Not Feasible is MANDATORY
     if (isNotFeasible) {
       if (!formData.reasonIfRejected || !formData.reasonIfRejected.trim()) {
-        const msg = 'Reason if Not Feasible is mandatory when Suggestion is Not Feasible.';
-        setErrorMessage(msg);
-        alert(msg);
-        return;
+        missing.push({
+          id: 'reasonIfRejected',
+          name: "Reason if Not Feasible",
+          desc: "Reason if Not Feasible is mandatory when Suggestion is Not Feasible."
+        });
       }
+    }
+
+    // If any mandatory field is missing, prevent saving and show centered alert modal
+    if (missing.length > 0) {
+      setMissingSections(missing);
+      setIsAlertModalOpen(true);
+      return;
     }
 
     const isAutoBest =
@@ -336,7 +396,10 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave, isRea
             </div>
 
             {/* Checkbox Blocks */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2.5">
+              <span className="text-red-600 font-extrabold text-base leading-none select-none" title="Mandatory">
+                *
+              </span>
               {[
                 { key: 'categoryP', label: 'P' },
                 { key: 'categoryQ', label: 'Q' },
@@ -467,10 +530,13 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave, isRea
 
           {/* Section 1 Header: PROBLEM NAME / PROBLEM IN CURRENT PROCESS OR METHOD : */}
           <div
-            className="px-3 py-1.5 border-b border-black font-bold text-sm md:text-base bg-white"
+            className="px-3 py-1.5 border-b border-black font-bold text-sm md:text-base bg-white flex items-center justify-between"
             style={{ textDecoration: 'underline' }}
           >
-            PROBLEM NAME / PROBLEM IN CURRENT PROCESS OR METHOD :
+            <span>PROBLEM NAME / PROBLEM IN CURRENT PROCESS OR METHOD :</span>
+            <span className="text-red-600 font-extrabold text-base no-underline leading-none select-none" title="Mandatory">
+              *
+            </span>
           </div>
 
           {/* Section 1 Input (Increased text size) */}
@@ -500,10 +566,13 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave, isRea
 
           {/* Section 2 Header: YOUR VALUABLE SUGGESTION TO IMPROVE THE CURRENT SITUATION */}
           <div
-            className="px-3 py-1.5 border-b border-black font-bold text-sm md:text-base bg-white"
+            className="px-3 py-1.5 border-b border-black font-bold text-sm md:text-base bg-white flex items-center justify-between"
             style={{ textDecoration: 'underline' }}
           >
-            YOUR VALUABLE SUGGESTION TO IMPROVE THE CURRENT SITUATION (Give calculation if required):
+            <span>YOUR VALUABLE SUGGESTION TO IMPROVE THE CURRENT SITUATION (Give calculation if required):</span>
+            <span className="text-red-600 font-extrabold text-base no-underline leading-none select-none" title="Mandatory">
+              *
+            </span>
           </div>
 
           {/* Section 2 Input (Increased text size) */}
@@ -549,7 +618,12 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave, isRea
                       className="py-2.5 px-3 text-center font-bold text-base md:text-lg tracking-wide text-black"
                       style={{ fontSize: '1.15rem' }}
                     >
-                      Suggestion related Defect Prevention
+                      <div className="flex items-center justify-center gap-1.5">
+                        <span>Suggestion related Defect Prevention</span>
+                        <span className="text-red-600 font-extrabold text-base leading-none select-none" title="Mandatory">
+                          *
+                        </span>
+                      </div>
                     </th>
                   </tr>
                 </thead>
@@ -923,6 +997,13 @@ export default function SuggestionChecksheetDetail({ item, onBack, onSave, isRea
           </div>
         </div>
       </form>
+
+      {/* Centered Modern Alert Modal for Mandatory Sections */}
+      <SuggestionChecksheetAlertModal
+        isOpen={isAlertModalOpen}
+        onClose={() => setIsAlertModalOpen(false)}
+        missingSections={missingSections}
+      />
     </div>
   );
 }

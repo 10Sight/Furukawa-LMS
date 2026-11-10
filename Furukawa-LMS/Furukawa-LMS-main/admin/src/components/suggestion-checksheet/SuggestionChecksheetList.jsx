@@ -251,13 +251,14 @@ export default function SuggestionChecksheetList({
   };
 
   return (
-    <div className="suggestion-checksheet-root flex flex-col gap-3.5 w-full">
+    <div className="suggestion-checksheet-root flex flex-col gap-3.5 w-full max-w-full min-w-0 overflow-x-hidden">
       {/* 0.5. Top Graph Section with Filters (Unit Filter placed in filters, All/Best separated from Overall/Dept Overview) */}
       <SuggestionChecksheetGraph
         records={records}
         selectedUnit={selectedUnit}
         onSelectUnit={handleSelectUnit}
         departmentList={departmentList}
+        isAdmin={isAdmin}
       />
 
       {/* 1. Page Header Tabs: All Suggestions & Best Suggestions */}

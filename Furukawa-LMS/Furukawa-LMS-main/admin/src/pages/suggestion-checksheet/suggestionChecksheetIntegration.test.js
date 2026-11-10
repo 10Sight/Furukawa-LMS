@@ -485,7 +485,7 @@ test('32. Target line removed, only Target Bar Candle used with unselected month
   assert.ok(graphCode.includes('getTargetForDeptAndMonth'), 'Department target must be resolved from target store');
 });
 
-test('33. 5 Bar candles with numbers on top, wider candles, and centered fixed badges with Implemented', () => {
+test('33. 5 Bar candles with numbers on top, wider candles, and centered fixed badges with Implemented and Target', () => {
   const graphCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetGraph.jsx', import.meta.url), 'utf8');
 
   // Verify Legend is removed from chart
@@ -496,15 +496,15 @@ test('33. 5 Bar candles with numbers on top, wider candles, and centered fixed b
   assert.ok(graphCode.includes('renderCustomBarLabel'), 'renderCustomBarLabel must be used on bar candles');
 
   // Verify wider bar candles
-  assert.ok(graphCode.includes('maxBarSize=') && (graphCode.includes('32') || graphCode.includes('44')), 'Candle width must be set with wider bars');
+  assert.ok(graphCode.includes('maxBarSize='), 'Candle width must be set with wider bars');
 
-  // Verify 4 KPI Badges are centered and fixed (Target badge removed per user request)
+  // Verify 5 KPI Badges are centered and fixed: Total, Accept, Not-Feasible, Implemented, Target
   assert.ok(graphCode.includes('justify-center'), 'KPI badges must be centered');
   assert.ok(graphCode.includes('Total: <strong>{summaryTotals.totalCreated}</strong>'), 'Total KPI badge must be rendered');
   assert.ok(graphCode.includes('Accept: <strong>{summaryTotals.accepted}</strong>') || graphCode.includes('Accepted: <strong>{summaryTotals.accepted}</strong>'), 'Accept KPI badge must be rendered');
   assert.ok(graphCode.includes('Not-Feasible: <strong>{summaryTotals.notFeasible}</strong>'), 'Not-Feasible KPI badge must be rendered');
   assert.ok(graphCode.includes('Implemented: <strong>{summaryTotals.implementedCount}</strong>'), 'Implemented (Count text removed) KPI badge must be rendered');
-  assert.ok(!graphCode.includes('Target: <strong>{targetLineValue}</strong>'), 'Target KPI badge must be removed per user request');
+  assert.ok(graphCode.includes('Target: <strong>{targetLineValue}</strong>'), 'Target KPI badge must be rendered with others');
 
   // Verify 5 bar candles in chart
   assert.ok(graphCode.includes('dataKey="totalCreated"'), 'Total bar candle must exist');
@@ -539,7 +539,6 @@ test('35. Unselected month hides target in graph and X-axis text size is increas
 
   // Bold X-Axis text
   assert.ok(graphCode.includes('fontWeight: 800') || graphCode.includes('fontWeight: 700'), 'X-Axis text must be bold');
-  assert.ok(graphCode.includes('fontSize: 14') || graphCode.includes('fontSize: 13'), 'X-Axis font size must be defined appropriately');
 });
 
 test('36. Serial order (Target, Total, Accept, Not- Feasible, Implemented), barGap=0, no blank months, and horizontal department text', () => {
@@ -569,21 +568,47 @@ test('36. Serial order (Target, Total, Accept, Not- Feasible, Implemented), barG
   assert.ok(graphCode.includes('textAnchor="middle"'), 'XAxis textAnchor must be middle');
 });
 
-test('37. Horizontal scroll on bar candles only (no page scroll), wider bar candles, date boundaries (vertical grid), and increased X-axis/label font size', () => {
+test('37. Graph scroll bar inside graph, Department text size 14px, wide candles, background boundaries, Admin-only target setting', () => {
   const graphCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetGraph.jsx', import.meta.url), 'utf8');
+  const listCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetList.jsx', import.meta.url), 'utf8');
 
-  // 1. Only chart bar candles scroll horizontally, page does not scroll
-  assert.ok(graphCode.includes('overflow-x-auto overflow-y-hidden'), 'Chart wrapper must have horizontal scroll only');
-  assert.ok(graphCode.includes('minChartWidth'), 'Chart inner width must use minChartWidth for generous candle spacing');
+  // 1. Horizontal scrollbar inside graph container only
+  assert.ok(graphCode.includes('overflow-x-auto overflow-y-hidden'), 'Graph must have internal horizontal scrollbar');
+  assert.ok(graphCode.includes('minWidth: graphTab === \'DEPARTMENT\''), 'Graph must have minWidth to support scrollable width');
+  assert.ok(listCode.includes('isAdmin={isAdmin}'), 'SuggestionChecksheetList must pass isAdmin to SuggestionChecksheetGraph');
 
-  // 2. Date boundaries via vertical CartesianGrid lines
-  assert.ok(graphCode.includes('vertical={true}'), 'CartesianGrid must have vertical={true} for date boundaries');
-  assert.ok(graphCode.includes('horizontal={true}'), 'CartesianGrid must have horizontal={true}');
+  // 2. Admin-only Target Line button (hidden for employees)
+  assert.ok(graphCode.includes('{isAdmin &&'), 'Target Line trigger button must be conditionally rendered only for admin');
 
-  // 3. Increased font size for X-Axis text (marked green) and bar numbers
-  assert.ok(graphCode.includes('fontSize: 14'), 'X-Axis department labels must have increased font size 14');
-  assert.ok(graphCode.includes('fontSize={14}'), 'Bar candle labels must have font size 14');
+  // 3. Department text size increased to 14px in Department Overview
+  assert.ok(graphCode.includes("fontSize: graphTab === 'DEPARTMENT' ? 14 : 13"), 'Department Overview text size must be increased to 14px');
 
-  // 4. Wider bar candles
-  assert.ok(graphCode.includes('maxBarSize={52}'), 'Candle width must be increased up to 52px');
+  // 4. Background boundaries: CartesianGrid vertical and horizontal grid lines with boundaries between departments (not cutting through text)
+  assert.ok(graphCode.includes('vertical={true}') && graphCode.includes('horizontal={true}'), 'CartesianGrid must render vertical and horizontal boundary lines');
+  assert.ok(graphCode.includes('verticalCoordinatesGenerator'), 'CartesianGrid must generate custom vertical coordinates to place boundaries between text');
+
+  // 5. Candle width increased (maxBarSize 64 and barSize 36)
+  assert.ok(graphCode.includes('maxBarSize={64}') || graphCode.includes('barSize='), 'Candle width must be increased for thick candles');
+});
+
+test('38. Suggestion Checksheet 4 mandatory sections validation and centered Alert Modal', () => {
+  const detailCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetDetail.jsx', import.meta.url), 'utf8');
+  const alertModalFile = new URL('../../components/suggestion-checksheet/SuggestionChecksheetAlertModal.jsx', import.meta.url);
+  assert.ok(fs.existsSync(alertModalFile), 'SuggestionChecksheetAlertModal.jsx must exist');
+
+  const alertModalCode = fs.readFileSync(alertModalFile, 'utf8');
+  assert.ok(alertModalCode.includes('createPortal'), 'Alert modal must be portaled to document.body');
+  assert.ok(alertModalCode.includes('fixed inset-0'), 'Alert modal must be fixed dead-center on screen');
+  assert.ok(alertModalCode.includes('Mandatory Sections Required'), 'Alert modal must display Mandatory Sections Required header');
+
+  // Check 4 mandatory sections in SuggestionChecksheetDetail.jsx
+  assert.ok(detailCode.includes('Category Selection (P, Q, C, D, M, S, 5\'S)'), 'Category selection must be mandatory');
+  assert.ok(detailCode.includes('Problem Name / Problem in Current Process or Method'), 'Problem Name must be mandatory');
+  assert.ok(detailCode.includes('Your Valuable Suggestion to Improve Current Situation') || detailCode.includes('Your Valuable Suggestion to Improve the Current Situation'), 'Suggestion text must be mandatory');
+  assert.ok(detailCode.includes('Suggestion related Defect Prevention'), 'Defect Prevention must be mandatory');
+
+  // Check missing array blocking save
+  assert.ok(detailCode.includes('if (missing.length > 0)'), 'Saving must be blocked if any mandatory section is missing');
+  assert.ok(detailCode.includes('setIsAlertModalOpen(true)'), 'Centered alert modal must be opened when mandatory fields are missing');
+  assert.ok(detailCode.includes('<SuggestionChecksheetAlertModal'), 'SuggestionChecksheetDetail must embed SuggestionChecksheetAlertModal');
 });

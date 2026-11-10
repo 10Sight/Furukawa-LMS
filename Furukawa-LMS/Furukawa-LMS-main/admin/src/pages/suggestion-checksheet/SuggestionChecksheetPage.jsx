@@ -154,7 +154,7 @@ export default function SuggestionChecksheetPage() {
 
   return (
     <div
-      className={`suggestion-checksheet-page-wrapper w-full flex flex-col ${
+      className={`suggestion-checksheet-page-wrapper w-full max-w-full min-w-0 flex flex-col overflow-x-hidden ${
         currentPage === 'detail' ? 'h-full min-h-0 flex-1 overflow-y-auto p-2 sm:p-4' : 'min-h-0 flex-1 p-2 sm:p-4'
       }`}
     >

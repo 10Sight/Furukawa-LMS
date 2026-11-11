@@ -661,3 +661,25 @@ test('40. Vertical boundaries enclose date/department in center (no vertical lin
   // Neither boundary line touches the center of '05 Nov' (800)
   assert.ok(!boundaries.includes(nov05Center), 'No boundary line must ever intersect the center of guidance date text');
 });
+
+test('41. Date-Wise Graph horizontal scrollbar & consistent candle width, Create Sheet button rename, Best Suggestion 2 candles (Total, Implemented)', () => {
+  const graphCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetGraph.jsx', import.meta.url), 'utf8');
+  const listCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetList.jsx', import.meta.url), 'utf8');
+
+  // 1. Rename Add Checksheet -> Create Sheet (only button label changed)
+  assert.ok(listCode.includes('<span>Create Sheet</span>'), 'Button label must be Create Sheet');
+  assert.ok(!listCode.includes('<span>Add Checksheet</span>'), 'Add Checksheet label must be replaced');
+  assert.ok(listCode.includes('onClick={() => setIsAddModalOpen(true)}'), 'Create Sheet button must open add modal');
+
+  // 2. Horizontal scrollbar inside candle/chart area with consistent candle bar size
+  assert.ok(graphCode.includes('candleBarSize = graphTab === \'DEPARTMENT\' ? 36 : (suggestionScope === \'BEST\' ? 36 : 28)'), 'Consistent candle width must be configured');
+  assert.ok(graphCode.includes('barSize={candleBarSize}'), 'Bar candles must use fixed barSize to prevent narrowing as dates are added');
+  assert.ok(graphCode.includes('chartContainerWidth'), 'Chart width must dynamically grow based on dates to avoid narrowing');
+  assert.ok(graphCode.includes('overflow-x-auto overflow-y-hidden'), 'Chart area must have horizontal scrollbar');
+
+  // 3. Best Suggestion Graph displays ONLY TWO bar candles: Total and Implemented
+  assert.ok(graphCode.includes('!(suggestionScope === \'BEST\' && graphTab !== \'DEPARTMENT\')'), 'Target, Accept, and Not-Feasible candles must be hidden in Best Suggestion timeline');
+  assert.ok(graphCode.includes('name="Total"'), 'Total candle must be present');
+  assert.ok(graphCode.includes('name="Implemented"'), 'Implemented candle must be present');
+});
+

@@ -307,7 +307,7 @@ export default function SuggestionChecksheetList({
           </button>
         </div>
 
-        {/* Action Buttons: Export Excel & Add Checksheet */}
+        {/* Action Buttons: Export Excel & Create Sheet */}
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -327,7 +327,7 @@ export default function SuggestionChecksheetList({
               title="Create New Suggestion Checksheet"
             >
               <Plus className="w-4 h-4" />
-              <span>Add Checksheet</span>
+              <span>Create Sheet</span>
             </button>
           )}
         </div>

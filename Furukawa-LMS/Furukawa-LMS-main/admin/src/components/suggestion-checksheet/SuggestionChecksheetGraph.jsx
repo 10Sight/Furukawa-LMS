@@ -508,6 +508,17 @@ export default function SuggestionChecksheetGraph({
     );
   }, [cumulativeMonthData]);
 
+  // Consistent candle width & dynamic chart container width so bar candles never shrink when dates are added
+  const candleBarSize = graphTab === 'DEPARTMENT' ? 36 : (suggestionScope === 'BEST' ? 36 : 28);
+  const chartContainerWidth = useMemo(() => {
+    if (graphTab === 'DEPARTMENT') {
+      return 2800;
+    }
+    const count = chartData.length;
+    const slotWidth = suggestionScope === 'BEST' ? 180 : 220;
+    return Math.max(1100, count * slotWidth);
+  }, [graphTab, chartData.length, suggestionScope]);
+
   const handleToggleOverall = () => {
     const next = graphView === 'OVERALL' ? 'TIMELINE' : 'OVERALL';
     setGraphView(next);
@@ -762,40 +773,48 @@ export default function SuggestionChecksheetGraph({
           <span>
             {graphTab === 'DEPARTMENT'
               ? 'Department Overview (Total, Accepted, Not-Feasible, Implemented, Target per Dept)'
-              : (graphTab === 'OVERALL' ? 'Overall Cumulative Progression' : 'Timeline with Past/Live Cumulative (5 Bar Series)')}
+              : (suggestionScope === 'BEST'
+                ? 'Best Suggestion Timeline (2 Bar Series: Total, Implemented)'
+                : (graphTab === 'OVERALL' ? 'Overall Cumulative Progression' : 'Timeline with Past/Live Cumulative (5 Bar Series)'))}
           </span>
           <span className="text-[11px] font-bold text-slate-400">
             {filteredRecords.length} records
           </span>
         </div>
 
-        {/* Centered Fixed KPI Badges (5 Metrics: Total, Accept, Not-Feasible, Implemented, Target) */}
+        {/* Centered Fixed KPI Badges */}
         <div className="w-full flex items-center justify-center py-2 px-2 border-b border-slate-100 mb-2 shrink-0">
           <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
             <div className="px-3 py-1.5 rounded-xl bg-blue-50/90 border border-blue-200/90 text-blue-800 flex items-center gap-1.5 text-xs font-semibold shadow-2xs">
               <Layers className="w-3.5 h-3.5 text-blue-600" />
               <span>Total: <strong>{summaryTotals.totalCreated}</strong></span>
             </div>
-            <div className="px-3 py-1.5 rounded-xl bg-emerald-50/90 border border-emerald-200/90 text-emerald-800 flex items-center gap-1.5 text-xs font-semibold shadow-2xs">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Accept: <strong>{summaryTotals.accepted}</strong></span>
-            </div>
-            <div className="px-3 py-1.5 rounded-xl bg-rose-50/90 border border-rose-200/90 text-rose-800 flex items-center gap-1.5 text-xs font-semibold shadow-2xs">
-              <XCircle className="w-3.5 h-3.5 text-rose-600" />
-              <span>Not-Feasible: <strong>{summaryTotals.notFeasible}</strong></span>
-            </div>
+            {!(suggestionScope === 'BEST' && graphTab !== 'DEPARTMENT') && (
+              <>
+                <div className="px-3 py-1.5 rounded-xl bg-emerald-50/90 border border-emerald-200/90 text-emerald-800 flex items-center gap-1.5 text-xs font-semibold shadow-2xs">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Accept: <strong>{summaryTotals.accepted}</strong></span>
+                </div>
+                <div className="px-3 py-1.5 rounded-xl bg-rose-50/90 border border-rose-200/90 text-rose-800 flex items-center gap-1.5 text-xs font-semibold shadow-2xs">
+                  <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Not-Feasible: <strong>{summaryTotals.notFeasible}</strong></span>
+                </div>
+              </>
+            )}
             <div className="px-3 py-1.5 rounded-xl bg-purple-50/90 border border-purple-200/90 text-purple-800 flex items-center gap-1.5 text-xs font-semibold shadow-2xs">
               <Clock className="w-3.5 h-3.5 text-purple-600" />
               <span>Implemented: <strong>{summaryTotals.implementedCount}</strong></span>
             </div>
-            <div className="px-3 py-1.5 rounded-xl bg-orange-50/90 border border-orange-200/90 text-orange-800 flex items-center gap-1.5 text-xs font-semibold shadow-2xs">
-              <Target className="w-3.5 h-3.5 text-orange-600" />
-              <span>Target: <strong>{targetLineValue}</strong></span>
-            </div>
+            {!(suggestionScope === 'BEST' && graphTab !== 'DEPARTMENT') && (
+              <div className="px-3 py-1.5 rounded-xl bg-orange-50/90 border border-orange-200/90 text-orange-800 flex items-center gap-1.5 text-xs font-semibold shadow-2xs">
+                <Target className="w-3.5 h-3.5 text-orange-600" />
+                <span>Target: <strong>{targetLineValue}</strong></span>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Scrollable Graph Container (Horizontal scroll strictly inside graph, not on entire screen) */}
+        {/* Scrollable Graph Container (Horizontal scroll strictly inside graph candle area, not on entire screen) */}
         <div
           className="w-full max-w-full min-w-0 overflow-x-auto overflow-y-hidden pb-3 custom-chart-scrollbar"
           style={{
@@ -805,12 +824,8 @@ export default function SuggestionChecksheetGraph({
         >
           <div
             style={{
-              width: graphTab === 'DEPARTMENT'
-                ? '2800px'
-                : (chartData.length > 8 ? `${Math.max(1100, chartData.length * 130)}px` : '100%'),
-              minWidth: graphTab === 'DEPARTMENT'
-                ? '2800px'
-                : (chartData.length > 8 ? `${Math.max(1100, chartData.length * 130)}px` : '100%'),
+              width: `${chartContainerWidth}px`,
+              minWidth: graphTab === 'DEPARTMENT' ? 2800 : `${chartContainerWidth}px`,
               height: '420px'
             }}
           >
@@ -819,7 +834,7 @@ export default function SuggestionChecksheetGraph({
                 <ComposedChart
                   data={chartData}
                   barGap={0}
-                  barCategoryGap={graphTab === 'DEPARTMENT' ? '6%' : '14%'}
+                  barCategoryGap={graphTab === 'DEPARTMENT' ? '6%' : (suggestionScope === 'BEST' ? '20%' : '14%')}
                   margin={{ top: 24, right: 25, left: -10, bottom: 20 }}
                 >
                   <CartesianGrid
@@ -846,17 +861,21 @@ export default function SuggestionChecksheetGraph({
                     axisLine={{ stroke: '#94A3B8', strokeWidth: 1.5 }}
                   />
                   <Tooltip cursor={false} content={<CustomTooltip />} />
-                  {/* 1. Target Bar Candle */}
-                  <Bar
-                    dataKey="target"
-                    name="Target"
-                    fill="#F97316"
-                    radius={[3, 3, 0, 0]}
-                    maxBarSize={64}
-                    barSize={graphTab === 'DEPARTMENT' ? 36 : undefined}
-                  >
-                    <LabelList content={renderCustomBarLabel} />
-                  </Bar>
+
+                  {/* 1. Target Bar Candle (Hidden in Best Suggestion timeline so Best Suggestion displays ONLY TWO candles: Total & Implemented) */}
+                  {!(suggestionScope === 'BEST' && graphTab !== 'DEPARTMENT') && (
+                    <Bar
+                      dataKey="target"
+                      name="Target"
+                      fill="#F97316"
+                      radius={[3, 3, 0, 0]}
+                      maxBarSize={64}
+                      barSize={candleBarSize}
+                    >
+                      <LabelList content={renderCustomBarLabel} />
+                    </Bar>
+                  )}
+
                   {/* 2. Total Bar */}
                   <Bar
                     dataKey="totalCreated"
@@ -864,32 +883,39 @@ export default function SuggestionChecksheetGraph({
                     fill="#3B82F6"
                     radius={[3, 3, 0, 0]}
                     maxBarSize={64}
-                    barSize={graphTab === 'DEPARTMENT' ? 36 : undefined}
+                    barSize={candleBarSize}
                   >
                     <LabelList content={renderCustomBarLabel} />
                   </Bar>
-                  {/* 3. Accept Bar */}
-                  <Bar
-                    dataKey="accepted"
-                    name="Accept"
-                    fill="#10B981"
-                    radius={[3, 3, 0, 0]}
-                    maxBarSize={64}
-                    barSize={graphTab === 'DEPARTMENT' ? 36 : undefined}
-                  >
-                    <LabelList content={renderCustomBarLabel} />
-                  </Bar>
-                  {/* 4. Not- Feasible Bar */}
-                  <Bar
-                    dataKey="notFeasible"
-                    name="Not- Feasible"
-                    fill="#EF4444"
-                    radius={[3, 3, 0, 0]}
-                    maxBarSize={64}
-                    barSize={graphTab === 'DEPARTMENT' ? 36 : undefined}
-                  >
-                    <LabelList content={renderCustomBarLabel} />
-                  </Bar>
+
+                  {/* 3. Accept Bar (Hidden in Best Suggestion timeline) */}
+                  {!(suggestionScope === 'BEST' && graphTab !== 'DEPARTMENT') && (
+                    <Bar
+                      dataKey="accepted"
+                      name="Accept"
+                      fill="#10B981"
+                      radius={[3, 3, 0, 0]}
+                      maxBarSize={64}
+                      barSize={candleBarSize}
+                    >
+                      <LabelList content={renderCustomBarLabel} />
+                    </Bar>
+                  )}
+
+                  {/* 4. Not- Feasible Bar (Hidden in Best Suggestion timeline) */}
+                  {!(suggestionScope === 'BEST' && graphTab !== 'DEPARTMENT') && (
+                    <Bar
+                      dataKey="notFeasible"
+                      name="Not- Feasible"
+                      fill="#EF4444"
+                      radius={[3, 3, 0, 0]}
+                      maxBarSize={64}
+                      barSize={candleBarSize}
+                    >
+                      <LabelList content={renderCustomBarLabel} />
+                    </Bar>
+                  )}
+
                   {/* 5. Implemented Bar */}
                   <Bar
                     dataKey="implementedCount"
@@ -897,7 +923,7 @@ export default function SuggestionChecksheetGraph({
                     fill="#8B5CF6"
                     radius={[3, 3, 0, 0]}
                     maxBarSize={64}
-                    barSize={graphTab === 'DEPARTMENT' ? 36 : undefined}
+                    barSize={candleBarSize}
                   >
                     <LabelList content={renderCustomBarLabel} />
                   </Bar>

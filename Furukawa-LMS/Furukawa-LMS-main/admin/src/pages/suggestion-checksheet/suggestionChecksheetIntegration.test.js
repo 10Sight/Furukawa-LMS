@@ -683,3 +683,39 @@ test('41. Date-Wise Graph horizontal scrollbar & consistent candle width, Create
   assert.ok(graphCode.includes('name="Implemented"'), 'Implemented candle must be present');
 });
 
+test('42. Consistent Graph data across all User IDs (Admin and Employees) via backend target sync & auth-change refetch', () => {
+  const routesCode = fs.readFileSync(new URL('../../../../server/routes/suggestionChecksheet/suggestionChecksheet.routes.js', import.meta.url), 'utf8');
+  const controllerCode = fs.readFileSync(new URL('../../../../server/controllers/suggestionChecksheet/suggestionChecksheet.controller.js', import.meta.url), 'utf8');
+  const dbCode = fs.readFileSync(new URL('../../../../server/db/suggestionChecksheet/suggestionChecksheetDb.js', import.meta.url), 'utf8');
+  const apiCode = fs.readFileSync(new URL('../../services/api/SuggestionChecksheetApi.js', import.meta.url), 'utf8');
+  const graphCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetGraph.jsx', import.meta.url), 'utf8');
+  const modalCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionTargetModal.jsx', import.meta.url), 'utf8');
+  const pageCode = fs.readFileSync(new URL('./SuggestionChecksheetPage.jsx', import.meta.url), 'utf8');
+
+  // 1. Server route and controller exist for targets
+  assert.ok(routesCode.includes('router.route("/targets")'), 'Route /targets must exist on suggestion-checksheet router');
+  assert.ok(controllerCode.includes('getSuggestionTargets'), 'getSuggestionTargets controller must exist');
+  assert.ok(controllerCode.includes('saveSuggestionTargets'), 'saveSuggestionTargets controller must exist');
+  assert.ok(dbCode.includes('readSuggestionTargetsStore'), 'readSuggestionTargetsStore DB function must exist');
+  assert.ok(dbCode.includes('writeSuggestionTargetsStore'), 'writeSuggestionTargetsStore DB function must exist');
+
+  // 2. Frontend RTK Query endpoints exist for targets
+  assert.ok(apiCode.includes('getSuggestionTargets'), 'getSuggestionTargets RTK Query endpoint must exist');
+  assert.ok(apiCode.includes('saveSuggestionTargets'), 'saveSuggestionTargets mutation must exist');
+  assert.ok(apiCode.includes('useGetSuggestionTargetsQuery'), 'useGetSuggestionTargetsQuery hook must be exported');
+  assert.ok(apiCode.includes('useSaveSuggestionTargetsMutation'), 'useSaveSuggestionTargetsMutation hook must be exported');
+
+  // 3. Graph and Target Modal use shared server targets
+  assert.ok(graphCode.includes('useGetSuggestionTargetsQuery'), 'SuggestionChecksheetGraph must fetch shared server targets');
+  assert.ok(graphCode.includes('syncServerTargets'), 'SuggestionChecksheetGraph must sync server targets');
+  assert.ok(modalCode.includes('useSaveSuggestionTargetsMutation'), 'SuggestionTargetModal must save targets to server');
+  assert.ok(modalCode.includes('syncServerTargets'), 'syncServerTargets must be exported to sync targets across all user logins');
+
+  // 4. SuggestionChecksheetPage refetches on auth change and on mount
+  assert.ok(pageCode.includes('refetchOnMountOrArgChange: true'), 'useGetSuggestionChecksheetsQuery must specify refetchOnMountOrArgChange');
+  assert.ok(pageCode.includes('authUser?.id') || pageCode.includes('authUser?.userName'), 'Page must react to authUser login changes to refetch data');
+
+  // 5. Timeline month stats correctly checks suggestionScope === BEST
+  assert.ok(graphCode.includes("suggestionScope === 'BEST'"), 'computeMonthStats must check suggestionScope === BEST');
+});
+

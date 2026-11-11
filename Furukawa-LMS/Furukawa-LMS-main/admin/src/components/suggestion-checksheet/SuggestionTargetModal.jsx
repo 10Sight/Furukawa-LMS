@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Target, Save, RotateCcw, Check, Calendar, CheckSquare, Square } from 'lucide-react';
+import { useSaveSuggestionTargetsMutation } from '@/services/api/SuggestionChecksheetApi.js';
 
 export const TARGET_DEPARTMENTS = [
   'PE',
@@ -54,14 +55,30 @@ export const DEFAULT_DEPARTMENT_TARGETS = {
   'C&C': 15
 };
 
+let memoryTargets = null;
+let memoryTargetsV2 = null;
+
+export function syncServerTargets(targets, targetsV2) {
+  if (targets && typeof targets === 'object') {
+    memoryTargets = { ...DEFAULT_DEPARTMENT_TARGETS, ...targets };
+    saveStoredDepartmentTargets(memoryTargets);
+  }
+  if (targetsV2 && typeof targetsV2 === 'object') {
+    memoryTargetsV2 = { ...targetsV2 };
+    saveStoredDepartmentTargetsV2(memoryTargetsV2);
+  }
+}
+
 export function getStoredDepartmentTargets() {
+  if (memoryTargets) return memoryTargets;
   if (typeof window === 'undefined') return DEFAULT_DEPARTMENT_TARGETS;
   try {
     const raw = localStorage.getItem(STORAGE_KEY_SUGGESTION_TARGETS);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') {
-        return { ...DEFAULT_DEPARTMENT_TARGETS, ...parsed };
+        memoryTargets = { ...DEFAULT_DEPARTMENT_TARGETS, ...parsed };
+        return memoryTargets;
       }
     }
   } catch (err) {
@@ -71,6 +88,7 @@ export function getStoredDepartmentTargets() {
 }
 
 export function saveStoredDepartmentTargets(targets) {
+  memoryTargets = targets;
   if (typeof window === 'undefined') return;
   try {
     localStorage.setItem(STORAGE_KEY_SUGGESTION_TARGETS, JSON.stringify(targets));
@@ -80,12 +98,16 @@ export function saveStoredDepartmentTargets(targets) {
 }
 
 export function getStoredDepartmentTargetsV2() {
+  if (memoryTargetsV2) return memoryTargetsV2;
   if (typeof window === 'undefined') return {};
   try {
     const raw = localStorage.getItem(STORAGE_KEY_SUGGESTION_TARGETS_V2);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object') return parsed;
+      if (parsed && typeof parsed === 'object') {
+        memoryTargetsV2 = parsed;
+        return memoryTargetsV2;
+      }
     }
   } catch (err) {
     console.warn('Could not read suggestion department targets v2 from storage:', err);
@@ -94,6 +116,7 @@ export function getStoredDepartmentTargetsV2() {
 }
 
 export function saveStoredDepartmentTargetsV2(targetsByYearMonth) {
+  memoryTargetsV2 = targetsByYearMonth;
   if (typeof window === 'undefined') return;
   try {
     localStorage.setItem(STORAGE_KEY_SUGGESTION_TARGETS_V2, JSON.stringify(targetsByYearMonth));
@@ -133,6 +156,7 @@ export default function SuggestionTargetModal({
   targets: initialTargets,
   onSaveTargets
 }) {
+  const [saveTargetsMutation] = useSaveSuggestionTargetsMutation();
   const currentYear = new Date().getFullYear() || 2026;
   const currentMonthNum = (new Date().getMonth() + 1) || 11;
 
@@ -231,6 +255,12 @@ export default function SuggestionTargetModal({
       }
     }
     saveStoredDepartmentTargetsV2(v2);
+
+    try {
+      saveTargetsMutation({ targets: cleanTargets, targetsV2: v2 });
+    } catch (err) {
+      console.warn('Could not sync targets to server:', err);
+    }
 
     if (typeof onSaveTargets === 'function') {
       onSaveTargets(cleanTargets, {

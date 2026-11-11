@@ -3,7 +3,9 @@ import {
   executeQuery,
   initSuggestionChecksheetTables,
   readSuggestionStore,
-  writeSuggestionStore
+  writeSuggestionStore,
+  readSuggestionTargetsStore,
+  writeSuggestionTargetsStore
 } from "../../db/suggestionChecksheet/suggestionChecksheetDb.js";
 import logger from "../../logger/winston.logger.js";
 
@@ -348,6 +350,14 @@ class SuggestionChecksheetModel {
     writeSuggestionStore(records);
 
     return true;
+  }
+
+  static async getTargets() {
+    return readSuggestionTargetsStore();
+  }
+
+  static async saveTargets(data) {
+    return writeSuggestionTargetsStore(data);
   }
 }
 

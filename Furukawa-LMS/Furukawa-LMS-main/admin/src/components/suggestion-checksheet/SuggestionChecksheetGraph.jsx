@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import {
   ResponsiveContainer,
@@ -25,13 +25,15 @@ import {
   Building2,
   MapPin
 } from 'lucide-react';
+import { useGetSuggestionTargetsQuery } from '@/services/api/SuggestionChecksheetApi.js';
 import SuggestionTargetModal, {
   TARGET_DEPARTMENTS,
   MONTHS,
   YEARS_LIST,
   getStoredDepartmentTargets,
   getStoredDepartmentTargetsV2,
-  getTargetForDeptAndMonth
+  getTargetForDeptAndMonth,
+  syncServerTargets
 } from './SuggestionTargetModal';
 
 // Helper to normalize date to YYYY-MM-DD
@@ -116,6 +118,21 @@ export default function SuggestionChecksheetGraph({
   const [cumulativeYear, setCumulativeYear] = useState(currentYear);
   const [isTargetModalOpen, setIsTargetModalOpen] = useState(false);
   const [targets, setTargets] = useState(() => getStoredDepartmentTargets());
+
+  // Fetch shared targets from backend so all user IDs (Admin, Employee 1, Employee 2) see identical data
+  const { data: serverTargetsRes } = useGetSuggestionTargetsQuery(undefined, {
+    refetchOnMountOrArgChange: true
+  });
+
+  useEffect(() => {
+    if (serverTargetsRes?.data) {
+      const { targets: sTargets, targetsV2: sTargetsV2 } = serverTargetsRes.data;
+      syncServerTargets(sTargets, sTargetsV2);
+      if (sTargets) {
+        setTargets(sTargets);
+      }
+    }
+  }, [serverTargetsRes]);
 
   // Filter records according to graph filter controls
   const filteredRecords = useMemo(() => {
@@ -296,7 +313,7 @@ export default function SuggestionChecksheetGraph({
           const itemDept = String(item.department || '').trim().toLowerCase();
           if (itemDept !== String(graphDept).trim().toLowerCase()) return;
         }
-        if (graphTab === 'BEST') {
+        if (suggestionScope === 'BEST') {
           const isBestItem = Boolean(
             item.isBest ||
             Number(item.defectPreventionRank) === 5 ||
@@ -403,7 +420,7 @@ export default function SuggestionChecksheetGraph({
     });
 
     return [...cumulativeBuckets, ...dailySorted];
-  }, [filteredRecords, graphTab, targets, cumulativeYear, graphFromDate, currentMonthNum]);
+  }, [filteredRecords, graphTab, suggestionScope, targets, cumulativeYear, graphFromDate, currentMonthNum]);
 
   // Overall totals for quick summary badges
   const summaryTotals = useMemo(() => {
@@ -464,6 +481,14 @@ export default function SuggestionChecksheetGraph({
           const targetDept = String(graphDept).trim().toLowerCase();
           if (itemDept !== targetDept) return false;
         }
+        if (suggestionScope === 'BEST') {
+          const isBestItem = Boolean(
+            item.isBest ||
+            Number(item.defectPreventionRank) === 5 ||
+            Number(item.defectPreventionRank) === 4
+          );
+          if (!isBestItem) return false;
+        }
         const ymd = normalizeDateToYMD(item.date);
         if (!ymd || !ymd.startsWith(`${cumulativeYear}-`)) return false;
         const mNum = parseInt(ymd.split('-')[1], 10);
@@ -495,7 +520,7 @@ export default function SuggestionChecksheetGraph({
         isCurrentMonth
       };
     });
-  }, [records, selectedUnit, graphDept, cumulativeYear, targets, currentMonthNum]);
+  }, [records, selectedUnit, graphDept, cumulativeYear, targets, currentMonthNum, suggestionScope]);
 
   const cumulativeTotals = useMemo(() => {
     return cumulativeMonthData.reduce(

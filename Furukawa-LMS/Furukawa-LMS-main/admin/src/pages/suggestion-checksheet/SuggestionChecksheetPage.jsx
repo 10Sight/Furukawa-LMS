@@ -34,11 +34,20 @@ export default function SuggestionChecksheetPage() {
   const [selectedUnit, setSelectedUnit] = useState('Bawal'); // Default unit is Bawal
   const [activeTab, setActiveTab] = useState('ALL'); // 'ALL' | 'BEST'
 
-  // RTK Query endpoints connected to database
-  const { data: apiResponse, refetch } = useGetSuggestionChecksheetsQuery();
+  // RTK Query endpoints connected to database with refetchOnMountOrArgChange
+  const { data: apiResponse, refetch } = useGetSuggestionChecksheetsQuery(undefined, {
+    refetchOnMountOrArgChange: true
+  });
   const [createChecksheetMutation] = useCreateSuggestionChecksheetMutation();
   const [updateChecksheetMutation] = useUpdateSuggestionChecksheetMutation();
   const [deleteChecksheetMutation] = useDeleteSuggestionChecksheetMutation();
+
+  // Refetch when auth user changes so switching logins immediately pulls latest records
+  useEffect(() => {
+    if (typeof refetch === 'function') {
+      refetch();
+    }
+  }, [authUser?.id, authUser?.userName, refetch]);
 
   // Sync records from database when loaded
   useEffect(() => {

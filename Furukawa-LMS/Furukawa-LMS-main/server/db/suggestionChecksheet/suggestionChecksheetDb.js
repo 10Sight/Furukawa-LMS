@@ -10,6 +10,23 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export const SUGGESTION_STORE_PATH = path.join(__dirname, "suggestion_checksheet_store.json");
+export const SUGGESTION_TARGETS_STORE_PATH = path.join(__dirname, "suggestion_targets_store.json");
+
+export const DEFAULT_SUGGESTION_TARGETS = {
+  PE: 10,
+  IT: 10,
+  Quality: 15,
+  Assembly: 20,
+  SRC: 10,
+  Store: 10,
+  HR: 8,
+  Safety: 12,
+  FG: 10,
+  PPC: 10,
+  Maintenance: 12,
+  'D&D': 10,
+  'C&C': 15
+};
 
 const DUMMY_RECORD_IDS = new Set([
   'SC-BWL-1021',
@@ -31,6 +48,50 @@ export async function isDbConnected() {
     return Boolean(pool);
   } catch {
     return false;
+  }
+}
+
+/**
+ * Reads Suggestion Checksheet targets fallback JSON store from disk
+ */
+export function readSuggestionTargetsStore() {
+  try {
+    if (fs.existsSync(SUGGESTION_TARGETS_STORE_PATH)) {
+      const raw = fs.readFileSync(SUGGESTION_TARGETS_STORE_PATH, "utf-8");
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") {
+        return {
+          targets: { ...DEFAULT_SUGGESTION_TARGETS, ...(parsed.targets || {}) },
+          targetsV2: parsed.targetsV2 || {}
+        };
+      }
+    }
+  } catch (e) {
+    logger.warn("Failed reading Suggestion Checksheet targets store:", e.message);
+  }
+  return {
+    targets: { ...DEFAULT_SUGGESTION_TARGETS },
+    targetsV2: {}
+  };
+}
+
+/**
+ * Writes Suggestion Checksheet targets data to disk
+ */
+export function writeSuggestionTargetsStore(data) {
+  try {
+    const dir = path.dirname(SUGGESTION_TARGETS_STORE_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const payload = {
+      targets: { ...DEFAULT_SUGGESTION_TARGETS, ...(data?.targets || {}) },
+      targetsV2: data?.targetsV2 || {},
+      updatedAt: new Date().toISOString()
+    };
+    fs.writeFileSync(SUGGESTION_TARGETS_STORE_PATH, JSON.stringify(payload, null, 2), "utf-8");
+    return payload;
+  } catch (e) {
+    logger.error("Failed writing Suggestion Checksheet targets store:", e.message);
+    return null;
   }
 }
 

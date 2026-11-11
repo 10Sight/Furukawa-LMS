@@ -4,7 +4,7 @@ import { createApi } from "@reduxjs/toolkit/query/react";
 export const suggestionChecksheetApi = createApi({
     reducerPath: "suggestionChecksheetApi",
     baseQuery: axiosBaseQuery,
-    tagTypes: ['SuggestionChecksheet'],
+    tagTypes: ['SuggestionChecksheet', 'SuggestionTargets'],
     endpoints: (builder) => ({
         getSuggestionChecksheets: builder.query({
             query: ({ unit = "", search = "", status = "" } = {}) => ({
@@ -13,6 +13,23 @@ export const suggestionChecksheetApi = createApi({
                 params: { unit, search, status }
             }),
             providesTags: ['SuggestionChecksheet'], 
+        }),
+
+        getSuggestionTargets: builder.query({
+            query: () => ({
+                url: "/api/suggestion-checksheet/targets",
+                method: "GET",
+            }),
+            providesTags: ['SuggestionTargets'],
+        }),
+
+        saveSuggestionTargets: builder.mutation({
+            query: (data) => ({
+                url: "/api/suggestion-checksheet/targets",
+                method: "POST",
+                data
+            }),
+            invalidatesTags: ['SuggestionTargets'],
         }),
 
         getSuggestionChecksheetById: builder.query({
@@ -57,5 +74,7 @@ export const {
     useCreateSuggestionChecksheetMutation,
     useUpdateSuggestionChecksheetMutation,
     useDeleteSuggestionChecksheetMutation,
+    useGetSuggestionTargetsQuery,
+    useSaveSuggestionTargetsMutation,
 } = suggestionChecksheetApi;
 

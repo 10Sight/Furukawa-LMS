@@ -75,3 +75,14 @@ export const deleteSuggestionChecksheet = asyncHandler(async (req, res) => {
   const success = await SuggestionChecksheetModel.delete(id);
   return res.status(200).json(new ApiResponse(200, { success }, "Suggestion checksheet deleted successfully"));
 });
+
+export const getSuggestionTargets = asyncHandler(async (req, res) => {
+  const targetsData = await SuggestionChecksheetModel.getTargets();
+  return res.status(200).json(new ApiResponse(200, targetsData, "Suggestion department targets retrieved successfully"));
+});
+
+export const saveSuggestionTargets = asyncHandler(async (req, res) => {
+  const { targets, targetsV2 } = req.body || {};
+  const saved = await SuggestionChecksheetModel.saveTargets({ targets, targetsV2 });
+  return res.status(200).json(new ApiResponse(200, saved, "Suggestion department targets saved successfully"));
+});

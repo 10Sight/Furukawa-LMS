@@ -427,16 +427,28 @@ export default function SuggestionChecksheetGraph({
     );
   }, [filteredRecords]);
 
-  // Active target line calculation
+  // Active target value calculation: sum of all department targets set by admin (or specific dept target)
   const targetLineValue = useMemo(() => {
-    if (graphDept !== 'All') {
-      return Number(targets[graphDept]) || 0;
+    const v2Store = getStoredDepartmentTargetsV2();
+    let targetYear = cumulativeYear;
+    let targetMonth = currentMonthNum;
+    if (graphFromDate) {
+      const parts = graphFromDate.split('-');
+      if (parts.length === 3) {
+        targetYear = parseInt(parts[0], 10) || targetYear;
+        targetMonth = parseInt(parts[1], 10) || targetMonth;
+      }
     }
-    const deptKeys = Object.keys(targets);
-    if (deptKeys.length === 0) return 0;
-    const sum = deptKeys.reduce((acc, k) => acc + (Number(targets[k]) || 0), 0);
-    return Math.round(sum / deptKeys.length) || 10;
-  }, [graphDept, targets]);
+
+    if (graphDept !== 'All') {
+      return getTargetForDeptAndMonth(graphDept, targetYear, targetMonth, v2Store, targets);
+    }
+
+    // Sum of all department targets configured by admin
+    return TARGET_DEPARTMENTS.reduce((sum, d) => {
+      return sum + getTargetForDeptAndMonth(d, targetYear, targetMonth, v2Store, targets);
+    }, 0);
+  }, [graphDept, targets, cumulativeYear, currentMonthNum, graphFromDate]);
 
   // Cumulative monthly data calculation (Target vs Current by Month)
   const cumulativeMonthData = useMemo(() => {

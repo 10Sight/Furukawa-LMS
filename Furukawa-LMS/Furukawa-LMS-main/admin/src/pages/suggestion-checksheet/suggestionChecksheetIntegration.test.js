@@ -612,3 +612,16 @@ test('38. Suggestion Checksheet 4 mandatory sections validation and centered Ale
   assert.ok(detailCode.includes('setIsAlertModalOpen(true)'), 'Centered alert modal must be opened when mandatory fields are missing');
   assert.ok(detailCode.includes('<SuggestionChecksheetAlertModal'), 'SuggestionChecksheetDetail must embed SuggestionChecksheetAlertModal');
 });
+
+test('39. Target value is calculated as sum of all department targets (not average), and \'- Target\' suffix is removed from department labels in target modal', () => {
+  const graphCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetGraph.jsx', import.meta.url), 'utf8');
+  const targetCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionTargetModal.jsx', import.meta.url), 'utf8');
+
+  // 1. Target line value in graph uses SUM across all departments (not average / length)
+  assert.ok(!graphCode.includes('/ deptKeys.length'), 'Average division must be removed from targetLineValue');
+  assert.ok(graphCode.includes('TARGET_DEPARTMENTS.reduce'), 'Sum must be calculated across TARGET_DEPARTMENTS');
+
+  // 2. '- Target' removed from department labels in target modal
+  assert.ok(!targetCode.includes('<span>{dept} - Target</span>'), '\'- Target\' suffix must be removed from department label');
+  assert.ok(targetCode.includes('<span>{dept}</span>'), 'Department card must render department name only');
+});

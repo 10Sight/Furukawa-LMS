@@ -384,7 +384,7 @@ export default function SuggestionTargetModal({
                 >
                   <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
-                    <span>{dept} - Target</span>
+                    <span>{dept}</span>
                   </label>
                   <div className="relative">
                     <input

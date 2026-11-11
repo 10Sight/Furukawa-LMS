@@ -28,7 +28,8 @@ import {
   Layers,
   Mail,
   BarChart3,
-  Lock
+  Lock,
+  Video
 } from 'lucide-react';
 import ImageEditorModal from '../pdca/ImageEditorModal';
 import FileUploadSelectionModal from '../pdca/FileUploadSelectionModal';
@@ -357,11 +358,11 @@ export default function LpaPdcaSheet({
 
   const normalizeRow = (row) => {
     if (!row) return createEmptyRow();
-    const isDocBefore = row.fileTypeBefore && ['pdf', 'excel', 'ppt', 'document'].includes(row.fileTypeBefore);
+    const isDocBefore = row.fileTypeBefore && ['pdf', 'excel', 'ppt', 'document', 'video'].includes(row.fileTypeBefore);
     const imagesBefore = Array.isArray(row.imagesBefore) && !isDocBefore
       ? row.imagesBefore
       : (!isDocBefore && row.imageBefore ? [{ id: 'legacy-before-0', url: row.imageBefore, name: row.imageBeforeName || 'Before Image', type: row.fileTypeBefore || 'image' }] : []);
-    const isDocAfter = row.fileTypeAfter && ['pdf', 'excel', 'ppt', 'document'].includes(row.fileTypeAfter);
+    const isDocAfter = row.fileTypeAfter && ['pdf', 'excel', 'ppt', 'document', 'video'].includes(row.fileTypeAfter);
     const imagesAfter = Array.isArray(row.imagesAfter) && !isDocAfter
       ? row.imagesAfter
       : (!isDocAfter && row.imageAfter ? [{ id: 'legacy-after-0', url: row.imageAfter, name: row.imageAfterName || 'After Image', type: row.fileTypeAfter || 'image' }] : []);
@@ -2527,6 +2528,13 @@ export default function LpaPdcaSheet({
                                     {row.imageBeforeName || 'PPT'}
                                   </span>
                                 </div>
+                              ) : row.fileTypeBefore === 'video' ? (
+                                <div className="h-12 px-2 rounded flex flex-col items-center justify-center gap-1 cursor-pointer bg-purple-50 text-purple-800 border border-purple-300">
+                                  <Video className="w-4 h-4 text-purple-600" />
+                                  <span className="text-[10px] font-bold truncate max-w-[100px]">
+                                    {row.imageBeforeName || 'Video'}
+                                  </span>
+                                </div>
                               ) : (
                                 <div className="relative w-full h-full min-h-[90px] flex items-center justify-center p-1.5 m-0 overflow-hidden group/imgcell">
                                   <img
@@ -2659,6 +2667,22 @@ export default function LpaPdcaSheet({
                                 <Presentation className="w-5 h-5 text-orange-600" />
                                 <span className="text-[7.5px] font-bold text-orange-800 truncate w-full text-center px-0.5 mt-0.5">
                                   {row.imageAfterName || 'PPT'}
+                                </span>
+                              </div>
+                            ) : row.fileTypeAfter === 'video' ? (
+                              <div
+                                onClick={() => setSelectedImageAction({
+                                  type: 'after',
+                                  rowIndex: idx,
+                                  preview: row.imageAfter,
+                                  fileType: row.fileTypeAfter,
+                                  fileName: row.imageAfterName
+                                })}
+                                className="w-full h-full bg-purple-50 flex flex-col items-center justify-center p-0.5 cursor-pointer hover:bg-purple-100 transition-colors"
+                              >
+                                <Video className="w-5 h-5 text-purple-600" />
+                                <span className="text-[7.5px] font-bold text-purple-800 truncate w-full text-center px-0.5 mt-0.5">
+                                  {row.imageAfterName || 'Video'}
                                 </span>
                               </div>
                             ) : (
@@ -3138,12 +3162,22 @@ export default function LpaPdcaSheet({
           onClick={() => setActivePreviewImage(null)}
         >
           <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center">
-            <img
-              src={activePreviewImage}
-              alt="Enlarged view"
-              className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            />
+            {typeof activePreviewImage === 'string' && (/\.(mp4|webm|ogg|mov|mkv)$/i.test(activePreviewImage) || activePreviewImage.startsWith('data:video/')) ? (
+              <video
+                controls
+                autoPlay
+                src={activePreviewImage}
+                className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              />
+            ) : (
+              <img
+                src={activePreviewImage}
+                alt="Enlarged view"
+                className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              />
+            )}
             <button
               type="button"
               onClick={() => setActivePreviewImage(null)}

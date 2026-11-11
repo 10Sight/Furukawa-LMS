@@ -31,7 +31,8 @@ import {
   AlertCircle,
   Mail,
   Lock,
-  Clock
+  Clock,
+  Video
 } from 'lucide-react';
 import ImageEditorModal from './ImageEditorModal';
 import FileUploadSelectionModal from './FileUploadSelectionModal';
@@ -934,11 +935,11 @@ export default function PDCASheet({
   // Helper to ensure row has normalized imagesBefore and imagesAfter arrays
   const normalizeRow = (row) => {
     if (!row) return createEmptyRow();
-    const isDocBefore = row.fileTypeBefore && ['pdf', 'excel', 'ppt', 'document'].includes(row.fileTypeBefore);
+    const isDocBefore = row.fileTypeBefore && ['pdf', 'excel', 'ppt', 'document', 'video'].includes(row.fileTypeBefore);
     const imagesBefore = Array.isArray(row.imagesBefore) && !isDocBefore
       ? row.imagesBefore
       : (!isDocBefore && row.imageBefore ? [{ id: 'legacy-before-0', url: row.imageBefore, name: row.imageBeforeName || 'Before Image', type: row.fileTypeBefore || 'image' }] : []);
-    const isDocAfter = row.fileTypeAfter && ['pdf', 'excel', 'ppt', 'document'].includes(row.fileTypeAfter);
+    const isDocAfter = row.fileTypeAfter && ['pdf', 'excel', 'ppt', 'document', 'video'].includes(row.fileTypeAfter);
     const imagesAfter = Array.isArray(row.imagesAfter) && !isDocAfter
       ? row.imagesAfter
       : (!isDocAfter && row.imageAfter ? [{ id: 'legacy-after-0', url: row.imageAfter, name: row.imageAfterName || 'After Image', type: row.fileTypeAfter || 'image' }] : []);
@@ -4453,6 +4454,9 @@ export default function PDCASheet({
     if (['ppt', 'pptx'].includes(ext) || mimeType.includes('presentation') || mimeType.includes('powerpoint')) {
       return 'ppt';
     }
+    if (['mp4', 'webm', 'ogg', 'mov', 'avi', 'mkv', 'wmv', 'flv'].includes(ext) || mimeType.startsWith('video/')) {
+      return 'video';
+    }
     return 'document';
   };
 
@@ -4473,14 +4477,14 @@ export default function PDCASheet({
     const { rowIndex, field, nameField, typeField } = uploadSelectionModal;
     if (rowIndex === null || !fileOrFiles) return;
 
-    const MAX_SIZE = 15 * 1024 * 1024; // 15 MB limit
+    const IMAGE_MAX_SIZE = 15 * 1024 * 1024; // 15 MB limit for images
 
     // Multiple uploads permitted strictly for Images
     if (uploadTypeId === 'image') {
       const files = Array.isArray(fileOrFiles) ? fileOrFiles : [fileOrFiles];
       if (files.length === 0) return;
 
-      const oversized = files.filter((f) => f.size > MAX_SIZE);
+      const oversized = files.filter((f) => f.size > IMAGE_MAX_SIZE);
       if (oversized.length > 0) {
         const sizeMB = (oversized[0].size / (1024 * 1024)).toFixed(1);
         setAlertModal({
@@ -4554,9 +4558,13 @@ export default function PDCASheet({
       return;
     }
 
-    // Single upload for PDF, PPT, Excel documents
+    // Single upload for PDF, PPT, Excel, Video documents
     const file = Array.isArray(fileOrFiles) ? fileOrFiles[0] : fileOrFiles;
     if (!file) return;
+
+    const isVideo = uploadTypeId === 'video';
+    const MAX_SIZE = isVideo ? 200 * 1024 * 1024 : 15 * 1024 * 1024;
+    const maxMbLabel = isVideo ? '200 MB' : '15 MB';
 
     if (file.size > MAX_SIZE) {
       const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
@@ -4564,14 +4572,14 @@ export default function PDCASheet({
         isOpen: true,
         type: 'warning',
         title: 'File Too Large',
-        message: `The selected file is ${sizeMB} MB, which exceeds the maximum allowed limit of 15 MB. Please select a smaller file.`,
+        message: `The selected file is ${sizeMB} MB, which exceeds the maximum allowed limit of ${maxMbLabel}. Please select a smaller file.`,
         confirmText: 'Understood'
       });
       return;
     }
 
     const detectedType = getFileType(file.name, file.type) || uploadTypeId;
-    const finalType = ['image', 'pdf', 'excel', 'ppt'].includes(uploadTypeId) ? uploadTypeId : detectedType;
+    const finalType = ['image', 'pdf', 'excel', 'ppt', 'video'].includes(uploadTypeId) ? uploadTypeId : detectedType;
 
     let serverUrl = null;
     if (topic?.id) {
@@ -4589,9 +4597,7 @@ export default function PDCASheet({
       }
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target.result;
+    const handleProcessedFile = (dataUrl) => {
       const fileSrc = serverUrl || dataUrl;
       const imagesField = field === 'imageBefore' ? 'imagesBefore' : 'imagesAfter';
 
@@ -4610,7 +4616,7 @@ export default function PDCASheet({
       // Close selection modal
       setUploadSelectionModal((prev) => ({ ...prev, isOpen: false }));
 
-      // Directly open the View modal for the uploaded document
+      // Directly open the View modal for the uploaded document / video
       setSelectedImageAction({
         rowIndex,
         field,
@@ -4623,7 +4629,14 @@ export default function PDCASheet({
       });
     };
 
-    reader.readAsDataURL(file);
+    if (isVideo && file.size > 25 * 1024 * 1024) {
+      handleProcessedFile(URL.createObjectURL(file));
+    } else {
+      const reader = new FileReader();
+      reader.onload = (event) => handleProcessedFile(event.target.result);
+      reader.onerror = () => handleProcessedFile(URL.createObjectURL(file));
+      reader.readAsDataURL(file);
+    }
   };
 
   // Open editor screen (applicable for Images only with Pen, Crop, and Add Text)
@@ -6027,7 +6040,7 @@ export default function PDCASheet({
 
                     {/* 7. Image (Before) - Auto-adjusts width/height, shows image in whole cell, hover reveals View and count */}
                     {(() => {
-                      const isDoc = row.fileTypeBefore && ['pdf', 'excel', 'ppt', 'document'].includes(row.fileTypeBefore);
+                      const isDoc = row.fileTypeBefore && ['pdf', 'excel', 'ppt', 'document', 'video'].includes(row.fileTypeBefore);
                       const beforeImages = Array.isArray(row.imagesBefore)
                         ? row.imagesBefore
                         : (row.imageBefore && (!row.fileTypeBefore || row.fileTypeBefore === 'image')
@@ -6069,8 +6082,12 @@ export default function PDCASheet({
                                         <FileText className="w-5 h-5 text-rose-600" />
                                       ) : row.fileTypeBefore === 'excel' ? (
                                         <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
-                                      ) : (
+                                      ) : row.fileTypeBefore === 'ppt' ? (
                                         <Presentation className="w-5 h-5 text-amber-600" />
+                                      ) : row.fileTypeBefore === 'video' ? (
+                                        <Video className="w-5 h-5 text-purple-600" />
+                                      ) : (
+                                        <File className="w-5 h-5 text-blue-600" />
                                       )}
                                     </div>
                                     <span className="text-[10px] font-semibold text-slate-700 truncate max-w-[120px] block">
@@ -6216,7 +6233,7 @@ export default function PDCASheet({
 
                     {/* 10. Image After - Auto-adjusts width/height, shows image in whole cell, hover reveals View and count */}
                     {(() => {
-                      const isDoc = row.fileTypeAfter && ['pdf', 'excel', 'ppt', 'document'].includes(row.fileTypeAfter);
+                      const isDoc = row.fileTypeAfter && ['pdf', 'excel', 'ppt', 'document', 'video'].includes(row.fileTypeAfter);
                       const afterImages = Array.isArray(row.imagesAfter)
                         ? row.imagesAfter
                         : (row.imageAfter && (!row.fileTypeAfter || row.fileTypeAfter === 'image')
@@ -6258,8 +6275,12 @@ export default function PDCASheet({
                                         <FileText className="w-5 h-5 text-rose-600" />
                                       ) : row.fileTypeAfter === 'excel' ? (
                                         <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
-                                      ) : (
+                                      ) : row.fileTypeAfter === 'ppt' ? (
                                         <Presentation className="w-5 h-5 text-amber-600" />
+                                      ) : row.fileTypeAfter === 'video' ? (
+                                        <Video className="w-5 h-5 text-purple-600" />
+                                      ) : (
+                                        <File className="w-5 h-5 text-blue-600" />
                                       )}
                                     </div>
                                     <span className="text-[10px] font-semibold text-slate-700 truncate max-w-[120px] block">
@@ -7255,6 +7276,8 @@ export default function PDCASheet({
                     <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
                   ) : selectedImageAction.fileType === 'ppt' ? (
                     <Presentation className="w-4 h-4 text-amber-600" />
+                  ) : selectedImageAction.fileType === 'video' ? (
+                    <Video className="w-4 h-4 text-purple-600" />
                   ) : (
                     <Eye className="w-4 h-4 text-blue-600" />
                   )}
@@ -7376,6 +7399,22 @@ export default function PDCASheet({
                     <Eye className="w-3.5 h-3.5" />
                     <span>Click to Enlarge</span>
                   </button>
+                </div>
+              ) : selectedImageAction.fileType === 'video' ? (
+                <div className="flex flex-col items-center justify-center p-4 bg-slate-900 rounded-xl shadow-lg border border-slate-700 max-w-2xl w-full">
+                  <video
+                    controls
+                    src={getMediaUrl(selectedImageAction.imageSrc)}
+                    className="max-h-[60vh] max-w-full rounded-lg"
+                  >
+                    Your browser does not support the video tag.
+                  </video>
+                  <div className="mt-3 flex items-center justify-between w-full text-slate-300 text-xs px-2">
+                    <span className="truncate font-semibold">{selectedImageAction.imageName}</span>
+                    <span className="text-[10px] uppercase font-bold text-purple-400 bg-purple-950/60 px-2 py-0.5 rounded border border-purple-800">
+                      Video (Max 200 MB)
+                    </span>
+                  </div>
                 </div>
               ) : (
                 <div className="flex flex-col items-center justify-center p-8 text-center bg-white rounded-xl shadow-lg border border-slate-200 max-w-sm">

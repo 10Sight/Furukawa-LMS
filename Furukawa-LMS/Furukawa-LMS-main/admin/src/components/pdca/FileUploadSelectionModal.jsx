@@ -6,7 +6,8 @@ import {
   FileText,
   Presentation,
   FileSpreadsheet,
-  UploadCloud
+  UploadCloud,
+  Video
 } from 'lucide-react';
 
 export default function FileUploadSelectionModal({
@@ -20,8 +21,7 @@ export default function FileUploadSelectionModal({
   const [imagePreviews, setImagePreviews] = useState([]);
   const imageInputRef = useRef(null);
   const selectTypeRef = useRef(onSelectType);
-  const imageOnly = columnTitle === 'Image Upload';
-  const showImageDropZone = imageOnly || columnTitle === 'Image (Before)' || columnTitle === 'Image (After)';
+  const showImageDropZone = columnTitle === 'Image Upload' || columnTitle === 'Image (Before)' || columnTitle === 'Image (After)';
   selectTypeRef.current = onSelectType;
   useEffect(() => () => imagePreviews.forEach((preview) => URL.revokeObjectURL(preview.url)), [imagePreviews]);
 
@@ -125,6 +125,19 @@ export default function FileUploadSelectionModal({
       borderColor: 'border-emerald-200 hover:border-emerald-400',
       iconColor: 'text-emerald-600',
       badge: 'Spreadsheet'
+    },
+    {
+      id: 'video',
+      title: 'Upload Video',
+      subtitle: 'MP4, WEBM, MOV, MKV',
+      desc: 'Upload video clip or audit recording (Up to 200 MB)',
+      icon: Video,
+      accept: 'video/mp4,video/webm,video/ogg,video/quicktime,video/x-matroska,video/x-msvideo,.mp4,.webm,.ogg,.mov,.mkv,.avi',
+      multiple: false,
+      bgColor: 'bg-purple-50/70 hover:bg-purple-100/80',
+      borderColor: 'border-purple-200 hover:border-purple-400',
+      iconColor: 'text-purple-600',
+      badge: 'Video 200 MB'
     }
   ];
 
@@ -132,7 +145,9 @@ export default function FileUploadSelectionModal({
     const rawFiles = e.target.files;
     if (!rawFiles || rawFiles.length === 0) return;
     const files = Array.from(rawFiles);
-    const MAX_SIZE = 15 * 1024 * 1024; // 15 MB limit
+    const isVideo = opt.id === 'video';
+    const MAX_SIZE = isVideo ? 200 * 1024 * 1024 : 15 * 1024 * 1024; // 200 MB limit for video, 15 MB for others
+    const maxMbLabel = isVideo ? '200 MB' : '15 MB';
 
     if (opt.id === 'image') {
       // Validate that all selected files are valid images
@@ -152,14 +167,13 @@ export default function FileUploadSelectionModal({
       if (oversized.length > 0) {
         const sizeMB = (oversized[0].size / (1024 * 1024)).toFixed(1);
         window.alert(
-          `File "${oversized[0].name}" is ${sizeMB} MB, which exceeds the maximum allowed limit of 15 MB. Please select smaller files.`
+          `File "${oversized[0].name}" is ${sizeMB} MB, which exceeds the maximum allowed limit of ${maxMbLabel}. Please select smaller files.`
         );
         e.target.value = '';
         return;
       }
 
-      if (imageOnly) acceptImageFiles(files);
-      else if (onSelectType) onSelectType('image', files);
+      if (onSelectType) onSelectType('image', files);
       else if (onUploadSuccess && files[0]) {
         const reader = new FileReader();
         reader.onload = (evt) => onUploadSuccess({ url: evt.target.result, name: files[0].name, type: 'image' });
@@ -167,13 +181,13 @@ export default function FileUploadSelectionModal({
       }
       e.target.value = '';
     } else {
-      // PDF, PPT, Excel - Single file only
+      // PDF, PPT, Excel, Video - Single file only
       const file = files[0];
 
       if (file.size > MAX_SIZE) {
         const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
         window.alert(
-          `The selected file "${file.name}" is ${sizeMB} MB, which exceeds the maximum allowed limit of 15 MB. Please select a smaller file.`
+          `The selected file "${file.name}" is ${sizeMB} MB, which exceeds the maximum allowed limit of ${maxMbLabel}. Please select a smaller file.`
         );
         e.target.value = '';
         return;
@@ -211,20 +225,46 @@ export default function FileUploadSelectionModal({
           e.target.value = '';
           return;
         }
+      } else if (opt.id === 'video') {
+        const isVideoFile =
+          file.type.startsWith('video/') ||
+          /\.(mp4|webm|ogg|mov|mkv|avi|wmv|flv)$/i.test(file.name);
+        if (!isVideoFile) {
+          window.alert(
+            `Invalid file type: "${file.name}". Please select a valid video file (.mp4, .webm, .ogg, .mov, .mkv, .avi).`
+          );
+          e.target.value = '';
+          return;
+        }
       }
 
       if (onSelectType) {
         onSelectType(opt.id, file);
       } else if (onUploadSuccess) {
-        const reader = new FileReader();
-        reader.onload = (evt) => {
+        if (opt.id === 'video' && file.size > 25 * 1024 * 1024) {
           onUploadSuccess({
-            url: evt.target.result,
+            url: URL.createObjectURL(file),
             name: file.name,
-            type: opt.id
+            type: 'video'
           });
-        };
-        reader.readAsDataURL(file);
+        } else {
+          const reader = new FileReader();
+          reader.onload = (evt) => {
+            onUploadSuccess({
+              url: evt.target.result,
+              name: file.name,
+              type: opt.id
+            });
+          };
+          reader.onerror = () => {
+            onUploadSuccess({
+              url: URL.createObjectURL(file),
+              name: file.name,
+              type: opt.id
+            });
+          };
+          reader.readAsDataURL(file);
+        }
       }
       e.target.value = '';
     }
@@ -236,7 +276,7 @@ export default function FileUploadSelectionModal({
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl w-full max-w-3xl lg:max-w-4xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col animate-in zoom-in-95 duration-150"
+        className="bg-white rounded-2xl w-full max-w-4xl lg:max-w-5xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col animate-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
@@ -266,7 +306,7 @@ export default function FileUploadSelectionModal({
           </button>
         </div>
 
-        {/* 4 Interactive Cards */}
+        {/* 5 Interactive Cards (Upload Image, Upload PDF, Upload PPT, Upload Excel, Upload Video) */}
         <div className="p-4 sm:p-5">
           {showImageDropZone ? (
             <div
@@ -292,8 +332,8 @@ export default function FileUploadSelectionModal({
               )}
             </div>
           ) : null}
-          <div className={`grid gap-3 ${imageOnly ? 'grid-cols-1 max-w-sm mx-auto' : 'grid-cols-2 md:grid-cols-4'}`}>
-            {(imageOnly ? uploadOptions.filter((opt) => opt.id === 'image') : uploadOptions).map((opt) => {
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            {uploadOptions.map((opt) => {
               const IconComp = opt.icon;
               return (
                 <label
@@ -301,17 +341,12 @@ export default function FileUploadSelectionModal({
                   className={`group relative flex flex-col p-3.5 rounded-xl border-2 cursor-pointer transition-all duration-200 ${opt.bgColor} ${opt.borderColor} hover:shadow-md hover:-translate-y-0.5 justify-between min-h-[145px]`}
                 >
                   <input
-                    ref={imageOnly && opt.id === 'image' ? imageInputRef : undefined}
                     type="file"
                     accept={opt.accept}
                     multiple={opt.multiple}
                     className="hidden"
                     onChange={(e) => handleFileChange(opt, e)}
                   />
-
-                  {imageOnly && opt.id === 'image' && (
-                    <button type="button" onClick={() => imageInputRef.current?.click()} className="absolute inset-0 z-10 cursor-pointer" aria-label="Upload image from computer" />
-                  )}
 
                   {/* Top: Icon + Badge Tag */}
                   <div>
@@ -351,7 +386,7 @@ export default function FileUploadSelectionModal({
 
         {/* Footer */}
         <div className="px-5 py-2.5 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-          <span>Supported: Images, PDF, PowerPoint (.ppt, .pptx), Excel (.xlsx, .csv)</span>
+          <span>Supported: Images, PDF, PowerPoint (.ppt, .pptx), Excel (.xlsx, .csv), Video (limit 200 MB)</span>
           <button
             onClick={onClose}
             className="px-3 py-1 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-200/60 rounded-md transition-colors cursor-pointer"

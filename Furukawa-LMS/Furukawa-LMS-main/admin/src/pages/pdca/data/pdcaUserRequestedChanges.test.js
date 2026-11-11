@@ -1491,3 +1491,45 @@ test('31. Plant-to-Department and Self PDCA visibility, independent department/s
   assert.equal(userBPoints.length, 3, 'User B receives only their 3 assigned points');
   assert.ok(userBPoints.every(p => p.observation.startsWith('B')), 'User B does not see User A points');
 });
+
+test('32. FileUploadSelectionModal includes Upload Video option with 200 MB limit alongside Image, PDF, PPT, and Excel', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+
+  const modalPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/pdca/FileUploadSelectionModal.jsx');
+  const modalCode = fs.readFileSync(modalPath, 'utf8');
+
+  // 1. Verify all 5 upload options are present in the exact order requested
+  const imageIdx = modalCode.indexOf("id: 'image'");
+  const pdfIdx = modalCode.indexOf("id: 'pdf'");
+  const pptIdx = modalCode.indexOf("id: 'ppt'");
+  const excelIdx = modalCode.indexOf("id: 'excel'");
+  const videoIdx = modalCode.indexOf("id: 'video'");
+
+  assert.ok(imageIdx !== -1, 'Upload Image option must exist');
+  assert.ok(pdfIdx !== -1, 'Upload PDF option must exist');
+  assert.ok(pptIdx !== -1, 'Upload PPT option must exist');
+  assert.ok(excelIdx !== -1, 'Upload Excel option must exist');
+  assert.ok(videoIdx !== -1, 'Upload Video option must exist');
+
+  assert.ok(imageIdx < pdfIdx, 'Upload Image must precede Upload PDF');
+  assert.ok(pdfIdx < pptIdx, 'Upload PDF must precede Upload PPT');
+  assert.ok(pptIdx < excelIdx, 'Upload PPT must precede Upload Excel');
+  assert.ok(excelIdx < videoIdx, 'Upload Excel must precede Upload Video');
+
+  // 2. Verify 200 MB limit for Video
+  assert.ok(modalCode.includes('200 * 1024 * 1024'), '200 MB limit must be configured for Video');
+  assert.ok(modalCode.includes('Video limit 200 MB') || modalCode.includes('Video (limit 200 MB)') || modalCode.includes('200 MB'), '200 MB limit must be mentioned in description or badge');
+
+  // 3. Verify grid layout supports 5 options
+  assert.ok(modalCode.includes('lg:grid-cols-5'), 'Grid layout must support 5 columns on desktop');
+
+  // 4. Verify PDCASheet and LpaPdcaSheet support video
+  const pdcaPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/pdca/PDCASheet.jsx');
+  const lpaPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/lpa/LpaPdcaSheet.jsx');
+  const pdcaCode = fs.readFileSync(pdcaPath, 'utf8');
+  const lpaCode = fs.readFileSync(lpaPath, 'utf8');
+
+  assert.ok(pdcaCode.includes("'video'"), 'PDCASheet must support video file type');
+  assert.ok(lpaCode.includes("'video'"), 'LpaPdcaSheet must support video file type');
+});

@@ -625,3 +625,39 @@ test('39. Target value is calculated as sum of all department targets (not avera
   assert.ok(!targetCode.includes('<span>{dept} - Target</span>'), '\'- Target\' suffix must be removed from department label');
   assert.ok(targetCode.includes('<span>{dept}</span>'), 'Department card must render department name only');
 });
+
+test('40. Vertical boundaries enclose date/department in center (no vertical line through date text, tooltip cursor disabled)', () => {
+  const graphCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetGraph.jsx', import.meta.url), 'utf8');
+
+  // 1. Tooltip cursor disabled so hovering on date does not draw vertical line cutting through date text
+  assert.ok(graphCode.includes('<Tooltip cursor={false}'), 'Tooltip must disable cursor line so no line cuts through date text');
+
+  // 2. Custom vertical coordinates generator divides plotWidth by dataCount into category bands
+  assert.ok(graphCode.includes('const bandWidth = plotWidth / dataCount;'), 'bandWidth must be computed as plotWidth / dataCount');
+  assert.ok(graphCode.includes('boundaries.push(Math.round(left + i * bandWidth));'), 'boundaries must be generated at band edges i * bandWidth');
+
+  // 3. Mathematical proof simulation: 2 data items ('Nov Live', '05 Nov') with plot offset [50, 1050]
+  const dataCount = 2;
+  const left = 50;
+  const plotWidth = 1000;
+  const bandWidth = plotWidth / dataCount; // 500
+  const boundaries = [];
+  for (let i = 0; i <= dataCount; i++) {
+    boundaries.push(Math.round(left + i * bandWidth));
+  }
+  // boundaries = [50, 550, 1050]
+  assert.deepStrictEqual(boundaries, [50, 550, 1050]);
+
+  // 'Nov Live' tick coordinate is left + 0.5 * 500 = 300 (dead-center between 50 and 550)
+  const novLiveCenter = left + 0.5 * bandWidth;
+  assert.strictEqual(novLiveCenter, 300);
+  assert.strictEqual(novLiveCenter - boundaries[0], boundaries[1] - novLiveCenter);
+
+  // '05 Nov' tick coordinate is left + 1.5 * 500 = 800 (dead-center between 550 and 1050)
+  const nov05Center = left + 1.5 * bandWidth;
+  assert.strictEqual(nov05Center, 800);
+  assert.strictEqual(nov05Center - boundaries[1], boundaries[2] - nov05Center);
+
+  // Neither boundary line touches the center of '05 Nov' (800)
+  assert.ok(!boundaries.includes(nov05Center), 'No boundary line must ever intersect the center of guidance date text');
+});

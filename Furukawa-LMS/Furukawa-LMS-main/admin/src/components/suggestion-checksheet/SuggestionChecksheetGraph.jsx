@@ -579,17 +579,19 @@ export default function SuggestionChecksheetGraph({
   }, [departmentList]);
 
   // Custom vertical coordinates generator for CartesianGrid so boundary lines are drawn
-  // BETWEEN departments, rather than cutting through the center of department names/candles.
-  const customVerticalCoordinates = ({ xAxis, offset }) => {
-    if (!xAxis || !xAxis.ticks || xAxis.ticks.length === 0) return [];
-    const ticks = xAxis.ticks.map((t) => t.coordinate);
-    if (ticks.length <= 1) return [offset.left, offset.left + offset.width];
-    const halfStep = (ticks[1] - ticks[0]) / 2;
-    const boundaries = [Math.max(offset.left, ticks[0] - halfStep)];
-    for (let i = 0; i < ticks.length - 1; i++) {
-      boundaries.push((ticks[i] + ticks[i + 1]) / 2);
+  // on both sides of every column, enclosing each date / department with text dead-center
+  // (preventing vertical lines from cutting through the center of date or department text).
+  const customVerticalCoordinates = ({ offset, width }) => {
+    const dataCount = chartData.length;
+    if (!dataCount) return [];
+    const left = offset?.left ?? 0;
+    const plotWidth = offset?.width ?? width ?? 0;
+    if (plotWidth <= 0) return [];
+    const bandWidth = plotWidth / dataCount;
+    const boundaries = [];
+    for (let i = 0; i <= dataCount; i++) {
+      boundaries.push(Math.round(left + i * bandWidth));
     }
-    boundaries.push(Math.min(offset.left + offset.width, ticks[ticks.length - 1] + halfStep));
     return boundaries;
   };
 
@@ -824,7 +826,7 @@ export default function SuggestionChecksheetGraph({
                     strokeDasharray="3 3"
                     vertical={true}
                     horizontal={true}
-                    stroke="#E2E8F0"
+                    stroke="#CBD5E1"
                     verticalCoordinatesGenerator={customVerticalCoordinates}
                   />
                   <XAxis
@@ -843,7 +845,7 @@ export default function SuggestionChecksheetGraph({
                     tickLine={false}
                     axisLine={{ stroke: '#94A3B8', strokeWidth: 1.5 }}
                   />
-                  <Tooltip content={<CustomTooltip />} />
+                  <Tooltip cursor={false} content={<CustomTooltip />} />
                   {/* 1. Target Bar Candle */}
                   <Bar
                     dataKey="target"

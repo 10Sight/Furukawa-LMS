@@ -219,11 +219,11 @@ export default function SuggestionChecksheetGraph({
         return {
           displayLabel: dept,
           department: dept,
+          target: deptTarget,
           totalCreated,
           accepted,
           notFeasible,
-          implementedCount,
-          target: deptTarget
+          implementedCount
         };
       });
     }
@@ -277,6 +277,7 @@ export default function SuggestionChecksheetGraph({
         return {
           ...d,
           displayLabel: d.displayDate,
+          target: 0,
           totalCreated: cumTotal,
           accepted: cumAccepted,
           notFeasible: cumNotFeasible,
@@ -350,7 +351,7 @@ export default function SuggestionChecksheetGraph({
         );
       }
 
-      return { totalCreated, accepted, notFeasible, implementedCount, target: targetVal };
+      return { target: targetVal, totalCreated, accepted, notFeasible, implementedCount };
     };
 
     const pastStats = computeMonthStats(pastYr, pastMonth);
@@ -363,11 +364,11 @@ export default function SuggestionChecksheetGraph({
         displayLabel: `${pastShort} Cumul`,
         dateKey: '0000-00-01',
         isCumulativeBucket: true,
+        target: pastStats.target,
         totalCreated: pastStats.totalCreated,
         accepted: pastStats.accepted,
         notFeasible: pastStats.notFeasible,
-        implementedCount: pastStats.implementedCount,
-        target: pastStats.target
+        implementedCount: pastStats.implementedCount
       });
     }
     if (curStats.totalCreated > 0) {
@@ -375,11 +376,11 @@ export default function SuggestionChecksheetGraph({
         displayLabel: `${curShort} Live`,
         dateKey: '0000-00-02',
         isCumulativeBucket: true,
+        target: curStats.target,
         totalCreated: curStats.totalCreated,
         accepted: curStats.accepted,
         notFeasible: curStats.notFeasible,
-        implementedCount: curStats.implementedCount,
-        target: curStats.target
+        implementedCount: curStats.implementedCount
       });
     }
 
@@ -391,11 +392,11 @@ export default function SuggestionChecksheetGraph({
           dateKey: ymd,
           displayLabel: ymd === 'Undated' ? 'Undated' : formatDisplayDate(ymd),
           displayDate: ymd === 'Undated' ? 'Undated' : formatDisplayDate(ymd),
+          target: 0,
           totalCreated: 0,
           accepted: 0,
           notFeasible: 0,
-          implementedCount: 0,
-          target: 0
+          implementedCount: 0
         });
       }
       const entry = dateMap.get(ymd);
@@ -857,6 +858,7 @@ export default function SuggestionChecksheetGraph({
             {chartData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart
+                  key={`${suggestionScope}-${graphTab}`}
                   data={chartData}
                   barGap={0}
                   barCategoryGap={graphTab === 'DEPARTMENT' ? '6%' : (suggestionScope === 'BEST' ? '20%' : '14%')}
@@ -887,9 +889,10 @@ export default function SuggestionChecksheetGraph({
                   />
                   <Tooltip cursor={false} content={<CustomTooltip />} />
 
-                  {/* 1. Target Bar Candle (Hidden in Best Suggestion timeline so Best Suggestion displays ONLY TWO candles: Total & Implemented) */}
+                  {/* 1. Target Bar Candle (First Candle - Hidden in Best Suggestion timeline so Best Suggestion displays ONLY TWO candles: Total & Implemented) */}
                   {!(suggestionScope === 'BEST' && graphTab !== 'DEPARTMENT') && (
                     <Bar
+                      key="bar-target"
                       dataKey="target"
                       name="Target"
                       fill="#F97316"
@@ -901,8 +904,9 @@ export default function SuggestionChecksheetGraph({
                     </Bar>
                   )}
 
-                  {/* 2. Total Bar */}
+                  {/* 2. Total Bar Candle (Second Candle) */}
                   <Bar
+                    key="bar-totalCreated"
                     dataKey="totalCreated"
                     name="Total"
                     fill="#3B82F6"
@@ -913,9 +917,10 @@ export default function SuggestionChecksheetGraph({
                     <LabelList content={renderCustomBarLabel} />
                   </Bar>
 
-                  {/* 3. Accept Bar (Hidden in Best Suggestion timeline) */}
+                  {/* 3. Accept Bar Candle (Hidden in Best Suggestion timeline) */}
                   {!(suggestionScope === 'BEST' && graphTab !== 'DEPARTMENT') && (
                     <Bar
+                      key="bar-accepted"
                       dataKey="accepted"
                       name="Accept"
                       fill="#10B981"
@@ -927,9 +932,10 @@ export default function SuggestionChecksheetGraph({
                     </Bar>
                   )}
 
-                  {/* 4. Not- Feasible Bar (Hidden in Best Suggestion timeline) */}
+                  {/* 4. Not- Feasible Bar Candle (Hidden in Best Suggestion timeline) */}
                   {!(suggestionScope === 'BEST' && graphTab !== 'DEPARTMENT') && (
                     <Bar
+                      key="bar-notFeasible"
                       dataKey="notFeasible"
                       name="Not- Feasible"
                       fill="#EF4444"
@@ -941,8 +947,9 @@ export default function SuggestionChecksheetGraph({
                     </Bar>
                   )}
 
-                  {/* 5. Implemented Bar */}
+                  {/* 5. Implemented Bar Candle */}
                   <Bar
+                    key="bar-implementedCount"
                     dataKey="implementedCount"
                     name="Implemented"
                     fill="#8B5CF6"

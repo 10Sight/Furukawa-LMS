@@ -1,4 +1,5 @@
 import db from '../db/database.js';
+import { isUserAdmin } from '../utils/authCheck.js';
 
 export function getAllPTM(req, res) {
   try {
@@ -169,6 +170,12 @@ export function updatePTM(req, res) {
 
 export function deletePTM(req, res) {
   try {
+    if (!isUserAdmin(req)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden: Only administrators have permission to delete PTM sheets.'
+      });
+    }
     const { id } = req.params;
     db.prepare('DELETE FROM ptm_items WHERE id = ?').run(id);
     db.prepare('DELETE FROM ptm_sheets WHERE sheet_key = ?').run(`item_${id}`);

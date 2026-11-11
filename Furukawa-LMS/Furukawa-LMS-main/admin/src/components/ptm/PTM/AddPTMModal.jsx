@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Check, CalendarDays, UserCheck } from 'lucide-react';
+import { X, Check, UserCheck } from 'lucide-react';
 
 const getTodayIso = () => {
   const now = new Date();
@@ -232,15 +232,6 @@ export default function AddPTMModal({ isOpen, onClose, onAdd, editData, onUpdate
                   onChange={(e) => setFormData({ ...formData, date: e.target.value })}
                   className="w-full text-sm border border-slate-300 rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none text-slate-700 cursor-pointer font-medium"
                 />
-                <button
-                  type="button"
-                  onClick={() => dateInputRef.current?.showPicker?.()}
-                  tabIndex={-1}
-                  aria-label="Open calendar"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 pointer-events-none"
-                >
-                  <CalendarDays className="w-4 h-4" />
-                </button>
               </div>
             </div>
           </div>

@@ -20,6 +20,21 @@ function getAuthHeaders() {
   try {
     const token = localStorage.getItem('token') || sessionStorage.getItem('token');
     if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const rawUser = localStorage.getItem('ptm_auth_user') || localStorage.getItem('user') || sessionStorage.getItem('user');
+    if (rawUser) {
+      const u = typeof rawUser === 'object' ? rawUser : JSON.parse(rawUser);
+      const role = u.role || (u.isAdmin ? 'ADMIN' : 'EMPLOYEE');
+      const isAdmin = Boolean(
+        u.isAdmin ||
+        String(role).toUpperCase() === 'ADMIN' ||
+        String(role).toUpperCase() === 'SUPERADMIN'
+      );
+      headers['x-user-role'] = role;
+      headers['x-user-is-admin'] = String(isAdmin);
+      headers['x-user-name'] = u.userName || u.username || u.name || '';
+      headers['x-user-id'] = String(u.id || u._id || '');
+    }
   } catch {}
   return headers;
 }

@@ -47,7 +47,7 @@ export default function PTMHeader({ headerInfo, setHeaderInfo, projectLeaderOpti
                       value={headerInfo.model || ''}
                       onChange={(e) => handleChange('model', e.target.value)}
                       className="font-bold text-slate-900 outline-none bg-transparent text-[11px] min-w-0 flex-1 px-1 py-0.5 rounded focus:bg-white focus:ring-1 focus:ring-blue-400"
-                      placeholder="YHB_MC25"
+                      placeholder=""
                     />
                   </div>
                 </td>
@@ -81,7 +81,7 @@ export default function PTMHeader({ headerInfo, setHeaderInfo, projectLeaderOpti
                       options={projectLeaderOptions}
                       id="apqp-leader"
                       className="w-full select-text cursor-text font-bold text-slate-900 outline-none bg-transparent text-[11px] min-w-0 px-1 py-0.5 rounded focus:bg-white focus:ring-1 focus:ring-blue-400"
-                      placeholder="Mr. Deepak Chauhan"
+                      placeholder=""
                     />
                   </div>
                 </td>
@@ -126,7 +126,7 @@ export default function PTMHeader({ headerInfo, setHeaderInfo, projectLeaderOpti
                       onChange={(e) => handleChange('reviewDate', e.target.value)}
                       containerClassName="w-fit flex-none"
                       className="w-[15ch] font-semibold text-slate-800 outline-none bg-transparent text-[11px] px-1 py-0.5 rounded focus:bg-white focus:ring-1 focus:ring-blue-400"
-                      placeholder="27-09-2013"
+                      placeholder=""
                     />
                   </div>
                 </td>

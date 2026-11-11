@@ -37,7 +37,7 @@ export default function FmeDashboardPage({ page, viewContext, lpaSource }) {
         error: false,
     };
     const publishUserContext = () => {
-        if (page === 'pdca') frameRef.current?.contentWindow?.postMessage({ type: 'fme-cms-user-context', ...contextRef.current }, window.location.origin);
+        if (page === 'pdca' || page === 'ptm') frameRef.current?.contentWindow?.postMessage({ type: 'fme-cms-user-context', ...contextRef.current }, window.location.origin);
     };
     useEffect(publishUserContext, [page, lpaSource, user]);
     const outletContext = useOutletContext();

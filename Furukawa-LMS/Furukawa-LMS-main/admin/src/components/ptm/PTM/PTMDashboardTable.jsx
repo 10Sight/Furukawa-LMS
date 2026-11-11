@@ -9,6 +9,7 @@ export default function PTMDashboardTable({
   onExportRow,
   pageStartIndex = 0,
   unitSelected = true,
+  canDelete = false,
 }) {
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
@@ -160,18 +161,20 @@ export default function PTMDashboardTable({
                       <Copy className="w-4 h-4" />
                     </button>
 
-                    {/* Delete */}
-                    <button
-                      onClick={() => handleDeleteClick(row.id)}
-                      title={confirmDeleteId === row.id ? 'Click again to confirm delete' : 'Delete PTM Item'}
-                      className={`p-1 rounded transition-colors ${
-                        confirmDeleteId === row.id
-                          ? 'text-rose-600 scale-110 font-bold'
-                          : 'text-slate-400 hover:text-rose-600'
-                      }`}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {/* Delete (Admin only) */}
+                    {canDelete && (
+                      <button
+                        onClick={() => handleDeleteClick(row.id)}
+                        title={confirmDeleteId === row.id ? 'Click again to confirm delete' : 'Delete PTM Item'}
+                        className={`p-1 rounded transition-colors ${
+                          confirmDeleteId === row.id
+                            ? 'text-rose-600 scale-110 font-bold'
+                            : 'text-slate-400 hover:text-rose-600'
+                        }`}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>

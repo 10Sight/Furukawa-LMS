@@ -38,12 +38,12 @@ export default function CalendarDateInput({
         type="text"
         value={value}
         onChange={onChange}
-        className={`${className} pr-6`}
+        className={`${className} pr-4`}
         {...props}
       />
       <CalendarDays
         aria-hidden="true"
-        className="pointer-events-none absolute right-1 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
+        className="pointer-events-none absolute right-0.5 top-1/2 h-3 w-3 -translate-y-1/2 text-slate-400"
       />
       <input
         ref={pickerRef}

@@ -1,9 +1,9 @@
 // FRM-WH-DD-006 Project Tracking Matrix Rev. 17 (YHB MC25) Data
 
 export const initialHeaderInfo = {
-  model: 'YHB_MC25',
+  model: '',
   rank: 'C1',
-  apqpLeader: 'Mr. Deepak Chauhan',
+  apqpLeader: '',
   phase: '1',
   projectLeader: 'Shiva Chaudhary',
   reviewDate: '',

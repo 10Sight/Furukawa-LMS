@@ -151,13 +151,20 @@ function getPortalUser() {
     const raw = localStorage.getItem('user') || sessionStorage.getItem('user');
     if (raw) {
       const u = typeof raw === 'object' ? raw : JSON.parse(raw);
+      const role = u.role || (u.isAdmin ? 'ADMIN' : 'EMPLOYEE');
+      const isAdmin = Boolean(
+        u.isAdmin ||
+        String(role).toUpperCase() === 'ADMIN' ||
+        String(role).toUpperCase() === 'SUPERADMIN'
+      );
       return {
         id: u.id || u._id || 1,
         username: u.userName || u.username || 'ST080014',
         name: u.fullName || u.name || u.userName || 'ST080014',
         employeeId: u.employeeId || u.empId || u.idCard || 'EMP0080',
         department: u.department?.name || (typeof u.department === 'string' ? u.department : '') || 'Assembly',
-        role: u.role || 'admin',
+        role: role,
+        isAdmin: isAdmin,
       };
     }
   } catch {}
@@ -182,10 +189,44 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
         employeeId: 'EMP0080',
         department: 'Assembly',
         role: 'admin',
+        isAdmin: true,
       };
     }
     return null;
   });
+
+  const isAdmin = Boolean(
+    currentUser?.isAdmin === true ||
+    String(currentUser?.role || '').toUpperCase() === 'ADMIN' ||
+    String(currentUser?.role || '').toUpperCase() === 'SUPERADMIN'
+  );
+
+  useEffect(() => {
+    const handleContextMessage = (event) => {
+      if (event.data?.type === 'fme-cms-user-context' && event.data?.user) {
+        const u = event.data.user;
+        const role = u.role || (u.isAdmin ? 'ADMIN' : 'EMPLOYEE');
+        const adminStatus = Boolean(
+          u.isAdmin === true ||
+          String(role).toUpperCase() === 'ADMIN' ||
+          String(role).toUpperCase() === 'SUPERADMIN'
+        );
+        setCurrentUser((prev) => ({
+          ...(prev || {}),
+          ...u,
+          role,
+          isAdmin: adminStatus,
+        }));
+      }
+    };
+    window.addEventListener('message', handleContextMessage);
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: 'fme-cms-user-context-request', page: 'ptm' }, '*');
+      }
+    } catch {}
+    return () => window.removeEventListener('message', handleContextMessage);
+  }, []);
 
   const handleLogout = async () => {
     try {
@@ -514,6 +555,10 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
   };
 
   const handleDeleteListItem = async (id) => {
+    if (!isAdmin) {
+      showToast('❌ Only Admin has permission to delete PTM sheets');
+      return;
+    }
     setListItems((prev) => prev.filter((it) => it.id !== id));
     showToast('✓ PTM item deleted');
     try {
@@ -821,6 +866,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
                 onDelete={handleDeleteListItem}
                 onExportRow={handleExportList}
                 pageStartIndex={(currentPage - 1) * itemsPerPage}
+                canDelete={isAdmin}
               />
             </div>
 
@@ -936,6 +982,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
                     selectedUnit={selectedUnit}
                     onAddNewRow={handleAddRowFromTop}
                     isMerged={true}
+                    isAdmin={isAdmin}
                   />
                 </div>
               </div>

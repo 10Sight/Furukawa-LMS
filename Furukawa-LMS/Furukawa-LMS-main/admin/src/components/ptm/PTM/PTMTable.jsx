@@ -218,6 +218,7 @@ export default function PTMTable({
   onAddNewRow,
   selectedUnit,
   isMerged = false,
+  isAdmin = false,
 }) {
   const tableRef = useRef(null);
   const activeResizeRef = useRef(null);
@@ -697,6 +698,10 @@ export default function PTMTable({
 
   /* ── Delete Row ── */
   const deleteRow = (rowIndex) => {
+    if (!isAdmin) {
+      if (showToast) showToast('❌ Only Admin can delete rows');
+      return;
+    }
     if (rows.length <= 1) {
       if (showToast) showToast('⚠️ Cannot delete the only remaining row');
       return;
@@ -930,16 +935,16 @@ export default function PTMTable({
                 </th>
 
                 {/* Group 6 Columns (Ice Blue tint) */}
-                <th className="py-2 px-1 w-22 min-w-[84px] max-w-[90px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center">
+                <th className="py-2 px-0.5 w-16 min-w-[62px] max-w-[66px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center text-[10px]">
                   Start Date (Plan)
                 </th>
-                <th className="py-2 px-1 w-22 min-w-[84px] max-w-[90px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center">
+                <th className="py-2 px-0.5 w-16 min-w-[62px] max-w-[66px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center text-[10px]">
                   Start Date (Actual)
                 </th>
-                <th className="py-2 px-1 w-22 min-w-[84px] max-w-[90px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center">
+                <th className="py-2 px-0.5 w-16 min-w-[62px] max-w-[66px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center text-[10px]">
                   End Date (Plan)
                 </th>
-                <th className="py-2 px-1 w-22 min-w-[84px] max-w-[90px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center">
+                <th className="py-2 px-0.5 w-16 min-w-[62px] max-w-[66px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center text-[10px]">
                   End Date (Actual)
                 </th>
 
@@ -1018,9 +1023,9 @@ export default function PTMTable({
                   </span>
                 </th>
 
-                {/* Actions Column: Visually separated at the end */}
+                {/* Actions Column: Visually separated section at the end of the sheet */}
                 <th
-                  className="relative overflow-visible py-2 px-2 bg-slate-200 text-slate-800 font-extrabold uppercase text-[10px] tracking-wider text-center sticky right-0 z-20 border-l-4 border-slate-300 shadow-[-6px_0_12px_rgba(0,0,0,0.06)]"
+                  className="relative overflow-visible py-2 px-2 bg-slate-200 text-slate-800 font-extrabold uppercase text-[10px] tracking-wider text-center border-l-4 border-slate-300"
                   style={{
                     width: `${colWidths.actions}px`,
                     minWidth: `${MIN_ACTION_COLUMN_WIDTH}px`,
@@ -1351,7 +1356,7 @@ export default function PTMTable({
                         </td>
 
                         {/* 21. Start Date (Plan) */}
-                        <td className="p-0 text-center">
+                        <td className="p-0 text-center w-16 min-w-[62px] max-w-[66px]">
                           <CalendarDateInput
                             value={row.startDatePlan || ''}
                             onChange={(e) => handleCellChange(originalIndex, 'startDatePlan', e.target.value)}
@@ -1359,12 +1364,12 @@ export default function PTMTable({
                             data-row={originalIndex}
                             data-col="startDatePlan"
                             placeholder="N/A"
-                            className="w-full text-center py-2 px-1 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs font-mono"
+                            className="w-full text-center py-1.5 px-0.5 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-[11px] font-mono"
                           />
                         </td>
 
                         {/* 22. Start Date (Actual) */}
-                        <td className="p-0 text-center">
+                        <td className="p-0 text-center w-16 min-w-[62px] max-w-[66px]">
                           <CalendarDateInput
                             value={row.startDateActual || ''}
                             onChange={(e) => handleCellChange(originalIndex, 'startDateActual', e.target.value)}
@@ -1372,12 +1377,12 @@ export default function PTMTable({
                             data-row={originalIndex}
                             data-col="startDateActual"
                             placeholder="N/A"
-                            className="w-full text-center py-2 px-1 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs font-mono"
+                            className="w-full text-center py-1.5 px-0.5 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-[11px] font-mono"
                           />
                         </td>
 
                         {/* 23. End Date (Plan) */}
-                        <td className="p-0 text-center">
+                        <td className="p-0 text-center w-16 min-w-[62px] max-w-[66px]">
                           <CalendarDateInput
                             value={row.endDatePlan || ''}
                             onChange={(e) => handleCellChange(originalIndex, 'endDatePlan', e.target.value)}
@@ -1385,12 +1390,12 @@ export default function PTMTable({
                             data-row={originalIndex}
                             data-col="endDatePlan"
                             placeholder="N/A"
-                            className="w-full text-center py-2 px-1 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs font-mono"
+                            className="w-full text-center py-1.5 px-0.5 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-[11px] font-mono"
                           />
                         </td>
 
                         {/* 24. End Date (Actual) */}
-                        <td className="p-0 text-center">
+                        <td className="p-0 text-center w-16 min-w-[62px] max-w-[66px]">
                           <CalendarDateInput
                             value={row.endDateActual || ''}
                             onChange={(e) => handleCellChange(originalIndex, 'endDateActual', e.target.value)}
@@ -1398,7 +1403,7 @@ export default function PTMTable({
                             data-row={originalIndex}
                             data-col="endDateActual"
                             placeholder="N/A"
-                            className="w-full text-center py-2 px-1 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs font-mono"
+                            className="w-full text-center py-1.5 px-0.5 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-[11px] font-mono"
                           />
                         </td>
 
@@ -1595,9 +1600,9 @@ export default function PTMTable({
                           />
                         </td>
 
-                        {/* Actions: Visually separated at the end of the sheet */}
+                        {/* Actions: Visually separated section at the end of the sheet */}
                         <td
-                          className="relative overflow-visible py-1.5 px-2 text-center sticky right-0 bg-[#F1F5F9] border-l-4 border-slate-300 shadow-[-6px_0_12px_rgba(0,0,0,0.06)] z-10"
+                          className="relative overflow-visible py-1.5 px-2 text-center bg-[#F1F5F9] border-l-4 border-slate-300 z-10"
                           style={{
                             width: `${colWidths.actions}px`,
                             minWidth: `${MIN_ACTION_COLUMN_WIDTH}px`,
@@ -1620,14 +1625,16 @@ export default function PTMTable({
                             >
                               <Copy className="w-3.5 h-3.5 stroke-[2]" />
                             </button>
-                            <button
-                              onClick={() => deleteRow(originalIndex)}
-                              title="Delete this row"
-                              aria-label="Delete row"
-                              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5 stroke-[2]" />
-                            </button>
+                            {isAdmin && (
+                              <button
+                                onClick={() => deleteRow(originalIndex)}
+                                title="Delete this row"
+                                aria-label="Delete row"
+                                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 stroke-[2]" />
+                              </button>
+                            )}
                             {isParentRow(row) && (
                               <button
                                 onClick={() => toggleRowHidden(originalIndex)}

@@ -212,6 +212,23 @@ export function isPtmRecordCreator(item, user) {
   return false;
 }
 
+export function matchesDateRange(item, fromDate = '', toDate = '') {
+  if (!fromDate && !toDate) return true;
+  const raw = String(item?.date || item?.auditDate || item?.createdAt || '').trim();
+  if (!raw) return false;
+  let date;
+  const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  const dmy = raw.match(/^(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{2,4})$/);
+  if (iso) date = `${iso[1]}-${String(iso[2]).padStart(2, '0')}-${String(iso[3]).padStart(2, '0')}`;
+  else if (dmy) date = `${dmy[3].length === 2 ? `20${dmy[3]}` : dmy[3]}-${String(dmy[2]).padStart(2, '0')}-${String(dmy[1]).padStart(2, '0')}`;
+  else {
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return false;
+    date = `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`;
+  }
+  return (!fromDate || date >= fromDate) && (!toDate || date <= toDate);
+}
+
 export function getUserDepartment(user) {
   if (!user) return '';
   return user.department || user.deptName || user.primaryDept || (typeof user.dept === 'string' ? user.dept : '') || '';
@@ -227,7 +244,9 @@ export function getPTMVisibleSheets(items, plant, scope, options = {}) {
   const {
     department = '',
     currentUser = null,
-    search = ''
+    search = '',
+    fromDate = '',
+    toDate = ''
   } = options;
 
   if (!Array.isArray(items)) return [];
@@ -246,6 +265,9 @@ export function getPTMVisibleSheets(items, plant, scope, options = {}) {
       const matchQuery = [item.topic, item.description, item.id, item.department, item.createdBy?.name, item.createdBy?.code]
         .some(val => String(val || '').toLowerCase().includes(query));
       if (!matchQuery) return false;
+    }
+    if (!matchesDateRange(item, fromDate, toDate)) {
+      return false;
     }
     return true;
   });

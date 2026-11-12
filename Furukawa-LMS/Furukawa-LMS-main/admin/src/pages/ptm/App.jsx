@@ -307,6 +307,8 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
   const [activeTab, setActiveTab] = useState('Company'); // 'Company' (Plant) | 'Department' | 'Self PTM'
   const [activePtmSection, setActivePtmSection] = useState('Ongoing'); // 'Ongoing' | 'Done'
   const [listSearch, setListSearch] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -456,9 +458,11 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
   const visibleListItems = useMemo(() => {
     return getPTMVisibleSheets(listItems, selectedUnit, activeTab, {
       currentUser,
-      search: listSearch
+      search: listSearch,
+      fromDate,
+      toDate
     });
-  }, [listItems, selectedUnit, activeTab, currentUser, listSearch]);
+  }, [listItems, selectedUnit, activeTab, currentUser, listSearch, fromDate, toDate]);
 
   const ptmSectionCounts = useMemo(() => {
     return getPTMSectionCounts(visibleListItems, activeTab, {
@@ -807,17 +811,55 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
         {/* ── VIEW 1: PTM DASHBOARD LIST VIEW ── */}
         {currentView === 'list' && (
           <main className="p-4 md:p-6 space-y-4 flex-1 w-full mx-auto max-w-[1600px]">
-            {/* 1. Scope Tabs: Plant (with Dropdown), Department, Self PTM */}
-            <PTMTabNavigation
-              activeTab={activeTab}
-              setActiveTab={(tab) => {
-                setActiveTab(tab);
-                setActivePtmSection('Ongoing');
-                setCurrentPage(1);
-              }}
-              selectedUnit={selectedUnit}
-              setSelectedUnit={handleSelectUnit}
-            />
+            {/* 1. Scope Tabs: Plant (with Dropdown), Department, Self PTM and Calendar Filter */}
+            <div className="flex flex-wrap items-center gap-3">
+              <PTMTabNavigation
+                activeTab={activeTab}
+                setActiveTab={(tab) => {
+                  setActiveTab(tab);
+                  setActivePtmSection('Ongoing');
+                  setCurrentPage(1);
+                }}
+                selectedUnit={selectedUnit}
+                setSelectedUnit={handleSelectUnit}
+              />
+
+              {/* Calendar Filter in the Green Marked Place */}
+              <div id="ptm-date-filter-bar" className="flex flex-wrap items-center gap-2 bg-white rounded-2xl p-2 px-3 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-[#ECEFF3]">
+                <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+                  <span className="text-[11px] font-bold text-slate-500">From Date</span>
+                  <input
+                    type="date"
+                    value={fromDate}
+                    max={toDate || undefined}
+                    onChange={e => { setFromDate(e.target.value); setCurrentPage(1); }}
+                    className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </label>
+                <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+                  <span className="text-[11px] font-bold text-slate-500">To Date</span>
+                  <input
+                    type="date"
+                    value={toDate}
+                    min={fromDate || undefined}
+                    onChange={e => { setToDate(e.target.value); setCurrentPage(1); }}
+                    className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </label>
+                {(fromDate || toDate) && (
+                  <button
+                    type="button"
+                    onClick={() => { setFromDate(''); setToDate(''); setCurrentPage(1); }}
+                    className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer"
+                  >
+                    Clear dates
+                  </button>
+                )}
+                {fromDate && toDate && fromDate > toDate && (
+                  <span role="alert" className="text-xs text-red-600 font-medium">From Date must not be later than To Date.</span>
+                )}
+              </div>
+            </div>
 
             {/* 2. Section Navigation: Ongoing & Done (No sub-filter bar!) */}
             <div className="bg-white rounded-2xl p-3 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-[#ECEFF3] flex items-center justify-between flex-wrap gap-2">

@@ -177,3 +177,54 @@ test('7. PTM Self PTM Visibility & Independent Completion', () => {
   assert.equal(user2Status.section, 'Ongoing', 'User 2 should see the sheet in Ongoing section independently');
 });
 
+test('8. PDCA Page: Calendar filter is positioned in green marked place alongside TabNavigation', () => {
+  const pdcaPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/pages/pdca/pages/DashboardPage.jsx');
+  const pdcaContent = fs.readFileSync(pdcaPath, 'utf8');
+
+  // Verify pdca-date-filter-bar is present
+  assert.match(pdcaContent, /id="pdca-date-filter-bar"/);
+  assert.match(pdcaContent, /From Date/);
+  assert.match(pdcaContent, /To Date/);
+  assert.match(pdcaContent, /Clear dates/);
+
+  // Verify it is positioned alongside TabNavigation in the same flex row
+  const tabNavIndex = pdcaContent.indexOf('<TabNavigation');
+  const dateFilterIndex = pdcaContent.indexOf('id="pdca-date-filter-bar"');
+  assert.ok(tabNavIndex > 0 && dateFilterIndex > 0, 'Both TabNavigation and Date Filter bar must be present');
+  assert.ok(dateFilterIndex > tabNavIndex, 'Date Filter bar must be placed after TabNavigation on the tab row');
+});
+
+test('9. PTM Page: Calendar filter is added in green marked place alongside PTMTabNavigation with date range filtering', () => {
+  const ptmPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/pages/ptm/App.jsx');
+  const ptmContent = fs.readFileSync(ptmPath, 'utf8');
+
+  // Verify ptm-date-filter-bar is present
+  assert.match(ptmContent, /id="ptm-date-filter-bar"/);
+  assert.match(ptmContent, /From Date/);
+  assert.match(ptmContent, /To Date/);
+  assert.match(ptmContent, /Clear dates/);
+
+  // Verify it is placed after PTMTabNavigation in the same flex container
+  const tabNavIndex = ptmContent.indexOf('<PTMTabNavigation');
+  const dateFilterIndex = ptmContent.indexOf('id="ptm-date-filter-bar"');
+  assert.ok(tabNavIndex > 0 && dateFilterIndex > 0, 'Both PTMTabNavigation and Date Filter bar must be present');
+  assert.ok(dateFilterIndex > tabNavIndex, 'Date Filter bar must be placed after PTMTabNavigation on the tab row');
+
+  // Verify date range filtering in getPTMVisibleSheets
+  const items = [
+    { id: '1', date: '10 Sep 2026', topic: 'Early Sept', plant: 'Bawal', scope: 'Company' },
+    { id: '2', date: '25 Sep 2026', topic: 'Late Sept', plant: 'Bawal', scope: 'Company' },
+    { id: '3', date: '15 Oct 2026', topic: 'Mid Oct', plant: 'Bawal', scope: 'Company' }
+  ];
+
+  const septOnly = getPTMVisibleSheets(items, 'Bawal', 'Company', { fromDate: '2026-09-01', toDate: '2026-09-30' });
+  assert.equal(septOnly.length, 2);
+  assert.equal(septOnly[0].id, '1');
+  assert.equal(septOnly[1].id, '2');
+
+  const octOnly = getPTMVisibleSheets(items, 'Bawal', 'Company', { fromDate: '2026-10-01', toDate: '2026-10-31' });
+  assert.equal(octOnly.length, 1);
+  assert.equal(octOnly[0].id, '3');
+});
+
+

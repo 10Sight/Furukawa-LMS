@@ -340,32 +340,64 @@ export default function DashboardPage() {
       {lpaSource && <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-800">LPA · {lpaSource.category === 'assembly' ? 'Assembly' : 'C&C'}{lpaSource.workbookName ? ` · ${lpaSource.workbookName}` : ''}{lpaSource.worksheet ? ` · ${lpaSource.worksheet}` : ''}<p className="mt-1 text-xs">Showing PDCA records linked to this LPA source. New records will be linked automatically.</p><button type="button" onClick={openLpaPdca} className="mt-3 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700">{sourceData.length ? 'Open original PDCA form' : 'Create original PDCA record'}</button></div>}
       {/* Export Action */}
       <FilterToolbar onExportAll={onExportAll || handleExportExcel} />
-      <div className="flex flex-wrap items-end gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
-        <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-600">From Date<input type="date" value={fromDate} max={toDate || undefined} onChange={e => { setFromDate(e.target.value); setCurrentPage(1); }} className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs" /></label>
-        <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-600">To Date<input type="date" value={toDate} min={fromDate || undefined} onChange={e => { setToDate(e.target.value); setCurrentPage(1); }} className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs" /></label>
-        {(fromDate || toDate) && <button type="button" onClick={() => { setFromDate(''); setToDate(''); setCurrentPage(1); }} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Clear dates</button>}
-        {fromDate && toDate && fromDate > toDate && <span role="alert" className="text-xs text-red-600">From Date must not be later than To Date.</span>}
-      </div>
 
-      {/* 2. Tabs: Plant (with Dropdown), Department, Self PDCA, CFT */}
-      <TabNavigation
-        activeTab={activeTab}
-        setActiveTab={(tab) => {
-          setActiveTab(tab);
-          if (tab !== 'Department') {
-            setSelectedDepartment('');
-          }
-          setActiveSection('Ongoing');
-          setActiveSubSection('All');
-          setCurrentPage(1);
-        }}
-        selectedPlant={selectedPlant}
-        setSelectedPlant={(p) => {
-          setSelectedPlant(p);
-          setCurrentPage(1);
-        }}
-        counts={{ selfCount }}
-      />
+      {/* 2. Tabs Bar with Date Filter in the Green-Marked Space */}
+      <div className="flex flex-wrap items-center gap-3">
+        <TabNavigation
+          activeTab={activeTab}
+          setActiveTab={(tab) => {
+            setActiveTab(tab);
+            if (tab !== 'Department') {
+              setSelectedDepartment('');
+            }
+            setActiveSection('Ongoing');
+            setActiveSubSection('All');
+            setCurrentPage(1);
+          }}
+          selectedPlant={selectedPlant}
+          setSelectedPlant={(p) => {
+            setSelectedPlant(p);
+            setCurrentPage(1);
+          }}
+          counts={{ selfCount }}
+        />
+
+        {/* Calendar Filter in the Green Marked Place */}
+        <div id="pdca-date-filter-bar" className="flex flex-wrap items-center gap-2 bg-white rounded-2xl p-2 px-3 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-[#ECEFF3]">
+          <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+            <span className="text-[11px] font-bold text-slate-500">From Date</span>
+            <input
+              type="date"
+              value={fromDate}
+              max={toDate || undefined}
+              onChange={e => { setFromDate(e.target.value); setCurrentPage(1); }}
+              className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </label>
+          <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+            <span className="text-[11px] font-bold text-slate-500">To Date</span>
+            <input
+              type="date"
+              value={toDate}
+              min={fromDate || undefined}
+              onChange={e => { setToDate(e.target.value); setCurrentPage(1); }}
+              className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </label>
+          {(fromDate || toDate) && (
+            <button
+              type="button"
+              onClick={() => { setFromDate(''); setToDate(''); setCurrentPage(1); }}
+              className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer"
+            >
+              Clear dates
+            </button>
+          )}
+          {fromDate && toDate && fromDate > toDate && (
+            <span role="alert" className="text-xs text-red-600 font-medium">From Date must not be later than To Date.</span>
+          )}
+        </div>
+      </div>
 
       {/* Section Navigation (Plant, Department, Self PDCA) */}
       {activeTab !== 'CFT' && (

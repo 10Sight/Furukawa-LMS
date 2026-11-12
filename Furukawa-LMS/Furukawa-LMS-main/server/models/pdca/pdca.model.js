@@ -331,7 +331,7 @@ export class PDCAModel {
     static async findAll({ plant, scope, search, page = 1, limit = 100 } = {}) {
         const dbActive = await isDbConnected();
         if (dbActive) {
-            let whereClauses = ["isDeleted = 0"];
+            let whereClauses = ["isDeleted = 0", "recordId NOT IN ('PDCA-LPA-ASSEMBLY-Bawal', 'PDCA-LPA-CC-Bawal')"];
             let params = [];
 
             if (plant && plant !== 'Unit' && plant !== 'All Plants') {
@@ -372,7 +372,7 @@ export class PDCAModel {
 
         // Fallback / in-sync store read
         const store = readFallbackStore();
-        let filtered = store.records.filter(r => !r.isDeleted);
+        let filtered = store.records.filter(r => !r.isDeleted && r.id !== 'PDCA-LPA-ASSEMBLY-Bawal' && r.id !== 'PDCA-LPA-CC-Bawal');
 
         if (plant && plant !== 'Unit' && plant !== 'All Plants') {
             filtered = filtered.filter(r => r.plant === plant);

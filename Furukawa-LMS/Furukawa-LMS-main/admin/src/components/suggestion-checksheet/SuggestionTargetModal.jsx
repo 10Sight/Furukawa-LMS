@@ -228,7 +228,11 @@ export default function SuggestionTargetModal({
   };
 
   const handleReset = () => {
-    setFormTargets(DEFAULT_DEPARTMENT_TARGETS);
+    const zeroTargets = TARGET_DEPARTMENTS.reduce((acc, dept) => {
+      acc[dept] = 0;
+      return acc;
+    }, {});
+    setFormTargets(zeroTargets);
   };
 
   const handleSave = (e) => {

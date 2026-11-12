@@ -87,6 +87,16 @@ const isLpaRecordForSection = (rec, section, unit) => {
   }
 };
 
+export const isDummyLpaPdcaSheet = (sheet) => {
+  if (!sheet) return false;
+  const sId = String(sheet.id || sheet.recordId || '').toUpperCase();
+  const sTitle = String(sheet.title || sheet.topic || '').trim().toLowerCase();
+  if (sId === 'PDCA-LPA-ASSEMBLY-BAWAL' || sId === 'PDCA-LPA-CC-BAWAL') return true;
+  if (sTitle === 'assembly - lpa observation (pdca)' && (sId.startsWith('PDCA-LPA-ASSEMBLY-BAWAL') || !sheet.createdAt)) return true;
+  if (sTitle === 'c&c - lpa observation (pdca)' && (sId.startsWith('PDCA-LPA-CC-BAWAL') || !sheet.createdAt)) return true;
+  return false;
+};
+
 class PdcaErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -882,7 +892,8 @@ function LpaPageContent({ viewContext }) {
   const [customPdcaSheets, setCustomPdcaSheets] = useState(() => {
     try {
       const saved = localStorage.getItem(`lpa_custom_pdca_sheets_${activeSection}_${selectedUnit || 'Bawal'}`);
-      return saved ? JSON.parse(saved) : [];
+      const list = saved ? JSON.parse(saved) : [];
+      return Array.isArray(list) ? list.filter(s => !isDummyLpaPdcaSheet(s)) : [];
     } catch {
       return [];
     }
@@ -891,8 +902,30 @@ function LpaPageContent({ viewContext }) {
 
   useEffect(() => {
     try {
+      ['assembly', 'cc'].forEach(sec => {
+        ['Bawal', 'Gujrat'].forEach(u => {
+          const key = `lpa_custom_pdca_sheets_${sec}_${u}`;
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            const list = JSON.parse(raw);
+            if (Array.isArray(list)) {
+              const cleaned = list.filter(item => !isDummyLpaPdcaSheet(item));
+              if (cleaned.length !== list.length) {
+                localStorage.setItem(key, JSON.stringify(cleaned));
+              }
+            }
+          }
+          localStorage.removeItem(`lpa_pdca_saved_PDCA-LPA-${sec.toUpperCase()}-${u}`);
+        });
+      });
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
       const saved = localStorage.getItem(`lpa_custom_pdca_sheets_${activeSection}_${selectedUnit || 'Bawal'}`);
-      setCustomPdcaSheets(saved ? JSON.parse(saved) : []);
+      const list = saved ? JSON.parse(saved) : [];
+      setCustomPdcaSheets(Array.isArray(list) ? list.filter(s => !isDummyLpaPdcaSheet(s)) : []);
     } catch {
       setCustomPdcaSheets([]);
     }
@@ -915,23 +948,9 @@ function LpaPageContent({ viewContext }) {
   });
 
   const allPdcaSheets = useMemo(() => {
-    const isCc = activeSection === 'cc';
-    const baseSheetId = `PDCA-LPA-${activeSection.toUpperCase()}-${selectedUnit || 'Bawal'}`;
-    const baseSheet = {
-      id: baseSheetId,
-      title: `${activeSection === 'assembly' ? 'Assembly' : 'C&C'} - LPA Observation (PDCA)`,
-      date: pdcaDate || todayIso,
-      unit: selectedUnit || 'Bawal',
-      department: activeSection === 'assembly' ? 'Assembly' : 'C&C',
-      isDefault: true
-    };
-    let deletedDefaultIds = [];
-    try {
-      deletedDefaultIds = JSON.parse(localStorage.getItem(`lpa_deleted_default_pdca_sheets_${activeSection}_${selectedUnit || 'Bawal'}`) || '[]');
-    } catch { /* An invalid removal cache never changes saved LPA records. */ }
-
     const matchingBackend = (backendPdcaSheets || [])
       .filter(rec => isLpaRecordForSection(rec, activeSection, selectedUnit))
+      .filter(rec => !isDummyLpaPdcaSheet(rec))
       .map(rec => ({
         id: rec.id || rec.recordId,
         title: rec.topic || `${activeSection === 'assembly' ? 'Assembly' : 'C&C'} - LPA Observation (PDCA)`,
@@ -944,7 +963,7 @@ function LpaPageContent({ viewContext }) {
         createdBy: rec.createdBy,
         createdById: rec.createdById,
         createdAt: rec.createdAt,
-        isDefault: (rec.id || rec.recordId) === baseSheetId,
+        isDefault: false,
         sheet: rec.sheet
       }));
 
@@ -953,26 +972,20 @@ function LpaPageContent({ viewContext }) {
       map.set(b.id, b);
     }
 
-    if (!map.has(baseSheetId) && !deletedDefaultIds.includes(baseSheetId)) {
-      map.set(baseSheetId, baseSheet);
-    }
-
     for (const c of (customPdcaSheets || [])) {
-      if (!map.has(c.id) && !deletedDefaultIds.includes(c.id)) {
+      if (!isDummyLpaPdcaSheet(c) && !map.has(c.id)) {
         map.set(c.id, c);
       }
     }
 
     const result = Array.from(map.values());
     return result.sort((a, b) => {
-      if (a.id === baseSheetId) return -1;
-      if (b.id === baseSheetId) return 1;
       const dateA = a.createdAt || a.date || '';
       const dateB = b.createdAt || b.date || '';
       return String(dateB).localeCompare(String(dateA));
     });
   }, [activeSection, selectedUnit, pdcaDate, backendPdcaSheets, customPdcaSheets, pdcaDeleteRevision, isAdmin, effectiveAuthUser]);
-  const visiblePdcaSheets = allPdcaSheets.filter(item => item.isDefault || matchesLpaDateRange(item.date, fromDate, toDate));
+  const visiblePdcaSheets = allPdcaSheets.filter(item => matchesLpaDateRange(item.date, fromDate, toDate));
 
   const emailPdcaSheets = useMemo(() => allPdcaSheets.map(item => {
     let sheetData = null;
@@ -1209,28 +1222,19 @@ function LpaPageContent({ viewContext }) {
   };
 
   const canDeletePdcaSheet = (sheet) => {
-    return Boolean(isAdmin || isRecordCreator(sheet, effectiveAuthUser) || hasPermission('lpa:manage') || hasPermission('pdca:delete') || hasPermission('lpa:delete'));
+    return Boolean(isAdmin);
   };
 
   const handleDeletePdcaSheet = async (sheet) => {
     if (!canDeletePdcaSheet(sheet)) {
-      alert('Only administrators and the sheet creator have permission to delete this PDCA sheet.');
+      alert('Only administrators have permission to delete this PDCA sheet.');
       return;
     }
     if (!confirm(`Are you sure you want to delete "${sheet.title}"?`)) return;
     try {
-      if (sheet.isDefault) {
-        const key = `lpa_deleted_default_pdca_sheets_${activeSection}_${selectedUnit || 'Bawal'}`;
-        const existing = JSON.parse(localStorage.getItem(key) || '[]');
-        const deletedIds = Array.isArray(existing) ? existing : [];
-        if (!deletedIds.includes(sheet.id)) deletedIds.push(sheet.id);
-        localStorage.setItem(key, JSON.stringify(deletedIds));
-        setPdcaDeleteRevision(revision => revision + 1);
-      } else {
-        const updated = customPdcaSheets.filter(item => item.id !== sheet.id);
-        setCustomPdcaSheets(updated);
-        localStorage.setItem(`lpa_custom_pdca_sheets_${activeSection}_${selectedUnit || 'Bawal'}`, JSON.stringify(updated));
-      }
+      const updated = customPdcaSheets.filter(item => item.id !== sheet.id);
+      setCustomPdcaSheets(updated);
+      localStorage.setItem(`lpa_custom_pdca_sheets_${activeSection}_${selectedUnit || 'Bawal'}`, JSON.stringify(updated));
       try {
         await pdcaApi.deleteRecord(sheet.id);
       } catch (apiErr) {

@@ -884,8 +884,20 @@ export const deletePDCARecord = asyncHandler(async (req, res) => {
 
     const isCreator = isUserCreatorOfRecord(user, existing);
     const isAdmin = Boolean(user.isAdmin === true || user.isAdmin === 1 || String(user.role || '').toUpperCase() === 'ADMIN' || String(user.role || '').toUpperCase() === 'SUPERADMIN');
-    if (!isCreator && !isAdmin) {
-        throw new ApiError("Forbidden: Only administrators or the employee who created this PDCA record can delete it", 403);
+    const isLpaObservation = Boolean(
+        String(id).toUpperCase().startsWith('PDCA-LPA-') ||
+        existing.lpaSource != null ||
+        existing.lpaCategory ||
+        /lpa observation/i.test(existing.topic || existing.title || '')
+    );
+    if (isLpaObservation) {
+        if (!isAdmin) {
+            throw new ApiError("Forbidden: Only administrators have permission to delete LPA Observation PDCA sheets", 403);
+        }
+    } else {
+        if (!isCreator && !isAdmin) {
+            throw new ApiError("Forbidden: Only administrators or the employee who created this PDCA record can delete it", 403);
+        }
     }
 
     const actor = user.fullName || user.userName;

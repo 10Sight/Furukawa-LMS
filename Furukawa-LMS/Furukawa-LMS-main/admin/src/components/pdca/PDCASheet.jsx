@@ -5121,9 +5121,9 @@ export default function PDCASheet({
   );
 
   return (
-    <div className="pdca-form-root w-full min-w-0 flex-1 flex flex-col min-h-0 space-y-2 animate-in fade-in duration-150 overflow-hidden">
-      {/* Control Bar: Back Button, Save, Calendar Date, Excel Export, Search & Add Row */}
-      <div className="sticky top-0 shrink-0 z-30 w-full min-w-0 bg-white rounded-xl border border-[#D5DCE5] shadow-[0_1px_3px_rgba(0,0,0,0.03)] overflow-hidden">
+    <div className="pdca-form-root w-full min-w-0 flex-1 flex flex-col min-h-0 space-y-2 animate-in fade-in duration-150">
+      {/* Control Bar: Back Button, Save, Calendar Date, Excel Export, Search & Add Row (Frozen with screen) */}
+      <div className="sticky top-0 shrink-0 z-50 w-full min-w-0 bg-white rounded-xl border border-[#D5DCE5] shadow-[0_2px_8px_rgba(0,0,0,0.08)]">
         {/* Control Toolbar */}
         <div className="px-4 py-2 flex flex-wrap items-center justify-between gap-2.5 text-xs bg-white">
           <div className="flex flex-wrap items-center gap-2 text-slate-500 font-medium">
@@ -5862,7 +5862,7 @@ export default function PDCASheet({
                       {sNo}
                     </td>
 
-                    {/* 4. Status (Frozen - visible dropdown styling but user cannot select) */}
+                    {/* 4. Status (Frozen - clearly visible, vivid & darker colors without browser fade) */}
                     <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[124px] min-w-[118px]">
                       {(() => {
                         const hasDate = Boolean(row.date?.trim());
@@ -5872,24 +5872,36 @@ export default function PDCASheet({
                           : (norm && norm !== 'Not-Started' ? norm : '');
                         return (
                           <div className="w-full flex items-center justify-center">
-                            <select
-                              disabled={true}
+                            <div
                               tabIndex={-1}
                               aria-label={`Status for row ${sNo}`}
-                              value={rowStatus}
-                              className={`w-full min-w-full rounded-md border px-1.5 py-1 text-[14px] font-medium outline-none whitespace-nowrap cursor-not-allowed pointer-events-none select-none text-center ${rowStatus === 'Done' ? 'bg-green-50 text-green-700 border-green-200' :
-                                rowStatus === 'In- Progress' ? 'bg-yellow-50 text-yellow-800 border-yellow-300' :
-                                  rowStatus === 'Delay' ? 'bg-red-50 text-red-700 border-red-200' :
-                                    rowStatus === 'Not-Started' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                                      'bg-slate-50 text-slate-400 border-slate-200'
-                                }`}
+                              className={`w-full min-w-full rounded-md border px-2 py-1 text-[13px] font-bold outline-none whitespace-nowrap select-none flex items-center justify-between cursor-default shadow-xs ${
+                                rowStatus === 'Done' ? 'bg-[#dcfce7] text-[#14532d] border-[#86efac]' :
+                                rowStatus === 'In- Progress' ? 'bg-[#fef3c7] text-[#78350f] border-[#fcd34d]' :
+                                rowStatus === 'Delay' ? 'bg-[#fee2e2] text-[#991b1b] border-[#fca5a5]' :
+                                rowStatus === 'Not-Started' ? 'bg-[#dbeafe] text-[#1e40af] border-[#93c5fd]' :
+                                'bg-slate-50 text-slate-500 border-slate-200'
+                              }`}
+                              style={{
+                                color: rowStatus === 'Done' ? '#14532d' :
+                                  rowStatus === 'In- Progress' ? '#78350f' :
+                                  rowStatus === 'Delay' ? '#991b1b' :
+                                  rowStatus === 'Not-Started' ? '#1e40af' : '#64748b',
+                                backgroundColor: rowStatus === 'Done' ? '#dcfce7' :
+                                  rowStatus === 'In- Progress' ? '#fef3c7' :
+                                  rowStatus === 'Delay' ? '#fee2e2' :
+                                  rowStatus === 'Not-Started' ? '#dbeafe' : '#f8fafc',
+                                borderColor: rowStatus === 'Done' ? '#86efac' :
+                                  rowStatus === 'In- Progress' ? '#fcd34d' :
+                                  rowStatus === 'Delay' ? '#fca5a5' :
+                                  rowStatus === 'Not-Started' ? '#93c5fd' : '#cbd5e1'
+                              }}
                             >
-                              <option value="">Select</option>
-                              <option value="Not-Started" style={{ color: '#1d4ed8', backgroundColor: '#eff6ff' }}>Not-Started</option>
-                              <option value="Done" style={{ color: '#15803d', backgroundColor: '#f0fdf4' }}>Done</option>
-                              <option value="In- Progress" style={{ color: '#854d0e', backgroundColor: '#fefce8' }}>In- Progress</option>
-                              <option value="Delay" style={{ color: '#b91c1c', backgroundColor: '#fef2f2' }}>Delay</option>
-                            </select>
+                              <span className="flex-1 text-center font-bold tracking-wide">
+                                {rowStatus || 'Select'}
+                              </span>
+                              <ChevronDown className="w-3.5 h-3.5 opacity-70 flex-shrink-0" />
+                            </div>
                           </div>
                         );
                       })()}

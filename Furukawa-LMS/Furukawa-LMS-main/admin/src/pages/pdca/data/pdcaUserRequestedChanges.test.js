@@ -1526,3 +1526,26 @@ test('32. FileUploadSelectionModal includes Upload Video option with 200 MB limi
   assert.ok(pdcaCode.includes("'video'"), 'PDCASheet must support video file type');
   assert.ok(lpaCode.includes("'video'"), 'LpaPdcaSheet must support video file type');
 });
+
+test('33. PDCA Sheet: Status column styling is clear & vivid (dark colors) and navbar is frozen with screen', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+
+  const pdcaPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/pdca/PDCASheet.jsx');
+  const pdcaCode = fs.readFileSync(pdcaPath, 'utf8');
+
+  // 1. Verify vivid, darker colors are configured for status options
+  assert.match(pdcaCode, /#991b1b/, 'Delay must use rich dark red');
+  assert.match(pdcaCode, /#78350f/, 'In-Progress must use rich dark amber');
+  assert.match(pdcaCode, /#14532d/, 'Done must use rich dark green');
+  assert.match(pdcaCode, /#1e40af/, 'Not-Started must use rich dark blue');
+
+  // 2. Verify navbar / control bar is frozen with screen (sticky top-0 z-50)
+  assert.match(pdcaCode, /sticky top-0 shrink-0 z-50/, 'Navbar must be sticky top-0 with z-50');
+
+  // 3. Verify MainLayout supports sticky on sheet page
+  const layoutPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/pages/pdca/layouts/MainLayout.jsx');
+  const layoutCode = fs.readFileSync(layoutPath, 'utf8');
+  assert.match(layoutCode, /isSheetPage \? '' : 'overflow-x-hidden'/, 'MainLayout must not block sticky with overflow-x-hidden on sheet page');
+});
+

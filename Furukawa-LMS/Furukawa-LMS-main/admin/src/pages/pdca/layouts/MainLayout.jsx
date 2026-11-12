@@ -60,7 +60,7 @@ export default function MainLayout({ embedded = false, cmsIntegration = false, o
   };
 
   return (
-    <div className="min-h-screen bg-[#F4F6F9] text-slate-800 flex overflow-x-hidden w-full">
+    <div className={`min-h-screen bg-[#F4F6F9] text-slate-800 flex ${isSheetPage ? '' : 'overflow-x-hidden'} w-full`}>
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-4 py-2.5 rounded-xl shadow-xl text-xs font-semibold flex items-center gap-2 animate-in fade-in duration-200">
@@ -93,8 +93,8 @@ export default function MainLayout({ embedded = false, cmsIntegration = false, o
           />
         )}
 
-        <main className={`flex-1 w-full min-w-0 mx-auto overflow-x-hidden ${
-          isSheetPage ? 'p-2 sm:p-3 max-w-full' : 'px-3 sm:px-4 md:px-6 pt-2 pb-6 space-y-3 max-w-[1280px]'
+        <main className={`flex-1 w-full min-w-0 mx-auto ${
+          isSheetPage ? 'p-2 sm:p-3 max-w-full' : 'px-3 sm:px-4 md:px-6 pt-2 pb-6 space-y-3 max-w-[1280px] overflow-x-hidden'
         }`}>
           <Outlet context={{ onExportAll: handleExportExcelAll }} />
         </main>

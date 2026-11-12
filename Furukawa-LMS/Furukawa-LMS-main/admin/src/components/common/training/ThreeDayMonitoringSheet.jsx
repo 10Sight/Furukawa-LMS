@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useSelector } from 'react-redux';
+import { useNavigate, useLocation } from 'react-router-dom';
 import axiosInstance from "@/services/requests/axiosInstance.js";
 import useRevisionInfo from "@/hooks/useRevisionInfo.js";
 import { toast } from "sonner";
@@ -8,10 +9,7 @@ import { exportToExcel } from "@/utils/exportHelper.js";
 import { cn } from "@/utils/classNames.js";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/common/ui/card.jsx";
 import { Button } from "@/components/common/ui/button.jsx";
-import { Input } from "@/components/forms/primitives/input.jsx";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/common/ui/dialog.jsx";
 import {
-    History,
     Loader2,
     Save,
     Download,
@@ -26,7 +24,8 @@ import {
     Printer,
     Lock,
     Plus,
-    Minus
+    Minus,
+    Edit2
 } from "lucide-react";
 import { Badge } from "@/components/common/ui/badge.jsx";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/common/ui/popover.jsx";
@@ -90,22 +89,39 @@ const combinedDept = (departmentName, sectionName) =>
 const ThreeDayMonitoringSheet = ({
     studentId,
     departmentId,
+    sectionId = null,
     departmentName = "",
     sectionName = "",
     readOnly = false,
-    canEditConfig = false,
+    // Shows the "Edit Layout & Revision" button, which opens the dedicated layout editor.
+    canEditConfig: canOpenLayoutEditor = false,
     initialForceNewAttempt = false,
     headerActionsContainer = null,
     // Open a specific saved attempt instead of the latest one (e.g. picked from a history table).
     initialRecordId = null,
+    // Embedded-editor mode, used only by ThreeDayMonitoringLayoutEditor: the editor owns
+    // the config (configValue + onConfigChange, which must accept functional updaters like
+    // a useState setter) and the doc-control header (revisionInfoOverride). In this mode
+    // the sheet renders as a live, in-place layout editor and never loads or saves config
+    // itself — all layout saves go through the editor's atomic save-with-revision.
+    configValue = null,
+    onConfigChange = null,
+    revisionInfoOverride = null,
 }) => {
-    // No sectionId prop reaches this component today — department-level scoping
-    // only; the backend still resolves the student's own section at freeze time.
-    const liveRevisionInfo = useRevisionInfo("three-day-monitoring", { docNo: "FRM-WH-QA-240", revNo: "00", issueDate: "16.10.20", revDate: "16.10.20" }, { departmentId });
+    const navigate = useNavigate();
+    const location = useLocation();
+    const isEmbeddedEditor = typeof onConfigChange === 'function';
+    // In-place layout editing (add/rename/delete categories, rows, score ranges,
+    // legends) is only ever enabled inside the dedicated layout editor.
+    const canEditConfig = isEmbeddedEditor;
+    // sectionId scopes both the config and the revision header lookup (Section >
+    // Department > Global); the backend still resolves the student's own section at freeze time.
+    const liveRevisionInfo = useRevisionInfo("three-day-monitoring", { docNo: "FRM-WH-QA-240", revNo: "00", issueDate: "16.10.20", revDate: "16.10.20" }, { departmentId, sectionId });
     const [savedRevisionInfo, setSavedRevisionInfo] = useState(null);
     // A saved attempt keeps whatever docNo/revNo/revDate was frozen into it at
     // creation; only a brand-new (not-yet-created) attempt shows the live value.
-    const revisionInfo = savedRevisionInfo?.docNo ? savedRevisionInfo : liveRevisionInfo;
+    const revisionInfo = revisionInfoOverride
+        || (savedRevisionInfo?.docNo ? savedRevisionInfo : liveRevisionInfo);
     const [headerInfo, setHeaderInfo] = useState({
         employeeName: "",
         employeeCode: "",
@@ -138,14 +154,9 @@ const ThreeDayMonitoringSheet = ({
         setZoom(next);
         try { localStorage.setItem(ZOOM_STORAGE_KEY, String(next)); } catch { /* storage unavailable */ }
     };
-    const [config, setConfig] = useState(buildDefaultConfig());
-    // Snapshot of config as last loaded/saved from the server — drives the
-    // "unsaved changes" indicator in the Design Mode toolbar.
-    const [savedSnapshot, setSavedSnapshot] = useState(null);
-    const isConfigDirty = !!config && JSON.stringify(config) !== savedSnapshot;
-    const [configRemark, setConfigRemark] = useState('');
-    const [history, setHistory] = useState([]);
-    const [showHistory, setShowHistory] = useState(false);
+    const [localConfig, setLocalConfig] = useState(buildDefaultConfig());
+    const config = isEmbeddedEditor && configValue ? configValue : localConfig;
+    const setConfig = isEmbeddedEditor ? onConfigChange : setLocalConfig;
     const [sendingEmail, setSendingEmail] = useState(false);
     const [status, setStatus] = useState("Draft");
     const [lines, setLines] = useState([]);
@@ -167,8 +178,20 @@ const ThreeDayMonitoringSheet = ({
                 if (initialRecordId && !initialForceNewAttempt) handleAttemptChange(String(initialRecordId));
             });
         }
-        if (departmentId && departmentId !== 'undefined') fetchConfig();
     }, [studentId, departmentId, sectionName, departmentName, authUser, initialForceNewAttempt, initialRecordId]);
+
+    // Layout config resolves Section > Department > Global; the embedded layout editor
+    // supplies its own config instead.
+    useEffect(() => {
+        if (!isEmbeddedEditor && departmentId && departmentId !== 'undefined') fetchConfig();
+    }, [departmentId, sectionId, isEmbeddedEditor]);
+
+    // Design Mode has no operator to supply the dept/section — keep the header label in
+    // step with the scope the layout editor is pointed at.
+    useEffect(() => {
+        if (studentId) return;
+        setHeaderInfo(prev => ({ ...prev, dept: combinedDept(departmentName, sectionName) }));
+    }, [studentId, departmentName, sectionName]);
 
     // Auto-populate checkedByName when authUser is available and it's a new or blank field
     useEffect(() => {
@@ -398,39 +421,30 @@ const ThreeDayMonitoringSheet = ({
     const fetchConfig = async () => {
         if (!departmentId || departmentId === 'undefined') return;
         try {
-            const response = await axiosInstance.get(`/api/progress/three-day-monitoring/config/${departmentId}`);
-            if (response.data.success && response.data.data.config) {
-                const loaded = normalizeConfig(response.data.data.config);
-                setConfig(loaded);
-                setSavedSnapshot(JSON.stringify(loaded));
-            } else {
-                setSavedSnapshot(JSON.stringify(config));
+            const qs = sectionId && String(sectionId) !== '0' ? `?sectionId=${sectionId}` : "";
+            const response = await axiosInstance.get(`/api/progress/three-day-monitoring/config/${departmentId}${qs}`);
+            if (response.data.success) {
+                // null means nothing is saved anywhere in the Section > Department > Global
+                // chain — fall back to the built-in defaults rather than keeping a previous scope's layout.
+                const saved = response.data.data?.config;
+                setLocalConfig(saved ? normalizeConfig(saved) : buildDefaultConfig());
             }
         } catch (error) {
             console.error("Error fetching config:", error);
         }
     };
 
-
-    const handleSaveConfig = async () => {
-        try {
-            setSaving(true);
-            const newConfig = normalizeConfig(config);
-            await axiosInstance.post(`/api/progress/three-day-monitoring/config/save`, {
-                departmentId,
-                config: newConfig,
-                remark: configRemark
-            });
-            setConfig(newConfig);
-            setSavedSnapshot(JSON.stringify(newConfig));
-            setConfigRemark('');
-            toast.success("Configuration saved successfully");
-        } catch (error) {
-            console.error("Error saving config:", error);
-            toast.error("Failed to save configuration");
-        } finally {
-            setSaving(false);
+    const openLayoutEditor = () => {
+        const params = new URLSearchParams();
+        if (departmentId) {
+            params.set('departmentId', String(departmentId));
+            if (sectionId && String(sectionId) !== '0') params.set('sectionId', String(sectionId));
+        } else {
+            params.set('global', '1');
         }
+        navigate(`/admin/revision-table/three-day-monitoring/layout?${params.toString()}`, {
+            state: { from: `${location.pathname}${location.search}` },
+        });
     };
 
     // ── Category / Row editors (Design Mode only) ───────────────────────────
@@ -586,19 +600,6 @@ const ThreeDayMonitoringSheet = ({
             next.evaluationLegends[group].splice(idx, 1);
             return next;
         });
-    };
-
-    const fetchHistory = async () => {
-        if (!departmentId || departmentId === 'undefined') return;
-        try {
-            const response = await axiosInstance.get(`/api/progress/three-day-monitoring/history/${departmentId}`);
-            if (response.data.success) {
-                setHistory(response.data.data);
-                setShowHistory(true);
-            }
-        } catch (error) {
-            toast.error("Failed to fetch history");
-        }
     };
 
     const handleSave = async (finalStatus = null) => {
@@ -1144,6 +1145,14 @@ const ThreeDayMonitoringSheet = ({
             )}
 
             <Card className="w-max min-w-full print:shadow-none print:border-none">
+                {isEmbeddedEditor ? (
+                    // Inside the layout editor only the zoom matters — status, attempts,
+                    // export and save/submit belong to a filled sheet, not a template.
+                    <div className="flex flex-wrap justify-between items-center gap-3 print:hidden mb-4 px-4 pt-4">
+                        <Badge className="bg-amber-500 text-white text-[10px]">DESIGN MODE: TEMPLATE SETUP</Badge>
+                        {zoomControl}
+                    </div>
+                ) : (
                 <div className="flex flex-wrap justify-between items-center gap-3 print:hidden mb-4 px-4 pt-4">
                     <div className="flex items-center gap-4">
                         <div className="flex items-center gap-2">
@@ -1171,15 +1180,15 @@ const ThreeDayMonitoringSheet = ({
                             <Badge className="bg-amber-500 text-white text-[10px] animate-pulse">DESIGN MODE: TEMPLATE SETUP</Badge>
                         )}
                         <div className="flex gap-1.5">
-                            {canEditConfig && (
+                            {canOpenLayoutEditor && (
                                 <Button
                                     variant="outline"
                                     size="sm"
-                                    onClick={fetchHistory}
+                                    onClick={openLayoutEditor}
                                     className="gap-1.5 h-8 text-[11px]"
                                 >
-                                    <History className="h-3.5 w-3.5" />
-                                    History
+                                    <Edit2 className="h-3.5 w-3.5" />
+                                    Edit Layout & Revision
                                 </Button>
                             )}
                             <Button
@@ -1198,6 +1207,7 @@ const ThreeDayMonitoringSheet = ({
                         </div>
                     </div>
                 </div>
+                )}
 
                 {/* --sheet-zoom lets zoomed descendants undo the scaling on page-level lengths (sticky top) */}
                 <div className="print:![zoom:1]" style={{ zoom, '--sheet-zoom': zoom }}>
@@ -1297,19 +1307,9 @@ const ThreeDayMonitoringSheet = ({
                                     </Button>
                                 </div>
                             </div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                                <Input
-                                    className="h-8 text-xs max-w-md"
-                                    value={configRemark}
-                                    onChange={(e) => setConfigRemark(e.target.value)}
-                                    placeholder="Remark / change details (e.g. Added a new Quality/System checkpoint)"
-                                />
-                                {isConfigDirty && <span className="text-xs text-amber-600 font-medium">Unsaved changes</span>}
-                                <Button size="sm" onClick={handleSaveConfig} disabled={saving || !configRemark.trim()} className="h-8 gap-1.5 text-xs bg-blue-600 hover:bg-blue-700">
-                                    {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                                    Save Configuration
-                                </Button>
-                            </div>
+                            <p className="text-[10px] text-slate-400">
+                                Hover a cell to reveal its delete button. Save from the editor above — the layout and its revision are saved together.
+                            </p>
                         </div>
                     )}
 
@@ -2018,40 +2018,6 @@ const ThreeDayMonitoringSheet = ({
                 </CardContent>
                 </div>
             </Card>
-
-            {/* History Dialog */}
-            <Dialog open={showHistory} onOpenChange={setShowHistory}>
-                <DialogContent className="max-w-[600px] max-h-[80vh] flex flex-col">
-                    <DialogHeader>
-                        <DialogTitle>Layout Change History</DialogTitle>
-                    </DialogHeader>
-                    <div className="flex-1 overflow-y-auto pr-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
-                        <div className="space-y-4 p-1">
-                            {history.length > 0 ? history.map((h, i) => (
-                                <div key={i} className="p-4 border rounded-md space-y-2 hover:bg-gray-50">
-                                    <div className="flex justify-between text-sm">
-                                        <span className="font-bold text-blue-600">{h.updatedBy || 'System'}</span>
-                                        <span className="text-gray-500">{new Date(h.updatedAt).toLocaleString()}</span>
-                                    </div>
-                                    <p className="text-sm font-medium">Remark: {h.remark || 'No remark'}</p>
-                                    <Button
-                                        variant="link"
-                                        size="sm"
-                                        className="h-auto p-0"
-                                        onClick={() => {
-                                            setConfig(normalizeConfig(h.config));
-                                            setShowHistory(false);
-                                            toast.info("Restored configuration from history (unsaved)");
-                                        }}
-                                    >
-                                        Apply this version
-                                    </Button>
-                                </div>
-                            )) : <div className="text-center py-8 text-gray-400">No history found</div>}
-                        </div>
-                    </div>
-                </DialogContent>
-            </Dialog>
         </div >
     );
 };

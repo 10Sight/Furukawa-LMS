@@ -114,6 +114,8 @@ const SYSTEM_PERMISSIONS = {
   DAILY_5M_DELETE: "daily5m:delete",
   DAILY_5M_SELECT_PAST_DATE: "daily5m:select_past_date",
   DAILY_5M_EDIT_APPROVED_DATE: "daily5m:edit_approved_date",
+  DAILY_5M_EDIT_LAYOUT: "daily5m:edit_layout",
+  DPR_EDIT_LAYOUT: "dpr:edit_layout",
 
   // Daily HR Meeting (Daily Manpower Report)
   HR_MEETING_READ: "hr_meeting:read",
@@ -239,6 +241,7 @@ const SYSTEM_PERMISSIONS = {
   ABNORMAL_CONDITION_UPDATE: "abnormal_condition:update",
   ABNORMAL_CONDITION_DELETE: "abnormal_condition:delete",
   ABNORMAL_CONDITION_APPROVE: "abnormal_condition:approve",
+  ABNORMAL_CONDITION_EDIT_LAYOUT: "abnormal_condition:edit_layout",
 
   // DOJO Evaluation Test Management
   DOJO_EVALUATION_TEST_CREATE: "dojo_evaluation_test:create",
@@ -652,7 +655,11 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.DAILY_5M_EDIT_SUBMITTED, name: "Edit Submitted Daily 5M", description: "Edit daily 5M records even after approval/submission" },
         { id: SYSTEM_PERMISSIONS.DAILY_5M_DELETE, name: "Delete Daily 5M", description: "Permanently delete daily 5M recording records" },
         { id: SYSTEM_PERMISSIONS.DAILY_5M_SELECT_PAST_DATE, name: "Select Past Date", description: "Allows selecting dates before today in daily 5M row entries and session creation (backdating). Requires Update Daily 5M" },
-        { id: SYSTEM_PERMISSIONS.DAILY_5M_EDIT_APPROVED_DATE, name: "Edit Approved Date", description: "Edit the Date column of a daily 5M row after it has been approved (a remark is required). Requires Update Daily 5M" }
+        { id: SYSTEM_PERMISSIONS.DAILY_5M_EDIT_APPROVED_DATE, name: "Edit Approved Date", description: "Edit the Date column of a daily 5M row after it has been approved (a remark is required). Requires Update Daily 5M" },
+        { id: SYSTEM_PERMISSIONS.DAILY_5M_EDIT_LAYOUT, name: "Edit Daily 5M Layout", description: "Edit the Daily 5M sheet layout (header text, 5M change-type table, default rows) and its Revision Table entry" }
+      ],
+      "Daily Production Report": [
+        { id: SYSTEM_PERMISSIONS.DPR_EDIT_LAYOUT, name: "Edit DPR Layout", description: "Edit the Daily Production Report layout (section titles, header text, row labels, row counts) and its Revision Table entry" }
       ],
       "MIS Portal - Daily HR Meeting": [
         { id: SYSTEM_PERMISSIONS.HR_MEETING_READ, name: "View Daily HR Meeting", description: "View the Daily Manpower Report (present headcount, overtime and gap per department) and export it to Excel" },
@@ -778,7 +785,8 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.ABNORMAL_CONDITION_CREATE, name: "Create Abnormal Conditions", description: "Create new Abnormal Condition sheets" },
         { id: SYSTEM_PERMISSIONS.ABNORMAL_CONDITION_UPDATE, name: "Update Abnormal Conditions", description: "Edit Abnormal Condition sheets" },
         { id: SYSTEM_PERMISSIONS.ABNORMAL_CONDITION_DELETE, name: "Delete Abnormal Conditions", description: "Delete Abnormal Condition sheets" },
-        { id: SYSTEM_PERMISSIONS.ABNORMAL_CONDITION_APPROVE, name: "Approve Abnormal Conditions", description: "Approve or Reject Abnormal Condition sheets as Head, QA" }
+        { id: SYSTEM_PERMISSIONS.ABNORMAL_CONDITION_APPROVE, name: "Approve Abnormal Conditions", description: "Approve or Reject Abnormal Condition sheets as Head, QA" },
+        { id: SYSTEM_PERMISSIONS.ABNORMAL_CONDITION_EDIT_LAYOUT, name: "Edit Abnormal Condition Layout", description: "Edit the Abnormal Condition sheet layout (title, column headers, Remarks, default rows) and its Revision Table entry" }
       ],
       "DOJO Evaluation Test": [
         { id: SYSTEM_PERMISSIONS.DOJO_EVALUATION_TEST_CREATE, name: "Create DOJO Evaluation Test", description: "Create and manage DOJO evaluation test papers" },

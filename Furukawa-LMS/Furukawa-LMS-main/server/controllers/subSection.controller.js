@@ -2,25 +2,16 @@ import { executeQuery } from "../db/mssqlHelper.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { ApiError } from "../utils/ApiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
-import { getDesignationShutterExclusionSql } from "../utils/userEligibility.js";
+import { subSectionCountJoinSql, subSectionCountSelectSql } from "../models/subSection.model.js";
 
-const subSectionCountSql = `
-    (SELECT COUNT(*)
-     FROM users u
-     WHERE (u.isDeleted = 0 OR u.isDeleted IS NULL)
-       AND (u.isTemporary = 0 OR u.isTemporary IS NULL)
-       AND u.status = 'PRESENT'
-       ${getDesignationShutterExclusionSql("u")}
-       AND (
-           u.subSectionId = ss.id
-           OR EXISTS (
-               SELECT 1 FROM machine_assignments ma
-               JOIN machines m ON ma.machine_id = m.id
-               WHERE ma.user_id = u.id AND m.subSectionId = ss.id
-           )
-       )
-    ) as subSectionCount
-`;
+// Single-row lookup: sub-section + line/section names + manpower count.
+const selectSubSectionByIdSql = (id) => `
+        SELECT ss.*, l.name as lineName, s.name as sectionName, ${subSectionCountSelectSql("ss")}
+        FROM [sub_sections] ss
+        LEFT JOIN [lines] l ON ss.lineId = l.id
+        LEFT JOIN [sections] s ON l.sectionId = s.id
+        ${subSectionCountJoinSql("ss", { subSectionIds: [id] })}
+        WHERE ss.id = ?`;
 
 const resolveDepartmentId = async (departmentId) => {
     if (!departmentId || departmentId === "undefined" || departmentId === "null") return null;
@@ -70,13 +61,7 @@ export const createSubSection = asyncHandler(async (req, res) => {
         [name, lineId, description, minimumRequiredLevel || null, minEfficiency ?? null, maxEfficiency ?? null, true]
     );
 
-    const [newSubSection] = await executeQuery(`
-        SELECT ss.*, l.name as lineName, s.name as sectionName,
-        ${subSectionCountSql}
-        FROM [sub_sections] ss 
-        LEFT JOIN [lines] l ON ss.lineId = l.id
-        LEFT JOIN [sections] s ON l.sectionId = s.id
-        WHERE ss.id = ?`, [result[0].id]);
+    const [newSubSection] = await executeQuery(selectSubSectionByIdSql(result[0].id), [result[0].id]);
 
     res.status(201).json(
         new ApiResponse(201, newSubSection[0], "Sub-Section created successfully")
@@ -104,12 +89,12 @@ export const getSubSectionsByLine = asyncHandler(async (req, res) => {
 
     const idsString = lineIds.join(',');
     const [subSections] = await executeQuery(`
-        SELECT ss.*, l.name as lineName, s.name as sectionName,
-        ${subSectionCountSql}
-        FROM [sub_sections] ss 
+        SELECT ss.*, l.name as lineName, s.name as sectionName, ${subSectionCountSelectSql("ss")}
+        FROM [sub_sections] ss
         LEFT JOIN [lines] l ON ss.lineId = l.id
         LEFT JOIN [sections] s ON l.sectionId = s.id
-        WHERE ss.lineId IN (${idsString}) 
+        ${subSectionCountJoinSql("ss", { lineIds })}
+        WHERE ss.lineId IN (${idsString})
         ORDER BY ss.createdAt DESC`);
 
     res.status(200).json(
@@ -127,13 +112,7 @@ export const getSubSectionById = asyncHandler(async (req, res) => {
         throw new ApiError(400, "Invalid Sub-Section ID parameter. Must be numeric.");
     }
 
-    const [subSections] = await executeQuery(`
-        SELECT ss.*, l.name as lineName, s.name as sectionName,
-        ${subSectionCountSql}
-        FROM [sub_sections] ss 
-        LEFT JOIN [lines] l ON ss.lineId = l.id
-        LEFT JOIN [sections] s ON l.sectionId = s.id
-        WHERE ss.id = ?`, [id]);
+    const [subSections] = await executeQuery(selectSubSectionByIdSql(id), [id]);
 
     if (subSections.length === 0) {
         throw new ApiError(404, "Sub-Section not found");
@@ -176,13 +155,7 @@ export const updateSubSection = asyncHandler(async (req, res) => {
         await executeQuery(`UPDATE [sub_sections] SET ${updateFields.join(', ')} WHERE id = ?`, [...updateValues, id]);
     }
 
-    const [updatedSubSection] = await executeQuery(`
-        SELECT ss.*, l.name as lineName, s.name as sectionName,
-        ${subSectionCountSql}
-        FROM [sub_sections] ss 
-        LEFT JOIN [lines] l ON ss.lineId = l.id
-        LEFT JOIN [sections] s ON l.sectionId = s.id
-        WHERE ss.id = ?`, [id]);
+    const [updatedSubSection] = await executeQuery(selectSubSectionByIdSql(id), [id]);
 
     res.status(200).json(
         new ApiResponse(200, updatedSubSection[0], "Sub-Section updated successfully")
@@ -213,11 +186,11 @@ export const getAllSubSections = asyncHandler(async (req, res) => {
     const { lineId, departmentId, sectionId } = req.query;
 
     let querySQL = `
-        SELECT ss.*, l.name as lineName, s.name as sectionName,
-        ${subSectionCountSql}
+        SELECT ss.*, l.name as lineName, s.name as sectionName, ${subSectionCountSelectSql("ss")}
         FROM [sub_sections] ss
         LEFT JOIN [lines] l ON ss.lineId = l.id
-        LEFT JOIN [sections] s ON l.sectionId = s.id`;
+        LEFT JOIN [sections] s ON l.sectionId = s.id
+        ${subSectionCountJoinSql("ss")}`;
     let conditions = [];
 
     if (lineId) {

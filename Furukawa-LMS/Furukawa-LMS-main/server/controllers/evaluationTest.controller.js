@@ -134,8 +134,14 @@ export const createEvaluationTestAttempt = asyncHandler(async (req, res) => {
     }
 
     const parsedTestId = parseInt(testId, 10);
+    // Freeze the test's current form onto the attempt: later builder edits must not change
+    // how this graded attempt reads or whether it counts as passed.
+    const formSnapshot = await EvaluationTestAttempt.getTestForm(parsedTestId);
+    if (!formSnapshot) {
+        throw new ApiError("Evaluation test not found", 404);
+    }
     const { isHandoverEligible, passedDate } = await EvaluationTestAttempt.computeHandoverEligibility(
-        parsedTestId, attemptData || {}
+        parsedTestId, attemptData || {}, formSnapshot
     );
 
     const newAttempt = await EvaluationTestAttempt.create({
@@ -146,7 +152,8 @@ export const createEvaluationTestAttempt = asyncHandler(async (req, res) => {
         attemptData,
         createdBy,
         isHandoverEligible,
-        passedDate
+        passedDate,
+        formSnapshot
     });
 
     logAudit(req.user?.id, "CREATE_EVALUATION_TEST_ATTEMPT", {
@@ -216,8 +223,11 @@ export const updateEvaluationTestAttempt = asyncHandler(async (req, res) => {
 
     // Use the incoming attemptData if provided, otherwise fall back to existing
     const effectiveAttemptData = attemptData ?? existingAttempt.attemptData;
+    // findById already resolves the attempt's own form (snapshot, or the live test for attempts
+    // created before snapshots existed) — judge eligibility against that same form.
     const { isHandoverEligible, passedDate } = await EvaluationTestAttempt.computeHandoverEligibility(
-        existingAttempt.testId, effectiveAttemptData
+        existingAttempt.testId, effectiveAttemptData,
+        { contentStructure: existingAttempt.contentStructure, performDateCount: existingAttempt.performDateCount }
     );
 
     const updatedAttempt = await EvaluationTestAttempt.update(id, {

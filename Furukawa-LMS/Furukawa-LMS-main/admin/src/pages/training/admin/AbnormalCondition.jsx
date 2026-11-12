@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useSelector } from "react-redux";
+import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/common/ui/card.jsx";
 import {
@@ -30,8 +31,15 @@ import {
     useGetAbnormalConditionSheetQuery,
     useUpdateAbnormalConditionSheetMutation,
     useApproveAbnormalConditionEntryMutation,
-    useDeleteAbnormalConditionSheetMutation
+    useDeleteAbnormalConditionSheetMutation,
+    useGetAbnormalConditionLayoutQuery
 } from "@/services/api/AbnormalConditionApi.js";
+import { LayoutText } from "@/components/common/training/LayoutEditorCells.jsx";
+import { AbnormalConditionHeaderRows, AbnormalConditionTitle } from "./components/AbnormalConditionLayoutParts.jsx";
+import { resolveAbnormalConditionLayout } from "../../../../../shared/abnormalConditionLayout.js";
+
+// Built-in layout used until the department/global layout has loaded.
+const DEFAULT_LAYOUT = resolveAbnormalConditionLayout(null);
 
 // Local YYYY-MM-DD (toISOString is UTC and returns yesterday's date before 05:30 IST)
 const toLocalDateStr = (d) =>
@@ -79,6 +87,10 @@ export default function AbnormalCondition() {
     const canEdit = isMasterAdmin || userPermissions.includes("abnormal_condition:update");
     const canDelete = isMasterAdmin || userPermissions.includes("abnormal_condition:delete");
     const canApprove = isMasterAdmin || userPermissions.includes("abnormal_condition:approve");
+    // Matches who the layout editor and its save-with-revision endpoint accept.
+    const canEditLayout = isMasterAdmin || userPermissions.includes("abnormal_condition:edit_layout") || userPermissions.includes("revision:update");
+    const location = useLocation();
+    const navigate = useNavigate();
 
     // States for Filter Hierarchy (Streamlined)
     const [selectedDept, setSelectedDept] = useState("");
@@ -141,6 +153,24 @@ export default function AbnormalCondition() {
     });
 
     const activeSheet = sheetResponse?.data || null;
+
+    // Sheet layout (title, column headers, Remarks): Department → Global → defaults.
+    const { data: layoutResponse } = useGetAbnormalConditionLayoutQuery(selectedDept, { skip: !selectedDept || !canView });
+    const layout = layoutResponse?.data?.layout || DEFAULT_LAYOUT;
+
+    // Layout is edited in the dedicated editor (layout + Revision Table record saved together),
+    // mounted in each area so non-admin layout editors can reach it (/admin is admin-only).
+    const openLayoutEditor = () => {
+        const params = new URLSearchParams();
+        if (selectedDept) params.set("departmentId", String(selectedDept));
+        else params.set("global", "1");
+        const editorPath = location.pathname.startsWith("/portal") ? "/portal/abnormal-condition/layout"
+            : location.pathname.startsWith("/cms") ? "/cms/abnormal-condition/layout"
+                : "/admin/revision-table/abnormal-condition/layout";
+        navigate(`${editorPath}?${params.toString()}`, {
+            state: { from: `${location.pathname}${location.search}` },
+        });
+    };
 
     // Mutator Hooks
     const [updateSheet, { isLoading: isSaving }] = useUpdateAbnormalConditionSheetMutation();
@@ -382,13 +412,21 @@ export default function AbnormalCondition() {
                                     Monthly Form View
                                 </span>
                                 <CardTitle className="text-lg font-bold text-slate-800 mt-2">
-                                    Abnormal Conditions recording and countermeasure sheet ({activeSheet.departmentName} - {new Date(activeSheet.date).toLocaleString('default', { month: 'long', year: 'numeric' })})
+                                    <AbnormalConditionTitle
+                                        title={layout.title}
+                                        suffix={`${activeSheet.departmentName} - ${new Date(activeSheet.date).toLocaleString('default', { month: 'long', year: 'numeric' })}`}
+                                    />
                                 </CardTitle>
                             </div>
                             <div className="flex items-center gap-2 shrink-0 no-print">
                                 {canDelete && (
                                     <Button variant="ghost" onClick={handleDeleteSheet} disabled={isDeleting} className="text-red-500 hover:text-red-700 hover:bg-red-50 h-9">
                                         <IconTrash className="w-4 h-4 mr-1.5" /> Delete Sheet
+                                    </Button>
+                                )}
+                                {canEditLayout && (
+                                    <Button variant="outline" onClick={openLayoutEditor} className="h-9">
+                                        Edit Layout & Revision
                                     </Button>
                                 )}
                                 <Button variant="outline" onClick={() => refetchSheet()} className="h-9">
@@ -405,31 +443,7 @@ export default function AbnormalCondition() {
                             {/* Interactive Excel Grid */}
                             <table className="w-full border-collapse border border-slate-300 text-slate-800 min-w-[1200px] table-auto">
                                 <thead>
-                                    <tr className="bg-slate-100 text-xs text-center border-b border-slate-300">
-                                        <th rowSpan={3} className="p-2 border border-slate-300 font-bold min-w-[50px]">S.No</th>
-                                        <th rowSpan={3} className="p-2 border border-slate-300 font-bold min-w-[130px]">Date</th>
-                                        <th rowSpan={3} className="p-2 border border-slate-300 font-bold min-w-[130px]">Line</th>
-                                        <th rowSpan={3} className="p-2 border border-slate-300 font-bold min-w-[150px]">Process</th>
-                                        <th colSpan={3} className="p-2 border border-slate-300 font-bold">Immediate containment action (if required)</th>
-                                        <th rowSpan={3} className="p-2 border border-slate-300 font-bold min-w-[180px]">Abnormal Condition</th>
-                                        <th rowSpan={3} className="p-2 border border-slate-300 font-bold min-w-[180px]">Cause</th>
-                                        <th rowSpan={3} className="p-2 border border-slate-300 font-bold min-w-[180px]">Action</th>
-                                        <th rowSpan={3} className="p-2 border border-slate-300 font-bold min-w-[170px]">Resp</th>
-                                        <th rowSpan={3} className="p-2 border border-slate-300 font-bold min-w-[110px]">Target</th>
-                                        <th rowSpan={3} className="p-2 border border-slate-300 font-bold min-w-[180px]">Setup Confirmation before restart process</th>
-                                        <th rowSpan={3} className="p-2 border border-slate-300 font-bold min-w-[160px]">Approved By (Head, QA)</th>
-                                        {canEdit && <th rowSpan={3} className="p-2 border border-slate-300 font-bold min-w-[60px] no-print">Actions</th>}
-                                    </tr>
-                                    <tr className="bg-slate-100 text-[10px] text-center border-b border-slate-300">
-                                        <th colSpan={3} className="p-1.5 border border-slate-300 font-semibold bg-slate-50/80 max-w-[200px] leading-snug">
-                                            Checking status of the previously produced production same lot (if required)
-                                        </th>
-                                    </tr>
-                                    <tr className="bg-slate-100 text-[10px] text-center border-b border-slate-300">
-                                        <th className="p-1 border border-slate-300 font-bold min-w-[80px]">Produced Qty.</th>
-                                        <th className="p-1 border border-slate-300 font-bold min-w-[80px]">OK Qty.</th>
-                                        <th className="p-1 border border-slate-300 font-bold min-w-[80px]">NG. Qty.</th>
-                                    </tr>
+                                    <AbnormalConditionHeaderRows headers={layout.headers} showActions={canEdit} />
                                 </thead>
                                 <tbody>
                                     {localEntries.length === 0 ? (
@@ -665,7 +679,8 @@ export default function AbnormalCondition() {
                             {/* Spreadsheet Footer Metadata */}
                             <div className="p-4 border-t bg-slate-50/50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 text-xs font-semibold text-slate-500">
                                 <div>
-                                    Remarks: <span className="text-slate-700 font-bold">{localMetadata.remarks || "NG product will be handled as the defective product handling system"}</span>
+                                    {/* Remarks come from the layout, so editing them applies to every month's sheet. */}
+                                    Remarks: <span className="text-slate-700 font-bold"><LayoutText value={layout.remarks} /></span>
                                 </div>
                                 <div className="flex flex-wrap items-center gap-6">
                                     <span>FORM NO: <span className="text-slate-700 font-bold">{localMetadata.docNo || "FRM/QA/155-A"}</span></span>

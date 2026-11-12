@@ -88,6 +88,21 @@ class HandoverSheetConfig {
         return new HandoverSheetConfig(rows[0]);
     }
 
+    // Layout in effect for a department/section: the section's own row, then the
+    // department-wide row, then the global template (departmentId = 'GLOBAL'), then null.
+    static async findResolved(departmentId, sectionId = null) {
+        const isGlobal = !departmentId || String(departmentId).toUpperCase() === 'GLOBAL';
+        if (!isGlobal) {
+            if (sectionId) {
+                const own = await this.findSpecific(departmentId, sectionId);
+                if (own) return own;
+            }
+            const dept = await this.findSpecific(departmentId, null);
+            if (dept) return dept;
+        }
+        return this.findSpecific('GLOBAL', null);
+    }
+
     static async findByDepartmentId(departmentId) {
         return this.findSpecific(departmentId, null);
     }

@@ -1,11 +1,14 @@
 import brandLogoUrl from "@/assets/logos/fme-transparent.png";
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { useSelector } from "react-redux";
 import {
     useGetEvaluationTestByIdQuery,
     useCreateEvaluationTestMutation,
-    useUpdateEvaluationTestMutation
+    useUpdateEvaluationTestMutation,
+    useGetEvaluationTestAttemptsByTestIdQuery
 } from "@/services/api/EvaluationTestApi.js";
+import useRevisionInfo from "@/hooks/useRevisionInfo.js";
 import { useGetAllDepartmentsQuery } from "@/services/api/DepartmentApi.js";
 import { useLogActionMutation } from "@/services/api/AuditApi.js";
 import { Button } from "@/components/common/ui/button.jsx";
@@ -82,6 +85,9 @@ const normalizeContentStructure = (structure, fallbackTitle) => {
 const EvaluationTestBuilder = () => {
     const { id } = useParams();
     const navigate = useNavigate();
+    const authUser = useSelector((state) => state.auth.user);
+    // The Revision Table lives under /admin (admin-only); only offer the link to those who can open it.
+    const canOpenRevisionTable = !!(authUser?.isAdmin || authUser?.role === "ADMIN" || authUser?.role === "SUPERADMIN");
     const [searchParams] = useSearchParams();
     const isPrintModeUrl = searchParams.get("mode") === "print";
 
@@ -103,6 +109,19 @@ const EvaluationTestBuilder = () => {
     const { data: departmentsData } = useGetAllDepartmentsQuery({ limit: 1000 });
     const departments = departmentsData?.data?.departments || [];
     const [logAction] = useLogActionMutation();
+
+    // Graded attempts keep a snapshot of the form they were graded on, so editing this test
+    // never rewrites them — but the editor should know they exist before changing the form.
+    const { data: attemptsResponse } = useGetEvaluationTestAttemptsByTestIdQuery(id, { skip: !isEditMode });
+    const existingAttemptCount = (attemptsResponse?.data || []).length;
+
+    // Doc header comes live from the Revision Table (sheet key "evaluation-test-attempt"),
+    // for this test's department — the same source the attempt sheet reads.
+    const revisionInfo = useRevisionInfo(
+        "evaluation-test-attempt",
+        { docNo: "ST-S16-01 FORMAT 4 -E", revNo: "01", revDate: "28.02.2025", issueDate: "17.01.2024" },
+        { departmentId: departmentId !== "all" ? departmentId : undefined }
+    );
 
     // Populate data when in edit mode
     useEffect(() => {
@@ -507,10 +526,10 @@ const EvaluationTestBuilder = () => {
                             <div className="font-semibold text-[10px] sm:text-xs">FURUKAWA ELECTRICAL INDIA PVT. LTD.</div>
                         </div>
                         <div className="text-right text-[10px] sm:text-xs leading-tight font-mono">
-                            <div>ST-S16-01 FORMAT 4 -E</div>
-                            <div>Revision No. 01</div>
-                            <div>Revision Date : 28.02.2025</div>
-                            <div>Issue date : 17.01.2024</div>
+                            <div>{revisionInfo.docNo}</div>
+                            <div>Revision No. {revisionInfo.revNo}</div>
+                            <div>Revision Date : {revisionInfo.revDate}</div>
+                            <div>Issue date : {revisionInfo.issueDate}</div>
                         </div>
                     </div>
 
@@ -786,6 +805,14 @@ const EvaluationTestBuilder = () => {
                 </div>
             </div>
 
+            {isEditMode && existingAttemptCount > 0 && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+                    <span className="font-bold">{existingAttemptCount} graded attempt{existingAttemptCount === 1 ? "" : "s"} already use this test.</span>{" "}
+                    Saving changes here only affects new attempts — attempts graded from now on keep the form they were graded on.
+                    (Attempts created before form snapshots were introduced still follow the current form.)
+                </div>
+            )}
+
             {/* 1. Top Section: Form Builder Controls */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
@@ -838,6 +865,24 @@ const EvaluationTestBuilder = () => {
                                     </SelectContent>
                                 </Select>
                                 <p className="text-[10px] text-gray-400">Restrict this template to a specific department, or leave as All Departments.</p>
+                            </div>
+
+                            {/* Document control lives in the Revision Table */}
+                            <div className="rounded-md border border-gray-200 bg-gray-50 p-3 space-y-1">
+                                <div className="text-xs font-bold text-gray-700 uppercase tracking-wide">Document No. / Revision</div>
+                                <div className="text-[11px] text-gray-600 font-mono">
+                                    {revisionInfo.docNo} · Rev {revisionInfo.revNo} · {revisionInfo.revDate}
+                                </div>
+                                {canOpenRevisionTable && (
+                                    <button
+                                        type="button"
+                                        onClick={() => navigate("/admin/revision-table/evaluation-test-attempt")}
+                                        className="text-[11px] font-semibold text-blue-600 hover:underline"
+                                    >
+                                        Edit in Revision Table →
+                                    </button>
+                                )}
+                                <p className="text-[10px] text-gray-400">Shown on every evaluation sheet for this department (read live — not stored per attempt).</p>
                             </div>
 
                             {/* Perform Date Columns Count Field */}

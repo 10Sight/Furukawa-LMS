@@ -129,8 +129,9 @@ class AbnormalConditionSheet {
             VALUES (?, ?, ?, ?, ?, ?, ?)
         `;
         
-        // Create 15 default empty rows if not provided
-        const defaultEntries = Array.from({ length: 15 }, (_, i) => ({
+        // Create the layout's default number of empty rows (15 unless configured) if not provided
+        const rowCount = Number.isInteger(data.rowCount) && data.rowCount > 0 ? data.rowCount : 15;
+        const defaultEntries = Array.from({ length: rowCount }, (_, i) => ({
             sNo: i + 1,
             date: i === 0 ? (data.date ? data.date.split('T')[0] : new Date().toISOString().split('T')[0]) : "",
             processId: null,

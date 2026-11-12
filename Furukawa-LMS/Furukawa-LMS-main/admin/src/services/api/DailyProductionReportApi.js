@@ -32,6 +32,25 @@ export const DailyProductionReportApi = createApi({
             providesTags: ["DailyProductionReportConfig"],
         }),
 
+        // Presentation layout (titles, header text, row labels, row counts):
+        // Department → Global → defaults. Pass a department id or "global".
+        getDPRPresentation: builder.query({
+            query: (departmentId) => ({
+                url: `/api/daily-production-report/config/presentation/${departmentId}`,
+                method: "GET",
+            }),
+            providesTags: ["DailyProductionReportConfig"],
+        }),
+
+        saveDPRPresentationWithRevision: builder.mutation({
+            query: (data) => ({
+                url: "/api/daily-production-report/config/save-with-revision",
+                method: "POST",
+                data,
+            }),
+            invalidatesTags: ["DailyProductionReportConfig", "DailyProductionReportConfigHistory"],
+        }),
+
         saveDPRConfig: builder.mutation({
             query: (data) => ({
                 url: "/api/daily-production-report/config/save",
@@ -118,6 +137,8 @@ export const {
     useCheckDailyProductionReportMutation,
     useGetDPRConfigQuery,
     useSaveDPRConfigMutation,
+    useGetDPRPresentationQuery,
+    useSaveDPRPresentationWithRevisionMutation,
     useGetDPRConfigHistoryQuery,
     useListDailyProductionReportsQuery,
     useDeleteDailyProductionReportMutation,

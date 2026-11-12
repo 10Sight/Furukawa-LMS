@@ -123,3 +123,33 @@ export const EditableSelect = ({ value, options, onCommit, placeholder = 'Select
         </span>
     );
 };
+
+// Layout-editor text: renders stored text (where "<br />" marks a line break) as plain
+// React text — never as HTML — or, when `onEdit` is given, as click-to-edit text that shows
+// line breaks as newlines and stores them back as "<br />". Shared by the DPR and Abnormal
+// Condition sheets and their layout editors.
+const BREAK_PATTERN = /(?:<br\s*\/?>|<\/br>|\n)/gi;
+const toEditableText = (text) => (text || "").replace(/\s*(?:<br\s*\/?>|<\/br>)\s*/gi, "\n");
+const fromEditableText = (text) => (text || "").split("\n").map((s) => s.trim()).join(" <br /> ");
+
+export const LayoutText = ({ value, onEdit, multiline = true }) => {
+    if (!onEdit) {
+        const parts = (value || "").split(BREAK_PATTERN).map((p) => p.trim());
+        if (parts.length === 1) return parts[0];
+        return parts.map((part, idx) => (
+            <React.Fragment key={idx}>
+                {part}
+                {idx < parts.length - 1 && <br />}
+            </React.Fragment>
+        ));
+    }
+    return (
+        <EditableCell
+            value={toEditableText(value)}
+            onCommit={(next) => onEdit(fromEditableText(next))}
+            placeholder="—"
+            multiline={multiline}
+            inputClassName="text-[11px] text-black font-normal text-left"
+        />
+    );
+};

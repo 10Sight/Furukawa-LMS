@@ -4,6 +4,7 @@ import {
     saveThreeDayMonitoring,
     getThreeDayMonitoringConfig,
     saveThreeDayMonitoringConfig,
+    saveThreeDayMonitoringConfigWithRevision,
     getThreeDayMonitoringHistory,
     getStudentThreeDayMonitoringHistory,
     sendThreeDayMonitoringEmail,
@@ -24,6 +25,7 @@ router.post("/:studentId/email", verifyJWT, authorizeRoles("isTrainer", "isAdmin
 // 3 Day Monitoring Config
 router.get("/config/:departmentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee", "three_day:edit_layout", "three_day:manage"), getThreeDayMonitoringConfig);
 router.post("/config/save", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "three_day:edit_layout", "three_day:manage"), saveThreeDayMonitoringConfig);
+router.post("/config/save-with-revision", verifyJWT, authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN", "three_day:edit_layout", "three_day:manage", "revision:update"), saveThreeDayMonitoringConfigWithRevision);
 router.get("/history/:departmentId", verifyJWT, authorizeRoles("isTrainer", "isAdmin", "isEmployee", "three_day:edit_layout", "three_day:manage"), getThreeDayMonitoringHistory);
 
 export default router;

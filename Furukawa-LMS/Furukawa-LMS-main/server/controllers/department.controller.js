@@ -19,6 +19,11 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import sendMail from "../utils/mail.util.js";
 import logAudit from "../utils/auditLogger.js";
 import { formatLocalDate } from "../utils/istDate.util.js";
+import {
+    HANDOVER_GLOBAL_KEY,
+    resolveHandoverLayout,
+    validateHandoverLayout,
+} from "../../shared/handoverSheetLayout.js";
 
 const normalizeParam = (val) => {
     if (!val || val === 'undefined' || val === 'null' || val === '' || val === '0' || val === 'all' || val === 'All') return null;
@@ -1556,6 +1561,24 @@ export const saveHandoverSheet = asyncHandler(async (req, res) => {
         ? await HandoverSheet.findById(sheetId)
         : await HandoverSheet.findSpecific(departmentId, sectionId || null, date, shift || null);
 
+    // The doc/revision header is owned by the Revision Table, never by a sheet save: a new
+    // sheet takes the current revision for its department/section, and an existing sheet keeps
+    // its stored values (Revision Table edits rewrite them via revisionPropagation.service.js).
+    // Clients send back the metadata they loaded, so a stale copy must never win.
+    const REVISION_FIELDS = ["docNo", "revNo", "revDate", "issueDate"];
+    let revisionMetadata;
+    if (sheet) {
+        revisionMetadata = Object.fromEntries(REVISION_FIELDS
+            .filter((f) => sheet.metadata?.[f] !== undefined)
+            .map((f) => [f, sheet.metadata[f]]));
+    } else {
+        const revision = await RevisionRecordService.getLatestForSheet('handover-sheet', departmentId, sectionId ? parseInt(sectionId) : null);
+        revisionMetadata = revision?.docNo
+            ? { docNo: revision.docNo, revNo: revision.revNo, revDate: revision.revDate, issueDate: revision.issueDate || "01.06.09" }
+            : Object.fromEntries(REVISION_FIELDS.filter((f) => metadata?.[f] !== undefined).map((f) => [f, metadata[f]]));
+    }
+    const effectiveMetadata = { ...(metadata || {}), ...revisionMetadata };
+
     // Permission check for approvals
     const userPermissions = req.user?.customRole?.permissions || [];
     const isAdmin = req.user?.isAdmin || req.user?.role === 'ADMIN' || req.user?.role === 'SUPERADMIN';
@@ -1604,13 +1627,13 @@ export const saveHandoverSheet = asyncHandler(async (req, res) => {
             }
         }
 
-        const contentChanged = hasContentChanged(sheet, entries, metadata);
+        const contentChanged = hasContentChanged(sheet, entries, effectiveMetadata);
         if (contentChanged) {
             const canEditSaved = isAdmin || userPermissions.includes('handover_sheet:edit_saved');
             if (!canEditSaved) {
                 throw new ApiError("You do not have permission to edit a saved handover sheet", 403);
             }
-            const nonMentorChanged = hasContentChanged(sheet, entries, metadata, true);
+            const nonMentorChanged = hasContentChanged(sheet, entries, effectiveMetadata, true);
             if (nonMentorChanged) {
                 if (!remark || !remark.trim()) {
                     throw new ApiError("Remark is required when editing a saved handover sheet", 400);
@@ -1681,7 +1704,7 @@ export const saveHandoverSheet = asyncHandler(async (req, res) => {
         sheet.shift = shift || sheet.shift || null;
         sheet.entries = entries;
         sheet.signatures = signatures;
-        sheet.metadata = metadata;
+        sheet.metadata = effectiveMetadata;
         sheet.updatedBy = req.user?.fullName || req.user?.name || "System";
 
         await sheet.save();
@@ -1693,7 +1716,7 @@ export const saveHandoverSheet = asyncHandler(async (req, res) => {
             date,
             entries,
             signatures,
-            metadata,
+            metadata: effectiveMetadata,
             createdBy: req.user?.fullName || req.user?.name || "System",
             isSubmitted: !!isSubmitted,
             submittedAt: isSubmitted ? new Date() : null
@@ -1882,7 +1905,83 @@ export const saveDojoHiringConfig = asyncHandler(async (req, res) => {
     );
 });
 
+// ── Layout (Handover Sheet Layout & Revision editor) ──────────────────────────
+// Title, "From:" label and the built-in columns (rename / reorder / read-only / hide).
+// Resolves Section → Department → Global → defaults (shared/handoverSheetLayout.js).
+
+const isGlobalParam = (id) => String(id || "").toLowerCase() === "global";
+
+// { departmentId, sectionId } for a layout scope; Global is ('GLOBAL', null).
+const resolveLayoutScope = async (id, sectionId) => {
+    if (isGlobalParam(id)) return { departmentId: HANDOVER_GLOBAL_KEY, sectionId: null };
+    const departmentId = await resolveDepartmentId(id);
+    if (!departmentId) throw new ApiError("Department ID is required", 400);
+    return { departmentId, sectionId: sectionId ? parseInt(sectionId, 10) || null : null };
+};
+
+const layoutScopeOf = (record) => {
+    if (!record) return "default";
+    if (String(record.departmentId).toUpperCase() === HANDOVER_GLOBAL_KEY) return "global";
+    return record.sectionId ? "section" : "department";
+};
+
+export const getHandoverSheetLayout = asyncHandler(async (req, res) => {
+    const { departmentId, sectionId } = await resolveLayoutScope(req.params.id, req.query.sectionId);
+    const record = await HandoverSheetConfig.findResolved(departmentId, sectionId);
+    return res.status(200).json(new ApiResponse(200, {
+        layout: resolveHandoverLayout(record?.config),
+        scope: layoutScopeOf(record),
+    }, "Handover sheet layout fetched"));
+});
+
+// Atomic save: the layout for this scope plus the Revision Table record for the same scope,
+// which propagates the doc/rev header onto already-saved handover sheets.
+export const saveHandoverSheetLayoutWithRevision = asyncHandler(async (req, res) => {
+    const { departmentId: rawDept, sectionId: rawSection, layout, remark, revision } = req.body || {};
+    if (!remark?.trim()) throw new ApiError("Remark is required when updating the layout", 400);
+    if (!revision?.docNo?.trim() || !revision?.revNo?.trim()) {
+        throw new ApiError("Document No. and Revision No. are required", 400);
+    }
+    const errors = validateHandoverLayout(layout);
+    if (errors.length) throw new ApiError(errors.join("; "), 400);
+
+    const { departmentId, sectionId } = await resolveLayoutScope(rawDept, rawSection);
+    const isGlobal = departmentId === HANDOVER_GLOBAL_KEY;
+    const updatedBy = req.user?.fullName || req.user?.name || "System";
+    await HandoverSheetConfig.upsert(departmentId, resolveHandoverLayout(layout), remark.trim(), updatedBy, sectionId);
+
+    const savedRevision = await RevisionRecordService.upsertForScope(
+        "handover-sheet",
+        isGlobal ? null : (parseInt(departmentId, 10) || null),
+        isGlobal ? null : sectionId,
+        {
+            sheetName: "Handover Sheet",
+            docNo: revision.docNo,
+            revNo: revision.revNo,
+            issueDate: revision.issueDate,
+            revDate: revision.revDate,
+            affectedSrNoPage: revision.affectedSrNoPage,
+            affectedSrNoPageHi: revision.affectedSrNoPageHi,
+            changeDetails: revision.changeDetails,
+            changeDetailsHi: revision.changeDetailsHi,
+        },
+        req.user
+    );
+
+    logAudit(req.user?.id, "SAVE_HANDOVER_SHEET_LAYOUT_WITH_REVISION", {
+        departmentId, sectionId, remark: remark.trim(), revisionRecordId: savedRevision.id, docNo: revision.docNo, revNo: revision.revNo,
+    }, { resourceType: "HandoverSheetConfig", resourceId: departmentId, req }).catch(err =>
+        console.error("logAudit(SAVE_HANDOVER_SHEET_LAYOUT_WITH_REVISION) failed:", err.message)
+    );
+
+    return res.status(200).json(new ApiResponse(200, { revision: savedRevision }, "Handover sheet layout and revision saved"));
+});
+
 export const getHandoverSheetHistory = asyncHandler(async (req, res) => {
+    if (isGlobalParam(req.params.id)) {
+        const history = await HandoverSheetConfig.getHistory(HANDOVER_GLOBAL_KEY, 20, null);
+        return res.status(200).json(new ApiResponse(200, history, "History fetched successfully"));
+    }
     const departmentId = await resolveDepartmentId(req.params.id);
     if (!departmentId) throw new ApiError("Department ID is required", 400);
     const sectionId = req.query.sectionId || null;

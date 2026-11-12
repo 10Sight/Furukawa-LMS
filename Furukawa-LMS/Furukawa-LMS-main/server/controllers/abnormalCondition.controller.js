@@ -4,6 +4,29 @@ import RevisionRecordService from "../services/revisionRecord.service.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import MonitoringConfig from "../models/monitoringConfig.model.js";
+import logAudit from "../utils/auditLogger.js";
+import {
+    ABNORMAL_CONDITION_CONFIG_TYPE,
+    resolveAbnormalConditionLayout,
+    validateAbnormalConditionLayout,
+} from "../../shared/abnormalConditionLayout.js";
+
+// Sheet metadata fields owned by the Revision Table, never by a sheet save.
+const REVISION_METADATA_FIELDS = ["docNo", "revNo", "issueDate", "revDate"];
+
+// Layout scope: a department id, or null for the global template ('global' in URLs).
+const toLayoutDepartmentId = (departmentId) => {
+    const raw = String(departmentId ?? "").trim();
+    return !raw || raw.toLowerCase() === "global" ? null : raw;
+};
+
+// Layout in effect for a department: its own, else the global template, else defaults.
+const findLayout = async (departmentId) => {
+    const record = await MonitoringConfig.findByFilters(ABNORMAL_CONDITION_CONFIG_TYPE, departmentId, 0, 0, 0);
+    const scope = !record ? "default" : (record.departmentId ? "department" : "global");
+    return { layout: resolveAbnormalConditionLayout(record?.config), scope };
+};
 
 // Helper to normalize any date/month string to YYYY-MM-01 format
 const normalizeToMonthStart = (dateStr) => {
@@ -65,13 +88,14 @@ export const getAbnormalConditionSheet = asyncHandler(async (req, res) => {
         // on every saved sheet via revisionPropagation.service.js.
         // Abnormal Condition has no section concept — always department-only scope.
         const revision = await RevisionRecordService.getLatestForSheet('abnormal-condition', parseInt(departmentId), null);
+        const { layout } = await findLayout(String(parseInt(departmentId)));
         const metadata = revision?.docNo
             ? {
                 docNo: revision.docNo,
                 revNo: revision.revNo,
                 issueDate: revision.issueDate,
                 revDate: revision.revDate,
-                remarks: "NG product will be handled as the defective product handling system"
+                remarks: layout.remarks
             }
             : undefined;
 
@@ -80,7 +104,8 @@ export const getAbnormalConditionSheet = asyncHandler(async (req, res) => {
             date: normalizedDate,
             updatedBy: req.user?.fullName || "System",
             isSubmitted: false,
-            metadata
+            metadata,
+            rowCount: layout.defaultRows
         });
     }
 
@@ -148,7 +173,18 @@ export const updateAbnormalConditionSheet = asyncHandler(async (req, res) => {
 
     if (entries) sheet.entries = entries;
     if (signatures) sheet.signatures = signatures;
-    if (metadata) sheet.metadata = metadata;
+    // The doc/revision header is owned by the Revision Table (copied at creation, then
+    // rewritten by revisionPropagation.service.js). Clients send back the metadata they
+    // loaded, so a stale copy must never overwrite a newer propagated header.
+    if (metadata) {
+        const current = sheet.metadata || {};
+        sheet.metadata = {
+            ...metadata,
+            ...Object.fromEntries(REVISION_METADATA_FIELDS
+                .filter((f) => current[f] !== undefined)
+                .map((f) => [f, current[f]])),
+        };
+    }
     
     const wasSubmitted = sheet.isSubmitted;
     if (isSubmitted !== undefined) sheet.isSubmitted = isSubmitted;
@@ -282,4 +318,67 @@ export const getAbnormalConditionList = asyncHandler(async (req, res) => {
 
     const sheets = await AbnormalConditionSheet.findAll(filters);
     res.status(200).json(new ApiResponse(200, sheets, "Abnormal condition sheets list retrieved successfully"));
+});
+
+// ── Layout (Abnormal Condition Layout & Revision editor) ──────────────────────
+// Text-only layout (title, column headers, Remarks, default rows); Department → Global → defaults.
+
+export const getAbnormalConditionLayout = asyncHandler(async (req, res) => {
+    const departmentId = toLayoutDepartmentId(req.params.departmentId);
+    const { layout, scope } = await findLayout(departmentId);
+    res.status(200).json(new ApiResponse(200, { layout, scope }, "Abnormal condition layout fetched"));
+});
+
+export const getAbnormalConditionLayoutHistory = asyncHandler(async (req, res) => {
+    const departmentId = toLayoutDepartmentId(req.params.departmentId);
+    const history = await MonitoringConfig.getHistory(ABNORMAL_CONDITION_CONFIG_TYPE, departmentId, 0);
+    res.status(200).json(new ApiResponse(200, history, "Abnormal condition layout history fetched"));
+});
+
+// Atomic save: the layout for this department (or the global template) plus the Revision
+// Table record for the same scope, which propagates the doc/rev header onto saved sheets.
+export const saveAbnormalConditionLayoutWithRevision = asyncHandler(async (req, res) => {
+    const { departmentId, layout, remark, revision } = req.body || {};
+    if (!remark?.trim()) throw new ApiError("Remark is required when updating the layout", 400);
+    if (!revision?.docNo?.trim() || !revision?.revNo?.trim()) {
+        throw new ApiError("Document No. and Revision No. are required", 400);
+    }
+    const errors = validateAbnormalConditionLayout(layout);
+    if (errors.length) throw new ApiError(errors.join("; "), 400);
+
+    const deptId = toLayoutDepartmentId(departmentId);
+    const config = resolveAbnormalConditionLayout(layout);
+    await MonitoringConfig.upsert({
+        type: ABNORMAL_CONDITION_CONFIG_TYPE,
+        departmentId: deptId,
+        sectionId: 0,
+        config,
+        remark: remark.trim(),
+        updatedBy: req.user?.fullName || req.user?.name || "Admin",
+    });
+
+    const savedRevision = await RevisionRecordService.upsertForScope(
+        "abnormal-condition",
+        deptId ? (parseInt(deptId, 10) || null) : null,
+        null, // Abnormal Condition has no section concept.
+        {
+            sheetName: "Abnormal Condition",
+            docNo: revision.docNo,
+            revNo: revision.revNo,
+            issueDate: revision.issueDate,
+            revDate: revision.revDate,
+            affectedSrNoPage: revision.affectedSrNoPage,
+            affectedSrNoPageHi: revision.affectedSrNoPageHi,
+            changeDetails: revision.changeDetails,
+            changeDetailsHi: revision.changeDetailsHi,
+        },
+        req.user
+    );
+
+    logAudit(req.user?.id, "SAVE_ABNORMAL_CONDITION_LAYOUT_WITH_REVISION",
+        { departmentId: deptId, remark: remark.trim(), revisionRecordId: savedRevision.id, docNo: revision.docNo, revNo: revision.revNo },
+        { resourceType: "AbnormalConditionLayout", resourceId: deptId || "global", req }
+    ).catch(err => console.error("logAudit(SAVE_ABNORMAL_CONDITION_LAYOUT_WITH_REVISION) failed:", err.message));
+
+    res.status(200).json(new ApiResponse(200, { revision: savedRevision }, "Abnormal condition layout and revision saved"));
 });

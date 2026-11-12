@@ -3,23 +3,59 @@ import migrationHelper from "../db/migrationHelper.js";
 import logger from "../logger/winston.logger.js";
 import { getDesignationShutterExclusionSql } from "../utils/userEligibility.js";
 
-const subSectionCountSql = (subSectionAlias = "ss") => `
-    (SELECT COUNT(*)
-     FROM users u
-     WHERE (u.isDeleted = 0 OR u.isDeleted IS NULL)
-       AND (u.isTemporary = 0 OR u.isTemporary IS NULL)
-       AND u.status = 'PRESENT'
-       ${getDesignationShutterExclusionSql("u")}
-       AND (
-           u.subSectionId = ${subSectionAlias}.id
-           OR EXISTS (
-               SELECT 1 FROM machine_assignments ma
-               JOIN machines m ON ma.machine_id = m.id
-               WHERE ma.user_id = u.id AND m.subSectionId = ${subSectionAlias}.id
-           )
-       )
-    ) as subSectionCount
-`;
+const toIdList = (ids) =>
+    [...new Set((Array.isArray(ids) ? ids : [ids]).map(id => parseInt(id, 10)).filter(Number.isInteger))];
+
+/**
+ * Manpower count per sub-section: PRESENT, non-deleted, non-temporary users
+ * not excluded by a designation shutter, linked either directly
+ * (users.subSectionId) or through a machine assignment on that sub-section.
+ * A user linked both ways is counted once.
+ *
+ * Returns a LEFT JOIN fragment (place it after FROM/JOINs, before WHERE) and
+ * the matching select column. Built set-based so eligibility is evaluated
+ * once per user instead of once per user per sub-section row; the old
+ * correlated `u.subSectionId = ss.id OR EXISTS(...)` scalar subquery took
+ * ~34s on the full sub-section list.
+ *
+ * `subSectionIds` / `lineIds` (optional) limit the aggregation to those
+ * sub-sections / lines' sub-sections. Ids are coerced to integers before
+ * being inlined, so callers may pass raw request values.
+ */
+export const subSectionCountJoinSql = (subSectionAlias = "ss", { subSectionIds = null, lineIds = null } = {}) => {
+    let scope = "";
+    if (subSectionIds !== null && subSectionIds !== undefined) {
+        const ids = toIdList(subSectionIds);
+        scope += ` AND links.subSectionId IN (${ids.length ? ids.join(",") : "NULL"})`;
+    }
+    if (lineIds !== null && lineIds !== undefined) {
+        const ids = toIdList(lineIds);
+        scope += ` AND links.subSectionId IN (SELECT id FROM [sub_sections] WHERE lineId IN (${ids.length ? ids.join(",") : "NULL"}))`;
+    }
+    return `
+    LEFT JOIN (
+        SELECT links.subSectionId, COUNT(DISTINCT eu.id) AS cnt
+        FROM users eu
+        CROSS APPLY (
+            SELECT eu.subSectionId AS subSectionId
+            UNION
+            SELECT m.subSectionId
+            FROM machine_assignments ma
+            JOIN machines m ON ma.machine_id = m.id
+            WHERE ma.user_id = eu.id
+        ) links
+        WHERE (eu.isDeleted = 0 OR eu.isDeleted IS NULL)
+          AND (eu.isTemporary = 0 OR eu.isTemporary IS NULL)
+          AND eu.status = 'PRESENT'
+          ${getDesignationShutterExclusionSql("eu")}
+          AND links.subSectionId IS NOT NULL
+          ${scope}
+        GROUP BY links.subSectionId
+    ) ${subSectionAlias}_cnt ON ${subSectionAlias}_cnt.subSectionId = ${subSectionAlias}.id`;
+};
+
+export const subSectionCountSelectSql = (subSectionAlias = "ss") =>
+    `ISNULL(${subSectionAlias}_cnt.cnt, 0) AS subSectionCount`;
 
 class SubSection {
     constructor(data) {
@@ -182,9 +218,9 @@ class SubSection {
 
     static async findById(id) {
         const query = `
-            SELECT ss.*,
-            ${subSectionCountSql("ss")}
+            SELECT ss.*, ${subSectionCountSelectSql("ss")}
             FROM [sub_sections] ss
+            ${subSectionCountJoinSql("ss", { subSectionIds: [id] })}
             WHERE ss.id = ?`;
         const [rows] = await executeQuery(query, [id]);
         if (rows.length === 0) return null;
@@ -199,19 +235,19 @@ class SubSection {
             const ids = lineId.split(',').map(id => parseInt(id)).filter(id => !isNaN(id));
             if (ids.length === 0) return [];
             query = `
-                SELECT ss.*,
-                ${subSectionCountSql("ss")}
+                SELECT ss.*, ${subSectionCountSelectSql("ss")}
                 FROM [sub_sections] ss
-                WHERE ss.lineId IN (${ids.join(',')}) 
+                ${subSectionCountJoinSql("ss", { lineIds: ids })}
+                WHERE ss.lineId IN (${ids.join(',')})
                 ORDER BY ss.createdAt DESC`;
         } else {
             const parsedId = parseInt(lineId);
             if (isNaN(parsedId)) return [];
             query = `
-                SELECT ss.*,
-                ${subSectionCountSql("ss")}
+                SELECT ss.*, ${subSectionCountSelectSql("ss")}
                 FROM [sub_sections] ss
-                WHERE ss.lineId = ? 
+                ${subSectionCountJoinSql("ss", { lineIds: [parsedId] })}
+                WHERE ss.lineId = ?
                 ORDER BY ss.createdAt DESC`;
             params = [parsedId];
         }

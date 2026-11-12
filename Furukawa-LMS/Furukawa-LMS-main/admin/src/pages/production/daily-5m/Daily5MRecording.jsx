@@ -27,6 +27,8 @@ import { ROW_STATUS, rowKey, isRejectedStatus, normalizeRejectReason } from "../
 import RejectReasonDialog from "./components/RejectReasonDialog.jsx";
 import RejectReasonRow from "./components/RejectReasonRow.jsx";
 import RejectedReasonsCell from "./components/RejectedReasonsCell.jsx";
+import { Daily5MHeaderRows, Daily5MChangeTypeTable } from "./components/Daily5MLayoutParts.jsx";
+import { DEFAULT_CRIMPING_CONFIG, countSheetColumns } from "./components/daily5mLayoutDefaults.js";
 import { Button } from "@/components/common/ui/button.jsx";
 import {
     IconSettings,
@@ -1054,232 +1056,6 @@ const DaysInput = ({ value, onChange, baseDate, disabled }) => {
     );
 };
 
-// Real column count of a header layout. Layouts are admin-editable, so a title row's colSpan can't be
-// trusted; instead each row's width is its own colSpans plus the cells still spanning down from above.
-const countHeaderColumns = (headers = []) => {
-    let carried = []; // remaining rowSpan of each cell started in an earlier row, with its width
-    let maxColumns = 0;
-    headers.forEach((row) => {
-        const ownWidth = row.reduce((n, h) => n + (h.colSpan || 1), 0);
-        const carriedWidth = carried.reduce((n, c) => n + c.width, 0);
-        maxColumns = Math.max(maxColumns, ownWidth + carriedWidth);
-        carried = [
-            ...carried.map(c => ({ ...c, rows: c.rows - 1 })),
-            ...row.map(h => ({ rows: (h.rowSpan || 1) - 1, width: h.colSpan || 1 }))
-        ].filter(c => c.rows > 0);
-    });
-    return maxColumns;
-};
-
-const DEFAULT_CRIMPING_CONFIG = {
-    headers: [
-        // Row 1
-        [{ text: "Daily 5M Recording Man -Crimping section", colSpan: 42, className: "bg-blue-50 text-lg font-bold" }],
-        // Row 2
-        [{ text: "*If any part NG during retroactive and containment inspection then 100% parts to be check since last OK (Set up / In-process)", colSpan: 42, className: "bg-yellow-50 text-red-600 font-semibold text-[16px]" }],
-        // Row 3
-        [
-            { text: "(To be filled by Leader / Supervisor)", colSpan: 7, className: "bg-gray-100" },
-            { text: "Auth. Person", colSpan: 3, className: "bg-emerald-50 text-emerald-800 font-bold border-black" },
-            { text: "(To be filled by Leader / Supervisor)", colSpan: 7, className: "bg-gray-100" },
-            { text: "Retroactive Inspection (To be filled by Leader / Supervisor Before Change)", colSpan: 6, className: "bg-gray-100" },
-            { text: "Set up Approval After Change (To be filled by Quality dept., Pick 5 samples for judgement)", colSpan: 9, className: "bg-gray-100" },
-            { text: "Containment Action if required", colSpan: 7, className: "bg-gray-100" },
-            { text: "Process Owner", rowSpan: 3 },
-            { text: "Approved By (QA Incharge)", rowSpan: 3 },
-            { text: "Approve or Reject", rowSpan: 3, className: "bg-slate-100 font-bold" }
-        ],
-        // Row 4
-        [
-            { text: "Sr. No.", rowSpan: 2 },
-            { text: "Date", rowSpan: 2 },
-            { text: "Station M/C No", rowSpan: 2 },
-            { text: "Shift", rowSpan: 2 },
-            { text: "Planned / <br /> Un-Planned", rowSpan: 2 },
-            { text: "Problem", rowSpan: 2 },
-            { text: "Process Name", rowSpan: 2 },
-            { text: "Auth. Operator / <br /> Inspector Name", rowSpan: 2 },
-            { text: "Operator Code / <br /> ID", rowSpan: 2 },
-            { text: "Current <br /> Skill <br /> Level", rowSpan: 2 },
-            { text: "Req. Min <br /> Skill Level", rowSpan: 2 },
-            { text: "Deputy Person Name (If req.)", rowSpan: 2 },
-            { text: "Operator <br /> Code", rowSpan: 2 },
-            { text: "Actual Skill <br /> Level", rowSpan: 2 },
-            { text: "Deputed From <br /> (Line/Process/Station)", rowSpan: 2 },
-            { text: "Deputation Plan <br /> (Date)", rowSpan: 2 },
-            { text: "OJT Status <br /> (Attached OJT sheet)", rowSpan: 2 },
-
-            { text: "Last Produced Part Status <br /> Parameters", rowSpan: 2 },
-            { text: "Standard", colSpan: 2 },
-            { text: "Result", colSpan: 2 },
-            { text: "Status", rowSpan: 2, isSplit: true, splitLabels: ["Status", "Prod Supr Sign"] },
-
-            { text: "Inspector Name", rowSpan: 2 },
-            { text: "Part No.", rowSpan: 2 },
-            { text: "Lot No.", rowSpan: 2 },
-            { text: "Circuit No.", rowSpan: 2 },
-            { text: "Set up Verification (Parameters)", rowSpan: 2 },
-            { text: "Result (After Change)", colSpan: 2 },
-            { text: "QA Shift In-charge name", rowSpan: 2 },
-            { text: "Status", rowSpan: 2 },
-
-            { text: "Support Person Name", rowSpan: 2 },
-            { text: "Visual Check (100%)", colSpan: 2 },
-            { text: "Dimension Check (Every 2 hours)", colSpan: 3 },
-            { text: "Remarks", rowSpan: 2 }
-        ],
-        // Row 5
-        [
-            // Retro Sub
-            { text: "F" }, { text: "R" }, { text: "F" }, { text: "R" },
-            // Setup Sub
-            { text: "F" }, { text: "R" },
-            // Containment Sub
-            { text: "Produced Qty." }, { text: "NG Qty." },
-            { text: "1st Check" }, { text: "2nd Check" }, { text: "3rd Check" }
-        ]
-    ],
-    bodyRows: 5
-};
-
-// Default configuration for the editable "5M Change Type" footer table (matches the legacy hardcoded layout)
-const DEFAULT_CHANGE_TYPE_CONFIG = {
-    title: "5M Change type: Man",
-    rows: [
-        [
-            { text: "Expected Change (Planned)", rowSpan: 7, className: "border border-black p-1.5 text-center font-bold align-middle bg-slate-50" },
-            { text: "Associate on planned leave / Absent without information (During start of shift)", rowSpan: 2, className: "border border-black py-0.5 px-0" },
-            { text: "Depute operator on station of same skill", className: "border border-black py-0.5 px-0" },
-            { text: "OJT", className: "border border-black p-1 text-center font-semibold" },
-            { text: "First Part Approval", className: "border border-black p-1 text-center font-semibold" },
-            { text: "Containment Action", className: "border border-black p-1 text-center font-semibold" },
-            { text: "Un-expected Change (Un-planned)", rowSpan: 7, className: "border border-black p-1.5 text-center font-bold align-middle bg-slate-50" },
-            { text: "Support operator / Work load (VD) adjustment", rowSpan: 2, className: "border border-black py-0.5 px-0" },
-            { text: "(a) Depute associates from similar skill and process from same or other line/machine", className: "border border-black py-0.5 px-0" },
-            { text: "OJT", className: "border border-black p-1 text-center font-semibold" },
-            { text: "First Part Approval", className: "border border-black p-1 text-center font-semibold" },
-            { text: "Containment Action", className: "border border-black p-1 text-center font-semibold" },
-            { text: "Abnormal Condition", rowSpan: 7, className: "border border-black p-1.5 text-center font-bold align-middle bg-slate-50" },
-            { text: "Extent working hours from 8 hrs (Over time)", rowSpan: 4, className: "border border-black py-0.5 px-0" },
-            { text: "Expert person shall check produced part (line/station/process change during over time)", className: "border border-black py-0.5 px-0" },
-            { text: "OJT", className: "border border-black p-1 text-center font-semibold" },
-            { text: "First Part Approval", className: "border border-black p-1 text-center font-semibold" }
-        ],
-        [
-            { text: "In case of less skill- a) less skill associates can produce parts under supervision of expert", className: "border border-black py-0.5 px-0" },
-            { text: "OJT", className: "border border-black p-0.5 text-center font-semibold" },
-            { text: "First Part Approval", className: "border border-black p-0.5 text-center font-semibold" },
-            { text: "Containment Action", className: "border border-black p-0.5 text-center font-semibold" },
-            { text: "In case of less skill- (b) less skill associates under supervision of expert after training of defects", className: "border border-black py-0.5 px-0" },
-            { text: "OJT", className: "border border-black p-0.5 text-center font-semibold" },
-            { text: "First Part Approval", className: "border border-black p-0.5 text-center font-semibold" },
-            { text: "Containment Action", className: "border border-black p-0.5 text-center font-semibold" },
-            { text: "", className: "border border-black py-0.5 px-0" },
-            { text: "", className: "border border-black py-0.5 px-0 text-center" },
-            { text: "", className: "border border-black py-0.5 px-0 text-center" }
-        ],
-        [
-            { text: "New associates", className: "border border-black py-0.5 px-0" },
-            { text: "Depute new associate to work station under supervision of expert", className: "border border-black py-0.5 px-0" },
-            { text: "OJT", className: "border border-black p-0.5 text-center font-semibold" },
-            { text: "First Part Approval", className: "border border-black p-0.5 text-center font-semibold" },
-            { text: "Containment Action", className: "border border-black p-0.5 text-center font-semibold" },
-            { text: "Gate pass due to emergency (Operator not able to work due to sickness or accident)", rowSpan: 2, className: "border border-black py-0.5 px-0" },
-            { text: "Operator of same skill deputed", className: "border border-black py-0.5 px-0" },
-            { text: "", className: "border border-black py-0.5 px-0 text-center" },
-            { text: "First Part Approval", className: "border border-black p-0.5 text-center font-semibold" },
-            { text: "Retroactive", className: "border border-black p-0.5 text-center font-semibold" },
-            { text: "", className: "border border-black py-0.5 px-0" },
-            { text: "", className: "border border-black py-0.5 px-0 text-center" },
-            { text: "", className: "border border-black py-0.5 px-0 text-center" }
-        ],
-        [
-            { text: "Job Rotation / Multi-skill", className: "border border-black py-0.5 px-0" },
-            { text: "Part/Product training before placing on the station", className: "border border-black py-0.5 px-0" },
-            { text: "OJT", className: "border border-black p-0.5 text-center font-semibold" },
-            { text: "First Part Approval", className: "border border-black p-0.5 text-center font-semibold" },
-            { text: "Containment Action", className: "border border-black p-0.5 text-center font-semibold" },
-            { text: "Operator unskilled deputed", className: "border border-black p-0.5 text-center font-semibold" },
-            { text: "OJT", className: "border border-black p-0.5 text-center font-semibold" },
-            { text: "First Part Approval", className: "border border-black p-0.5 text-center font-semibold" },
-            { text: "Containment Action", className: "border border-black p-0.5 text-center font-semibold" },
-            { text: "", className: "border border-black py-0.5 px-0" },
-            { text: "", className: "border border-black py-0.5 px-0 text-center" },
-            { text: "", className: "border border-black py-0.5 px-0 text-center" }
-        ],
-        [
-            { text: "Associate work after Long vacation (1 month)", className: "border border-black py-0.5 px-0" },
-            { text: "Depute associate under supervision of expert", className: "border border-black py-0.5 px-0" },
-            { text: "OJT", className: "border border-black p-1 text-center font-semibold" },
-            { text: "First Part Approval", className: "border border-black p-1 text-center font-semibold" },
-            { text: "Containment Action", className: "border border-black p-1 text-center font-semibold" },
-            { text: "", className: "border border-black py-0.5 px-0" },
-            { text: "", className: "border border-black py-0.5 px-0" },
-            { text: "", className: "border border-black p-1 text-center" },
-            { text: "", className: "border border-black p-1 text-center" },
-            { text: "", className: "border border-black p-1 text-center" },
-            { text: "", className: "border border-black py-0.5 px-0" },
-            { text: "", className: "border border-black py-0.5 px-0" },
-            { text: "", className: "border border-black p-1 text-center" },
-            { text: "", className: "border border-black p-1 text-center" }
-        ],
-        [
-            { text: "Planned Gate pass", rowSpan: 2, className: "border border-black py-0.5 px-0" },
-            { text: "Depute operator on station of same skill", className: "border border-black py-0.5 px-0" },
-            { text: "", className: "border border-black p-1 text-center" },
-            { text: "Setup Approval", className: "border border-black p-1 text-center font-semibold" },
-            { text: "Containment Action", className: "border border-black p-1 text-center font-semibold" },
-            { text: "", className: "border border-black py-0.5 px-0" },
-            { text: "", className: "border border-black py-0.5 px-0" },
-            { text: "", className: "border border-black p-1 text-center" },
-            { text: "", className: "border border-black p-1 text-center" },
-            { text: "", className: "border border-black p-1 text-center" },
-            { text: "", className: "border border-black py-0.5 px-0" },
-            { text: "", className: "border border-black py-0.5 px-0" },
-            { text: "", className: "border border-black p-1 text-center" },
-            { text: "", className: "border border-black p-1 text-center" }
-        ],
-        [
-            { text: "In case of less skill- a) less skill associates can produce parts under supervision of expert", className: "border border-black py-0.5 px-0" },
-            { text: "OJT", className: "border border-black p-1 text-center font-semibold" },
-            { text: "Setup Approval", className: "border border-black p-1 text-center font-semibold" },
-            { text: "Containment Action", className: "border border-black p-1 text-center font-semibold" },
-            { text: "", className: "border border-black py-0.5 px-0" },
-            { text: "", className: "border border-black py-0.5 px-0" },
-            { text: "", className: "border border-black p-1 text-center" },
-            { text: "", className: "border border-black p-1 text-center" },
-            { text: "", className: "border border-black p-1 text-center" },
-            { text: "", className: "border border-black py-0.5 px-0" },
-            { text: "", className: "border border-black py-0.5 px-0" },
-            { text: "", className: "border border-black p-1 text-center" },
-            { text: "", className: "border border-black p-1 text-center" }
-        ]
-    ],
-    notes: [
-        { term: "* Retro parts:", definition: "Retro parts are the parts which are already produced when we come to know of change in process like m/c breakdown, poka yoke failures etc." },
-        { term: "* Containment parts:", definition: "Containment parts are the parts produced after change (ex. Part produced by lower operator, part produced at time of poka yoke bypass)" }
-    ]
-};
-
-// Form types available for editable Daily 5M layouts, in the order they should be offered in the Edit Layout chooser
-const FORM_TYPE_META = [
-    {
-        key: 'src', label: 'SRC', description: 'SRC Machine Fix', icon: IconCpu,
-        hoverBorder: 'hover:border-emerald-300', iconInactive: 'bg-emerald-50 text-emerald-500 group-hover:bg-emerald-500 group-hover:text-white',
-        titleHover: 'group-hover:text-emerald-700'
-    },
-    {
-        key: 'crimping', label: 'Cutting & Crimping', description: 'Crimping Machine Fix', icon: IconScissors,
-        hoverBorder: 'hover:border-orange-300', iconInactive: 'bg-orange-50 text-orange-500 group-hover:bg-orange-500 group-hover:text-white',
-        titleHover: 'group-hover:text-orange-700'
-    },
-    {
-        key: 'standard', label: 'Assembly', description: 'Regular 5M Sheet', icon: IconLayout2,
-        hoverBorder: 'hover:border-blue-300', iconInactive: 'bg-blue-50 text-blue-500 group-hover:bg-blue-500 group-hover:text-white',
-        titleHover: 'group-hover:text-blue-700'
-    }
-];
-
 const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange, departmentId, sectionId, canApprove, authUser, isLocked, isSubmitter, handleActionRow, skillLevels, canEditSubmitted5M, hasEditPermission, isReview, selectedDate, recordStatus, canEditApprovedDate, dateMin, dateMax }) => {
     const params = ['C/H', 'I/H', 'Strength', 'Length', 'Visual'];
     const rowStatus = formData[`rec_${recIndex}_RowStatus`];
@@ -1772,12 +1548,6 @@ const Daily5MRecording = () => {
     const [tableConfig, setTableConfig] = useState(null);
     const [rowCount, setRowCount] = useState(5);
     const [configError, setConfigError] = useState(null);
-    const [isEditing, setIsEditing] = useState(false);
-    const [editingFormType, setEditingFormType] = useState(null); // null = showing the form-type chooser
-    const [jsonConfigStr, setJsonConfigStr] = useState("");
-    const [layoutRemark, setLayoutRemark] = useState("");
-    const [isViewingHistory, setIsViewingHistory] = useState(false);
-    const [configHistory, setConfigHistory] = useState([]);
     const { data: activeConfigData } = useGetActiveConfigQuery();
     const skillLevels = activeConfigData?.data?.levels || [];
     const [submittedBy, setSubmittedBy] = useState(null);
@@ -1814,6 +1584,10 @@ const Daily5MRecording = () => {
     const hasEditPermission = isAdmin || canEdit5M || canEditSubmitted5M;
     const canSelectPastDate = isAdmin || authUser?.customRole?.permissions?.includes('daily5m:select_past_date');
     const canEditApprovedDate = isAdmin || authUser?.customRole?.permissions?.includes('daily5m:edit_approved_date');
+    // Matches who the layout editor and its save-with-revision endpoint accept.
+    const canEditLayout5M = isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN'
+        || authUser?.customRole?.permissions?.includes('daily5m:edit_layout')
+        || authUser?.customRole?.permissions?.includes('revision:update');
     // Shadows the module-level todayStr so it is re-evaluated on every render: a page left
     // open past midnight must offer the date the server accepts.
     const todayStr = new Date().toLocaleDateString('en-CA');
@@ -1998,67 +1772,20 @@ const Daily5MRecording = () => {
         }
     };
 
-    // Opens the JSON editor for a specific form type's layout (called from the Edit Layout chooser)
-    const openLayoutEditor = (type) => {
-        setEditingFormType(type);
-        setJsonConfigStr(JSON.stringify(tableConfig?.[type] || {}, null, 2));
-    };
-
-    const handleSaveConfig = async () => {
-        if (!layoutRemark.trim()) {
-            toast.error("Please enter a remark detailing your layout changes.");
-            return;
-        }
-
-        try {
-            let parsedTypeConfig;
-            try {
-                parsedTypeConfig = JSON.parse(jsonConfigStr);
-            } catch (e) {
-                toast.error("Invalid JSON format");
-                return;
-            }
-
-            const mergedConfig = { ...tableConfig, [editingFormType]: parsedTypeConfig };
-
-            await axiosInstance.post(`/api/daily-5m/config/save`,
-                { departmentId: selectedDepartment, config: mergedConfig, remark: layoutRemark }
-            );
-
-            setTableConfig(mergedConfig);
-            setIsEditing(false);
-            setEditingFormType(null);
-            setLayoutRemark("");
-            toast.success("Configuration saved successfully");
-        } catch (error) {
-            console.error("Error saving config:", error);
-            toast.error("Failed to save configuration");
-        }
-    };
-
-    const fetchConfigHistory = async () => {
-        if (!selectedDepartment) return;
-        try {
-            const response = await axiosInstance.get(`/api/daily-5m/history/${selectedDepartment}`);
-            if (response.data.success) {
-                setConfigHistory(response.data.data);
-                setIsViewingHistory(true);
-                logAction({ action: "VIEW_DAILY_5M_LAYOUT_HISTORY", details: { departmentId: selectedDepartment } }).catch(() => { });
-            }
-        } catch (error) {
-            console.error("Error fetching history:", error);
-            toast.error("Failed to load layout history.");
-        }
-    };
-
-    const handleResetConfig = async () => {
-        if (!confirm("Are you sure you want to reset to the default layout? This will lose any custom changes.")) return;
-
-        try {
-            // ... reset logic ...
-        } catch (e) {
-            toast.error("Reset failed");
-        }
+    // Layout is edited in the dedicated Daily 5M Layout & Revision editor (layout + Revision
+    // Table record saved together). Layouts are department-wide, so only the department is passed.
+    // The editor is mounted in each area (/cms, /portal) so non-admin layout editors can reach it;
+    // /admin is admin-only, so the Revision Table copy is the admin entry point.
+    const openLayoutEditor = () => {
+        const params = new URLSearchParams();
+        if (selectedDepartment) params.set('departmentId', String(selectedDepartment));
+        else params.set('global', '1');
+        const editorPath = location.pathname.startsWith('/portal') ? '/portal/daily-5m-recording/layout'
+            : location.pathname.startsWith('/cms') ? '/cms/daily-5m-recording/layout'
+                : '/admin/revision-table/daily-5m/layout';
+        navigate(`${editorPath}?${params.toString()}`, {
+            state: { from: `${location.pathname}${location.search}` },
+        });
     };
 
     const generatePDFBlob = async () => {
@@ -2209,79 +1936,6 @@ const Daily5MRecording = () => {
         } finally {
             setIsGeneratingPDF(false);
         }
-    };
-
-    // Helper to render class names dynamically
-    const renderHeaderContent = (rawText) => {
-        if (!rawText) return "";
-        let text = processText(rawText);
-
-        const HEADER_NORMALIZE_MAP = {
-            "Planned / Un-Planned": "Planned / <br /> Un-Planned",
-            "Planned/Un-Planned": "Planned / <br /> Un-Planned",
-            "Operator Code/ID": "Operator Code / <br /> ID",
-            "Operator / Inspector ID": "Operator Code / <br /> ID",
-            "Auth. Operator / Inspector Name": "Auth. Operator / <br /> Inspector Name",
-            "Operator / Inspector Name": "Auth. Operator / <br /> Inspector Name",
-            "Current Skill Level": "Current <br /> Skill <br /> Level",
-            "Req. Min Skill Level": "Req. Min <br /> Skill Level",
-            "Operator Code": "Operator <br /> Code",
-            "Employee Code": "Operator <br /> Code",
-            "Actual Skill Level": "Actual Skill <br /> Level",
-            "Deputed From (Line/Process/Station)": "Deputed From <br /> (Line/Process/Station)",
-            "Deputed Plan (Date)": "Deputation Plan <br /> (Date)",
-            "Deputed on Plan": "Deputation Plan <br /> (Date)",
-            "Deputation Plan (Date)": "Deputation Plan <br /> (Date)",
-            "OJT Status (Attached OJT sheet)": "OJT Status <br /> (Attached OJT sheet)",
-            "OJT Status (Attached OJT Sheet)": "OJT Status <br /> (Attached OJT sheet)",
-            "OJT Status (Attended/Not Attended) [Attached OJT sheet]": "OJT Status <br /> (Attached OJT sheet)",
-            "Last Produced Part Status (Parameters)": "Last Produced Part Status <br /> Parameters"
-        };
-
-        if (HEADER_NORMALIZE_MAP[text]) {
-            text = HEADER_NORMALIZE_MAP[text];
-        }
-
-        const parts = text.split(/(?:<br\s*\/?>|<\/br>|\n)/gi);
-        if (parts.length === 1) return parts[0];
-
-        return (
-            <span className="inline-block leading-tight text-center">
-                {parts.map((part, idx) => (
-                    <React.Fragment key={idx}>
-                        {part}
-                        {idx < parts.length - 1 && <br />}
-                    </React.Fragment>
-                ))}
-            </span>
-        );
-    };
-
-    const getClassName = (header) => {
-        let classes = "border border-black py-0.5 px-0 text-center ";
-        if (header.className) classes += header.className;
-        if (header.width) classes += ` ${header.width}`;
-
-        const plainText = (header.text || "").replace(/<[^>]*>/g, '').trim();
-        if (plainText === "Sr.no" || plainText === "Sr. No.") {
-            classes += " w-10 min-w-[36px] max-w-[48px]";
-        } else if (plainText === "Part No.") {
-            classes += " w-16 min-w-[60px] max-w-[110px]";
-        } else if (plainText === "Lot No.") {
-            classes += " w-14 min-w-[50px] max-w-[95px]";
-        } else if (plainText === "Circuit No.") {
-            classes += " w-16 min-w-[60px] max-w-[100px]";
-        } else if (plainText === "Produced Qty." || plainText === "Produce d Qty.") {
-            classes += " w-12 min-w-[42px] max-w-[65px]";
-        } else if (plainText === "NG Qty.") {
-            classes += " w-12 min-w-[42px] max-w-[65px]";
-        } else if (plainText === "Remarks") {
-            classes += " w-20 min-w-[70px] max-w-[130px]";
-        } else if (plainText === "Process Owner") {
-            classes += " w-20 min-w-[75px] max-w-[110px]";
-        }
-
-        return classes;
     };
 
     const _oldGetClassName = (header) => {
@@ -2973,55 +2627,13 @@ const Daily5MRecording = () => {
         const activeConfig = tableConfig?.[formType] || (formType === 'crimping' ? DEFAULT_CRIMPING_CONFIG : null);
         if (!activeConfig) return null;
 
-        const renderChangeTypeTable = () => {
-            const changeTypeConfig = activeConfig.changeTypeTable || DEFAULT_CHANGE_TYPE_CONFIG;
-            const notes = changeTypeConfig.notes || [];
-
-            return (
-                <div className="mt-8 border-2 border-black">
-                    <table className="w-full border-collapse text-[12px] sm:text-sm">
-                        <thead>
-                            <tr>
-                                <th colSpan={100} className="border border-black bg-gray-100 p-1 text-left font-bold text-[12px]">
-                                    {processText(changeTypeConfig.title)}
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody className="text-[16px] leading-normal">
-                            {(changeTypeConfig.rows || []).map((row, rowIndex) => (
-                                <tr key={rowIndex}>
-                                    {row.map((cell, cellIndex) => (
-                                        <td
-                                            key={cellIndex}
-                                            rowSpan={cell.rowSpan}
-                                            colSpan={cell.colSpan}
-                                            className={cell.className}
-                                        >
-                                            {processText(cell.text)}
-                                        </td>
-                                    ))}
-                                    {rowIndex === 0 && notes.length > 0 && (
-                                        <td rowSpan={changeTypeConfig.rows.length} className="border border-black p-1.5 align-top bg-slate-50/50">
-                                            <div className="space-y-1.5">
-                                                {notes.map((note, noteIndex) => (
-                                                    <div key={noteIndex}>
-                                                        <span className="font-bold underline">{processText(note.term)}</span>
-                                                        <p className="mt-0.5 italic">{processText(note.definition)}</p>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </td>
-                                    )}
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            );
-        };
+        // Shared with the layout editor's preview (components/Daily5MLayoutParts.jsx).
+        const renderChangeTypeTable = () => (
+            <Daily5MChangeTypeTable config={activeConfig.changeTypeTable} processText={processText} />
+        );
 
         // Non-crimping layouts also get the injected "Approve or Reject" column
-        const totalColumns = countHeaderColumns(activeConfig.headers) + (formType !== 'crimping' ? 1 : 0);
+        const totalColumns = countSheetColumns(activeConfig.headers, formType);
 
         const renderRejectReasonRow = (recIndex) => {
             if (!isRejectedStatus(formData[rowKey(recIndex, 'RowStatus')])) return null;
@@ -3042,66 +2654,7 @@ const Daily5MRecording = () => {
                 <div className="border-2 border-black block min-w-full print:overflow-visible">
                     <table className="w-max print:w-full min-w-full border-collapse text-[16px] sm:text-xs">
                         <thead>
-                            {(() => {
-                                // 1. Identify where to place the "Approve or Reject" header
-                                const totalHeaderRows = activeConfig.headers.length;
-                                let targetRowIndex = totalHeaderRows - 1;
-
-                                if (formType !== 'crimping') {
-                                    for (let i = 0; i < totalHeaderRows; i++) {
-                                        const row = activeConfig.headers[i];
-                                        const lastItem = row[row.length - 1];
-                                        if (lastItem && (i + (lastItem.rowSpan || 1) === totalHeaderRows)) {
-                                            if (row.length > 1) {
-                                                targetRowIndex = i;
-                                                break;
-                                            }
-                                        }
-                                    }
-                                }
-
-                                return activeConfig.headers.map((row, rowIndex) => (
-                                    <tr key={rowIndex}>
-                                        {row.map((header, colIndex) => {
-                                            const headerText = processText(header.text);
-
-                                            const isLastInRow = colIndex === row.length - 1;
-                                            const adjustedColSpan = (formType !== 'crimping' && rowIndex < targetRowIndex && isLastInRow)
-                                                ? (header.colSpan || 1) + 1
-                                                : header.colSpan;
-
-                                            return (
-                                                <th
-                                                    key={colIndex}
-                                                    colSpan={adjustedColSpan}
-                                                    rowSpan={header.rowSpan}
-                                                    className={getClassName(header)}
-                                                >
-                                                    {header.isSplit ? (
-                                                        <div className="flex flex-col h-full min-h-[40px]">
-                                                            {header.splitLabels?.map((label, idx) => (
-                                                                <div key={idx} className={`flex-1 flex items-center justify-center ${idx < header.splitLabels.length - 1 ? 'border-b border-black' : ''}`}>
-                                                                    {label}
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    ) : (
-                                                        renderHeaderContent(header.text)
-                                                    )}
-                                                </th>
-                                            );
-                                        })}
-                                        {formType !== 'crimping' && rowIndex === targetRowIndex && (
-                                            <th
-                                                rowSpan={activeConfig.headers[targetRowIndex][activeConfig.headers[targetRowIndex].length - 1].rowSpan || 1}
-                                                className="border border-black py-0.5 px-0 bg-slate-100 font-bold text-center text-[10px] uppercase align-middle shadow-sm"
-                                            >
-                                                Approve or Reject
-                                            </th>
-                                        )}
-                                    </tr>
-                                ));
-                            })()}
+                            <Daily5MHeaderRows headers={activeConfig.headers} formType={formType} processText={processText} />
                         </thead>
                         <tbody>
                             {[...Array(rowCount)].map((_, recIndex) =>
@@ -3672,17 +3225,16 @@ const Daily5MRecording = () => {
                     )}
                 </div>
                 <div className="flex gap-2">
-                    <Button
-                        variant="outline"
-                        disabled={!selectedDepartment || loadingConfig}
-                        onClick={() => {
-                            setEditingFormType(null);
-                            setIsEditing(true);
-                        }}
-                    >
-                        <IconSettings className="w-5 h-5 mr-2" />
-                        Edit Layout
-                    </Button>
+                    {canEditLayout5M && (
+                        <Button
+                            variant="outline"
+                            disabled={!selectedDepartment || loadingConfig}
+                            onClick={openLayoutEditor}
+                        >
+                            <IconSettings className="w-5 h-5 mr-2" />
+                            Edit Layout & Revision
+                        </Button>
+                    )}
 
                     <Button
                         variant="outline"
@@ -3699,112 +3251,6 @@ const Daily5MRecording = () => {
                         departmentId={selectedDepartment}
                         departmentName={selectedDeptName}
                     />
-
-                    <Dialog open={isEditing} onOpenChange={(open) => {
-                        setIsEditing(open);
-                        if (!open) setEditingFormType(null);
-                    }}>
-                        <DialogContent className="max-w-[800px] max-h-[90vh] flex flex-col">
-                            {!editingFormType ? (
-                                <>
-                                    <DialogHeader>
-                                        <DialogTitle>Edit Layout</DialogTitle>
-                                        <DialogDescription>Choose which sheet layout you'd like to customize.</DialogDescription>
-                                    </DialogHeader>
-                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-1">
-                                        {FORM_TYPE_META.map((meta) => {
-                                            const Icon = meta.icon;
-                                            return (
-                                                <button
-                                                    key={meta.key}
-                                                    type="button"
-                                                    onClick={() => openLayoutEditor(meta.key)}
-                                                    className={`group flex flex-col items-center gap-2 rounded-xl border-2 border-slate-200 p-5 text-center transition-all duration-200 hover:shadow-md ${meta.hoverBorder}`}
-                                                >
-                                                    <div className={`rounded-lg p-3 transition-colors ${meta.iconInactive}`}>
-                                                        <Icon size={26} />
-                                                    </div>
-                                                    <div>
-                                                        <div className={`font-bold text-slate-800 transition-colors ${meta.titleHover}`}>{meta.label}</div>
-                                                        <p className="text-xs text-slate-500 mt-0.5">{meta.description}</p>
-                                                    </div>
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                    <div className="flex justify-end">
-                                        <Button variant="ghost" onClick={() => setIsEditing(false)}>Cancel</Button>
-                                    </div>
-                                </>
-                            ) : (
-                                <>
-                                    <DialogHeader>
-                                        <DialogTitle className="flex justify-between items-center pr-8">
-                                            <span>
-                                                Edit Table Configuration (JSON) — {FORM_TYPE_META.find(m => m.key === editingFormType)?.label}
-                                            </span>
-                                            <Button variant="outline" size="sm" onClick={fetchConfigHistory}>
-                                                View History
-                                            </Button>
-                                        </DialogTitle>
-                                    </DialogHeader>
-                                    <div className="flex-1 overflow-auto p-1 space-y-4">
-                                        <Textarea
-                                            className="font-mono text-xs h-[400px]"
-                                            value={jsonConfigStr}
-                                            onChange={(e) => setJsonConfigStr(e.target.value)}
-                                        />
-                                        <div className="space-y-2">
-                                            <Label htmlFor="remark">Remark (Required)</Label>
-                                            <Input
-                                                id="remark"
-                                                placeholder="Briefly describe the changes made to the layout..."
-                                                value={layoutRemark}
-                                                onChange={(e) => setLayoutRemark(e.target.value)}
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <Button variant="ghost" onClick={() => {
-                                            if (confirm("Discard changes?")) {
-                                                setEditingFormType(null);
-                                                setLayoutRemark("");
-                                            }
-                                        }}>Back</Button>
-                                        <Button onClick={handleSaveConfig} disabled={!layoutRemark.trim()}>
-                                            Save Configuration
-                                        </Button>
-                                    </div>
-                                </>
-                            )}
-                        </DialogContent>
-                    </Dialog>
-
-                    {/* History Dialog */}
-                    <Dialog open={isViewingHistory} onOpenChange={setIsViewingHistory}>
-                        <DialogContent className="max-w-[600px] max-h-[80vh] flex flex-col">
-                            <DialogHeader>
-                                <DialogTitle>Layout Change History</DialogTitle>
-                            </DialogHeader>
-                            <div className="flex-1 overflow-auto p-4 space-y-4">
-                                {configHistory.length === 0 ? (
-                                    <div className="text-center text-gray-500 py-8">No history found.</div>
-                                ) : (
-                                    configHistory.map((entry, idx) => (
-                                        <div key={idx} className="border p-3 rounded-lg space-y-2 bg-slate-50">
-                                            <div className="flex justify-between text-sm">
-                                                <span className="font-semibold">{entry.updatedBy}</span>
-                                                <span className="text-gray-500">{new Date(entry.createdAt).toLocaleString()}</span>
-                                            </div>
-                                            <div className="text-sm border-l-2 border-blue-400 pl-2">
-                                                {entry.remark}
-                                            </div>
-                                        </div>
-                                    ))
-                                )}
-                            </div>
-                        </DialogContent>
-                    </Dialog>
 
                     {!isReadOnly && (
                         <div className="flex gap-2">
@@ -4421,18 +3867,17 @@ const Daily5MRecording = () => {
                                         {!viewOnlyAccess && (
                                             <>
                                                 <div className="h-7 w-px bg-slate-200 mx-1" />
-                                                <Button
-                                                    variant="outline"
-                                                    onClick={() => {
-                                                        setEditingFormType(null);
-                                                        setIsEditing(true);
-                                                    }}
-                                                    disabled={loadingConfig}
-                                                    className="h-9"
-                                                >
-                                                    <IconSettings className="w-4 h-4 mr-2" />
-                                                    Edit Layout
-                                                </Button>
+                                                {canEditLayout5M && (
+                                                    <Button
+                                                        variant="outline"
+                                                        onClick={openLayoutEditor}
+                                                        disabled={loadingConfig}
+                                                        className="h-9"
+                                                    >
+                                                        <IconSettings className="w-4 h-4 mr-2" />
+                                                        Edit Layout & Revision
+                                                    </Button>
+                                                )}
                                                 <Button variant="outline" onClick={() => setIsManagePeopleOpen(true)} className="h-9">
                                                     <IconPlus className="w-4 h-4 mr-2" />
                                                     Manage People

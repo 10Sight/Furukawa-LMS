@@ -14,17 +14,23 @@ import {
   getPTMSectionCounts
 } from './ptmRecordFilters.js';
 
-test('1. PTM Plant Dropdown options: Bawal, Gujrat, All, default is Bawal', () => {
+test('1. PTM Plant Dropdown options: Bawal, Gujrat, All, default is Bawal inside Plant tab', () => {
   assert.deepEqual(PTM_VALID_UNITS, ['Bawal', 'Gujrat', 'All']);
 
+  const tabNavPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/ptm/PTM/PTMTabNavigation.jsx');
+  const tabNavContent = fs.readFileSync(tabNavPath, 'utf8');
+
+  // Verify dropdown button is embedded in the Plant tab
+  assert.match(tabNavContent, /ptm-plant-tab-button/);
+  assert.match(tabNavContent, /Plant:/);
+  assert.match(tabNavContent, /'Bawal'/);
+  assert.match(tabNavContent, /'Gujrat'/);
+  assert.match(tabNavContent, /'All'/);
+
+  // Verify standalone top-left dropdown is removed from App.jsx
   const appPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/pages/ptm/App.jsx');
   const appContent = fs.readFileSync(appPath, 'utf8');
-
-  // Verify dropdown button has "Plant:" label
-  assert.match(appContent, /Plant:/);
-  assert.match(appContent, /ptm-plant-dropdown-button/);
-  // Verify default unit is Bawal
-  assert.match(appContent, /selectedUnit \|\| 'Bawal'/);
+  assert.doesNotMatch(appContent, /ptm-plant-dropdown-button/);
 });
 
 test('2. PTM Page Structure: Plant, Department, Self PTM only (No CFT)', () => {
@@ -62,15 +68,21 @@ test('4. PDCA Page: Ongoing Status sub-filter bar is removed from all pages', ()
   assert.match(pdcaContent, /setActiveSection\('Done'\)/);
 });
 
-test('5. PDCA Page: Top-left Unit selecting dropdown replaced with Plant dropdown (Bawal, Gujrat, All)', () => {
-  const filterToolbarPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/pdca/FilterToolbar.jsx');
-  const content = fs.readFileSync(filterToolbarPath, 'utf8');
+test('5. PDCA Page: Plant tab is a dropdown with options Bawal, Gujrat, All (default Bawal)', () => {
+  const tabNavPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/pdca/TabNavigation.jsx');
+  const tabNavContent = fs.readFileSync(tabNavPath, 'utf8');
 
-  assert.match(content, /plant-dropdown-button/);
-  assert.match(content, /Plant:/);
-  assert.match(content, /'Bawal'/);
-  assert.match(content, /'Gujrat'/);
-  assert.match(content, /'All'/);
+  // Verify dropdown button is embedded in the Plant tab
+  assert.match(tabNavContent, /pdca-plant-tab-button/);
+  assert.match(tabNavContent, /Plant:/);
+  assert.match(tabNavContent, /'Bawal'/);
+  assert.match(tabNavContent, /'Gujrat'/);
+  assert.match(tabNavContent, /'All'/);
+
+  // Verify standalone top-left dropdown is removed from FilterToolbar.jsx
+  const filterToolbarPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/pdca/FilterToolbar.jsx');
+  const ftContent = fs.readFileSync(filterToolbarPath, 'utf8');
+  assert.doesNotMatch(ftContent, /plant-dropdown-button/);
 });
 
 test('6. PTM Department-wise Sheet Visibility & Independent Completion', () => {
@@ -164,3 +176,4 @@ test('7. PTM Self PTM Visibility & Independent Completion', () => {
   const user2Status = classifyPTMSheetStatus(sheetWithPoints, 'Self PTM', { currentUser: user2 });
   assert.equal(user2Status.section, 'Ongoing', 'User 2 should see the sheet in Ongoing section independently');
 });
+

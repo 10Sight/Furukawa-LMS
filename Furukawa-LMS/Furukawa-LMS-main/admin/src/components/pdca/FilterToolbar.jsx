@@ -10,93 +10,20 @@ import {
 } from 'lucide-react';
 
 export default function FilterToolbar({
-  selectedPlant = 'Bawal',
-  setSelectedPlant,
-  searchQuery,
-  setSearchQuery,
-  onExport,
-  onOpenAddModal,
   onExportAll
 }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = useRef(null);
-
-  const plantOptions = ['Bawal', 'Gujrat', 'All'];
-
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const normalizedCurrent = !selectedPlant || selectedPlant === 'All Unit' || selectedPlant === 'All Units' || selectedPlant === 'All Plants' || selectedPlant === 'All'
-    ? 'All'
-    : selectedPlant;
-
-  const displayLabel = normalizedCurrent === 'All' ? 'All' : normalizedCurrent;
+  if (!onExportAll) return null;
 
   return (
-    <div className="w-full">
-      {/* 1. Plant Filter Dropdown (Positioned in Top-Left Corner) */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative inline-block" ref={dropdownRef}>
-            <button
-              type="button"
-              id="plant-dropdown-button"
-              onClick={() => setIsOpen(!isOpen)}
-              className="flex items-center gap-2.5 bg-white border border-[#D1D5DB] text-slate-800 text-sm font-semibold rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500 cursor-pointer shadow-xs hover:border-slate-400 transition-colors"
-              title="Select Plant"
-            >
-              <span className="text-slate-500 font-medium">Plant:</span>
-              <span className="font-bold text-slate-900">{displayLabel}</span>
-              <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-            </button>
-
-            {isOpen && (
-              <div className="absolute left-0 mt-1.5 w-36 bg-white rounded-xl shadow-xl border border-slate-100 py-1.5 z-50 text-xs font-semibold animate-in fade-in">
-                {plantOptions.map((p) => {
-                  const isSelected = p === 'All'
-                    ? normalizedCurrent === 'All'
-                    : selectedPlant === p;
-                  return (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => {
-                        setSelectedPlant(p);
-                        setIsOpen(false);
-                      }}
-                      className={`w-full text-left px-3.5 py-2 hover:bg-blue-50 hover:text-blue-600 flex items-center justify-between transition-colors cursor-pointer ${
-                        isSelected ? 'font-bold text-blue-600 bg-blue-50/60' : 'text-slate-700'
-                      }`}
-                    >
-                      <span>{p}</span>
-                      {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 stroke-[2.5]" />}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Top-Right Action Button */}
-        {onExportAll && (
-          <button
-            type="button"
-            onClick={onExportAll}
-            title="Download all PDCA records"
-            className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-2xs transition-colors cursor-pointer"
-          >
-            Export All Records
-          </button>
-        )}
-      </div>
+    <div className="w-full flex items-center justify-end">
+      <button
+        type="button"
+        onClick={onExportAll}
+        title="Download all PDCA records"
+        className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-2xs transition-colors cursor-pointer"
+      >
+        Export All Records
+      </button>
     </div>
   );
 }

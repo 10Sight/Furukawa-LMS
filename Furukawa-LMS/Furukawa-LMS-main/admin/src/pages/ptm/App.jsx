@@ -807,50 +807,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
         {/* ── VIEW 1: PTM DASHBOARD LIST VIEW ── */}
         {currentView === 'list' && (
           <main className="p-4 md:p-6 space-y-4 flex-1 w-full mx-auto max-w-[1600px]">
-            {/* 1. Plant Selector Dropdown */}
-            <div className="flex items-center justify-between">
-              <div className="relative inline-block">
-                <button
-                  type="button"
-                  id="ptm-plant-dropdown-button"
-                  onClick={() => setUnitDropdownOpen(!unitDropdownOpen)}
-                  className="flex items-center gap-2.5 bg-white px-4 py-2.5 rounded-xl border border-slate-200 shadow-sm text-sm font-bold text-slate-800 hover:bg-slate-50 hover:border-slate-300 transition-colors cursor-pointer"
-                  title="Select Plant"
-                >
-                  <span className="text-slate-500 font-medium">Plant:</span>
-                  <span className="font-bold text-slate-900">{selectedUnit === 'All Units' || selectedUnit === 'All' ? 'All' : (selectedUnit || 'Bawal')}</span>
-                  <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${unitDropdownOpen ? 'rotate-180' : ''}`} />
-                </button>
-
-                {unitDropdownOpen && (
-                  <div className="absolute left-0 mt-1.5 w-40 bg-white rounded-xl shadow-xl border border-slate-100 py-1.5 z-40 text-xs font-semibold animate-in fade-in">
-                    {VALID_UNITS.map((u) => {
-                      const isSelected = u === 'All'
-                        ? (selectedUnit === 'All' || selectedUnit === 'All Units')
-                        : selectedUnit === u;
-                      return (
-                        <button
-                          key={u}
-                          type="button"
-                          onClick={() => {
-                            handleSelectUnit(u);
-                            setUnitDropdownOpen(false);
-                          }}
-                          className={`w-full text-left px-3.5 py-2 hover:bg-blue-50 hover:text-blue-600 flex items-center justify-between transition-colors cursor-pointer ${
-                            isSelected ? 'font-bold text-blue-600 bg-blue-50/60' : 'text-slate-700'
-                          }`}
-                        >
-                          <span>{u}</span>
-                          {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 stroke-[2.5]" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* 2. Scope Tabs: Plant, Department, Self PTM */}
+            {/* 1. Scope Tabs: Plant (with Dropdown), Department, Self PTM */}
             <PTMTabNavigation
               activeTab={activeTab}
               setActiveTab={(tab) => {
@@ -858,9 +815,11 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
                 setActivePtmSection('Ongoing');
                 setCurrentPage(1);
               }}
+              selectedUnit={selectedUnit}
+              setSelectedUnit={handleSelectUnit}
             />
 
-            {/* 3. Section Navigation: Ongoing & Done (No sub-filter bar!) */}
+            {/* 2. Section Navigation: Ongoing & Done (No sub-filter bar!) */}
             <div className="bg-white rounded-2xl p-3 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-[#ECEFF3] flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2">
                 <button

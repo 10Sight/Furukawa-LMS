@@ -190,7 +190,7 @@ function CriticalActivityCell({ value, onChange }) {
           if (event.key === 'Escape') setIsEditing(false);
         }}
         aria-label="Critical Activity"
-        className="w-[58px] rounded border border-[#64748B] bg-white px-1 py-1 text-center text-[11px] font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+        className="w-[62px] rounded border border-[#64748B] bg-white px-1 py-1 text-center text-xs sm:text-sm font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
       >
         <option value="Yes">Yes</option>
         <option value="No">No</option>
@@ -204,11 +204,11 @@ function CriticalActivityCell({ value, onChange }) {
       onClick={() => setIsEditing(true)}
       aria-label={`Critical Activity: ${isYes ? 'Yes' : 'No'}. Click to change`}
       title="Click to change Critical Activity"
-      className="inline-flex min-h-7 min-w-[34px] items-center justify-center rounded px-1 hover:bg-slate-100 focus:outline-none focus-visible:ring-1 focus-visible:ring-blue-500"
+      className="inline-flex min-h-7 min-w-[34px] items-center justify-center rounded px-1 hover:bg-slate-100 focus:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 cursor-pointer"
     >
       {isYes
         ? <span className="text-[22px] font-bold leading-none text-slate-900">♦</span>
-        : <span className="text-[11px] font-medium text-slate-500">No</span>}
+        : <span className="text-xs sm:text-sm font-medium text-slate-500">No</span>}
     </button>
   );
 }
@@ -1216,7 +1216,7 @@ export default function PTMTable({
               {/* ══════════════════════════════════════════════════════════════════
                 COLUMN TITLES
                 ══════════════════════════════════════════════════════════════════ */}
-              <tr className="divide-x divide-[#64748B] text-[10px] font-bold text-center border-b border-slate-300">
+              <tr className="divide-x divide-[#64748B] text-xs sm:text-[12.5px] font-bold text-center border-b border-slate-300">
                 {/* Group 1 Columns (Ice Blue tint) */}
                 <th rowSpan={2} className="py-2 px-1 w-10 min-w-[36px] max-w-[42px] bg-[#EEF4FA] text-[#2C5282] whitespace-normal leading-tight text-center">
                   S.No
@@ -1324,7 +1324,7 @@ export default function PTMTable({
                   <th
                     key={dept.key}
                     rowSpan={2}
-                    className="py-2 px-0.5 w-8 min-w-[30px] max-w-[34px] bg-[#EAF5EC] text-[#276749] text-center whitespace-nowrap text-[9.5px]"
+                    className="py-2 px-0.5 w-8 min-w-[30px] max-w-[34px] bg-[#EAF5EC] text-[#276749] text-center whitespace-nowrap text-xs sm:text-[12px]"
                   >
                     {dept.label}
                   </th>
@@ -1361,16 +1361,16 @@ export default function PTMTable({
                 </th>
 
                 {/* Group 6 Columns (Ice Blue tint) */}
-                <th rowSpan={2} className="py-2 px-1 w-20 min-w-[78px] max-w-[84px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center text-[10.5px]">
+                <th rowSpan={2} className="py-2 px-1 w-20 min-w-[78px] max-w-[84px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center text-xs sm:text-[12px]">
                   Start Date (Plan)
                 </th>
-                <th rowSpan={2} className="py-2 px-1 w-20 min-w-[78px] max-w-[84px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center text-[10.5px]">
+                <th rowSpan={2} className="py-2 px-1 w-20 min-w-[78px] max-w-[84px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center text-xs sm:text-[12px]">
                   Start Date (Actual)
                 </th>
-                <th rowSpan={2} className="py-2 px-1 w-20 min-w-[78px] max-w-[84px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center text-[10.5px]">
+                <th rowSpan={2} className="py-2 px-1 w-20 min-w-[78px] max-w-[84px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center text-xs sm:text-[12px]">
                   End Date (Plan)
                 </th>
-                <th rowSpan={2} className="py-2 px-1 w-20 min-w-[78px] max-w-[84px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center text-[10.5px]">
+                <th rowSpan={2} className="py-2 px-1 w-20 min-w-[78px] max-w-[84px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center text-xs sm:text-[12px]">
                   End Date (Actual)
                 </th>
 
@@ -1418,7 +1418,7 @@ export default function PTMTable({
                 {/* Responsible Person Section Header */}
                 <th
                   colSpan={3}
-                  className="py-1 px-1 border-r border-b border-[#64748B] bg-[#ECEFF1] text-center select-none text-slate-800 font-bold text-[11px] leading-tight"
+                  className="py-1 px-1 border-r border-b border-[#64748B] bg-[#ECEFF1] text-center select-none text-slate-800 font-bold text-xs sm:text-[13px] leading-tight"
                 >
                   Responsible Person
                 </th>
@@ -1463,7 +1463,7 @@ export default function PTMTable({
                 {/* Actions Column: Visually separated section at the end of the sheet */}
                 <th
                   rowSpan={2}
-                  className="relative overflow-visible py-2 px-2 bg-slate-200 text-slate-800 font-extrabold uppercase text-[10px] tracking-wider text-center border-l-4 border-slate-300"
+                  className="relative overflow-visible py-2 px-2 bg-slate-200 text-slate-800 font-extrabold uppercase text-xs sm:text-[12px] tracking-wider text-center border-l-4 border-slate-300"
                   style={{
                     width: `${colWidths.actions}px`,
                     minWidth: `${MIN_ACTION_COLUMN_WIDTH}px`,
@@ -1488,7 +1488,7 @@ export default function PTMTable({
               </tr>
 
               {/* Row 2: Sub-columns for Responsible Person */}
-              <tr className="divide-x divide-[#64748B] text-[10px] font-bold text-center border-b-2 border-slate-400 bg-[#ECEFF1] text-slate-800">
+              <tr className="divide-x divide-[#64748B] text-xs sm:text-[12.5px] font-bold text-center border-b-2 border-slate-400 bg-[#ECEFF1] text-slate-800">
                 <th className="py-1 px-1 text-center w-[110px] min-w-[100px]">
                   Unit
                 </th>
@@ -1546,7 +1546,7 @@ export default function PTMTable({
                         ) : (
                           <>
                             {/* S.No */}
-                            <td className="py-2 px-1 text-center font-semibold text-slate-500 text-xs bg-slate-50/40">
+                            <td className="py-2 px-1 text-center font-semibold text-slate-600 text-sm bg-slate-50/40">
                               {getRowSerial(row, originalIndex)}
                             </td>
 
@@ -1556,7 +1556,7 @@ export default function PTMTable({
                                 <select
                                   value={row.addedFrom === 'filters' && !row.phaseNo ? '' : row.phaseNo || '1'}
                                   onChange={(e) => handleCellChange(originalIndex, 'phaseNo', e.target.value)}
-                                  className="appearance-none w-full bg-transparent text-center font-bold text-slate-800 pr-5 pl-2 py-2 text-xs outline-none cursor-pointer hover:bg-blue-50/50 transition-colors"
+                                  className="appearance-none w-full bg-transparent text-center font-bold text-slate-800 pr-5 pl-2 py-2 text-sm outline-none cursor-pointer hover:bg-blue-50/50 transition-colors"
                                 >
                                   {row.addedFrom === 'filters' && !row.phaseNo && <option value="">—</option>}
                                   {Array.from({ length: 25 }, (_, phaseIndex) => {
@@ -1564,7 +1564,7 @@ export default function PTMTable({
                                     return <option key={phaseNumber} value={phaseNumber}>{phaseNumber}</option>;
                                   })}
                                 </select>
-                                <ChevronDown className="w-3 h-3 text-slate-400 absolute right-1.5 pointer-events-none" />
+                                <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-1.5 pointer-events-none" />
                               </div>
                             </td>
 
@@ -1584,7 +1584,7 @@ export default function PTMTable({
                                 data-row={originalIndex}
                                 data-col="phaseName"
                                 placeholder="Phase Name..."
-                                className="w-full py-2 px-2 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs"
+                                className="w-full py-2 px-2 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm"
                               />
                             </td>
                           </>
@@ -1607,7 +1607,7 @@ export default function PTMTable({
                                   readOnly
                                   noDropdown={true}
                                   aria-label={`Child row number ${getRowSerial(row, originalIndex)}`}
-                                  className="w-full text-center py-2 px-1 text-slate-700 font-mono bg-transparent outline-none focus:bg-slate-50 text-xs cursor-default"
+                                  className="w-full text-center py-2 px-1 text-slate-700 font-mono bg-transparent outline-none focus:bg-slate-50 text-sm cursor-default"
                                 />
                               ) : (
                                 <ManualInputBox
@@ -1618,7 +1618,7 @@ export default function PTMTable({
                                   data-row={originalIndex}
                                   data-col="reqNo"
                                   placeholder="No."
-                                  className="w-full text-center py-2 px-1 text-slate-700 font-mono bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs"
+                                  className="w-full text-center py-2 px-1 text-slate-700 font-mono bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm"
                                 />
                               )}
                             </div>
@@ -1654,7 +1654,7 @@ export default function PTMTable({
                             data-row={originalIndex}
                             data-col="customerEvent"
                             placeholder="Event name..."
-                            className="w-full py-2 px-2 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs"
+                            className="w-full py-2 px-2 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm"
                           />
                         </td>
 
@@ -1671,7 +1671,7 @@ export default function PTMTable({
                             {row.rankA === 'if_required' && (
                               <div className="w-5 h-5 border-[2.5px] border-black bg-white rounded-xs flex items-center justify-center"></div>
                             )}
-                            {!row.rankA && <span className="text-slate-300 text-xs">—</span>}
+                            {!row.rankA && <span className="text-slate-300 text-sm">—</span>}
                           </div>
                         </td>
 
@@ -1688,7 +1688,7 @@ export default function PTMTable({
                             {row.rankB === 'if_required' && (
                               <div className="w-5 h-5 border-[2.5px] border-black bg-white rounded-xs flex items-center justify-center"></div>
                             )}
-                            {!row.rankB && <span className="text-slate-300 text-xs">—</span>}
+                            {!row.rankB && <span className="text-slate-300 text-sm">—</span>}
                           </div>
                         </td>
 
@@ -1705,7 +1705,7 @@ export default function PTMTable({
                             {row.rankC === 'if_required' && (
                               <div className="w-5 h-5 border-[2.5px] border-black bg-white rounded-xs flex items-center justify-center"></div>
                             )}
-                            {!row.rankC && <span className="text-slate-300 text-xs">—</span>}
+                            {!row.rankC && <span className="text-slate-300 text-sm">—</span>}
                           </div>
                         </td>
 
@@ -1733,7 +1733,7 @@ export default function PTMTable({
                             data-row={originalIndex}
                             data-col="activity"
                             placeholder="Type activity description..."
-                            className="w-full py-2 px-2.5 text-slate-900 text-xs font-normal leading-relaxed bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500"
+                            className="w-full py-2 px-2.5 text-slate-900 text-sm font-normal leading-relaxed bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500"
                           />
                         </td>
 
@@ -1773,7 +1773,7 @@ export default function PTMTable({
                               value={row.deliverableRequired || (row.deliverable ? 'Yes' : 'No')}
                               onChange={(e) => handleCellChange(originalIndex, 'deliverableRequired', e.target.value)}
                               aria-label="Deliverable required"
-                              className="w-[54px] shrink-0 rounded border border-[#64748B] bg-white px-1 py-1 text-center text-[11px] font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                              className="w-[58px] shrink-0 rounded border border-[#64748B] bg-white px-1 py-1 text-center text-xs sm:text-sm font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                             >
                               <option value="Yes">Yes</option>
                               <option value="No">No</option>
@@ -1787,7 +1787,7 @@ export default function PTMTable({
                               data-col="deliverable"
                               placeholder="Format No."
                               disabled={(row.deliverableRequired || (row.deliverable ? 'Yes' : 'No')) === 'No'}
-                              className={`min-w-0 flex-1 py-1.5 px-1.5 text-slate-800 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs truncate ${(row.deliverableRequired || (row.deliverable ? 'Yes' : 'No')) === 'No' ? 'cursor-not-allowed opacity-50' : ''}`}
+                              className={`min-w-0 flex-1 py-1.5 px-1.5 text-slate-800 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm truncate ${(row.deliverableRequired || (row.deliverable ? 'Yes' : 'No')) === 'No' ? 'cursor-not-allowed opacity-50' : ''}`}
                             />
                           </div>
                         </td>
@@ -1800,7 +1800,7 @@ export default function PTMTable({
                         >
                           <div className="flex items-center justify-center gap-1.5 py-1.5 px-2">
                             <Clock className="w-3.5 h-3.5 text-blue-500 group-hover/duration:text-blue-600 shrink-0" />
-                            <span className="font-mono text-xs font-semibold text-slate-800">
+                            <span className="font-mono text-sm font-semibold text-slate-800">
                               {row.duration || '—'}
                             </span>
                           </div>
@@ -1815,7 +1815,7 @@ export default function PTMTable({
                             data-row={originalIndex}
                             data-col="startDatePlan"
                             placeholder="N/A"
-                            className="w-full text-center py-2 px-1 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs font-mono"
+                            className="w-full text-center py-2 px-1 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm font-mono"
                           />
                         </td>
 
@@ -1828,7 +1828,7 @@ export default function PTMTable({
                             data-row={originalIndex}
                             data-col="startDateActual"
                             placeholder="N/A"
-                            className="w-full text-center py-2 px-1 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs font-mono"
+                            className="w-full text-center py-2 px-1 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm font-mono"
                           />
                         </td>
 
@@ -1841,7 +1841,7 @@ export default function PTMTable({
                             data-row={originalIndex}
                             data-col="endDatePlan"
                             placeholder="N/A"
-                            className="w-full text-center py-2 px-1 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs font-mono"
+                            className="w-full text-center py-2 px-1 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm font-mono"
                           />
                         </td>
 
@@ -1854,7 +1854,7 @@ export default function PTMTable({
                             data-row={originalIndex}
                             data-col="endDateActual"
                             placeholder="N/A"
-                            className="w-full text-center py-2 px-1 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs font-mono"
+                            className="w-full text-center py-2 px-1 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm font-mono"
                           />
                         </td>
 
@@ -1864,7 +1864,7 @@ export default function PTMTable({
                             <select
                               value={row.hitMiss || ''}
                               onChange={(e) => handleCellChange(originalIndex, 'hitMiss', e.target.value)}
-                              className={`appearance-none w-full py-1 pr-3.5 pl-1 rounded text-center text-[11px] font-bold transition-all cursor-pointer outline-none ${row.hitMiss === 'HIT'
+                              className={`appearance-none w-full py-1 pr-3.5 pl-1 rounded text-center text-xs sm:text-sm font-bold transition-all cursor-pointer outline-none ${row.hitMiss === 'HIT'
                                 ? 'bg-[#86EFAC] text-[#14532D] shadow-xs'
                                 : row.hitMiss === 'MISS'
                                   ? 'bg-[#FCA5A5] text-[#7F1D1D] shadow-xs'
@@ -1888,7 +1888,7 @@ export default function PTMTable({
                             data-row={originalIndex}
                             data-col="revisedDate"
                             placeholder="—"
-                            className="w-full text-center py-2 px-1 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs"
+                            className="w-full text-center py-2 px-1 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm font-mono"
                           />
                         </td>
 
@@ -1928,7 +1928,7 @@ export default function PTMTable({
                                 data-row={originalIndex}
                                 data-col="noOfTimesRevised"
                                 placeholder="0"
-                                className={`w-full text-center py-2 ${isRevisedTaken(row.noOfTimesRevised) ? 'pl-1 pr-5 font-semibold text-rose-800' : 'px-1 text-slate-700'} bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs`}
+                                className={`w-full text-center py-2 ${isRevisedTaken(row.noOfTimesRevised) ? 'pl-1 pr-5 font-semibold text-rose-800' : 'px-1 text-slate-700'} bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm`}
                               />
                             </div>
                             {isRevisedTaken(row.noOfTimesRevised) && (
@@ -1969,7 +1969,7 @@ export default function PTMTable({
                                 ? 'Select or enter Reason of Failure'
                                 : 'Select No. of Times Revised first to enable Reason of Failure'
                             }
-                            className={`w-full py-2 px-2 text-xs outline-none ${!isRevisedTaken(row.noOfTimesRevised)
+                            className={`w-full py-2 px-2 text-sm outline-none ${!isRevisedTaken(row.noOfTimesRevised)
                               ? 'bg-slate-50/70 text-slate-400 cursor-not-allowed placeholder:text-slate-400'
                               : !String(row.reasonOfFailure || '').trim()
                                 ? 'bg-rose-50/70 text-slate-800 ring-1 ring-inset ring-rose-400 placeholder:text-rose-600 placeholder:font-semibold focus:bg-amber-50 focus:ring-blue-500'
@@ -1994,7 +1994,7 @@ export default function PTMTable({
                             data-row={originalIndex}
                             data-col="actionTaken"
                             placeholder="Action taken..."
-                            className="w-full py-2 px-2 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs"
+                            className="w-full py-2 px-2 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm"
                           />
                         </td>
 
@@ -2021,7 +2021,7 @@ export default function PTMTable({
                                       >
                                         {/* 1. Unit Child */}
                                         <div className="w-[110px] min-w-[100px] shrink-0 relative min-h-[30px] flex items-center justify-between px-2 py-1 bg-white hover:bg-slate-50 transition-colors">
-                                          <span className="text-[12px] font-bold text-slate-800">{unitName}</span>
+                                          <span className="text-sm font-bold text-slate-800">{unitName}</span>
                                           <CheckboxMultiSelect
                                             value={units}
                                             options={PDCA_UNITS.map((u) => ({ value: u, label: u }))}
@@ -2034,7 +2034,7 @@ export default function PTMTable({
                                                 className="text-slate-400 hover:text-blue-600 p-0.5 rounded cursor-pointer"
                                                 title={`Change units (currently: ${units.join(', ')})`}
                                               >
-                                                <ChevronDown className="w-2.5 h-2.5" />
+                                                <ChevronDown className="w-3 h-3" />
                                               </button>
                                             )}
                                           />
@@ -2053,7 +2053,7 @@ export default function PTMTable({
                                             </div>
                                           ) : unitDepts.length === 1 ? (
                                             <div className="flex-1 w-full min-h-[30px] flex items-center justify-between px-2 py-1 gap-1 hover:bg-blue-50/40 transition-colors">
-                                              <span className="text-[12px] font-semibold text-slate-800 whitespace-nowrap text-left" title={unitDepts[0]}>
+                                              <span className="text-sm font-semibold text-slate-800 whitespace-nowrap text-left" title={unitDepts[0]}>
                                                 {unitDepts[0]}
                                               </span>
                                               <CheckboxMultiSelect
@@ -2068,7 +2068,7 @@ export default function PTMTable({
                                                     className="text-slate-400 hover:text-blue-600 p-0.5 cursor-pointer ml-1 shrink-0"
                                                     title={`Edit ${unitName} departments`}
                                                   >
-                                                    <ChevronDown className="w-2.5 h-2.5" />
+                                                    <ChevronDown className="w-3 h-3" />
                                                   </button>
                                                 )}
                                               />
@@ -2080,7 +2080,7 @@ export default function PTMTable({
                                                   key={deptName}
                                                   className="flex-1 min-h-[30px] flex items-center justify-between px-2 py-1 gap-1 hover:bg-blue-50/40 transition-colors"
                                                 >
-                                                  <span className="text-[12px] font-semibold text-slate-800 whitespace-nowrap text-left" title={deptName}>
+                                                  <span className="text-sm font-semibold text-slate-800 whitespace-nowrap text-left" title={deptName}>
                                                     {deptName}
                                                   </span>
                                                   <CheckboxMultiSelect
@@ -2095,7 +2095,7 @@ export default function PTMTable({
                                                         className="text-slate-400 hover:text-blue-600 p-0.5 cursor-pointer ml-1 shrink-0"
                                                         title={`Edit ${unitName} departments`}
                                                       >
-                                                        <ChevronDown className="w-2.5 h-2.5" />
+                                                        <ChevronDown className="w-3 h-3" />
                                                       </button>
                                                     )}
                                                   />
@@ -2119,13 +2119,13 @@ export default function PTMTable({
                                                   <div className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors justify-center">
                                                     {(assignedEmps.length ? assignedEmps : [{ name: legacyDisplay, legacy: true }]).map((employee, employeeIndex) => (
                                                       <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
-                                                        <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, '', e)} className="min-w-0 flex-1 truncate text-left text-[12px] font-semibold text-slate-800 cursor-pointer hover:text-blue-600" title={`${unitName}: ${employee.name}`}>
+                                                        <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, '', e)} className="min-w-0 flex-1 truncate text-left text-sm font-semibold text-slate-800 cursor-pointer hover:text-blue-600" title={`${unitName}: ${employee.name}`}>
                                                           {stripEmployeeId(employee.name || employee.label || '')}
                                                         </button>
-                                                        <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(originalIndex, unitName, '', null) : handleRemoveDepartmentEmployee(originalIndex, unitName, '', employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>
+                                                        <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(originalIndex, unitName, '', null) : handleRemoveDepartmentEmployee(originalIndex, unitName, '', employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3.5 w-3.5 stroke-[2.5]" /></button>
                                                       </div>
                                                     ))}
-                                                    <button type="button" onClick={() => handleOpenAddStaffModal(originalIndex, unitName, '')} className="flex items-center justify-center gap-1 rounded py-0.5 text-[11px] font-semibold text-blue-600 hover:bg-blue-50 cursor-pointer"><Plus className="h-3 w-3" /> Add Employee</button>
+                                                    <button type="button" onClick={() => handleOpenAddStaffModal(originalIndex, unitName, '')} className="flex items-center justify-center gap-1 rounded py-0.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 cursor-pointer"><Plus className="h-3.5 w-3.5" /> Add Employee</button>
                                                   </div>
                                                 );
                                               }
@@ -2138,7 +2138,7 @@ export default function PTMTable({
                                                     className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer"
                                                     title={`Select staff for ${unitName} (Department will auto-fetch)`}
                                                   >
-                                                    <div className="flex items-center gap-1 text-[12px]">
+                                                    <div className="flex items-center gap-1 text-sm">
                                                       <Search className="h-3.5 w-3.5" />
                                                       <span>Staff...</span>
                                                       <ChevronDown className="h-3 w-3" />
@@ -2163,13 +2163,13 @@ export default function PTMTable({
                                                     >
                                                       {(assignedEmps.length ? assignedEmps : (legacyDisplay ? [{ name: legacyDisplay, department: deptName, unit: unitName, legacy: true }] : [])).map((employee, employeeIndex) => (
                                                         <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
-                                                          <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, deptName, e)} className="min-w-0 flex-1 truncate text-left text-[12px] font-semibold text-slate-800 cursor-pointer hover:text-blue-600" title={`${unitName} - ${deptName}: ${employee.name}`}>
+                                                          <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, deptName, e)} className="min-w-0 flex-1 truncate text-left text-sm font-semibold text-slate-800 cursor-pointer hover:text-blue-600" title={`${unitName} - ${deptName}: ${employee.name}`}>
                                                             {stripEmployeeId(employee.name || employee.label || '')}
                                                           </button>
-                                                          <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(originalIndex, unitName, deptName, null) : handleRemoveDepartmentEmployee(originalIndex, unitName, deptName, employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>
+                                                          <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(originalIndex, unitName, deptName, null) : handleRemoveDepartmentEmployee(originalIndex, unitName, deptName, employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3.5 w-3.5 stroke-[2.5]" /></button>
                                                         </div>
                                                       ))}
-                                                      <button type="button" onClick={() => handleOpenAddStaffModal(originalIndex, unitName, deptName)} className="flex items-center justify-center gap-1 rounded py-0.5 text-[11px] font-semibold text-blue-600 hover:bg-blue-50 cursor-pointer"><Plus className="h-3 w-3" /> Add Employee</button>
+                                                      <button type="button" onClick={() => handleOpenAddStaffModal(originalIndex, unitName, deptName)} className="flex items-center justify-center gap-1 rounded py-0.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 cursor-pointer"><Plus className="h-3.5 w-3.5" /> Add Employee</button>
                                                     </div>
                                                   );
                                                 }
@@ -2180,8 +2180,8 @@ export default function PTMTable({
                                                     className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1"
                                                   >
                                                     <div className="flex w-full flex-col items-center">
-                                                      <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, deptName, e)} className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer" title={`Select staff for ${unitName} - ${deptName}`}><div className="flex items-center gap-1 text-[12px]"><Search className="h-3.5 w-3.5" /><span>Staff...</span><ChevronDown className="h-3 w-3" /></div></button>
-                                                      <button type="button" onClick={() => handleOpenAddStaffModal(originalIndex, unitName, deptName)} className="flex items-center gap-1 py-0.5 text-[11px] font-semibold text-blue-600 hover:bg-blue-50 rounded cursor-pointer"><Plus className="h-3 w-3" /> Add Employee</button>
+                                                      <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, deptName, e)} className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer" title={`Select staff for ${unitName} - ${deptName}`}><div className="flex items-center gap-1 text-sm"><Search className="h-3.5 w-3.5" /><span>Staff...</span><ChevronDown className="h-3 w-3" /></div></button>
+                                                      <button type="button" onClick={() => handleOpenAddStaffModal(originalIndex, unitName, deptName)} className="flex items-center gap-1 py-0.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded cursor-pointer"><Plus className="h-3.5 w-3.5" /> Add Employee</button>
                                                     </div>
                                                   </div>
                                                 );
@@ -2215,7 +2215,7 @@ export default function PTMTable({
                               {/* Department Dropdown in Responsible Person */}
                               <td className="p-0 align-middle text-center bg-white group-hover/row:bg-[#F8FAFC] w-[145px] min-w-[135px]">
                                 {units.length === 0 ? (
-                                  <div className="w-full py-1 text-center text-slate-300 text-xs select-none" title="Select Staff Name to auto-fetch Department">
+                                  <div className="w-full py-1 text-center text-slate-300 text-sm select-none" title="Select Staff Name to auto-fetch Department">
                                     -
                                   </div>
                                 ) : (() => {
@@ -2239,7 +2239,7 @@ export default function PTMTable({
                                   if (unitDepts.length === 1) {
                                     return (
                                       <div className="flex-1 min-h-[30px] flex items-center justify-between px-2 py-1 gap-1 hover:bg-blue-50/40 transition-colors">
-                                        <span className="text-[12px] font-semibold text-slate-800 whitespace-nowrap text-left" title={unitDepts[0]}>
+                                        <span className="text-sm font-semibold text-slate-800 whitespace-nowrap text-left" title={unitDepts[0]}>
                                           {unitDepts[0]}
                                         </span>
                                         <CheckboxMultiSelect
@@ -2254,7 +2254,7 @@ export default function PTMTable({
                                               className="text-slate-400 hover:text-blue-600 p-0.5 cursor-pointer ml-1 shrink-0"
                                               title={`Edit ${unitName} departments`}
                                             >
-                                              <ChevronDown className="w-2.5 h-2.5" />
+                                              <ChevronDown className="w-3 h-3" />
                                             </button>
                                           )}
                                         />
@@ -2269,7 +2269,7 @@ export default function PTMTable({
                                           key={deptName}
                                           className="flex-1 min-h-[30px] flex items-center justify-between px-2 py-1 gap-1 hover:bg-blue-50/40 transition-colors"
                                         >
-                                          <span className="text-[12px] font-semibold text-slate-800 whitespace-nowrap text-left" title={deptName}>
+                                          <span className="text-sm font-semibold text-slate-800 whitespace-nowrap text-left" title={deptName}>
                                             {deptName}
                                           </span>
                                           <CheckboxMultiSelect
@@ -2284,7 +2284,7 @@ export default function PTMTable({
                                                 className="text-slate-400 hover:text-blue-600 p-0.5 cursor-pointer ml-1 shrink-0"
                                                 title={`Edit ${unitName} departments`}
                                               >
-                                                <ChevronDown className="w-2.5 h-2.5" />
+                                                <ChevronDown className="w-3 h-3" />
                                               </button>
                                             )}
                                           />
@@ -2306,10 +2306,10 @@ export default function PTMTable({
                                         <div className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors">
                                           {(assignedEmps.length ? assignedEmps : [{ name: legacyDisplay, legacy: true }]).map((employee, employeeIndex) => (
                                             <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
-                                              <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, '', '', e)} className="min-w-0 flex-1 truncate text-left text-[12px] font-semibold text-slate-800 cursor-pointer hover:text-blue-600" title={`Staff: ${employee.name}`}>
+                                              <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, '', '', e)} className="min-w-0 flex-1 truncate text-left text-sm font-semibold text-slate-800 cursor-pointer hover:text-blue-600" title={`Staff: ${employee.name}`}>
                                                 {stripEmployeeId(employee.name || employee.label || '')}
                                               </button>
-                                              <button type="button" onClick={() => handleSelectStaffForUnitDept(originalIndex, '', '', null)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>
+                                              <button type="button" onClick={() => handleSelectStaffForUnitDept(originalIndex, '', '', null)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3.5 w-3.5 stroke-[2.5]" /></button>
                                             </div>
                                           ))}
                                         </div>
@@ -2323,7 +2323,7 @@ export default function PTMTable({
                                           className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer"
                                           title="Select staff name (Department will auto-fetch)"
                                         >
-                                          <div className="flex items-center gap-1 text-[12px]">
+                                          <div className="flex items-center gap-1 text-sm">
                                             <Search className="h-3.5 w-3.5" />
                                             <span>Staff...</span>
                                             <ChevronDown className="h-3 w-3" />
@@ -2347,10 +2347,10 @@ export default function PTMTable({
                                         <div className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors">
                                           {(assignedEmps.length ? assignedEmps : [{ name: legacyDisplay, legacy: true }]).map((employee, employeeIndex) => (
                                             <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
-                                              <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, '', e)} className="min-w-0 flex-1 truncate text-left text-[12px] font-semibold text-slate-800 cursor-pointer hover:text-blue-600" title={`${unitName}: ${employee.name}`}>
+                                              <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, '', e)} className="min-w-0 flex-1 truncate text-left text-sm font-semibold text-slate-800 cursor-pointer hover:text-blue-600" title={`${unitName}: ${employee.name}`}>
                                                 {stripEmployeeId(employee.name || employee.label || '')}
                                               </button>
-                                              <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(originalIndex, unitName, '', null) : handleRemoveDepartmentEmployee(originalIndex, unitName, '', employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>
+                                              <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(originalIndex, unitName, '', null) : handleRemoveDepartmentEmployee(originalIndex, unitName, '', employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3.5 w-3.5 stroke-[2.5]" /></button>
                                             </div>
                                           ))}
                                         </div>
@@ -2365,7 +2365,7 @@ export default function PTMTable({
                                           className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer"
                                           title={`Select staff for ${unitName} (Department will auto-fetch)`}
                                         >
-                                          <div className="flex items-center gap-1 text-[12px]">
+                                          <div className="flex items-center gap-1 text-sm">
                                             <Search className="h-3.5 w-3.5" />
                                             <span>Staff...</span>
                                             <ChevronDown className="h-3 w-3" />
@@ -2391,13 +2391,13 @@ export default function PTMTable({
                                             >
                                               {(assignedEmps.length ? assignedEmps : (legacyDisplay ? [{ name: legacyDisplay, department: deptName, unit: unitName, legacy: true }] : [])).map((employee, employeeIndex) => (
                                                 <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
-                                                  <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, deptName, e)} className="min-w-0 flex-1 truncate text-left text-[12px] font-semibold text-slate-800 cursor-pointer hover:text-blue-600" title={`${unitName} - ${deptName}: ${employee.name}`}>
+                                                  <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, deptName, e)} className="min-w-0 flex-1 truncate text-left text-sm font-semibold text-slate-800 cursor-pointer hover:text-blue-600" title={`${unitName} - ${deptName}: ${employee.name}`}>
                                                     {stripEmployeeId(employee.name || employee.label || '')}
                                                   </button>
-                                                  <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(originalIndex, unitName, deptName, null) : handleRemoveDepartmentEmployee(originalIndex, unitName, deptName, employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>
+                                                  <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(originalIndex, unitName, deptName, null) : handleRemoveDepartmentEmployee(originalIndex, unitName, deptName, employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3.5 w-3.5 stroke-[2.5]" /></button>
                                                 </div>
                                               ))}
-                                              <button type="button" onClick={() => handleOpenAddStaffModal(originalIndex, unitName, deptName)} className="flex items-center justify-center gap-1 rounded py-0.5 text-[11px] font-semibold text-blue-600 hover:bg-blue-50 cursor-pointer"><Plus className="h-3 w-3" /> Add Employee</button>
+                                              <button type="button" onClick={() => handleOpenAddStaffModal(originalIndex, unitName, deptName)} className="flex items-center justify-center gap-1 rounded py-0.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 cursor-pointer"><Plus className="h-3.5 w-3.5" /> Add Employee</button>
                                             </div>
                                           );
                                         }
@@ -2408,8 +2408,8 @@ export default function PTMTable({
                                             className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1"
                                           >
                                             <div className="flex w-full flex-col items-center">
-                                              <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, deptName, e)} className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer" title={`Select staff for ${unitName} - ${deptName}`}><div className="flex items-center gap-1 text-[12px]"><Search className="h-3.5 w-3.5" /><span>Staff...</span><ChevronDown className="h-3 w-3" /></div></button>
-                                              <button type="button" onClick={() => handleOpenAddStaffModal(originalIndex, unitName, deptName)} className="flex items-center gap-1 py-0.5 text-[11px] font-semibold text-blue-600 hover:bg-blue-50 rounded cursor-pointer"><Plus className="h-3 w-3" /> Add Employee</button>
+                                              <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, deptName, e)} className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer" title={`Select staff for ${unitName} - ${deptName}`}><div className="flex items-center gap-1 text-sm"><Search className="h-3.5 w-3.5" /><span>Staff...</span><ChevronDown className="h-3 w-3" /></div></button>
+                                              <button type="button" onClick={() => handleOpenAddStaffModal(originalIndex, unitName, deptName)} className="flex items-center gap-1 py-0.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded cursor-pointer"><Plus className="h-3.5 w-3.5" /> Add Employee</button>
                                             </div>
                                           </div>
                                         );
@@ -2434,7 +2434,7 @@ export default function PTMTable({
                             <select
                               value={row.addedFrom === 'filters' && !row.status ? '' : row.status || 'Open'}
                               onChange={(e) => handleCellChange(originalIndex, 'status', e.target.value)}
-                              className={`appearance-none w-full py-1 pr-3.5 pl-1 rounded text-center text-[11px] font-semibold cursor-pointer outline-none transition-colors ${row.addedFrom === 'filters' && !row.status
+                              className={`appearance-none w-full py-1 pr-3.5 pl-1 rounded text-center text-xs sm:text-sm font-semibold cursor-pointer outline-none transition-colors ${row.addedFrom === 'filters' && !row.status
                                 ? 'bg-transparent text-slate-500 border border-transparent'
                                 : row.status === 'Closed'
                                   ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
@@ -2471,7 +2471,7 @@ export default function PTMTable({
                             data-row={originalIndex}
                             data-col="remarks"
                             placeholder="Remarks..."
-                            className="w-full py-2 px-2 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs"
+                            className="w-full py-2 px-2 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm"
                           />
                         </td>
 
@@ -2515,7 +2515,7 @@ export default function PTMTable({
                                 onClick={() => toggleRowHidden(originalIndex)}
                                 title={`${childrenHidden ? 'Unhide' : 'Hide'} child rows for this parent`}
                                 aria-label={`${childrenHidden ? 'Unhide' : 'Hide'} child rows`}
-                                className="inline-flex h-6 shrink-0 items-center justify-center gap-0.5 whitespace-nowrap rounded px-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                                className="inline-flex h-6 shrink-0 items-center justify-center gap-0.5 whitespace-nowrap rounded px-1 text-xs font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                               >
                                 {childrenHidden
                                   ? <Eye className="h-3.5 w-3.5" />

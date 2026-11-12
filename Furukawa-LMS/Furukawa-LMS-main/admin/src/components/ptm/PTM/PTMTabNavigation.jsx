@@ -47,7 +47,7 @@ export default function PTMTabNavigation({
                   setActiveTab(tab.id);
                   setIsPlantDropdownOpen(!isPlantDropdownOpen);
                 }}
-                className={`flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-6 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 cursor-pointer ${
+                className={`flex items-center gap-1.5 sm:gap-2 px-4 sm:px-6 py-2.5 rounded-xl text-sm sm:text-base font-semibold transition-all duration-200 cursor-pointer ${
                   isActive
                     ? 'bg-white text-slate-900 shadow-sm border border-slate-200/80 ring-1 ring-black/5 font-bold'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-transparent'
@@ -59,12 +59,12 @@ export default function PTMTabNavigation({
                     ? `Plant: ${normalizedCurrentPlant}`
                     : 'Plant'}
                 </span>
-                <ChevronDown className={`w-3.5 h-3.5 text-slate-500 transition-transform ${isPlantDropdownOpen ? 'rotate-180' : ''}`} />
+                <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform ${isPlantDropdownOpen ? 'rotate-180' : ''}`} />
               </button>
 
               {isPlantDropdownOpen && (
-                <div className="absolute left-0 top-full mt-2 w-44 bg-white rounded-2xl shadow-2xl border border-slate-200/80 py-2 z-50 text-xs font-semibold animate-in fade-in zoom-in-95">
-                  <div className="px-3.5 py-1 text-[10px] uppercase tracking-wider text-slate-400 font-bold border-b border-slate-100 mb-1">
+                <div className="absolute left-0 top-full mt-2 w-52 bg-white rounded-2xl shadow-2xl border border-slate-200/80 py-2 z-50 text-sm font-semibold animate-in fade-in zoom-in-95">
+                  <div className="px-4 py-1.5 text-xs uppercase tracking-wider text-slate-400 font-bold border-b border-slate-100 mb-1">
                     Select Plant
                   </div>
                   {plantOptions.map((p) => {
@@ -80,12 +80,12 @@ export default function PTMTabNavigation({
                           setActiveTab('Company');
                           setIsPlantDropdownOpen(false);
                         }}
-                        className={`w-full text-left px-3.5 py-2 hover:bg-blue-50 hover:text-blue-600 flex items-center justify-between transition-colors cursor-pointer ${
+                        className={`w-full text-left px-4 py-2.5 hover:bg-blue-50 hover:text-blue-600 flex items-center justify-between transition-colors cursor-pointer text-sm ${
                           isSelected ? 'font-bold text-blue-600 bg-blue-50/60' : 'text-slate-700'
                         }`}
                       >
                         <span>{p === 'Bawal' ? 'Bawal (Default Plant)' : p}</span>
-                        {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 stroke-[2.5]" />}
+                        {isSelected && <Check className="w-4 h-4 text-blue-600 stroke-[2.5]" />}
                       </button>
                     );
                   })}
@@ -103,7 +103,7 @@ export default function PTMTabNavigation({
               setActiveTab(tab.id);
               setIsPlantDropdownOpen(false);
             }}
-            className={`flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-6 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 cursor-pointer ${
+            className={`flex items-center gap-1.5 sm:gap-2 px-4 sm:px-6 py-2.5 rounded-xl text-sm sm:text-base font-semibold transition-all duration-200 cursor-pointer ${
               isActive
                 ? 'bg-white text-slate-900 shadow-sm border border-slate-200/80 ring-1 ring-black/5 font-bold'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-transparent'

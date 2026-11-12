@@ -68,7 +68,7 @@ export default function SearchableLeaderInput({ value, onChange, options, classN
             }}
             placeholder="Search by name..."
             aria-label={`Search ${placeholder || 'people'}`}
-            className="mb-1.5 w-full rounded border border-slate-300 px-2 py-1.5 text-xs outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30"
+            className="mb-1.5 w-full rounded border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30"
           />
           <div id={`${id}-options`} role="listbox" className="max-h-40 overflow-y-auto">
             {filteredOptions.length ? filteredOptions.map((name) => (
@@ -79,12 +79,12 @@ export default function SearchableLeaderInput({ value, onChange, options, classN
                 aria-selected={name === value}
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => choose(name)}
-                className="block w-full rounded px-2 py-1.5 text-left text-xs text-slate-700 hover:bg-blue-50"
+                className="block w-full rounded px-2 py-1.5 text-left text-sm text-slate-700 hover:bg-blue-50 cursor-pointer"
               >
                 {name}
               </button>
             )) : (
-              <div className="px-2 py-2 text-xs text-slate-500">No matching names</div>
+              <div className="px-2 py-2 text-sm text-slate-500">No matching names</div>
             )}
           </div>
         </div>

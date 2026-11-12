@@ -50,7 +50,7 @@ export default function TopHeader({
   return (
     <header className="h-16 w-full min-w-0 shrink-0 bg-white backdrop-blur-md border-b border-[#E9ECEF] flex items-center justify-between gap-2 px-3 sm:px-6 sticky top-0 z-40 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
       {/* Left: Breadcrumbs */}
-      <div className="flex items-center gap-2.5 text-sm">
+      <div className="flex items-center gap-2.5 text-base">
         <button 
           onClick={onBackToList}
           className="text-slate-400 hover:text-blue-600 transition-colors cursor-pointer"
@@ -62,7 +62,7 @@ export default function TopHeader({
         
         <span 
           onClick={onBackToList}
-          className={`font-bold text-[14px] tracking-tight ${
+          className={`font-bold text-base tracking-tight ${
             currentView === 'form' 
               ? 'text-slate-500 hover:text-blue-600 cursor-pointer' 
               : 'text-slate-800'
@@ -74,14 +74,14 @@ export default function TopHeader({
         {currentView === 'form' && (
           <>
             <ChevronRight className="w-3.5 h-3.5 text-slate-300 stroke-[2.5]" />
-            <span className="font-bold text-[14px] text-blue-600">
+            <span className="font-bold text-base text-blue-600">
               Form View
             </span>
             <button
               onClick={onBackToList}
-              className="ml-3 flex items-center gap-1.5 px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors cursor-pointer"
+              className="ml-3 flex items-center gap-1.5 px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold transition-colors cursor-pointer"
             >
-              <ArrowLeft className="w-3.5 h-3.5" />
+              <ArrowLeft className="w-4 h-4" />
               <span>Back to PTM List</span>
             </button>
           </>

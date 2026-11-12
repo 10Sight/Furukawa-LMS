@@ -828,7 +828,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
 
         {/* ── VIEW 1: PTM DASHBOARD LIST VIEW ── */}
         {currentView === 'list' && (
-          <main className="p-4 md:p-6 space-y-4 flex-1 w-full mx-auto max-w-[1600px]">
+          <main className="ptm-page-root p-4 md:p-6 space-y-4 flex-1 w-full mx-auto max-w-[1600px]">
             {/* 1. Scope Tabs: Plant (with Dropdown), Department, Self PTM and Calendar Filter */}
             <div className="flex flex-wrap items-center gap-3">
               <PTMTabNavigation
@@ -844,31 +844,31 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
 
               {/* Calendar Filter in the Green Marked Place */}
               <div id="ptm-date-filter-bar" className="flex flex-wrap items-center gap-2 bg-white rounded-2xl p-2 px-3 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-[#ECEFF3]">
-                <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
-                  <span className="text-[11px] font-bold text-slate-500">From Date</span>
+                <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-600">
+                  <span className="text-xs sm:text-sm font-bold text-slate-500">From Date</span>
                   <input
                     type="date"
                     value={fromDate}
                     max={toDate || undefined}
                     onChange={e => { setFromDate(e.target.value); setCurrentPage(1); }}
-                    className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 </label>
-                <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
-                  <span className="text-[11px] font-bold text-slate-500">To Date</span>
+                <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-600">
+                  <span className="text-xs sm:text-sm font-bold text-slate-500">To Date</span>
                   <input
                     type="date"
                     value={toDate}
                     min={fromDate || undefined}
                     onChange={e => { setToDate(e.target.value); setCurrentPage(1); }}
-                    className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 </label>
                 {(fromDate || toDate) && (
                   <button
                     type="button"
                     onClick={() => { setFromDate(''); setToDate(''); setCurrentPage(1); }}
-                    className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer"
+                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer"
                   >
                     Clear dates
                   </button>
@@ -888,7 +888,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
                     setActivePtmSection('Ongoing');
                     setCurrentPage(1);
                   }}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm sm:text-base font-bold transition-all cursor-pointer ${
                     activePtmSection === 'Ongoing'
                       ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
                       : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -897,7 +897,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
                   <Clock className="w-4 h-4" />
                   <span>Ongoing</span>
                   <span
-                    className={`px-2 py-0.5 rounded-full text-xs font-black ${
+                    className={`px-2.5 py-0.5 rounded-full text-xs sm:text-sm font-black ${
                       activePtmSection === 'Ongoing'
                         ? 'bg-white/20 text-white'
                         : 'bg-slate-200 text-slate-700'
@@ -913,7 +913,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
                     setActivePtmSection('Done');
                     setCurrentPage(1);
                   }}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm sm:text-base font-bold transition-all cursor-pointer ${
                     activePtmSection === 'Done'
                       ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/20'
                       : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -922,7 +922,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
                   <CheckCircle2 className="w-4 h-4" />
                   <span>Done</span>
                   <span
-                    className={`px-2 py-0.5 rounded-full text-xs font-black ${
+                    className={`px-2.5 py-0.5 rounded-full text-xs sm:text-sm font-black ${
                       activePtmSection === 'Done'
                         ? 'bg-white/20 text-white'
                         : 'bg-slate-200 text-slate-700'
@@ -933,7 +933,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
                 </button>
               </div>
 
-              <div className="text-xs text-slate-500 font-medium">
+              <div className="text-sm text-slate-600 font-medium">
                 Showing <strong>{filteredListItems.length}</strong> {activePtmSection.toLowerCase()} {filteredListItems.length === 1 ? 'sheet' : 'sheets'}
               </div>
             </div>
@@ -994,25 +994,25 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
 
         {/* ── VIEW 2: PTM FORM MATRIX VIEW ── */}
         {currentView === 'form' && (
-          <main className="px-2 pb-2 pt-14 sm:px-3 sm:pb-3 md:px-4 md:pb-4 md:pt-14 space-y-3.5 flex-1 min-h-0 min-w-0 w-full mx-auto max-w-full flex flex-col overflow-hidden">
+          <main className="ptm-page-root px-2 pb-2 pt-14 sm:px-3 sm:pb-3 md:px-4 md:pb-4 md:pt-14 space-y-3.5 flex-1 min-h-0 min-w-0 w-full mx-auto max-w-full flex flex-col overflow-hidden">
             {/* Top Toolbar */}
-            <div className="fixed inset-x-0 top-0 z-[60] flex min-h-12 w-full flex-wrap items-center gap-1.5 border-b border-slate-300 bg-white px-4 py-2 shadow-sm">
+            <div className="ptm-top-toolbar fixed inset-x-0 top-0 z-[60] flex min-h-12 w-full flex-wrap items-center gap-2 border-b border-slate-300 bg-white px-4 py-2 shadow-sm">
               <button
                 type="button"
                 onClick={() => {
                   setCurrentView('list');
                   setSelectedTopicItem(null);
                 }}
-                className="flex items-center gap-1 rounded-lg bg-slate-100 px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200"
+                className="flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-200 cursor-pointer"
               >
-                <ArrowLeft className="h-3.5 w-3.5" />
+                <ArrowLeft className="h-4 w-4" />
                 <span>Back</span>
               </button>
               <button
                 type="button"
                 onClick={undoFormChange}
                 disabled={historyRef.current.undo.length === 0}
-                className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
                 title="Go to the previous form state"
               >
                 <Undo2 className="h-4 w-4" />
@@ -1021,7 +1021,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
                 type="button"
                 onClick={redoFormChange}
                 disabled={historyRef.current.redo.length === 0}
-                className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
                 title="Go to the next form state"
               >
                 <Redo2 className="h-4 w-4" />
@@ -1029,7 +1029,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
               <button
                 type="button"
                 onClick={saveFormChanges}
-                className="flex items-center gap-1 rounded-lg bg-[#2563EB] px-2 py-1.5 text-xs font-bold text-white hover:bg-blue-700"
+                className="flex items-center gap-1.5 rounded-lg bg-[#2563EB] px-3 py-1.5 text-sm font-bold text-white hover:bg-blue-700 cursor-pointer"
                 title="Save all current form changes"
               >
                 <Save className="h-4 w-4" />
@@ -1038,7 +1038,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
               <button
                 type="button"
                 onClick={handleAddRowFromTop}
-                className="flex items-center gap-1 rounded-lg bg-[#2563EB] px-2 py-1.5 text-xs font-bold text-white hover:bg-blue-700"
+                className="flex items-center gap-1.5 rounded-lg bg-[#2563EB] px-3 py-1.5 text-sm font-bold text-white hover:bg-blue-700 cursor-pointer"
                 title="Add a new parent row at the bottom"
               >
                 <Plus className="h-4 w-4" />
@@ -1047,10 +1047,10 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
               <button
                 type="button"
                 onClick={handleExportMatrixCSV}
-                className="flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
                 title="Export complete matrix to CSV"
               >
-                <Download className="h-3.5 w-3.5 text-slate-500" />
+                <Download className="h-4 w-4 text-slate-500" />
                 <span>Export CSV</span>
               </button>
               <FormZoomControls selector=".ptm-zoom-surface" rootSelector="main" />

@@ -62,12 +62,12 @@ export default function SearchableManualTextInput({ value = '', onChange, placeh
             }}
             placeholder="Search saved values..."
             aria-label={`Search ${placeholder || 'values'}`}
-            className="mb-1.5 w-full rounded border border-slate-300 px-2 py-1.5 text-xs outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30"
+            className="mb-1.5 w-full rounded border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30"
           />
           <div role="listbox" className="max-h-40 overflow-y-auto">
             {filteredOptions.length ? filteredOptions.map((option) => (
-              <button key={option} type="button" role="option" aria-selected={option === value} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(option)} className="block w-full rounded px-2 py-1.5 text-left text-xs text-slate-700 hover:bg-blue-50">{option}</button>
-            )) : <div className="px-2 py-2 text-xs text-slate-500">No matching values</div>}
+              <button key={option} type="button" role="option" aria-selected={option === value} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(option)} className="block w-full rounded px-2 py-1.5 text-left text-sm text-slate-700 hover:bg-blue-50 cursor-pointer">{option}</button>
+            )) : <div className="px-2 py-2 text-sm text-slate-500">No matching values</div>}
           </div>
         </div>
       )}

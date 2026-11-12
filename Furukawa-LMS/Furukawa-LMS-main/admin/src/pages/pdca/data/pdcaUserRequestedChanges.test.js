@@ -1340,22 +1340,15 @@ test('29. Confirmation dropdown restricted strictly to Admin, Sheet Creator, and
 });
 
 test('30. PDCA Page Structure: Ongoing (Not-Started, In-Progress, Delay) and Done (Done) for Plant, Department, and Self PDCA', () => {
-  // Verify DashboardPage.jsx renders Ongoing & Done main sections with sub-sections for Plant, Department, and Self PDCA
+  // Verify DashboardPage.jsx renders Ongoing & Done main sections for Plant, Department, and Self PDCA
   const dashboardPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/pages/pdca/pages/DashboardPage.jsx');
   const dashboardContent = fs.readFileSync(dashboardPath, 'utf8');
 
   // Verify section buttons and counts exist
   assert.match(dashboardContent, /setActiveSection\('Ongoing'\)/);
   assert.match(dashboardContent, /setActiveSection\('Done'\)/);
-  assert.match(dashboardContent, /setActiveSubSection\('Not-Started'\)/);
-  assert.match(dashboardContent, /setActiveSubSection\('In-Progress'\)/);
-  assert.match(dashboardContent, /setActiveSubSection\('Delay'\)/);
-  assert.match(dashboardContent, /setActiveSubSection\('Done'\)/);
   assert.match(dashboardContent, /sectionCounts\.Ongoing/);
   assert.match(dashboardContent, /sectionCounts\.Done/);
-  assert.match(dashboardContent, /sectionCounts\['Not-Started'\]/);
-  assert.match(dashboardContent, /sectionCounts\['In-Progress'\]/);
-  assert.match(dashboardContent, /sectionCounts\.Delay/);
 
   // Verify CFT tab remains untouched and does not render the section switcher
   assert.match(dashboardContent, /activeTab !== 'CFT'/);

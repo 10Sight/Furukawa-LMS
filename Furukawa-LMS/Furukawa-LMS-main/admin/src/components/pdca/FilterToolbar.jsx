@@ -1,15 +1,16 @@
 import { PDCA_DEPARTMENTS } from '../../pages/pdca/data/pdcaConstants.js';
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Search, 
   FileSpreadsheet, 
   Plus, 
   ChevronDown,
-  MapPin
+  MapPin,
+  Check
 } from 'lucide-react';
 
 export default function FilterToolbar({
-  selectedPlant,
+  selectedPlant = 'Bawal',
   setSelectedPlant,
   searchQuery,
   setSearchQuery,
@@ -17,32 +18,70 @@ export default function FilterToolbar({
   onOpenAddModal,
   onExportAll
 }) {
-  const plants = [
-    { value: 'All Unit', label: 'All Unit' },
-    { value: 'Bawal', label: 'Bawal' },
-    { value: 'Gujrat', label: 'Gujrat' }
-  ];
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef(null);
+
+  const plantOptions = ['Bawal', 'Gujrat', 'All'];
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const normalizedCurrent = !selectedPlant || selectedPlant === 'All Unit' || selectedPlant === 'All Units' || selectedPlant === 'All Plants' || selectedPlant === 'All'
+    ? 'All'
+    : selectedPlant;
+
+  const displayLabel = normalizedCurrent === 'All' ? 'All' : normalizedCurrent;
 
   return (
     <div className="w-full">
-      {/* 1. Unit Filter Row (Positioned in Top-Left Corner) */}
+      {/* 1. Plant Filter Dropdown (Positioned in Top-Left Corner) */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
-          {/* Unit Filter */}
-          <div className="relative">
-            <select
-              value={selectedPlant === 'Unit' || selectedPlant === 'All Plants' ? 'All Unit' : (selectedPlant || 'All Unit')}
-              onChange={(e) => setSelectedPlant(e.target.value)}
-              className="appearance-none bg-white border border-[#D1D5DB] text-slate-700 text-sm font-semibold rounded-xl pl-4 pr-10 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500 cursor-pointer shadow-sm hover:border-slate-400 transition-colors"
-              id="plant-filter-select"
+          <div className="relative inline-block" ref={dropdownRef}>
+            <button
+              type="button"
+              id="plant-dropdown-button"
+              onClick={() => setIsOpen(!isOpen)}
+              className="flex items-center gap-2.5 bg-white border border-[#D1D5DB] text-slate-800 text-sm font-semibold rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500 cursor-pointer shadow-xs hover:border-slate-400 transition-colors"
+              title="Select Plant"
             >
-              {plants.map((plant) => (
-                <option key={plant.value} value={plant.value}>
-                  {plant.label}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <span className="text-slate-500 font-medium">Plant:</span>
+              <span className="font-bold text-slate-900">{displayLabel}</span>
+              <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isOpen && (
+              <div className="absolute left-0 mt-1.5 w-36 bg-white rounded-xl shadow-xl border border-slate-100 py-1.5 z-50 text-xs font-semibold animate-in fade-in">
+                {plantOptions.map((p) => {
+                  const isSelected = p === 'All'
+                    ? normalizedCurrent === 'All'
+                    : selectedPlant === p;
+                  return (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => {
+                        setSelectedPlant(p);
+                        setIsOpen(false);
+                      }}
+                      className={`w-full text-left px-3.5 py-2 hover:bg-blue-50 hover:text-blue-600 flex items-center justify-between transition-colors cursor-pointer ${
+                        isSelected ? 'font-bold text-blue-600 bg-blue-50/60' : 'text-slate-700'
+                      }`}
+                    >
+                      <span>{p}</span>
+                      {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 stroke-[2.5]" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 

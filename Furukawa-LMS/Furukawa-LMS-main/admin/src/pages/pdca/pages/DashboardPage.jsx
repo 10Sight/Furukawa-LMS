@@ -369,165 +369,69 @@ export default function DashboardPage() {
         counts={{ selfCount }}
       />
 
-      {/* Section & Sub-Section Navigation (Plant, Department, Self PDCA) */}
+      {/* Section Navigation (Plant, Department, Self PDCA) */}
       {activeTab !== 'CFT' && (
-        <div className="bg-white rounded-2xl p-3 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-[#ECEFF3] flex flex-col gap-3">
+        <div className="bg-white rounded-2xl p-3 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-[#ECEFF3] flex items-center justify-between flex-wrap gap-2">
           {/* Main Sections: Ongoing & Done */}
-          <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 flex-wrap gap-2">
-            <div className="flex items-center gap-2">
-              {/* Ongoing Button */}
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveSection('Ongoing');
-                  setActiveSubSection('All');
-                  setCurrentPage(1);
-                }}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+          <div className="flex items-center gap-2">
+            {/* Ongoing Button */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveSection('Ongoing');
+                setActiveSubSection('All');
+                setCurrentPage(1);
+              }}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                activeSection === 'Ongoing'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <Clock className="w-4 h-4" />
+              <span>Ongoing</span>
+              <span
+                className={`px-2 py-0.5 rounded-full text-xs font-black ${
                   activeSection === 'Ongoing'
-                    ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-slate-200 text-slate-700'
                 }`}
               >
-                <Clock className="w-4 h-4" />
-                <span>Ongoing</span>
-                <span
-                  className={`px-2 py-0.5 rounded-full text-xs font-black ${
-                    activeSection === 'Ongoing'
-                      ? 'bg-white/20 text-white'
-                      : 'bg-slate-200 text-slate-700'
-                  }`}
-                >
-                  {sectionCounts.Ongoing}
-                </span>
-              </button>
+                {sectionCounts.Ongoing}
+              </span>
+            </button>
 
-              {/* Done Button */}
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveSection('Done');
-                  setActiveSubSection('Done');
-                  setCurrentPage(1);
-                }}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+            {/* Done Button */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveSection('Done');
+                setActiveSubSection('Done');
+                setCurrentPage(1);
+              }}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                activeSection === 'Done'
+                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/20'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              <span>Done</span>
+              <span
+                className={`px-2 py-0.5 rounded-full text-xs font-black ${
                   activeSection === 'Done'
-                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/20'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-slate-200 text-slate-700'
                 }`}
               >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Done</span>
-                <span
-                  className={`px-2 py-0.5 rounded-full text-xs font-black ${
-                    activeSection === 'Done'
-                      ? 'bg-white/20 text-white'
-                      : 'bg-slate-200 text-slate-700'
-                  }`}
-                >
-                  {sectionCounts.Done}
-                </span>
-              </button>
-            </div>
-
-            <div className="text-xs text-slate-500 font-medium">
-              Showing <strong>{filteredData.length}</strong> {activeSection.toLowerCase()} {filteredData.length === 1 ? 'sheet' : 'sheets'}
-            </div>
+                {sectionCounts.Done}
+              </span>
+            </button>
           </div>
 
-          {/* Sub-Sections for Ongoing / Done */}
-          {activeSection === 'Ongoing' ? (
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-1">
-                Ongoing Status:
-              </span>
-
-              {/* All Ongoing */}
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveSubSection('All');
-                  setCurrentPage(1);
-                }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  activeSubSection === 'All'
-                    ? 'bg-slate-800 text-white shadow-xs'
-                    : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200'
-                }`}
-              >
-                All Ongoing ({sectionCounts.Ongoing})
-              </button>
-
-              {/* Not-Started */}
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveSubSection('Not-Started');
-                  setCurrentPage(1);
-                }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  activeSubSection === 'Not-Started'
-                    ? 'bg-blue-600 text-white shadow-xs'
-                    : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'
-                }`}
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-                <span>Not-Started</span>
-                <span className="font-extrabold ml-0.5">({sectionCounts['Not-Started']})</span>
-              </button>
-
-              {/* In-Progress */}
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveSubSection('In-Progress');
-                  setCurrentPage(1);
-                }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  activeSubSection === 'In-Progress'
-                    ? 'bg-amber-500 text-white shadow-xs'
-                    : 'bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200'
-                }`}
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                <span>In-Progress</span>
-                <span className="font-extrabold ml-0.5">({sectionCounts['In-Progress']})</span>
-              </button>
-
-              {/* Delay */}
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveSubSection('Delay');
-                  setCurrentPage(1);
-                }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  activeSubSection === 'Delay'
-                    ? 'bg-rose-600 text-white shadow-xs'
-                    : 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200'
-                }`}
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
-                <span>Delay</span>
-                <span className="font-extrabold ml-0.5">({sectionCounts.Delay})</span>
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-1">
-                Completed:
-              </span>
-              <button
-                type="button"
-                disabled
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200"
-              >
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Done</span>
-                <span className="font-extrabold ml-0.5">({sectionCounts.Done})</span>
-              </button>
-            </div>
-          )}
+          <div className="text-xs text-slate-500 font-medium">
+            Showing <strong>{filteredData.length}</strong> {activeSection.toLowerCase()} {filteredData.length === 1 ? 'sheet' : 'sheets'}
+          </div>
         </div>
       )}
 

@@ -57,7 +57,9 @@ import {
   SAVE_MANDATORY_COLUMNS,
   isRowStartedForSave,
   getMissingSaveMandatoryFields,
-  isUserInSameDepartmentAsRecord
+  isUserInSameDepartmentAsRecord,
+  doesRowBelongToDepartment,
+  getUserPrimaryDepartment
 } from '../../pages/pdca/data/recordFilters.js';
 import {
   parseStaffEmployee,
@@ -782,10 +784,12 @@ export default function PDCASheet({
   isAdmin: propIsAdmin = undefined,
   currentUser = null,
   isSelfView = false,
+  isDepartmentView = false,
+  targetDepartment = '',
   emailPdcaSheets = undefined,
   onDelete = undefined
 }) {
-  const { data, setData, showToast, userContext } = usePDCA();
+  const { data, setData, showToast, userContext, refreshData } = usePDCA();
   const lpaSheetIdentity = [
     topic?.id,
     topic?.recordId,
@@ -813,12 +817,15 @@ export default function PDCASheet({
   const lpaDefaultDepartment = isLpaObservationSheet
     ? (String(topic?.section || '').toLowerCase() === 'cc' ? 'C&C' : (String(topic?.section || '').toLowerCase() === 'assembly' ? 'Assembly' : ''))
     : '';
+  const effectiveDept = targetDepartment ||
+    (isDepartmentView ? (topic?.department || getUserPrimaryDepartment(effectiveUser, VERIFIED_EMPLOYEE_MASTER)) : '');
+  const deptForDefaultRow = (isDepartmentView && effectiveDept) ? effectiveDept : lpaDefaultDepartment;
   const createTopicDefaultRow = () => createEmptyRow({
     status: '',
     unit: lpaDefaultUnit,
     units: lpaDefaultUnit ? [lpaDefaultUnit] : [],
-    department: lpaDefaultDepartment,
-    departments: lpaDefaultDepartment ? [lpaDefaultDepartment] : []
+    department: deptForDefaultRow,
+    departments: deptForDefaultRow ? [deptForDefaultRow] : []
   });
 
   // Determine if the current user has Administrator privileges
@@ -1946,6 +1953,9 @@ export default function PDCASheet({
       try { onSave(sheet); } catch (e) { console.error(e); }
     }
     if (topic?.id) {
+      try {
+        localStorage.setItem(`pdca_sheet_saved_${topic.id}`, JSON.stringify(sheet));
+      } catch (e) { /* ignore */ }
       setData(items => {
         if (!items || !items.some(item => item.id === topic.id)) {
           return [{ ...topic, sheet }, ...(items || [])];
@@ -2240,6 +2250,9 @@ export default function PDCASheet({
         showToast(`Saved locally, but server update failed: ${backendError?.response?.data?.message || backendError?.message || 'Check network connection'}`);
       } else {
         showToast('PDCA is saved successfully');
+      }
+      if (typeof refreshData === 'function') {
+        refreshData();
       }
       return true;
     } catch (error) {
@@ -5825,6 +5838,12 @@ export default function PDCASheet({
                   if (!isAssigned && !isCreatorUnassigned) return null;
                 }
 
+                // Department visibility rule: display ONLY points belonging to my department
+                if (isDepartmentView && effectiveDept) {
+                  const belongs = doesRowBelongToDepartment(row, effectiveDept, dbEmployees);
+                  if (!belongs) return null;
+                }
+
                 const sNo = idx + 1;
                 const isResponsiblePerson = isUserResponsibleForRow(row, effectiveUser);
                 const isDeptMember = isUserInResponsibleDepartment(row, effectiveUser);
@@ -7222,31 +7241,44 @@ export default function PDCASheet({
                 );
               });
 
-              if (renderedRows.filter(Boolean).length === 0) {
+              const activeRendered = renderedRows.filter(Boolean);
+              if (activeRendered.length === 0) {
+                let candidateRows = rows;
+                if (isSelfView) {
+                  candidateRows = rows.filter(r => isUserResponsibleForRow(r, effectiveUser) || (isCreatorOrAdmin && (topic?.scope === 'Self PDCA' || topic?.isSelf) && !r.staffName && !r.staffEmployee));
+                } else if (isDepartmentView && effectiveDept) {
+                  candidateRows = rows.filter(r => doesRowBelongToDepartment(r, effectiveDept, dbEmployees));
+                }
+
+                if (candidateRows.length === 0) {
+                  const message = isSelfView
+                    ? `No assigned PDCA points for ${effectiveUser?.name || 'this user'} in this sheet.`
+                    : (isDepartmentView ? `No points assigned to ${effectiveDept || 'your department'} in this sheet.` : 'No PDCA points found in this sheet.');
+                  return (
+                    <tr>
+                      <td colSpan={totalCols} className="py-10 text-center text-xs text-slate-500 font-medium bg-slate-50/50">
+                        {message}
+                      </td>
+                    </tr>
+                  );
+                }
+
+                const doneCount = candidateRows.filter(r => normalizePDCAStatus(r.status) === 'Done').length;
                 return (
                   <tr>
                     <td colSpan={totalCols} className="py-8 text-center text-slate-500 bg-slate-50/50">
                       <div className="flex flex-col items-center justify-center gap-2">
                         <Check className="w-8 h-8 text-emerald-600" />
-                        <span className="font-semibold text-slate-700">All rows are marked as Done and currently hidden from sheet view.</span>
+                        <span className="font-semibold text-slate-700">All points are marked as Done and currently hidden from sheet view.</span>
                         <span className="text-xs text-slate-500">Done status records are fully preserved in graph calculations and Excel exports.</span>
                         <button
                           type="button"
                           onClick={() => setShowDoneRows(true)}
                           className="mt-1 px-3 py-1 text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 cursor-pointer"
                         >
-                          Show Hidden Done Rows ({rows.filter(r => normalizePDCAStatus(r.status) === 'Done').length})
+                          Show Hidden Done Rows ({doneCount})
                         </button>
                       </div>
-                    </td>
-                  </tr>
-                );
-              }
-              if (isSelfView && renderedRows.filter(Boolean).length === 0) {
-                return (
-                  <tr>
-                    <td colSpan={canShowRowActions ? 17 : 16} className="py-10 text-center text-xs text-slate-500 font-medium bg-slate-50/50">
-                      No assigned PDCA points for {effectiveUser?.name || 'this user'} in this sheet.
                     </td>
                   </tr>
                 );

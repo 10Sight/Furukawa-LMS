@@ -1286,28 +1286,37 @@ export function canAccessRecord(record, currentUser, employeeDatabase = VERIFIED
  */
 export function doesRowBelongToDepartment(row, deptName, employeeDatabase = VERIFIED_EMPLOYEE_MASTER) {
   if (!row || !deptName) return false;
-  const target = String(deptName).trim().toLowerCase();
-  if (!target || target === 'all departments' || target === 'all department') return true;
+  const rawTarget = String(deptName).trim().toLowerCase();
+  if (!rawTarget || rawTarget === 'all departments' || rawTarget === 'all department') return true;
+  const targetNorm = normalizeDepartmentName(rawTarget) || rawTarget;
+
+  const matchesNormOrDirect = (candidate) => {
+    if (!candidate) return false;
+    const cLow = String(candidate).trim().toLowerCase();
+    if (cLow === rawTarget) return true;
+    const cNorm = normalizeDepartmentName(cLow);
+    return Boolean(cNorm && cNorm === targetNorm);
+  };
 
   // 1. Observation department
-  if (row.department && String(row.department).trim().toLowerCase() === target) {
+  if (row.department && matchesNormOrDirect(row.department)) {
     return true;
   }
   if (Array.isArray(row.departments)) {
-    if (row.departments.some(d => String(d).trim().toLowerCase() === target)) return true;
+    if (row.departments.some(d => matchesNormOrDirect(d))) return true;
   }
 
   // 2. Responsible Person Dept (single string or comma/semicolon separated)
   const respDept = row.responsiblePersonDept || row.respDept;
   if (respDept && typeof respDept === 'string') {
-    const parts = respDept.split(/[,;]/).map(d => d.trim().toLowerCase());
-    if (parts.includes(target)) return true;
+    const parts = respDept.split(/[,;]/).map(d => d.trim());
+    if (parts.some(p => matchesNormOrDirect(p))) return true;
   }
 
   // 3. respDeptsByUnit object
   if (row.respDeptsByUnit && typeof row.respDeptsByUnit === 'object') {
     for (const depts of Object.values(row.respDeptsByUnit)) {
-      if (Array.isArray(depts) && depts.some(d => String(d).trim().toLowerCase() === target)) {
+      if (Array.isArray(depts) && depts.some(d => matchesNormOrDirect(d))) {
         return true;
       }
     }
@@ -1316,7 +1325,7 @@ export function doesRowBelongToDepartment(row, deptName, employeeDatabase = VERI
   // 4. staffEmployees list
   if (Array.isArray(row.staffEmployees)) {
     for (const emp of row.staffEmployees) {
-      if (emp?.department && String(emp.department).trim().toLowerCase() === target) {
+      if (emp?.department && matchesNormOrDirect(emp.department)) {
         return true;
       }
     }
@@ -1335,7 +1344,7 @@ export function doesRowBelongToDepartment(row, deptName, employeeDatabase = VERI
       return (eName && (sLower === eName || sLower.includes(eName))) ||
              (eCode && (sLower === eCode || sLower.includes(eCode)));
     });
-    if (matched?.department && String(matched.department).trim().toLowerCase() === target) {
+    if (matched?.department && matchesNormOrDirect(matched.department)) {
       return true;
     }
   }
@@ -1354,12 +1363,15 @@ export function getSheetPointsForDepartment(sheet, deptName, employeeDatabase = 
     return activeRows;
   }
 
-  const target = String(deptName).trim().toLowerCase();
-  const matchingRows = activeRows.filter(r => doesRowBelongToDepartment(r, target, employeeDatabase));
+  const rawTarget = String(deptName).trim().toLowerCase();
+  const targetNorm = normalizeDepartmentName(rawTarget) || rawTarget;
+
+  const matchingRows = activeRows.filter(r => doesRowBelongToDepartment(r, deptName, employeeDatabase));
 
   // If sheet was created in Department page with sheet.department === target,
   // and some active rows have no explicit department, they also belong to this department
-  if (matchingRows.length === 0 && String(sheet.department || '').trim().toLowerCase() === target) {
+  const sheetDeptNorm = normalizeDepartmentName(sheet.department || '') || String(sheet.department || '').trim().toLowerCase();
+  if (matchingRows.length === 0 && (sheetDeptNorm === targetNorm || String(sheet.department || '').trim().toLowerCase() === rawTarget)) {
     return activeRows;
   }
 
@@ -1521,20 +1533,28 @@ export function getPDCAVisibleSheets(data, plant, scope, options = {}) {
     // User sees Department sheets AND Plant sheets containing points for the department
     const userPrimaryDept = getUserPrimaryDepartment(currentUser, employeeDatabase);
     const targetDept = deptFilter || (userPrimaryDept ? userPrimaryDept.toLowerCase() : '');
+    const targetDeptNorm = targetDept ? (normalizeDepartmentName(targetDept) || targetDept) : '';
 
     plantMatches.forEach(item => {
       const itemDept = String(item.department || '').trim().toLowerCase();
+      const itemDeptNorm = normalizeDepartmentName(itemDept) || itemDept;
 
       // Case A: Sheet was created in Department page
       const isDeptSheet = item.scope === 'Department';
-      const matchesDeptDirectly = isDeptSheet && (!targetDept || itemDept === targetDept);
+      const matchesDeptDirectly = isDeptSheet && (!targetDept || itemDeptNorm === targetDeptNorm || itemDept === targetDept);
 
-      // Case B: Sheet was created in Plant page (Company) and contains points for target department
-      const isPlantSheet = item.scope === 'Company';
+      // Case B: Sheet was created in Plant page (Company/Plant or legacy) and contains points for target department
+      const isPlantSheet = item.scope === 'Company' || item.scope === 'Plant' || (!item.scope && !item.isSelf);
       let hasPointsForDept = false;
-      if (isPlantSheet && targetDept) {
-        const deptPoints = getSheetPointsForDepartment(item, targetDept, employeeDatabase);
-        hasPointsForDept = deptPoints.length > 0;
+      if (isPlantSheet) {
+        if (targetDept) {
+          const deptPoints = getSheetPointsForDepartment(item, targetDept, employeeDatabase);
+          hasPointsForDept = deptPoints.length > 0;
+        } else {
+          // If no specific targetDept is specified, show any plant sheet that has assigned department points
+          const allPoints = resolvePDCASheetRows(item).filter(isActivePDCARow);
+          hasPointsForDept = allPoints.some(r => r.department || r.responsiblePersonDept || r.respDept || (Array.isArray(r.departments) && r.departments.length > 0) || r.staffName || r.staffEmployee);
+        }
       }
 
       if (matchesDeptDirectly || hasPointsForDept) {

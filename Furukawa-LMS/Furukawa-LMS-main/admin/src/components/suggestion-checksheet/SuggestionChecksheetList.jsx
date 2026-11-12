@@ -259,6 +259,8 @@ export default function SuggestionChecksheetList({
         onSelectUnit={handleSelectUnit}
         departmentList={departmentList}
         isAdmin={isAdmin}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
       />
 
       {/* 1. Page Header Tabs: All Suggestions & Best Suggestions */}

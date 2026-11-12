@@ -580,6 +580,10 @@ export class PDCAModel {
             headerInfo,
             rows
         };
+        const rIdx = (store.records || []).findIndex(r => r.recordId === recordId || r.id === recordId);
+        if (rIdx >= 0) {
+            store.records[rIdx].sheet = { headerInfo, rows };
+        }
         writeFallbackStore(store);
 
         await PDCAModel.logAudit(recordId, 'SAVE_SHEET', actor, `Saved sheet with ${rows.length} rows`);

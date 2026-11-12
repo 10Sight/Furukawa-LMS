@@ -1678,3 +1678,89 @@ test('36. Dependent Dropdowns: Applied to BOTH PDCASheet and LpaPdcaSheet', () =
   assert.match(lineSelectCode, /Please select a Section first/, 'SearchableLineAreaSelect must show prompt if no section selected');
 });
 
+test('37. Department Page: Plant sheet points visibility and independent department completion logic', () => {
+  // Mock plant-created sheet with points for two different departments: Quality and PE
+  const mixedPlantSheet = {
+    id: 'PDCA-2026-TEST-MIXED',
+    plant: 'Bawal',
+    scope: 'Company',
+    department: '',
+    sheet: {
+      rows: [
+        // Quality department points: both Done
+        { date: '2026-10-20', department: 'Quality', status: 'Done', observation: 'Quality check 1' },
+        { date: '2026-10-21', department: 'Quality', status: 'Done', observation: 'Quality check 2' },
+        // PE department points: In-Progress
+        { date: '2026-10-22', department: 'PE', status: 'In- Progress', observation: 'PE check 1' },
+        { date: '2026-10-23', department: 'PE', status: 'Delay', observation: 'PE check 2' }
+      ]
+    }
+  };
+
+  const sheets = [mixedPlantSheet];
+
+  // 1. Plant-created sheet containing points assigned to Quality must appear in Quality Department page
+  const qualityVisible = getPDCAVisibleSheets(sheets, 'Bawal', 'Department', {
+    department: 'Quality',
+    currentUser: { department: 'Quality' }
+  });
+  assert.equal(qualityVisible.length, 1, 'Plant-created sheet must appear in Quality department page');
+
+  // 2. Show only points belonging to Quality department
+  const qualityPoints = getSheetPointsForDepartment(mixedPlantSheet, 'Quality');
+  assert.equal(qualityPoints.length, 2, 'Must return exactly 2 points for Quality');
+  assert.ok(qualityPoints.every(r => r.department === 'Quality'), 'All returned points must belong to Quality');
+
+  // 3. For Quality, all points are Done -> Sheet status is Done independently
+  const qualityStatus = classifyPDCASheetStatus(mixedPlantSheet, 'Department', {
+    targetDept: 'Quality'
+  });
+  assert.equal(qualityStatus.section, 'Done', 'Quality sheet must be Done because all Quality points are Done');
+  assert.equal(qualityStatus.statusSummary.done, 2);
+  assert.equal(qualityStatus.statusSummary.inProgress, 0);
+  assert.equal(qualityStatus.statusSummary.delay, 0);
+
+  // 4. For PE department: points are In-Progress & Delay -> Sheet status is Ongoing (Delay)
+  const peVisible = getPDCAVisibleSheets(sheets, 'Bawal', 'Department', {
+    department: 'PE',
+    currentUser: { department: 'PE' }
+  });
+  assert.equal(peVisible.length, 1, 'Plant-created sheet must also appear in PE department page');
+
+  const pePoints = getSheetPointsForDepartment(mixedPlantSheet, 'PE');
+  assert.equal(pePoints.length, 2, 'Must return exactly 2 points for PE');
+
+  const peStatus = classifyPDCASheetStatus(mixedPlantSheet, 'Department', {
+    targetDept: 'PE'
+  });
+  assert.equal(peStatus.section, 'Ongoing', 'PE sheet must be Ongoing because PE points are pending');
+  assert.equal(peStatus.subSection, 'Delay', 'PE sheet sub-section must reflect Delay point');
+  assert.equal(peStatus.statusSummary.done, 0);
+  assert.equal(peStatus.statusSummary.inProgress, 1);
+  assert.equal(peStatus.statusSummary.delay, 1);
+
+  // 5. In Plant scope (Company), sheet status evaluates ALL points:
+  const plantStatus = classifyPDCASheetStatus(mixedPlantSheet, 'Company');
+  assert.equal(plantStatus.section, 'Ongoing', 'In Plant scope, sheet is Ongoing because PE points are pending');
+  assert.equal(plantStatus.statusSummary.total, 4, 'Plant scope considers all 4 points');
+});
+
+test('38. Suggestion Graph: Best Suggestion displays only Total & Implemented bar candles, while Department Overview retains all 5', () => {
+  const graphPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/suggestion-checksheet/SuggestionChecksheetGraph.jsx');
+  const graphCode = fs.readFileSync(graphPath, 'utf8');
+
+  // Verify Best Suggestion candle condition
+  assert.match(graphCode, /!\(suggestionScope === 'BEST' && graphTab !== 'DEPARTMENT'\)/, 'Graph must conditionally omit Target, Accept, and Not-Feasible candles when Best Suggestion is selected outside Department Overview');
+
+  // Total candle is always rendered
+  assert.match(graphCode, /key="bar-totalCreated"/, 'Total bar candle must be present');
+
+  // Implemented candle is always rendered
+  assert.match(graphCode, /key="bar-implementedCount"/, 'Implemented bar candle must be present');
+
+  // Target, Accept, Not-Feasible are wrapped in the Best Suggestion exclusion condition
+  assert.match(graphCode, /!\(suggestionScope === 'BEST' && graphTab !== 'DEPARTMENT'\)[\s\S]*?key="bar-target"/, 'Target candle must be hidden in Best Suggestion');
+  assert.match(graphCode, /!\(suggestionScope === 'BEST' && graphTab !== 'DEPARTMENT'\)[\s\S]*?key="bar-accepted"/, 'Accept candle must be hidden in Best Suggestion');
+  assert.match(graphCode, /!\(suggestionScope === 'BEST' && graphTab !== 'DEPARTMENT'\)[\s\S]*?key="bar-notFeasible"/, 'Not-Feasible candle must be hidden in Best Suggestion');
+});
+

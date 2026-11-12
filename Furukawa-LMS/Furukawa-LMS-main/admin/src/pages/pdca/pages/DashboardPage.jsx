@@ -42,7 +42,8 @@ export default function DashboardPage() {
     handleSaveMembers,
     showToast,
     selectedPlant: contextSelectedPlant,
-    setSelectedPlant: contextSetSelectedPlant
+    setSelectedPlant: contextSetSelectedPlant,
+    refreshData
   } = usePDCA();
 
   const lpaSource = userContext.lpaSource;
@@ -160,7 +161,14 @@ export default function DashboardPage() {
       openLpaPdca();
     }
   }, [lpaSource]);
-  const deptFilterToApply = activeTab === 'Department' ? selectedDepartment : '';
+  useEffect(() => {
+    if (typeof refreshData === 'function') {
+      refreshData();
+    }
+  }, [refreshData]);
+
+  const userPrimaryDept = getUserPrimaryDepartment(userContext?.user);
+  const deptFilterToApply = activeTab === 'Department' ? (selectedDepartment || userPrimaryDept || '') : '';
 
   // 1. Get visible sheets for current scope, adhering to visibility rules:
   // - Plant: complete plant sheets
@@ -349,6 +357,9 @@ export default function DashboardPage() {
             setActiveTab(tab);
             if (tab !== 'Department') {
               setSelectedDepartment('');
+            } else if (!selectedDepartment) {
+              const primaryDept = getUserPrimaryDepartment(userContext?.user);
+              if (primaryDept) setSelectedDepartment(primaryDept);
             }
             setActiveSection('Ongoing');
             setActiveSubSection('All');
@@ -507,7 +518,7 @@ export default function DashboardPage() {
           onDownload={handleDownloadPDCASheet}
           onCopy={handleCopy}
           onDelete={requestDeletePDCA}
-          onTopicClick={(topicRow) => navigate(`/sheet/${encodeURIComponent(topicRow.id)}`, { state: { fromScope: activeTab, returnTo: '/' } })}
+          onTopicClick={(topicRow) => navigate(`/sheet/${encodeURIComponent(topicRow.id)}`, { state: { fromScope: activeTab, targetDept: deptFilterToApply, returnTo: '/' } })}
           onOpenAddMember={(item) => setTargetItemForMemberModal(item)}
           onEdit={handleEditPDCA}
         />
@@ -524,7 +535,7 @@ export default function DashboardPage() {
           onDownload={handleDownloadPDCASheet}
           onCopy={handleCopy}
           onDelete={requestDeletePDCA}
-          onTopicClick={(topicRow) => navigate(`/sheet/${encodeURIComponent(topicRow.id)}`, { state: { fromScope: activeTab, returnTo: '/' } })}
+          onTopicClick={(topicRow) => navigate(`/sheet/${encodeURIComponent(topicRow.id)}`, { state: { fromScope: activeTab, targetDept: deptFilterToApply, returnTo: '/' } })}
           onOpenAddMember={(item) => setTargetItemForMemberModal(item)}
           onEdit={handleEditPDCA}
         />

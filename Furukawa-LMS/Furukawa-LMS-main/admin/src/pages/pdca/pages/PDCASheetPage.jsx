@@ -60,6 +60,8 @@ export default function PDCASheetPage() {
   const isCreator = selectedTopic ? isRecordCreator(selectedTopic, userContext?.user) : false;
   const fromScope = location.state?.fromScope || queryParams.get('scope') || (selectedTopic?.scope === 'Self PDCA' ? 'Self PDCA' : '');
   const isSelfView = fromScope === 'Self PDCA';
+  const isDepartmentView = fromScope === 'Department' || (!fromScope && selectedTopic?.scope === 'Department');
+  const targetDepartment = location.state?.targetDept || queryParams.get('dept') || '';
 
   return (
     <div className="w-full min-w-0">
@@ -68,6 +70,8 @@ export default function PDCASheetPage() {
         topic={selectedTopic || (id ? { id, topic: 'PDCA Audit Sheet' } : null)}
         isCreator={isCreator}
         isSelfView={isSelfView}
+        isDepartmentView={isDepartmentView}
+        targetDepartment={targetDepartment}
         currentUser={userContext?.user}
         onBack={() => {
           window.parent?.postMessage?.({

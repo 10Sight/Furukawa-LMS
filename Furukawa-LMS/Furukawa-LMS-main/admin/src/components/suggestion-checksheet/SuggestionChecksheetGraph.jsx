@@ -92,7 +92,9 @@ export default function SuggestionChecksheetGraph({
   selectedUnit = 'Bawal',
   onSelectUnit,
   departmentList = TARGET_DEPARTMENTS,
-  isAdmin: controlledIsAdmin
+  isAdmin: controlledIsAdmin,
+  activeTab,
+  onTabChange
 }) {
   const authUser = useSelector((state) => state.auth?.user);
   const isAdmin = controlledIsAdmin !== undefined ? controlledIsAdmin : Boolean(
@@ -137,6 +139,15 @@ export default function SuggestionChecksheetGraph({
       }
     }
   }, [serverTargetsRes]);
+
+  useEffect(() => {
+    if (activeTab && (activeTab === 'ALL' || activeTab === 'BEST')) {
+      setSuggestionScope(activeTab);
+      if (graphView === 'TIMELINE') {
+        setGraphTab(activeTab);
+      }
+    }
+  }, [activeTab, graphView]);
 
   // Filter records according to graph filter controls
   const filteredRecords = useMemo(() => {
@@ -578,6 +589,7 @@ export default function SuggestionChecksheetGraph({
     setGraphFromDate('');
     setGraphToDate('');
     if (onSelectUnit) onSelectUnit('Bawal');
+    if (onTabChange) onTabChange('ALL');
   };
 
   // Custom Tooltip component
@@ -669,6 +681,7 @@ export default function SuggestionChecksheetGraph({
               onClick={() => {
                 setSuggestionScope('ALL');
                 if (graphView === 'TIMELINE') setGraphTab('ALL');
+                if (onTabChange) onTabChange('ALL');
               }}
               className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
                 suggestionScope === 'ALL'
@@ -683,6 +696,7 @@ export default function SuggestionChecksheetGraph({
               onClick={() => {
                 setSuggestionScope('BEST');
                 if (graphView === 'TIMELINE') setGraphTab('BEST');
+                if (onTabChange) onTabChange('BEST');
               }}
               className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
                 suggestionScope === 'BEST'

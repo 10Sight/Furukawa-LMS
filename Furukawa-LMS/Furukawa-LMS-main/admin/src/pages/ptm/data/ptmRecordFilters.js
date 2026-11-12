@@ -70,6 +70,33 @@ export function doesPtmRowBelongToDepartment(row, targetDept) {
     return true;
   }
 
+  // 1b. Responsible Person Department match
+  const respDept = normalizeDeptName(row.responsiblePersonDept);
+  if (respDept && validAliases.some(alias => respDept.includes(alias) || alias.includes(respDept))) {
+    return true;
+  }
+
+  // 1c. Department in respDeptsByUnit
+  if (row.respDeptsByUnit && typeof row.respDeptsByUnit === 'object') {
+    const allDepts = Object.values(row.respDeptsByUnit).flat();
+    for (const d of allDepts) {
+      const normD = normalizeDeptName(d);
+      if (normD && validAliases.some(alias => normD.includes(alias) || alias.includes(normD))) {
+        return true;
+      }
+    }
+  }
+
+  // 1d. Department in staffEmployees
+  if (Array.isArray(row.staffEmployees)) {
+    for (const emp of row.staffEmployees) {
+      const empDept = normalizeDeptName(emp?.department);
+      if (empDept && validAliases.some(alias => empDept.includes(alias) || alias.includes(empDept))) {
+        return true;
+      }
+    }
+  }
+
   // 2. Check row.departments dictionary
   if (row.departments && typeof row.departments === 'object') {
     for (const [key, val] of Object.entries(row.departments)) {
@@ -91,10 +118,19 @@ export function doesPtmRowBelongToUser(row, currentUser) {
   const userName = String(currentUser.name || currentUser.fullName || currentUser.userName || '').trim().toLowerCase();
 
   const pic = String(row.pic || row.responsiblePerson || row.staff || row.staffName || row.staffEmployee || '').trim().toLowerCase();
-  const picCode = String(row.staffCode || row.empCode || row.picCode || '').trim().toLowerCase();
+  const picCode = String(row.staffCode || row.empCode || row.picCode || row.staffId || row.employeeId || '').trim().toLowerCase();
 
   if (userCode && (picCode === userCode || pic.includes(userCode))) return true;
   if (userName && userName.length > 2 && pic.includes(userName)) return true;
+
+  if (Array.isArray(row.staffEmployees)) {
+    for (const emp of row.staffEmployees) {
+      const empCode = String(emp?.code || emp?.empId || emp?.id || '').trim().toLowerCase();
+      const empName = String(emp?.name || '').trim().toLowerCase();
+      if (userCode && empCode && empCode === userCode) return true;
+      if (userName && empName && (empName === userName || (userName.length > 2 && empName.includes(userName)))) return true;
+    }
+  }
 
   return false;
 }

@@ -1,9 +1,22 @@
-import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import ManualInputBox, { ManualInputOptionsContext } from './ManualInputBox';
 import SearchableManualTextInput from './SearchableManualTextInput';
 import CalendarDateInput from './CalendarDateInput';
 import StdDurationWatchModal from './StdDurationWatchModal';
 import SearchableApqpDropdown from './SearchableApqpDropdown';
+import CheckboxMultiSelect from './CheckboxMultiSelect';
+import AddStaffEmployeeModal from '../../pdca/AddStaffEmployeeModal';
+import {
+  stripEmployeeId,
+  parseStaffEmployee,
+  findEmployeeDepartment,
+  VERIFIED_EMPLOYEE_MASTER
+} from '../../../pages/pdca/data/pdcaEmployees.js';
+import {
+  PDCA_UNITS,
+  getDepartmentsForUnit
+} from '../../../pages/pdca/data/pdcaConstants.js';
 import { apqpApi } from '../../services/api';
 import {
   Plus,
@@ -16,7 +29,9 @@ import {
   Eye,
   EyeOff,
   Clock,
-  X
+  X,
+  Search,
+  User
 } from 'lucide-react';
 
 const DEPARTMENTS = [
@@ -237,6 +252,404 @@ export default function PTMTable({
     value: '',
   });
   const [rowHeights, setRowHeights] = useState({});
+  const [openStaffDropdown, setOpenStaffDropdown] = useState(null);
+  const [staffSearchQuery, setStaffSearchQuery] = useState('');
+  const [staffEmployeeModal, setStaffEmployeeModal] = useState({
+    isOpen: false,
+    rowIndex: null,
+    unit: null,
+    department: null,
+    initialValue: '',
+    initialEmployees: []
+  });
+  const [dbEmployees] = useState(VERIFIED_EMPLOYEE_MASTER);
+
+  useEffect(() => {
+    if (!openStaffDropdown) return;
+    const handleOutsideClick = (e) => {
+      if (!e.target.closest('.staff-dropdown-menu')) {
+        setOpenStaffDropdown(null);
+      }
+    };
+    window.addEventListener('mousedown', handleOutsideClick);
+    return () => window.removeEventListener('mousedown', handleOutsideClick);
+  }, [openStaffDropdown]);
+
+  const getResponsiblePersonStructure = (row) => {
+    if (!row) return { units: [], deptsByUnit: {} };
+    const units = (Array.isArray(row.respUnits) && row.respUnits.length > 0)
+      ? row.respUnits.filter((u) => PDCA_UNITS.includes(u))
+      : (row.respUnit && PDCA_UNITS.includes(row.respUnit) ? [row.respUnit] : []);
+
+    const deptsByUnit = {};
+    units.forEach((u) => {
+      if (Array.isArray(row.respDeptsByUnit?.[u])) {
+        deptsByUnit[u] = row.respDeptsByUnit[u];
+      } else {
+        const staffDepts = (row.staffEmployees || [])
+          .filter((e) => (e.unit === u || (!e.unit && units.length === 1)))
+          .map((e) => e.department)
+          .filter(Boolean);
+        if (staffDepts.length > 0) {
+          deptsByUnit[u] = [...new Set(staffDepts)];
+        } else if (units.length === 1 && row.responsiblePersonDept) {
+          deptsByUnit[u] = row.responsiblePersonDept.split(/[,;]/).map((d) => d.trim()).filter(Boolean);
+        } else {
+          deptsByUnit[u] = [];
+        }
+      }
+    });
+
+    return { units, deptsByUnit };
+  };
+
+  const handleResponsibleUnitsChange = (rowIndex, newUnits) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const currentRow = updated[rowIndex];
+      if (!currentRow) return prev;
+
+      const prevDeptsByUnit = currentRow.respDeptsByUnit || {};
+      const updatedDeptsByUnit = {};
+      newUnits.forEach((u) => {
+        updatedDeptsByUnit[u] = prevDeptsByUnit[u] || [];
+      });
+
+      const currentList = Array.isArray(currentRow.staffEmployees) ? [...currentRow.staffEmployees] : [];
+      const updatedStaffList = currentList.filter((emp) => {
+        return !emp.unit || newUnits.includes(emp.unit);
+      });
+
+      const formattedStaff = updatedStaffList
+        .map((e) => (e.code ? `${e.name} (${e.code})` : e.name))
+        .join(', ');
+
+      const primary = updatedStaffList[0] || {};
+      const activeDepts = Object.values(updatedDeptsByUnit).flat();
+
+      updated[rowIndex] = {
+        ...currentRow,
+        respUnits: newUnits,
+        respUnit: newUnits[0] || '',
+        responsiblePersonUnit: newUnits[0] || '',
+        respDeptsByUnit: updatedDeptsByUnit,
+        staffEmployees: updatedStaffList,
+        staffEmployee: formattedStaff,
+        staffName: primary.name || '',
+        staffId: primary.code || '',
+        employeeId: primary.code || '',
+        responsiblePersonDept: activeDepts.join(', ') || ''
+      };
+      return updated;
+    });
+  };
+
+  const handleUnitDepartmentsChange = (rowIndex, unit, newDepts) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const currentRow = updated[rowIndex];
+      if (!currentRow) return prev;
+
+      const prevDeptsByUnit = currentRow.respDeptsByUnit || {};
+      const updatedDeptsByUnit = {
+        ...prevDeptsByUnit,
+        [unit]: newDepts
+      };
+
+      const currentList = Array.isArray(currentRow.staffEmployees) ? [...currentRow.staffEmployees] : [];
+      const updatedStaffList = currentList.filter((emp) => {
+        if (emp.unit && emp.unit !== unit) return true;
+        return newDepts.includes(emp.department);
+      });
+
+      const formattedStaff = updatedStaffList
+        .map((e) => (e.code ? `${e.name} (${e.code})` : e.name))
+        .join(', ');
+
+      const primary = updatedStaffList[0] || {};
+      const activeDepts = Object.values(updatedDeptsByUnit).flat();
+
+      updated[rowIndex] = {
+        ...currentRow,
+        respDeptsByUnit: updatedDeptsByUnit,
+        staffEmployees: updatedStaffList,
+        staffEmployee: formattedStaff,
+        staffName: primary.name || '',
+        staffId: primary.code || '',
+        employeeId: primary.code || '',
+        responsiblePersonDept: activeDepts.join(', ') || (newDepts[0] || '')
+      };
+      return updated;
+    });
+  };
+
+  const handleSelectStaffForUnitDept = (rowIndex, unit, department, empObj) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const currentRow = updated[rowIndex];
+      if (!currentRow) return prev;
+
+      let targetDept = department;
+      let targetUnit = unit;
+
+      if (empObj && empObj.name) {
+        const cleanName = stripEmployeeId(empObj.name);
+        const code = (empObj.code || '').toUpperCase();
+        const autoDept = empObj.department || findEmployeeDepartment(`${cleanName} (${code})`, dbEmployees) || findEmployeeDepartment(`${cleanName} (${code})`, VERIFIED_EMPLOYEE_MASTER) || '';
+        targetDept = targetDept || autoDept;
+        if (!targetUnit) {
+          targetUnit = empObj.unit || (code.startsWith('GJ') ? 'Gujrat' : (code.startsWith('BW') ? 'Bawal' : (currentRow.respUnit || currentRow.unit || 'Bawal')));
+        }
+      }
+
+      const currentList = Array.isArray(currentRow.staffEmployees) ? [...currentRow.staffEmployees] : [];
+      const filtered = currentList.filter(
+        (emp) => !(targetUnit && emp.unit === targetUnit && (targetDept ? emp.department === targetDept : true))
+      );
+
+      if (empObj && empObj.name) {
+        const cleanName = stripEmployeeId(empObj.name);
+        const code = (empObj.code || '').toUpperCase();
+        filtered.push({
+          id: empObj.id || undefined,
+          name: cleanName,
+          code,
+          department: targetDept,
+          unit: targetUnit
+        });
+      }
+
+      const formattedStaff = filtered
+        .map((e) => (e.code ? `${e.name} (${e.code})` : e.name))
+        .join(', ');
+
+      const primary = filtered[0] || {};
+      const allDepts = [...new Set(filtered.map((e) => e.department).filter(Boolean))];
+      const finalUnit = targetUnit || primary.unit || currentRow.respUnit || 'Bawal';
+      const prevDeptsByUnit = currentRow.respDeptsByUnit || {};
+      const updatedDeptsByUnit = {
+        ...prevDeptsByUnit,
+        [finalUnit]: allDepts.length > 0 ? allDepts : (prevDeptsByUnit[finalUnit] || [])
+      };
+
+      updated[rowIndex] = {
+        ...currentRow,
+        staffEmployees: filtered,
+        staffEmployee: formattedStaff,
+        staffName: primary.name || '',
+        staffId: primary.code || '',
+        employeeId: primary.code || '',
+        respUnit: finalUnit,
+        respUnits: (currentRow.respUnits && currentRow.respUnits.length > 0) ? currentRow.respUnits : [finalUnit],
+        responsiblePersonUnit: finalUnit,
+        respDeptsByUnit: updatedDeptsByUnit,
+        responsiblePersonDept: allDepts.join(', ') || currentRow.responsiblePersonDept || ''
+      };
+      return updated;
+    });
+  };
+
+  const handleRemoveDepartmentEmployee = (rowIndex, unit, department, employee) => {
+    setRows((prev) => prev.map((row, index) => {
+      if (index !== rowIndex) return row;
+      const staffEmployees = (Array.isArray(row.staffEmployees) ? row.staffEmployees : []).filter((entry) => {
+        const sameDepartment = entry.department === department && (entry.unit === unit || !entry.unit);
+        const sameEmployee = employee.code ? entry.code === employee.code : entry.name === employee.name;
+        return !(sameDepartment && sameEmployee);
+      });
+      const primary = staffEmployees[0] || {};
+      const staffEmployee = staffEmployees.map((entry) => entry.code ? `${entry.name} (${entry.code})` : entry.name).join(', ');
+      return { ...row, staffEmployees, staffEmployee, staffName: primary.name || '', staffId: primary.code || '', employeeId: primary.code || '', responsiblePersonDept: staffEmployees.map(e => e.department).filter(Boolean).join(', ') };
+    }));
+  };
+
+  const handleOpenAddStaffModal = (rowIndex, unit = null, department = null) => {
+    const row = rows[rowIndex];
+    const allExisting = Array.isArray(row?.staffEmployees) && row.staffEmployees.length > 0
+      ? row.staffEmployees
+      : (row?.staffEmployee
+        ? row.staffEmployee.split(/[,;]/).map((s) => s.trim()).filter(Boolean).map((p) => {
+          const parsed = parseStaffEmployee(p);
+          return {
+            name: parsed.name,
+            code: parsed.code,
+            department: findEmployeeDepartment(p, dbEmployees) || ''
+          };
+        })
+        : []);
+    const existing = unit && department
+      ? allExisting.filter((employee) => employee.department === department && (employee.unit === unit || !employee.unit))
+      : allExisting;
+
+    const initialEmployees = existing.length > 0
+      ? [...existing, { name: '', code: '', department: '' }]
+      : [{ name: '', code: '', department: '' }];
+
+    setStaffEmployeeModal({
+      isOpen: true,
+      rowIndex,
+      unit,
+      department,
+      initialValue: row?.staffEmployee || '',
+      initialEmployees
+    });
+  };
+
+  const handleSaveDepartmentStaff = (_rowIndex, _formattedValue, employees) => {
+    const { rowIndex, unit, department } = staffEmployeeModal;
+    if (rowIndex == null) return;
+    setRows((prev) => prev.map((row, index) => {
+      if (index !== rowIndex) return row;
+      const current = Array.isArray(row.staffEmployees) ? row.staffEmployees : [];
+      const retained = department
+        ? current.filter((employee) => !(employee.department === department && (employee.unit === unit || !employee.unit)))
+        : current.filter((employee) => (unit ? employee.unit !== unit : false));
+      const additions = employees
+        .filter((employee) => employee.name)
+        .map((employee) => ({ ...employee, ...(department ? { department } : {}), ...(unit ? { unit } : {}) }));
+      const staffEmployees = [...retained, ...additions];
+      const primary = staffEmployees[0] || {};
+      const staffEmployee = staffEmployees.map((employee) => employee.code ? `${employee.name} (${employee.code})` : employee.name).join(', ');
+      return { ...row, staffEmployees, staffEmployee, staffName: primary.name || '', staffId: primary.code || '', employeeId: primary.code || '', responsiblePersonDept: staffEmployees.map(e => e.department).filter(Boolean).join(', ') };
+    }));
+  };
+
+  const handleSaveStaffEmployee = (rowIndex, formattedValue, employeeList = []) => {
+    if (rowIndex == null) return;
+    setRows((prev) => prev.map((row, index) => {
+      if (index !== rowIndex) return row;
+      const additions = employeeList
+        .filter((employee) => employee.name)
+        .map((employee) => ({ ...employee }));
+      const primary = additions[0] || {};
+      return { ...row, staffEmployees: additions, staffEmployee: formattedValue, staffName: primary.name || '', staffId: primary.code || '', employeeId: primary.code || '' };
+    }));
+  };
+
+  const handleToggleStaffDropdownForDept = (rowIndex, unit, department, e) => {
+    e.stopPropagation();
+    if (
+      openStaffDropdown?.rowIndex === rowIndex &&
+      openStaffDropdown?.unit === unit &&
+      openStaffDropdown?.department === department
+    ) {
+      setOpenStaffDropdown(null);
+      return;
+    }
+    setStaffSearchQuery('');
+    const rect = e.currentTarget.getBoundingClientRect();
+    const dropdownWidth = 280;
+    let leftPos = rect.left + (rect.width / 2) - (dropdownWidth / 2);
+    if (leftPos + dropdownWidth > window.innerWidth - 12) {
+      leftPos = window.innerWidth - dropdownWidth - 12;
+    }
+    if (leftPos < 12) {
+      leftPos = 12;
+    }
+
+    let topPos = rect.bottom + 4;
+    const estimatedHeight = 320;
+    if (topPos + estimatedHeight > window.innerHeight - 12 && rect.top - estimatedHeight > 12) {
+      topPos = rect.top - estimatedHeight - 4;
+    }
+
+    setOpenStaffDropdown({
+      rowIndex,
+      unit,
+      department,
+      top: topPos,
+      left: Math.max(12, leftPos),
+      width: dropdownWidth
+    });
+  };
+
+  const employeeOptionList = useMemo(() => {
+    const map = new Map();
+    dbEmployees.forEach((emp) => {
+      const cleanName = stripEmployeeId(emp.name);
+      if (!cleanName) return;
+      map.set(cleanName, {
+        label: cleanName,
+        name: cleanName,
+        code: emp.code || '',
+        department: emp.department || '',
+        unit: emp.unit || (emp.code?.toUpperCase().startsWith('GJ') ? 'Gujrat' : (emp.code?.toUpperCase().startsWith('BW') ? 'Bawal' : ''))
+      });
+    });
+
+    rows.forEach((r) => {
+      if (r.staffEmployee?.trim()) {
+        const cleanName = stripEmployeeId(r.staffEmployee);
+        if (cleanName && !map.has(cleanName)) {
+          const dept = findEmployeeDepartment(r.staffEmployee, dbEmployees);
+          map.set(cleanName, {
+            label: cleanName,
+            name: cleanName,
+            code: '',
+            department: dept || r.responsiblePersonDept || '',
+            unit: r.respUnit || (Array.isArray(r.respUnits) ? r.respUnits[0] : '') || ''
+          });
+        }
+      }
+    });
+
+    return Array.from(map.values());
+  }, [dbEmployees, rows]);
+
+  const getStaffOptionsForRow = (rowIndex, targetUnit = null, targetDept = null) => {
+    const unitToUse = targetUnit || '';
+    const deptToUse = targetDept || '';
+    const currentUnit = unitToUse.trim().toLowerCase();
+    const currentDept = deptToUse.trim().toLowerCase();
+    const query = staffSearchQuery.trim().toLowerCase();
+
+    let list = employeeOptionList;
+    if (query) {
+      list = list.filter(
+        (item) =>
+          item.label.toLowerCase().includes(query) ||
+          (item.department && item.department.toLowerCase().includes(query)) ||
+          (item.code && item.code.toLowerCase().includes(query))
+      );
+    }
+
+    if (currentUnit || currentDept) {
+      const deptMatches = list.filter((item) => {
+        const itemDept = (item.department || '').toLowerCase();
+        const itemUnit = (item.unit || '').toLowerCase();
+        const itemCode = (item.code || '').toUpperCase();
+
+        let matchesUnit = true;
+        if (currentUnit && itemUnit) {
+          if (currentUnit === 'bawal') {
+            matchesUnit = itemUnit === 'bawal' || itemCode.startsWith('BW');
+          } else if (currentUnit === 'gujrat' || currentUnit === 'gujarat') {
+            matchesUnit = itemUnit === 'gujrat' || itemUnit === 'gujarat' || itemCode.startsWith('GJ');
+          }
+        }
+
+        let matchesDept = true;
+        if (currentDept) {
+          matchesDept = itemDept === currentDept;
+        }
+
+        return matchesUnit && matchesDept;
+      });
+
+      if (deptMatches.length > 0) {
+        return deptMatches;
+      }
+
+      if (currentDept) {
+        const deptOnlyMatches = list.filter((item) => (item.department || '').toLowerCase() === currentDept);
+        if (deptOnlyMatches.length > 0) {
+          return deptOnlyMatches;
+        }
+      }
+    }
+
+    return list;
+  };
 
   const recordManualRowHeight = useCallback((rowIndex, measuredHeight) => {
     const row = rows[rowIndex];
@@ -637,6 +1050,14 @@ export default function PTMTable({
       noOfTimesRevised: '0',
       reasonOfFailure: '',
       actionTaken: '',
+      respUnits: [selectedUnit && ['Bawal', 'Gujrat'].includes(selectedUnit) ? selectedUnit : 'Bawal'],
+      respUnit: selectedUnit && ['Bawal', 'Gujrat'].includes(selectedUnit) ? selectedUnit : 'Bawal',
+      respDeptsByUnit: {},
+      staffEmployees: [],
+      staffEmployee: '',
+      staffName: '',
+      staffId: '',
+      responsiblePersonDept: '',
       status: 'Open',
       remarks: '',
     };
@@ -780,7 +1201,7 @@ export default function PTMTable({
         <ManualInputOptionsContext.Provider value={manualOptionsByColumn}>
           <table className="w-full border-collapse text-xs">
             <colgroup>
-              <col span={32} />
+              <col span={35} />
               <col
                 style={{
                   width: `${colWidths.actions}px`,
@@ -795,15 +1216,16 @@ export default function PTMTable({
               {/* ══════════════════════════════════════════════════════════════════
                 COLUMN TITLES
                 ══════════════════════════════════════════════════════════════════ */}
-              <tr className="divide-x divide-[#64748B] text-[10px] font-bold text-center border-b-2 border-slate-400">
+              <tr className="divide-x divide-[#64748B] text-[10px] font-bold text-center border-b border-slate-300">
                 {/* Group 1 Columns (Ice Blue tint) */}
-                <th className="py-2 px-1 w-10 min-w-[36px] max-w-[42px] bg-[#EEF4FA] text-[#2C5282] whitespace-normal leading-tight text-center">
+                <th rowSpan={2} className="py-2 px-1 w-10 min-w-[36px] max-w-[42px] bg-[#EEF4FA] text-[#2C5282] whitespace-normal leading-tight text-center">
                   S.No
                 </th>
-                <th className="py-2 px-1 w-16 min-w-[58px] max-w-[64px] bg-[#EEF4FA] text-[#2C5282] whitespace-normal leading-tight text-center">
+                <th rowSpan={2} className="py-2 px-1 w-16 min-w-[58px] max-w-[64px] bg-[#EEF4FA] text-[#2C5282] whitespace-normal leading-tight text-center">
                   Phase No.
                 </th>
                 <th
+                  rowSpan={2}
                   className="relative py-2 px-2 bg-[#EEF4FA] text-[#2C5282] text-left whitespace-normal leading-tight"
                   style={{
                     width: `${colWidths.phaseName}px`,
@@ -827,10 +1249,11 @@ export default function PTMTable({
                     <span className="h-4 w-0.5 rounded-full bg-slate-300 group-hover:bg-blue-500" />
                   </span>
                 </th>
-                <th className="py-2 px-2 min-w-[190px] w-48 bg-[#EEF4FA] text-[#2C5282] text-left whitespace-normal leading-tight">
+                <th rowSpan={2} className="py-2 px-2 min-w-[190px] w-48 bg-[#EEF4FA] text-[#2C5282] text-left whitespace-normal leading-tight">
                   AIAG APQP Requirements
                 </th>
                 <th
+                  rowSpan={2}
                   className="relative py-2 px-2 bg-[#EEF4FA] text-[#2C5282] text-left whitespace-normal leading-tight"
                   style={{
                     width: `${colWidths.customerEvent}px`,
@@ -856,21 +1279,22 @@ export default function PTMTable({
                 </th>
 
                 {/* Group 2 Columns (Pale Yellow tint) - compact */}
-                <th className="py-2 px-1 w-9 min-w-[34px] max-w-[38px] bg-[#FFF9E6] text-[#975A16] whitespace-normal leading-tight text-center">
+                <th rowSpan={2} className="py-2 px-1 w-9 min-w-[34px] max-w-[38px] bg-[#FFF9E6] text-[#975A16] whitespace-normal leading-tight text-center">
                   Rank A
                 </th>
-                <th className="py-2 px-1 w-9 min-w-[34px] max-w-[38px] bg-[#FFF9E6] text-[#975A16] whitespace-normal leading-tight text-center">
+                <th rowSpan={2} className="py-2 px-1 w-9 min-w-[34px] max-w-[38px] bg-[#FFF9E6] text-[#975A16] whitespace-normal leading-tight text-center">
                   Rank B
                 </th>
-                <th className="py-2 px-1 w-11 min-w-[42px] max-w-[48px] bg-[#FFF9E6] text-[#975A16] whitespace-normal leading-tight text-center">
+                <th rowSpan={2} className="py-2 px-1 w-11 min-w-[42px] max-w-[48px] bg-[#FFF9E6] text-[#975A16] whitespace-normal leading-tight text-center">
                   Rank C1 & C2
                 </th>
 
                 {/* Group 3 Columns (Slate tint) */}
-                <th className="py-2 px-1 w-14 min-w-[50px] max-w-[56px] bg-[#F8F9FA] text-[#4A5568] whitespace-normal leading-tight text-center">
+                <th rowSpan={2} className="py-2 px-1 w-14 min-w-[50px] max-w-[56px] bg-[#F8F9FA] text-[#4A5568] whitespace-normal leading-tight text-center">
                   Critical Activity
                 </th>
                 <th
+                  rowSpan={2}
                   className="relative py-2 px-2.5 bg-[#F8F9FA] text-[#4A5568] text-left whitespace-normal leading-tight"
                   style={{
                     width: `${colWidths.activity}px`,
@@ -899,6 +1323,7 @@ export default function PTMTable({
                 {DEPARTMENTS.map((dept) => (
                   <th
                     key={dept.key}
+                    rowSpan={2}
                     className="py-2 px-0.5 w-8 min-w-[30px] max-w-[34px] bg-[#EAF5EC] text-[#276749] text-center whitespace-nowrap text-[9.5px]"
                   >
                     {dept.label}
@@ -907,6 +1332,7 @@ export default function PTMTable({
 
                 {/* Group 5 Columns (Lavender tint) */}
                 <th
+                  rowSpan={2}
                   className="relative py-2 px-2 bg-[#F1F5F9] text-[#2D3748] text-left whitespace-normal leading-tight"
                   style={{
                     width: `${colWidths.deliverable}px`,
@@ -930,40 +1356,41 @@ export default function PTMTable({
                     <span className="h-4 w-0.5 rounded-full bg-slate-300 group-hover:bg-blue-500" />
                   </span>
                 </th>
-                <th className="py-2 px-1.5 w-20 min-w-[76px] bg-[#F1F5F9] text-[#2D3748] whitespace-normal leading-tight text-center">
+                <th rowSpan={2} className="py-2 px-1.5 w-20 min-w-[76px] bg-[#F1F5F9] text-[#2D3748] whitespace-normal leading-tight text-center">
                   Std. Duration in Hours
                 </th>
 
                 {/* Group 6 Columns (Ice Blue tint) */}
-                <th className="py-2 px-1 w-20 min-w-[78px] max-w-[84px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center text-[10.5px]">
+                <th rowSpan={2} className="py-2 px-1 w-20 min-w-[78px] max-w-[84px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center text-[10.5px]">
                   Start Date (Plan)
                 </th>
-                <th className="py-2 px-1 w-20 min-w-[78px] max-w-[84px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center text-[10.5px]">
+                <th rowSpan={2} className="py-2 px-1 w-20 min-w-[78px] max-w-[84px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center text-[10.5px]">
                   Start Date (Actual)
                 </th>
-                <th className="py-2 px-1 w-20 min-w-[78px] max-w-[84px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center text-[10.5px]">
+                <th rowSpan={2} className="py-2 px-1 w-20 min-w-[78px] max-w-[84px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center text-[10.5px]">
                   End Date (Plan)
                 </th>
-                <th className="py-2 px-1 w-20 min-w-[78px] max-w-[84px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center text-[10.5px]">
+                <th rowSpan={2} className="py-2 px-1 w-20 min-w-[78px] max-w-[84px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center text-[10.5px]">
                   End Date (Actual)
                 </th>
 
                 {/* Group 7 Columns (Mint Green tint) */}
-                <th className="py-2 px-1 w-16 min-w-[64px] max-w-[70px] bg-[#EAF5EC] text-[#276749] whitespace-normal leading-tight text-center">
+                <th rowSpan={2} className="py-2 px-1 w-16 min-w-[64px] max-w-[70px] bg-[#EAF5EC] text-[#276749] whitespace-normal leading-tight text-center">
                   HIT/MISS
                 </th>
-                <th className="py-2 px-1 w-20 min-w-[78px] bg-[#EAF5EC] text-[#276749] whitespace-normal leading-tight text-center">
+                <th rowSpan={2} className="py-2 px-1 w-20 min-w-[78px] bg-[#EAF5EC] text-[#276749] whitespace-normal leading-tight text-center">
                   Revised Date (If MISS)
                 </th>
 
                 {/* Group 8 Columns (Pastel Rose tint) */}
-                <th className="py-2 px-1 w-14 min-w-[50px] bg-[#FDF2F2] text-[#9B1C1C] whitespace-normal leading-tight text-center">
+                <th rowSpan={2} className="py-2 px-1 w-14 min-w-[50px] bg-[#FDF2F2] text-[#9B1C1C] whitespace-normal leading-tight text-center">
                   No. of Times Revised
                 </th>
-                <th className="py-2 px-2 w-48 min-w-[140px] max-w-[200px] bg-[#FDF2F2] text-[#9B1C1C] text-left whitespace-normal leading-tight">
+                <th rowSpan={2} className="py-2 px-2 w-48 min-w-[140px] max-w-[200px] bg-[#FDF2F2] text-[#9B1C1C] text-left whitespace-normal leading-tight">
                   Reason of Failure
                 </th>
                 <th
+                  rowSpan={2}
                   className="relative py-2 px-2 bg-[#FDF2F2] text-[#9B1C1C] text-left whitespace-normal leading-tight"
                   style={{
                     width: `${colWidths.actionTaken}px`,
@@ -988,8 +1415,17 @@ export default function PTMTable({
                   </span>
                 </th>
 
+                {/* Responsible Person Section Header */}
+                <th
+                  colSpan={3}
+                  className="py-1 px-1 border-r border-b border-[#64748B] bg-[#ECEFF1] text-center select-none text-slate-800 font-bold text-[11px] leading-tight"
+                >
+                  Responsible Person
+                </th>
+
                 {/* Group 9 Columns (Slate tint) */}
                 <th
+                  rowSpan={2}
                   className="py-2 px-1 bg-[#F8F9FA] text-[#4A5568] whitespace-normal leading-tight text-center"
                   style={{
                     width: `${STATUS_COLUMN_WIDTH}px`,
@@ -999,6 +1435,7 @@ export default function PTMTable({
                   Status
                 </th>
                 <th
+                  rowSpan={2}
                   className="relative py-2 px-2 bg-[#F8F9FA] text-[#4A5568] text-left whitespace-normal leading-tight"
                   style={{
                     width: `${colWidths.remarks}px`,
@@ -1025,6 +1462,7 @@ export default function PTMTable({
 
                 {/* Actions Column: Visually separated section at the end of the sheet */}
                 <th
+                  rowSpan={2}
                   className="relative overflow-visible py-2 px-2 bg-slate-200 text-slate-800 font-extrabold uppercase text-[10px] tracking-wider text-center border-l-4 border-slate-300"
                   style={{
                     width: `${colWidths.actions}px`,
@@ -1048,6 +1486,19 @@ export default function PTMTable({
                   </span>
                 </th>
               </tr>
+
+              {/* Row 2: Sub-columns for Responsible Person */}
+              <tr className="divide-x divide-[#64748B] text-[10px] font-bold text-center border-b-2 border-slate-400 bg-[#ECEFF1] text-slate-800">
+                <th className="py-1 px-1 text-center w-[110px] min-w-[100px]">
+                  Unit
+                </th>
+                <th className="py-1 px-1 text-center w-[145px] min-w-[135px]">
+                  Dept
+                </th>
+                <th className="py-1 px-1 text-center w-[160px] min-w-[150px]">
+                  <span>Staff Name</span> <span className="text-red-500 font-bold">*</span>
+                </th>
+              </tr>
             </thead>
 
             {/* ══════════════════════════════════════════════════════════════════
@@ -1057,7 +1508,7 @@ export default function PTMTable({
               {filteredRows.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={24 + DEPARTMENTS.length}
+                    colSpan={27 + DEPARTMENTS.length}
                     className="py-12 text-center text-slate-400 font-medium"
                   >
                     No matching rows found.
@@ -1547,6 +1998,430 @@ export default function PTMTable({
                           />
                         </td>
 
+                        {/* Responsible Person: When both units chosen, parent cell divided horizontally into Bawal and Gujrat parts */}
+                        {(() => {
+                          const { units, deptsByUnit } = getResponsiblePersonStructure(row);
+                          if (units.length > 1) {
+                            return (
+                              <td
+                                colSpan={3}
+                                className="p-0 align-middle text-center bg-white group-hover/row:bg-[#F8FAFC]"
+                              >
+                                <div className="flex flex-col w-full h-full divide-y divide-[#CBD5E1]">
+                                  {units.map((unitName) => {
+                                    const unitDepts = deptsByUnit[unitName] || [];
+                                    const unitOptions = getDepartmentsForUnit(unitName).map((d) => ({ value: d, label: d }));
+                                    const flexGrow = Math.max(1, unitDepts.length);
+
+                                    return (
+                                      <div
+                                        key={unitName}
+                                        style={{ flex: flexGrow }}
+                                        className="flex w-full items-stretch divide-x divide-[#CBD5E1]"
+                                      >
+                                        {/* 1. Unit Child */}
+                                        <div className="w-[110px] min-w-[100px] shrink-0 relative min-h-[30px] flex items-center justify-between px-2 py-1 bg-white hover:bg-slate-50 transition-colors">
+                                          <span className="text-[12px] font-bold text-slate-800">{unitName}</span>
+                                          <CheckboxMultiSelect
+                                            value={units}
+                                            options={PDCA_UNITS.map((u) => ({ value: u, label: u }))}
+                                            onChange={(newUnits) => handleResponsibleUnitsChange(originalIndex, newUnits)}
+                                            renderTrigger={({ open, setOpen, buttonRef }) => (
+                                              <button
+                                                ref={buttonRef}
+                                                type="button"
+                                                onClick={() => setOpen(!open)}
+                                                className="text-slate-400 hover:text-blue-600 p-0.5 rounded cursor-pointer"
+                                                title={`Change units (currently: ${units.join(', ')})`}
+                                              >
+                                                <ChevronDown className="w-2.5 h-2.5" />
+                                              </button>
+                                            )}
+                                          />
+                                        </div>
+
+                                        {/* 2. Dept Child */}
+                                        <div className="w-[145px] min-w-[135px] shrink-0 flex items-center justify-center">
+                                          {unitDepts.length === 0 ? (
+                                            <div className="w-full p-1 min-h-[30px] flex items-center justify-center">
+                                              <CheckboxMultiSelect
+                                                value={[]}
+                                                options={unitOptions}
+                                                placeholder="Dept..."
+                                                onChange={(newDepts) => handleUnitDepartmentsChange(originalIndex, unitName, newDepts)}
+                                              />
+                                            </div>
+                                          ) : unitDepts.length === 1 ? (
+                                            <div className="flex-1 w-full min-h-[30px] flex items-center justify-between px-2 py-1 gap-1 hover:bg-blue-50/40 transition-colors">
+                                              <span className="text-[12px] font-semibold text-slate-800 whitespace-nowrap text-left" title={unitDepts[0]}>
+                                                {unitDepts[0]}
+                                              </span>
+                                              <CheckboxMultiSelect
+                                                value={unitDepts}
+                                                options={unitOptions}
+                                                onChange={(newDepts) => handleUnitDepartmentsChange(originalIndex, unitName, newDepts)}
+                                                renderTrigger={({ open, setOpen, buttonRef }) => (
+                                                  <button
+                                                    ref={buttonRef}
+                                                    type="button"
+                                                    onClick={() => setOpen(!open)}
+                                                    className="text-slate-400 hover:text-blue-600 p-0.5 cursor-pointer ml-1 shrink-0"
+                                                    title={`Edit ${unitName} departments`}
+                                                  >
+                                                    <ChevronDown className="w-2.5 h-2.5" />
+                                                  </button>
+                                                )}
+                                              />
+                                            </div>
+                                          ) : (
+                                            <div className="flex flex-col h-full w-full divide-y divide-[#CBD5E1] justify-center">
+                                              {unitDepts.map((deptName) => (
+                                                <div
+                                                  key={deptName}
+                                                  className="flex-1 min-h-[30px] flex items-center justify-between px-2 py-1 gap-1 hover:bg-blue-50/40 transition-colors"
+                                                >
+                                                  <span className="text-[12px] font-semibold text-slate-800 whitespace-nowrap text-left" title={deptName}>
+                                                    {deptName}
+                                                  </span>
+                                                  <CheckboxMultiSelect
+                                                    value={unitDepts}
+                                                    options={unitOptions}
+                                                    onChange={(newDepts) => handleUnitDepartmentsChange(originalIndex, unitName, newDepts)}
+                                                    renderTrigger={({ open, setOpen, buttonRef }) => (
+                                                      <button
+                                                        ref={buttonRef}
+                                                        type="button"
+                                                        onClick={() => setOpen(!open)}
+                                                        className="text-slate-400 hover:text-blue-600 p-0.5 cursor-pointer ml-1 shrink-0"
+                                                        title={`Edit ${unitName} departments`}
+                                                      >
+                                                        <ChevronDown className="w-2.5 h-2.5" />
+                                                      </button>
+                                                    )}
+                                                  />
+                                                </div>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </div>
+
+                                        {/* 3. Staff Name Child */}
+                                        <div className="w-[160px] min-w-[150px] shrink-0 flex items-center justify-center">
+                                          {unitDepts.length === 0 ? (
+                                            (() => {
+                                              const assignedEmps = (row.staffEmployees || []).filter(
+                                                (e) => e.unit === unitName || (!e.unit && units.length === 1)
+                                              );
+                                              const legacyDisplay = units.length === 1 && !assignedEmps.length ? (row.staffEmployee ? stripEmployeeId(row.staffEmployee) : '') : '';
+
+                                              if (assignedEmps.length || legacyDisplay) {
+                                                return (
+                                                  <div className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors justify-center">
+                                                    {(assignedEmps.length ? assignedEmps : [{ name: legacyDisplay, legacy: true }]).map((employee, employeeIndex) => (
+                                                      <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
+                                                        <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, '', e)} className="min-w-0 flex-1 truncate text-left text-[12px] font-semibold text-slate-800 cursor-pointer hover:text-blue-600" title={`${unitName}: ${employee.name}`}>
+                                                          {stripEmployeeId(employee.name || employee.label || '')}
+                                                        </button>
+                                                        <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(originalIndex, unitName, '', null) : handleRemoveDepartmentEmployee(originalIndex, unitName, '', employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>
+                                                      </div>
+                                                    ))}
+                                                    <button type="button" onClick={() => handleOpenAddStaffModal(originalIndex, unitName, '')} className="flex items-center justify-center gap-1 rounded py-0.5 text-[11px] font-semibold text-blue-600 hover:bg-blue-50 cursor-pointer"><Plus className="h-3 w-3" /> Add Employee</button>
+                                                  </div>
+                                                );
+                                              }
+
+                                              return (
+                                                <div className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1">
+                                                  <button
+                                                    type="button"
+                                                    onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, '', e)}
+                                                    className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer"
+                                                    title={`Select staff for ${unitName} (Department will auto-fetch)`}
+                                                  >
+                                                    <div className="flex items-center gap-1 text-[12px]">
+                                                      <Search className="h-3.5 w-3.5" />
+                                                      <span>Staff...</span>
+                                                      <ChevronDown className="h-3 w-3" />
+                                                    </div>
+                                                  </button>
+                                                </div>
+                                              );
+                                            })()
+                                          ) : (
+                                            <div className="flex flex-col h-full w-full divide-y divide-[#CBD5E1] justify-center">
+                                              {unitDepts.map((deptName) => {
+                                                const assignedEmps = (row.staffEmployees || []).filter(
+                                                  (e) => e.department === deptName && (e.unit === unitName || (!e.unit && units.length === 1))
+                                                );
+                                                const legacyDisplay = units.length === 1 && unitDepts.length === 1 && !(row.staffEmployees || []).length ? row.staffEmployee : '';
+
+                                                if (assignedEmps.length || legacyDisplay) {
+                                                  return (
+                                                    <div
+                                                      key={deptName}
+                                                      className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors justify-center"
+                                                    >
+                                                      {(assignedEmps.length ? assignedEmps : (legacyDisplay ? [{ name: legacyDisplay, department: deptName, unit: unitName, legacy: true }] : [])).map((employee, employeeIndex) => (
+                                                        <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
+                                                          <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, deptName, e)} className="min-w-0 flex-1 truncate text-left text-[12px] font-semibold text-slate-800 cursor-pointer hover:text-blue-600" title={`${unitName} - ${deptName}: ${employee.name}`}>
+                                                            {stripEmployeeId(employee.name || employee.label || '')}
+                                                          </button>
+                                                          <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(originalIndex, unitName, deptName, null) : handleRemoveDepartmentEmployee(originalIndex, unitName, deptName, employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>
+                                                        </div>
+                                                      ))}
+                                                      <button type="button" onClick={() => handleOpenAddStaffModal(originalIndex, unitName, deptName)} className="flex items-center justify-center gap-1 rounded py-0.5 text-[11px] font-semibold text-blue-600 hover:bg-blue-50 cursor-pointer"><Plus className="h-3 w-3" /> Add Employee</button>
+                                                    </div>
+                                                  );
+                                                }
+
+                                                return (
+                                                  <div
+                                                    key={deptName}
+                                                    className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1"
+                                                  >
+                                                    <div className="flex w-full flex-col items-center">
+                                                      <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, deptName, e)} className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer" title={`Select staff for ${unitName} - ${deptName}`}><div className="flex items-center gap-1 text-[12px]"><Search className="h-3.5 w-3.5" /><span>Staff...</span><ChevronDown className="h-3 w-3" /></div></button>
+                                                      <button type="button" onClick={() => handleOpenAddStaffModal(originalIndex, unitName, deptName)} className="flex items-center gap-1 py-0.5 text-[11px] font-semibold text-blue-600 hover:bg-blue-50 rounded cursor-pointer"><Plus className="h-3 w-3" /> Add Employee</button>
+                                                    </div>
+                                                  </div>
+                                                );
+                                              })}
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </td>
+                            );
+                          }
+
+                          // Single unit or none selected: 3 separate <td> elements
+                          return (
+                            <>
+                              {/* Unit */}
+                              <td className="p-0 align-middle text-center bg-white group-hover/row:bg-[#F8FAFC] w-[110px] min-w-[100px]">
+                                <div className="p-1 w-full">
+                                  <CheckboxMultiSelect
+                                    value={units}
+                                    options={PDCA_UNITS.map((u) => ({ value: u, label: u }))}
+                                    placeholder="Unit..."
+                                    onChange={(newUnits) => handleResponsibleUnitsChange(originalIndex, newUnits)}
+                                  />
+                                </div>
+                              </td>
+
+                              {/* Department Dropdown in Responsible Person */}
+                              <td className="p-0 align-middle text-center bg-white group-hover/row:bg-[#F8FAFC] w-[145px] min-w-[135px]">
+                                {units.length === 0 ? (
+                                  <div className="w-full py-1 text-center text-slate-300 text-xs select-none" title="Select Staff Name to auto-fetch Department">
+                                    -
+                                  </div>
+                                ) : (() => {
+                                  const unitName = units[0];
+                                  const unitDepts = deptsByUnit[unitName] || [];
+                                  const unitOptions = getDepartmentsForUnit(unitName).map((d) => ({ value: d, label: d }));
+
+                                  if (unitDepts.length === 0) {
+                                    return (
+                                      <div className="p-1 min-h-[30px] flex items-center justify-center">
+                                        <CheckboxMultiSelect
+                                          value={[]}
+                                          options={unitOptions}
+                                          placeholder="Dept..."
+                                          onChange={(newDepts) => handleUnitDepartmentsChange(originalIndex, unitName, newDepts)}
+                                        />
+                                      </div>
+                                    );
+                                  }
+
+                                  if (unitDepts.length === 1) {
+                                    return (
+                                      <div className="flex-1 min-h-[30px] flex items-center justify-between px-2 py-1 gap-1 hover:bg-blue-50/40 transition-colors">
+                                        <span className="text-[12px] font-semibold text-slate-800 whitespace-nowrap text-left" title={unitDepts[0]}>
+                                          {unitDepts[0]}
+                                        </span>
+                                        <CheckboxMultiSelect
+                                          value={unitDepts}
+                                          options={unitOptions}
+                                          onChange={(newDepts) => handleUnitDepartmentsChange(originalIndex, unitName, newDepts)}
+                                          renderTrigger={({ open, setOpen, buttonRef }) => (
+                                            <button
+                                              ref={buttonRef}
+                                              type="button"
+                                              onClick={() => setOpen(!open)}
+                                              className="text-slate-400 hover:text-blue-600 p-0.5 cursor-pointer ml-1 shrink-0"
+                                              title={`Edit ${unitName} departments`}
+                                            >
+                                              <ChevronDown className="w-2.5 h-2.5" />
+                                            </button>
+                                          )}
+                                        />
+                                      </div>
+                                    );
+                                  }
+
+                                  return (
+                                    <div className="flex flex-col h-full w-full divide-y divide-[#CBD5E1] justify-center">
+                                      {unitDepts.map((deptName) => (
+                                        <div
+                                          key={deptName}
+                                          className="flex-1 min-h-[30px] flex items-center justify-between px-2 py-1 gap-1 hover:bg-blue-50/40 transition-colors"
+                                        >
+                                          <span className="text-[12px] font-semibold text-slate-800 whitespace-nowrap text-left" title={deptName}>
+                                            {deptName}
+                                          </span>
+                                          <CheckboxMultiSelect
+                                            value={unitDepts}
+                                            options={unitOptions}
+                                            onChange={(newDepts) => handleUnitDepartmentsChange(originalIndex, unitName, newDepts)}
+                                            renderTrigger={({ open, setOpen, buttonRef }) => (
+                                              <button
+                                                ref={buttonRef}
+                                                type="button"
+                                                onClick={() => setOpen(!open)}
+                                                className="text-slate-400 hover:text-blue-600 p-0.5 cursor-pointer ml-1 shrink-0"
+                                                title={`Edit ${unitName} departments`}
+                                              >
+                                                <ChevronDown className="w-2.5 h-2.5" />
+                                              </button>
+                                            )}
+                                          />
+                                        </div>
+                                      ))}
+                                    </div>
+                                  );
+                                })()}
+                              </td>
+
+                              {/* Staff Name in Responsible Person */}
+                              <td className="p-0 align-middle text-center bg-white group-hover/row:bg-[#F8FAFC] w-[160px] min-w-[150px]">
+                                {units.length === 0 ? (
+                                  (() => {
+                                    const assignedEmps = row.staffEmployees || [];
+                                    const legacyDisplay = !assignedEmps.length ? (row.staffEmployee ? stripEmployeeId(row.staffEmployee) : '') : '';
+                                    if (assignedEmps.length || legacyDisplay) {
+                                      return (
+                                        <div className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors">
+                                          {(assignedEmps.length ? assignedEmps : [{ name: legacyDisplay, legacy: true }]).map((employee, employeeIndex) => (
+                                            <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
+                                              <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, '', '', e)} className="min-w-0 flex-1 truncate text-left text-[12px] font-semibold text-slate-800 cursor-pointer hover:text-blue-600" title={`Staff: ${employee.name}`}>
+                                                {stripEmployeeId(employee.name || employee.label || '')}
+                                              </button>
+                                              <button type="button" onClick={() => handleSelectStaffForUnitDept(originalIndex, '', '', null)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      );
+                                    }
+                                    return (
+                                      <div className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, '', '', e)}
+                                          className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer"
+                                          title="Select staff name (Department will auto-fetch)"
+                                        >
+                                          <div className="flex items-center gap-1 text-[12px]">
+                                            <Search className="h-3.5 w-3.5" />
+                                            <span>Staff...</span>
+                                            <ChevronDown className="h-3 w-3" />
+                                          </div>
+                                        </button>
+                                      </div>
+                                    );
+                                  })()
+                                ) : (() => {
+                                  const unitName = units[0];
+                                  const unitDepts = deptsByUnit[unitName] || [];
+
+                                  if (unitDepts.length === 0) {
+                                    const assignedEmps = (row.staffEmployees || []).filter(
+                                      (e) => e.unit === unitName || (!e.unit && units.length === 1)
+                                    );
+                                    const legacyDisplay = units.length === 1 && !assignedEmps.length ? (row.staffEmployee ? stripEmployeeId(row.staffEmployee) : '') : '';
+
+                                    if (assignedEmps.length || legacyDisplay) {
+                                      return (
+                                        <div className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors">
+                                          {(assignedEmps.length ? assignedEmps : [{ name: legacyDisplay, legacy: true }]).map((employee, employeeIndex) => (
+                                            <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
+                                              <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, '', e)} className="min-w-0 flex-1 truncate text-left text-[12px] font-semibold text-slate-800 cursor-pointer hover:text-blue-600" title={`${unitName}: ${employee.name}`}>
+                                                {stripEmployeeId(employee.name || employee.label || '')}
+                                              </button>
+                                              <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(originalIndex, unitName, '', null) : handleRemoveDepartmentEmployee(originalIndex, unitName, '', employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      );
+                                    }
+
+                                    return (
+                                      <div className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, '', e)}
+                                          className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer"
+                                          title={`Select staff for ${unitName} (Department will auto-fetch)`}
+                                        >
+                                          <div className="flex items-center gap-1 text-[12px]">
+                                            <Search className="h-3.5 w-3.5" />
+                                            <span>Staff...</span>
+                                            <ChevronDown className="h-3 w-3" />
+                                          </div>
+                                        </button>
+                                      </div>
+                                    );
+                                  }
+
+                                  return (
+                                    <div className="flex flex-col h-full w-full divide-y divide-[#CBD5E1] justify-center">
+                                      {unitDepts.map((deptName) => {
+                                        const assignedEmps = (row.staffEmployees || []).filter(
+                                          (e) => e.department === deptName && (e.unit === unitName || (!e.unit && units.length === 1))
+                                        );
+                                        const legacyDisplay = units.length === 1 && unitDepts.length === 1 && !(row.staffEmployees || []).length ? row.staffEmployee : '';
+
+                                        if (assignedEmps.length || legacyDisplay) {
+                                          return (
+                                            <div
+                                              key={deptName}
+                                              className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors"
+                                            >
+                                              {(assignedEmps.length ? assignedEmps : (legacyDisplay ? [{ name: legacyDisplay, department: deptName, unit: unitName, legacy: true }] : [])).map((employee, employeeIndex) => (
+                                                <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
+                                                  <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, deptName, e)} className="min-w-0 flex-1 truncate text-left text-[12px] font-semibold text-slate-800 cursor-pointer hover:text-blue-600" title={`${unitName} - ${deptName}: ${employee.name}`}>
+                                                    {stripEmployeeId(employee.name || employee.label || '')}
+                                                  </button>
+                                                  <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(originalIndex, unitName, deptName, null) : handleRemoveDepartmentEmployee(originalIndex, unitName, deptName, employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>
+                                                </div>
+                                              ))}
+                                              <button type="button" onClick={() => handleOpenAddStaffModal(originalIndex, unitName, deptName)} className="flex items-center justify-center gap-1 rounded py-0.5 text-[11px] font-semibold text-blue-600 hover:bg-blue-50 cursor-pointer"><Plus className="h-3 w-3" /> Add Employee</button>
+                                            </div>
+                                          );
+                                        }
+
+                                        return (
+                                          <div
+                                            key={deptName}
+                                            className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1"
+                                          >
+                                            <div className="flex w-full flex-col items-center">
+                                              <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, deptName, e)} className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer" title={`Select staff for ${unitName} - ${deptName}`}><div className="flex items-center gap-1 text-[12px]"><Search className="h-3.5 w-3.5" /><span>Staff...</span><ChevronDown className="h-3 w-3" /></div></button>
+                                              <button type="button" onClick={() => handleOpenAddStaffModal(originalIndex, unitName, deptName)} className="flex items-center gap-1 py-0.5 text-[11px] font-semibold text-blue-600 hover:bg-blue-50 rounded cursor-pointer"><Plus className="h-3 w-3" /> Add Employee</button>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  );
+                                })()}
+                              </td>
+                            </>
+                          );
+                        })()}
+
                         {/* 30. Status (Open/Closed) — Compact width */}
                         <td
                           className="p-0.5 text-center relative"
@@ -1687,6 +2562,159 @@ export default function PTMTable({
             handleCellChange(watchModal.rowIndex, 'duration', newTime);
           }
         }}
+      />
+
+      {/* Staff Dropdown Popover Portal */}
+      {openStaffDropdown && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            top: `${openStaffDropdown.top}px`,
+            left: `${openStaffDropdown.left}px`,
+            width: `${openStaffDropdown.width}px`,
+            zIndex: 9999
+          }}
+          className="staff-dropdown-menu bg-white rounded-xl shadow-2xl border border-slate-200 p-2.5 animate-in fade-in zoom-in-95 duration-100 select-none max-h-[85vh] flex flex-col"
+        >
+          {/* Header */}
+          <div className="px-2 py-1 pb-2 border-b border-slate-100 flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-1.5">
+              <User className="w-3.5 h-3.5 text-blue-600" />
+              <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                {openStaffDropdown.department ? `${openStaffDropdown.unit ? `${openStaffDropdown.unit} - ` : ''}${openStaffDropdown.department} Staff` : 'Select Staff Name'}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setOpenStaffDropdown(null)}
+              className="text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer transition-colors"
+              title="Close"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Search bar */}
+          <div className="pt-2 pb-1.5 px-0.5 shrink-0">
+            <div className="relative w-full">
+              <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                autoFocus
+                value={staffSearchQuery}
+                onChange={(e) => setStaffSearchQuery(e.target.value)}
+                placeholder="Search staff name or ID..."
+                className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg pl-7 pr-7 py-1 text-xs text-slate-700 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+              />
+              {staffSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setStaffSearchQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Staff Options List */}
+          <div className="py-1 space-y-1 overflow-y-auto flex-1 pr-0.5 max-h-[240px]">
+            {getStaffOptionsForRow(openStaffDropdown.rowIndex, openStaffDropdown.unit, openStaffDropdown.department).length > 0 ? (
+              getStaffOptionsForRow(openStaffDropdown.rowIndex, openStaffDropdown.unit, openStaffDropdown.department).map((empItem, i) => {
+                const empName = empItem.label;
+                const empDept = empItem.department;
+                const currentRow = rows[openStaffDropdown.rowIndex];
+                const isSelected = openStaffDropdown.unit && openStaffDropdown.department
+                  ? (currentRow?.staffEmployees || []).some(
+                    (e) => e.department === openStaffDropdown.department && (e.unit === openStaffDropdown.unit || (!e.unit && (!currentRow?.respUnits || currentRow?.respUnits?.length <= 1))) && (e.name === empItem.label || e.name === empItem.name)
+                  )
+                  : currentRow?.staffEmployee === empName;
+                const isDeptMatch = currentRow?.department &&
+                  empDept &&
+                  empDept.toLowerCase() === currentRow.department.toLowerCase();
+
+                return (
+                  <button
+                    key={`${empName}_${i}`}
+                    type="button"
+                    onClick={() => {
+                      const empObj = {
+                        id: empItem.id,
+                        name: empItem.name || empItem.label,
+                        code: empItem.code || '',
+                        department: openStaffDropdown.department || empItem.department || '',
+                        unit: openStaffDropdown.unit || empItem.unit || ''
+                      };
+                      handleSelectStaffForUnitDept(openStaffDropdown.rowIndex, openStaffDropdown.unit, openStaffDropdown.department, empObj);
+                      setOpenStaffDropdown(null);
+                    }}
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg transition-colors flex items-center justify-between cursor-pointer group text-xs ${isSelected
+                      ? 'bg-blue-50 text-blue-900 font-semibold border border-blue-200'
+                      : 'hover:bg-slate-100/80 text-slate-800 border border-transparent'
+                      }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0 pr-1 truncate">
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full shrink-0 ${isSelected ? 'bg-blue-600' : 'bg-slate-300 group-hover:bg-blue-500'
+                          }`}
+                      />
+                      <span className="truncate font-medium">{empItem.name || empName}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {empItem.code && (
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 font-medium">
+                          {empItem.code}
+                        </span>
+                      )}
+                      {empDept && (
+                        <span
+                          className={`text-[9.5px] font-medium px-1.5 py-0.5 rounded border ${isDeptMatch
+                            ? 'bg-blue-100/80 text-blue-800 border-blue-300 font-semibold'
+                            : 'bg-slate-100 text-slate-600 border-slate-200'
+                            }`}
+                        >
+                          {empDept}
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })
+            ) : (
+              <div className="py-4 text-center text-xs text-slate-400">
+                No matching staff found
+              </div>
+            )}
+          </div>
+
+          {/* Add custom staff button at bottom */}
+          <button
+            type="button"
+            onClick={() => {
+              const idx = openStaffDropdown.rowIndex;
+              const unit = openStaffDropdown.unit;
+              const dept = openStaffDropdown.department;
+              setOpenStaffDropdown(null);
+              handleOpenAddStaffModal(idx, unit, dept);
+            }}
+            className="w-full mt-2 pt-2 border-t border-slate-100 flex items-center justify-center gap-1.5 py-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+            <span>+ Add / Enter Custom Staff Details</span>
+          </button>
+        </div>,
+        document.body
+      )}
+
+      {/* Add Staff Employee Modal */}
+      <AddStaffEmployeeModal
+        isOpen={staffEmployeeModal.isOpen}
+        rowIndex={staffEmployeeModal.rowIndex}
+        initialValue={staffEmployeeModal.initialValue}
+        initialEmployees={staffEmployeeModal.initialEmployees}
+        onSave={staffEmployeeModal.department ? handleSaveDepartmentStaff : handleSaveStaffEmployee}
+        onClose={() => setStaffEmployeeModal({ isOpen: false, rowIndex: null, unit: null, department: null, initialValue: '', initialEmployees: [] })}
       />
 
       {/* Table Footer: Total Rows & Add Row button */}

@@ -73,6 +73,14 @@ function createBlankRow(index, unit = 'Both') {
     noOfTimesRevised: '',
     reasonOfFailure: '',
     actionTaken: '',
+    respUnits: [unit && ['Bawal', 'Gujrat'].includes(unit) ? unit : 'Bawal'],
+    respUnit: unit && ['Bawal', 'Gujrat'].includes(unit) ? unit : 'Bawal',
+    respDeptsByUnit: {},
+    staffEmployees: [],
+    staffEmployee: '',
+    staffName: '',
+    staffId: '',
+    responsiblePersonDept: '',
     status: '',
     remarks: '',
     unit: unit && unit !== 'All Units' ? unit : 'Both',
@@ -702,11 +710,18 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
       'No. of Times Revised',
       'Reason of Failure',
       'Action Taken Against Failure',
+      'Responsible Unit',
+      'Responsible Dept',
+      'Responsible Staff Name',
       'Status',
       'Remarks',
     ];
 
     const dataRows = ptmRows.map((r) => {
+      const respUnitsStr = Array.isArray(r.respUnits) && r.respUnits.length > 0 ? r.respUnits.join(', ') : (r.respUnit || '');
+      const respDeptsStr = r.responsiblePersonDept || (r.respDeptsByUnit ? Object.values(r.respDeptsByUnit).flat().join(', ') : '') || '';
+      const respStaffStr = r.staffEmployee || r.staffName || '';
+
       return [
         `"${r.phaseNo || ''}"`,
         `"${(r.phaseName || '').replace(/"/g, '""')}"`,
@@ -738,6 +753,9 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
         `"${r.noOfTimesRevised || ''}"`,
         `"${(r.reasonOfFailure || '').replace(/"/g, '""')}"`,
         `"${(r.actionTaken || '').replace(/"/g, '""')}"`,
+        `"${respUnitsStr.replace(/"/g, '""')}"`,
+        `"${respDeptsStr.replace(/"/g, '""')}"`,
+        `"${respStaffStr.replace(/"/g, '""')}"`,
         `"${r.status || ''}"`,
         `"${(r.remarks || '').replace(/"/g, '""')}"`,
       ].join(',');

@@ -227,4 +227,79 @@ test('9. PTM Page: Calendar filter is added in green marked place alongside PTMT
   assert.equal(octOnly[0].id, '3');
 });
 
+test('10. PTM Sheet: Responsible Person section added immediately before Status column with Unit, Dept, and Staff Name *', () => {
+  const tablePath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/ptm/PTM/PTMTable.jsx');
+  const tableContent = fs.readFileSync(tablePath, 'utf8');
+
+  // Verify colgroup was updated to span 35
+  assert.match(tableContent, /<col span=\{35\} \/>/);
+
+  // Verify header has Responsible Person with colSpan={3}
+  assert.match(tableContent, /Responsible Person/);
+  assert.match(tableContent, /colSpan=\{3\}[^>]*>[\s\S]*?Responsible Person/);
+
+  // Verify header row 2 contains Unit, Dept, and Staff Name *
+  assert.match(tableContent, /<th[^>]*>\s*Unit\s*<\/th>/);
+  assert.match(tableContent, /<th[^>]*>\s*Dept\s*<\/th>/);
+  assert.match(tableContent, /<span>Staff Name<\/span>\s*<span className="text-red-500 font-bold">\*<\/span>/);
+
+  // Verify placement: Action Taken Against Failure is immediately before Responsible Person, which is immediately before Status
+  const actionTakenIdx = tableContent.indexOf('Action Taken Against Failure');
+  const respHeaderIdx = tableContent.indexOf('Responsible Person', actionTakenIdx);
+  const statusIdx = tableContent.indexOf('Status', respHeaderIdx);
+  assert.ok(actionTakenIdx > 0, 'Action Taken Against Failure column must exist');
+  assert.ok(respHeaderIdx > actionTakenIdx, 'Responsible Person must be after Action Taken Against Failure');
+  assert.ok(statusIdx > respHeaderIdx, 'Status must be after Responsible Person');
+
+  // In tbody, verify Responsible Person is placed between actionTaken and status
+  const tbodyActionTakenIdx = tableContent.indexOf('data-col="actionTaken"');
+  const tbodyRespIdx = tableContent.indexOf('getResponsiblePersonStructure(row)', tbodyActionTakenIdx);
+  const tbodyStatusIdx = tableContent.indexOf('row.status || \'Open\'', tbodyRespIdx);
+  assert.ok(tbodyActionTakenIdx > 0, 'tbody actionTaken cell must exist');
+  assert.ok(tbodyRespIdx > tbodyActionTakenIdx, 'tbody Responsible Person must be after actionTaken');
+  assert.ok(tbodyStatusIdx > tbodyRespIdx, 'tbody Status must be after Responsible Person');
+});
+
+test('11. PTM Sheet: Responsible Person 2-part horizontal division when both units (Bawal & Gujrat) selected', () => {
+  const tablePath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/ptm/PTM/PTMTable.jsx');
+  const tableContent = fs.readFileSync(tablePath, 'utf8');
+
+  // Verify units.length > 1 triggers colSpan={3} with vertical flex column and horizontal divide line
+  assert.match(tableContent, /units\.length > 1/);
+  assert.match(tableContent, /colSpan=\{3\}/);
+  assert.match(tableContent, /divide-y divide-\[#CBD5E1\]/);
+  assert.match(tableContent, /divide-x divide-\[#CBD5E1\]/);
+
+  // Verify Bawal and Gujrat options in PDCA_UNITS
+  assert.match(tableContent, /PDCA_UNITS/);
+  assert.match(tableContent, /getDepartmentsForUnit/);
+
+  // Verify AddStaffEmployeeModal integration
+  assert.match(tableContent, /<AddStaffEmployeeModal/);
+  assert.match(tableContent, /handleOpenAddStaffModal/);
+  assert.match(tableContent, /handleSaveDepartmentStaff/);
+  assert.match(tableContent, /handleRemoveDepartmentEmployee/);
+  assert.match(tableContent, /openStaffDropdown/);
+  assert.match(tableContent, /staff-dropdown-menu/);
+});
+
+test('12. PTM CSV Export includes Responsible Unit, Responsible Dept, and Responsible Staff Name immediately before Status', () => {
+  const appPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/pages/ptm/App.jsx');
+  const appContent = fs.readFileSync(appPath, 'utf8');
+
+  // Verify headers order in handleExportMatrixCSV
+  const actionTakenHeaderIdx = appContent.indexOf('\'Action Taken Against Failure\',');
+  const respUnitHeaderIdx = appContent.indexOf('\'Responsible Unit\',', actionTakenHeaderIdx);
+  const respDeptHeaderIdx = appContent.indexOf('\'Responsible Dept\',', respUnitHeaderIdx);
+  const respStaffHeaderIdx = appContent.indexOf('\'Responsible Staff Name\',', respDeptHeaderIdx);
+  const statusHeaderIdx = appContent.indexOf('\'Status\',', respStaffHeaderIdx);
+
+  assert.ok(actionTakenHeaderIdx > 0, 'Action Taken header must exist');
+  assert.ok(respUnitHeaderIdx > actionTakenHeaderIdx, 'Responsible Unit must be after Action Taken');
+  assert.ok(respDeptHeaderIdx > respUnitHeaderIdx, 'Responsible Dept must be after Responsible Unit');
+  assert.ok(respStaffHeaderIdx > respDeptHeaderIdx, 'Responsible Staff Name must be after Responsible Dept');
+  assert.ok(statusHeaderIdx > respStaffHeaderIdx, 'Status must be after Responsible Staff Name');
+});
+
+
 

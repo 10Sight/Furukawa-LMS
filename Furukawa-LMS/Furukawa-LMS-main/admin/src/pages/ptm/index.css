@@ -4,9 +4,20 @@
 
 @layer base {
   body {
-    @apply bg-[#F4F6F9] text-[#1E293B] antialiased;
+    @apply bg-[#F4F6F9] text-[#1E293B] antialiased text-[14px];
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
+}
+
+/* PTM Page and Sheet typography enhancement */
+.ptm-page-root {
+  font-size: 14px;
+}
+
+.ptm-page-root button,
+.ptm-page-root input,
+.ptm-page-root select {
+  font-size: 14px;
 }
 
 /* Custom subtle scrollbar */

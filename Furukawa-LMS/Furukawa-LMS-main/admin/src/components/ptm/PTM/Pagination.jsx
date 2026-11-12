@@ -12,8 +12,8 @@ export default function Pagination({
   const endItem = Math.min(currentPage * itemsPerPage, totalItems);
 
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-4 px-2 text-xs text-slate-500">
-      <div className="text-[13px] text-slate-500">
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-4 px-2 text-sm text-slate-500">
+      <div className="text-sm text-slate-500">
         Showing <span className="font-bold text-slate-800">{startItem}</span> to{' '}
         <span className="font-bold text-slate-800">{endItem}</span> of{' '}
         <span className="font-bold text-slate-800">{totalItems}</span> PTM items
@@ -33,7 +33,7 @@ export default function Pagination({
           <button
             key={pageNum}
             onClick={() => onPageChange(pageNum)}
-            className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${
+            className={`w-8 h-8 rounded-lg text-sm font-bold transition-all ${
               currentPage === pageNum
                 ? 'bg-[#2563EB] text-white shadow-sm'
                 : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'

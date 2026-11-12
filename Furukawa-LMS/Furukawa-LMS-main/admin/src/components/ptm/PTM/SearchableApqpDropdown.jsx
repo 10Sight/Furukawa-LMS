@@ -100,7 +100,7 @@ export default function SearchableApqpDropdown({
         data-row={dataRow}
         data-col={dataCol}
         title={value || placeholder}
-        className="w-full h-full min-h-[32px] px-2 py-1.5 flex items-center justify-between gap-1 text-xs cursor-pointer hover:bg-amber-50/60 focus:bg-amber-50 focus:ring-1 focus:ring-inset focus:ring-blue-500 rounded transition-colors"
+        className="w-full h-full min-h-[32px] px-2 py-1.5 flex items-center justify-between gap-1 text-sm cursor-pointer hover:bg-amber-50/60 focus:bg-amber-50 focus:ring-1 focus:ring-inset focus:ring-blue-500 rounded transition-colors"
       >
         <span className={`truncate text-left flex-1 ${value ? 'text-slate-800 font-medium' : 'text-slate-400'}`}>
           {value || placeholder}
@@ -113,10 +113,10 @@ export default function SearchableApqpDropdown({
               className="p-0.5 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition-colors"
               title="Clear selection"
             >
-              <X className="w-3 h-3" />
+              <X className="w-3.5 h-3.5" />
             </button>
           )}
-          <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+          <ChevronDown className="w-4 h-4 text-slate-400" />
         </div>
       </div>
 
@@ -144,7 +144,7 @@ export default function SearchableApqpDropdown({
                 }
               }}
               placeholder="Search or enter requirement..."
-              className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-800 placeholder-slate-400 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20"
+              className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-sm text-slate-800 placeholder-slate-400 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20"
             />
           </div>
 
@@ -154,7 +154,7 @@ export default function SearchableApqpDropdown({
               <button
                 type="button"
                 onClick={handleAddCustom}
-                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-xs font-semibold text-blue-700 hover:bg-blue-100/70 transition-colors cursor-pointer"
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-sm font-semibold text-blue-700 hover:bg-blue-100/70 transition-colors cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                 <span className="truncate">Use &quot;{searchTerm.trim()}&quot;</span>
@@ -165,11 +165,11 @@ export default function SearchableApqpDropdown({
           {/* Options List */}
           <div className="max-h-56 overflow-y-auto p-1 divide-y divide-slate-50">
             {filteredOptions.length === 0 && !searchTerm.trim() ? (
-              <div className="px-3 py-4 text-center text-xs text-slate-400">
+              <div className="px-3 py-4 text-center text-sm text-slate-400">
                 No requirements available
               </div>
             ) : filteredOptions.length === 0 ? (
-              <div className="px-3 py-3 text-center text-xs text-slate-500">
+              <div className="px-3 py-3 text-center text-sm text-slate-500">
                 Press Enter to use &quot;<span className="font-semibold text-slate-700">{searchTerm}</span>&quot;
               </div>
             ) : (
@@ -180,7 +180,7 @@ export default function SearchableApqpDropdown({
                     key={option}
                     type="button"
                     onClick={() => handleSelect(option)}
-                    className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg text-left text-xs transition-colors cursor-pointer ${
+                    className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg text-left text-sm transition-colors cursor-pointer ${
                       isSelected
                         ? 'bg-blue-50 text-blue-700 font-bold'
                         : 'text-slate-700 hover:bg-slate-100'

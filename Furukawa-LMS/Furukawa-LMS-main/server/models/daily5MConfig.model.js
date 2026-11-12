@@ -51,6 +51,17 @@ class Daily5MConfig {
         return new Daily5MConfig(rows[0]);
     }
 
+    // Layout lookup with fallback: the department's own row, then the global template
+    // (stored under the literal key GLOBAL_KEY), then null (caller uses the built-in
+    // defaults). Daily 5M layouts are department-wide — there is no section scope.
+    static async findResolved(departmentId) {
+        if (departmentId && departmentId !== Daily5MConfig.GLOBAL_KEY) {
+            const own = await this.findByDepartmentId(departmentId);
+            if (own) return own;
+        }
+        return this.findByDepartmentId(Daily5MConfig.GLOBAL_KEY);
+    }
+
     static async upsert(departmentId, configData, remark = "Layout updated", updatedBy = "System") {
         const configJson = JSON.stringify(configData);
 
@@ -96,6 +107,9 @@ class Daily5MConfig {
         }));
     }
 }
+
+// departmentId key under which the global layout template is stored.
+Daily5MConfig.GLOBAL_KEY = 'global';
 
 // Initialize table
 Daily5MConfig.init().catch(err => console.error("Failed to initialize daily_5m_configs table:", err));

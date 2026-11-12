@@ -4,6 +4,7 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import sendMail from "../utils/mail.util.js";
 import logAudit from "../utils/auditLogger.js";
+import RevisionRecordService from "../services/revisionRecord.service.js";
 
 // Shared default "5M Change Type" footer table, reused across all three form-type defaults below
 const DEFAULT_CHANGE_TYPE_TABLE = {
@@ -302,21 +303,97 @@ const resolveConfig = (storedConfig) => {
     return merged;
 };
 
+// Department key for daily_5m_configs: a department id, or Daily5MConfig.GLOBAL_KEY for
+// the global template (the route param and request body both use the literal 'global').
+const toConfigKey = (departmentId) =>
+    (!departmentId || departmentId === Daily5MConfig.GLOBAL_KEY ? Daily5MConfig.GLOBAL_KEY : String(departmentId));
+// revision_records stores the global scope as a NULL department.
+const toRevisionDepartmentId = (configKey) =>
+    (configKey === Daily5MConfig.GLOBAL_KEY ? null : (parseInt(configKey, 10) || null));
+
+// The body cells of every form type are fixed JSX with fixed field names, so a header's
+// shape (cells per row, colSpan/rowSpan, split cells) must never change — only its text.
+// This signature captures exactly that shape.
+const headerSignature = (headers = []) =>
+    headers.map(row => (row || []).map(c => `${c?.colSpan || 1}x${c?.rowSpan || 1}${c?.isSplit ? 's' : ''}`).join(',')).join('|');
+
 export const get5MConfig = asyncHandler(async (req, res) => {
     const { departmentId } = req.params;
     if (!departmentId) throw new ApiError("Department ID is required", 400);
 
-    const configRecord = await Daily5MConfig.findByDepartmentId(departmentId);
+    const configKey = toConfigKey(departmentId);
+    // Department's own layout, else the global template, else the built-in defaults.
+    const configRecord = await Daily5MConfig.findResolved(configKey);
 
     logAudit(req.user?.id, "VIEW_DAILY_5M_CONFIG", { departmentId }, { resourceType: "DAILY_5M_CONFIG", resourceId: departmentId, req })
         .catch(err => console.error("logAudit(VIEW_DAILY_5M_CONFIG) failed:", err.message));
 
     // If no custom config, return default
     if (!configRecord) {
-        return res.json(new ApiResponse(200, { isDefault: true, config: DEFAULT_CONFIG }, "Default configuration returned"));
+        return res.json(new ApiResponse(200, { isDefault: true, resolvedScope: null, config: DEFAULT_CONFIG }, "Default configuration returned"));
     }
 
-    res.json(new ApiResponse(200, { isDefault: false, config: resolveConfig(configRecord.config) }, "Custom configuration fetched"));
+    // Tells the layout editor whether it is looking at this department's own layout
+    // or an inherited global template.
+    const resolvedScope = { departmentId: configRecord.departmentId === Daily5MConfig.GLOBAL_KEY ? null : configRecord.departmentId };
+    res.json(new ApiResponse(200, { isDefault: false, resolvedScope, config: resolveConfig(configRecord.config) }, "Custom configuration fetched"));
+});
+
+// Atomic save used by the dedicated Daily 5M layout editor: the layout (all three form
+// types) and the Revision Table record for the same department/global scope are written
+// together; the revision write propagates the new doc/rev header onto daily_5m_records.
+export const save5MConfigWithRevision = asyncHandler(async (req, res) => {
+    const { departmentId, config, remark, revision } = req.body || {};
+
+    if (!config || typeof config !== "object") throw new ApiError("Config is required", 400);
+    if (!remark?.trim()) throw new ApiError("Remark is required when updating configuration", 400);
+    if (!revision?.docNo?.trim() || !revision?.revNo?.trim()) {
+        throw new ApiError("Document No. and Revision No. are required", 400);
+    }
+
+    const configKey = toConfigKey(departmentId);
+    const incoming = resolveConfig(config);
+
+    // Reject any header shape change against the layout currently in effect for this scope.
+    const current = resolveConfig((await Daily5MConfig.findResolved(configKey))?.config);
+    const changedTypes = FORM_TYPES.filter(type => headerSignature(incoming[type]?.headers) !== headerSignature(current[type]?.headers));
+    if (changedTypes.length > 0) {
+        throw new ApiError(`Header structure cannot change (only header text can be edited): ${changedTypes.join(", ")}`, 400);
+    }
+    for (const type of FORM_TYPES) {
+        const rows = Number(incoming[type]?.bodyRows);
+        if (!Number.isInteger(rows) || rows < 1 || rows > 100) {
+            throw new ApiError(`Default rows for "${type}" must be a whole number between 1 and 100`, 400);
+        }
+    }
+
+    const userName = req.user?.fullName || req.user?.name || "Admin";
+    await Daily5MConfig.upsert(configKey, incoming, remark.trim(), userName);
+
+    const savedRevision = await RevisionRecordService.upsertForScope(
+        "daily-5m",
+        toRevisionDepartmentId(configKey),
+        null, // Daily 5M layouts are department-wide; section-level revision overrides are edited in the Revision Table.
+        {
+            sheetName: "Daily 5M Record",
+            docNo: revision.docNo,
+            revNo: revision.revNo,
+            issueDate: revision.issueDate,
+            revDate: revision.revDate,
+            affectedSrNoPage: revision.affectedSrNoPage,
+            affectedSrNoPageHi: revision.affectedSrNoPageHi,
+            changeDetails: revision.changeDetails,
+            changeDetailsHi: revision.changeDetailsHi,
+        },
+        req.user
+    );
+
+    logAudit(req.user?.id, "SAVE_DAILY_5M_CONFIG_WITH_REVISION",
+        { departmentId: configKey, remark: remark.trim(), revisionRecordId: savedRevision.id, docNo: revision.docNo, revNo: revision.revNo },
+        { resourceType: "DAILY_5M_CONFIG", resourceId: configKey, req }
+    ).catch(err => console.error("logAudit(SAVE_DAILY_5M_CONFIG_WITH_REVISION) failed:", err.message));
+
+    res.json(new ApiResponse(200, { revision: savedRevision }, "Daily 5M layout and revision saved"));
 });
 
 export const save5MConfig = asyncHandler(async (req, res) => {
@@ -338,7 +415,7 @@ export const getConfigHistory = asyncHandler(async (req, res) => {
     const { departmentId } = req.params;
     if (!departmentId) throw new ApiError("Department ID is required", 400);
 
-    const history = await Daily5MConfig.getHistory(departmentId);
+    const history = await Daily5MConfig.getHistory(toConfigKey(departmentId));
 
     logAudit(req.user?.id, "VIEW_DAILY_5M_CONFIG_HISTORY", { departmentId }, { resourceType: "DAILY_5M_CONFIG", resourceId: departmentId, req })
         .catch(err => console.error("logAudit(VIEW_DAILY_5M_CONFIG_HISTORY) failed:", err.message));

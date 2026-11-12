@@ -107,6 +107,13 @@ class EvaluationTestAttempt {
             await migrationHelper.ensureColumnExists('evaluation_test_attempts', 'studentLineId', 'INT NULL');
             await migrationHelper.ensureColumnExists('evaluation_test_attempts', 'studentSubSectionId', 'INT NULL');
 
+            // Snapshot of the test's form (structure + base perform-date count) at attempt time, so
+            // later edits to the test in the builder never rewrite how a graded attempt reads.
+            // NULL on attempts created before this column existed — those fall back to the live test.
+            // Named snapshot* so `a.*` never collides with the joined t.contentStructure/performDateCount.
+            await migrationHelper.ensureColumnExists('evaluation_test_attempts', 'snapshotContentStructure', 'NVARCHAR(MAX) NULL');
+            await migrationHelper.ensureColumnExists('evaluation_test_attempts', 'snapshotPerformDateCount', 'INT NULL');
+
             // Prior to these indexes the only fast lookup was the PK, so every eligibility check
             // in getHandoverSheet/buildDojoHandoverPassedClause (`userId = ? AND isHandoverEligible = 1
             // AND testId IN (...)`, or the reverse `testId IN (...)` scan for interview prefill) had
@@ -160,31 +167,41 @@ class EvaluationTestAttempt {
         }
     }
 
+    // The test's current form: { contentStructure (parsed), performDateCount }, or null.
+    static async getTestForm(testId) {
+        const [testRows] = await executeQuery(
+            "SELECT performDateCount, contentStructure FROM evaluation_tests WHERE id = ?",
+            [testId]
+        );
+        if (!testRows || testRows.length === 0) return null;
+        let contentStructure;
+        try {
+            contentStructure = typeof testRows[0].contentStructure === "string"
+                ? JSON.parse(testRows[0].contentStructure)
+                : (testRows[0].contentStructure || []);
+        } catch {
+            contentStructure = [];
+        }
+        return { contentStructure, performDateCount: testRows[0].performDateCount };
+    }
+
     // Determines if a given attemptData qualifies for handover eligibility.
-    // Called from the controller (which already has testId available).
-    static async computeHandoverEligibility(testId, attemptData) {
+    // Called from the controller (which already has testId available). `form` is the
+    // attempt's own snapshot ({ contentStructure, performDateCount }); without it the
+    // test's live form is used (attempts created before snapshots existed).
+    static async computeHandoverEligibility(testId, attemptData, form = null) {
         try {
             if (attemptData._approvedStatus !== "APPROVED" || attemptData._confirmedStatus !== "APPROVED") {
                 return { isHandoverEligible: false, passedDate: null };
             }
 
-            const [testRows] = await executeQuery(
-                "SELECT performDateCount, contentStructure FROM evaluation_tests WHERE id = ?",
-                [testId]
-            );
-            if (!testRows || testRows.length === 0) {
+            const effectiveForm = form || await EvaluationTestAttempt.getTestForm(testId);
+            if (!effectiveForm) {
                 return { isHandoverEligible: false, passedDate: null };
             }
 
-            const baseCount = testRows[0].performDateCount || 4;
-            let contentStructure;
-            try {
-                contentStructure = typeof testRows[0].contentStructure === "string"
-                    ? JSON.parse(testRows[0].contentStructure)
-                    : (testRows[0].contentStructure || []);
-            } catch {
-                contentStructure = [];
-            }
+            const baseCount = effectiveForm.performDateCount || 4;
+            const contentStructure = Array.isArray(effectiveForm.contentStructure) ? effectiveForm.contentStructure : [];
 
             const normalized = normalizeContentStructure(contentStructure);
             const allQIds = [];
@@ -252,10 +269,11 @@ class EvaluationTestAttempt {
         const query = `
             INSERT INTO evaluation_test_attempts (
                 testId, traineeName, employeeNo, educatorName, attemptData, createdBy, userId, isHandoverEligible, passedDate,
-                studentIsTemporary, studentDeptId, studentSectionId, studentLineId, studentSubSectionId
+                studentIsTemporary, studentDeptId, studentSectionId, studentLineId, studentSubSectionId,
+                snapshotContentStructure, snapshotPerformDateCount
             )
             OUTPUT INSERTED.*
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         const attemptDataStr = JSON.stringify(data.attemptData || {});
         const [rows] = await executeQuery(query, [
@@ -272,14 +290,19 @@ class EvaluationTestAttempt {
             studentDeptId,
             studentSectionId,
             studentLineId,
-            studentSubSectionId
+            studentSubSectionId,
+            data.formSnapshot ? JSON.stringify(data.formSnapshot.contentStructure || []) : null,
+            data.formSnapshot ? (data.formSnapshot.performDateCount ?? null) : null
         ]);
         return new EvaluationTestAttempt(rows[0]);
     }
 
     static async findById(id) {
         const query = `
-            SELECT a.*, t.title as testTitle, t.performDateCount, t.processType, t.contentStructure, t.departmentId as testDepartmentId,
+            SELECT a.*, t.title as testTitle, t.processType, t.departmentId as testDepartmentId,
+                   COALESCE(a.snapshotPerformDateCount, t.performDateCount) as performDateCount,
+                   COALESCE(a.snapshotContentStructure, t.contentStructure) as contentStructure,
+                   CASE WHEN a.snapshotContentStructure IS NULL THEN 0 ELSE 1 END as hasFormSnapshot,
                    COALESCE(u.departmentId, (CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END), a.studentDeptId) as departmentId,
                    COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END), a.studentSectionId) as sectionId,
                    dept.name as departmentName, sec.name as sectionName,
@@ -309,6 +332,9 @@ class EvaluationTestAttempt {
                 row.contentStructure = [];
             }
         }
+        // Already folded into contentStructure / performDateCount above.
+        delete row.snapshotContentStructure;
+        delete row.snapshotPerformDateCount;
         return row;
     }
 
@@ -324,7 +350,7 @@ class EvaluationTestAttempt {
 
     static async findAll() {
         const query = `
-            SELECT a.*, t.title as testTitle, t.performDateCount, t.departmentId as testDepartmentId,
+            SELECT a.*, t.title as testTitle, COALESCE(a.snapshotPerformDateCount, t.performDateCount) as performDateCount, t.departmentId as testDepartmentId,
                    COALESCE(u.departmentId, (CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END), a.studentDeptId) as departmentId,
                    COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END), a.studentSectionId) as sectionId,
                    COALESCE(u.lineId, (CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END), a.studentLineId) as lineId,
@@ -350,13 +376,59 @@ class EvaluationTestAttempt {
                     row.attemptData = {};
                 }
             }
+            delete row.snapshotContentStructure;
+            delete row.snapshotPerformDateCount;
             return row;
         });
     }
 
+    /**
+     * Resolve a student reference to { userId, empCode }. The route param may
+     * be a numeric users.id, an employee code (users.empId, e.g. 'M00977'),
+     * or a userName (lowercased empId, e.g. 'm00977') — the same keys
+     * create() resolves trainees by. All-digit values are tried as users.id
+     * first and then as an employee code, because empIds can be numeric too.
+     * Comparisons are type-safe: never bind a string against an INT column.
+     */
+    static async resolveStudent(studentId) {
+        const ref = String(studentId ?? "").trim();
+        if (!ref) return { userId: null, empCode: null };
+
+        if (/^\d+$/.test(ref)) {
+            const [byId] = await executeQuery(
+                "SELECT TOP 1 id, empId FROM users WHERE id = ?",
+                [parseInt(ref, 10)]
+            );
+            if (byId.length > 0) return { userId: byId[0].id, empCode: byId[0].empId || null };
+        }
+
+        const [byCode] = await executeQuery(
+            "SELECT TOP 1 id, empId FROM users WHERE empId = ? OR userName = ? ORDER BY CASE WHEN empId = ? THEN 0 ELSE 1 END, id",
+            [ref, ref.toLowerCase(), ref]
+        );
+        if (byCode.length > 0) return { userId: byCode[0].id, empCode: byCode[0].empId || ref };
+
+        // Not a registered user: attempts may still be stored by employeeNo only.
+        return { userId: null, empCode: ref };
+    }
+
     static async findByStudentId(studentId) {
+        const { userId, empCode } = await EvaluationTestAttempt.resolveStudent(studentId);
+        if (userId === null && !empCode) return [];
+
+        const conditions = [];
+        const params = [];
+        if (userId !== null) {
+            conditions.push("a.userId = ?");
+            params.push(userId);
+        }
+        if (empCode) {
+            conditions.push("(a.userId IS NULL AND a.employeeNo = ?)");
+            params.push(String(empCode));
+        }
+
         const query = `
-            SELECT a.*, t.title as testTitle, t.performDateCount, t.departmentId as testDepartmentId,
+            SELECT a.*, t.title as testTitle, COALESCE(a.snapshotPerformDateCount, t.performDateCount) as performDateCount, t.departmentId as testDepartmentId,
                    COALESCE(u.departmentId, (CASE WHEN u.isTemporary = 1 THEN u.targetDeptId ELSE NULL END), a.studentDeptId) as departmentId,
                    COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END), a.studentSectionId) as sectionId,
                    COALESCE(u.lineId, (CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END), a.studentLineId) as lineId,
@@ -371,14 +443,16 @@ class EvaluationTestAttempt {
             LEFT JOIN [sections] sec ON COALESCE(u.sectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSectionId ELSE NULL END), a.studentSectionId) = sec.id
             LEFT JOIN [lines] l ON COALESCE(u.lineId, (CASE WHEN u.isTemporary = 1 THEN u.targetLineId ELSE NULL END), a.studentLineId) = l.id
             LEFT JOIN sub_sections ss ON COALESCE(u.subSectionId, (CASE WHEN u.isTemporary = 1 THEN u.targetSubSectionId ELSE NULL END), a.studentSubSectionId) = ss.id
-            WHERE a.userId = ? OR (a.userId IS NULL AND a.employeeNo = (SELECT empId FROM users WHERE id = ?))
+            WHERE ${conditions.join(" OR ")}
             ORDER BY a.createdAt DESC
         `;
-        const [rows] = await executeQuery(query, [studentId, studentId]);
+        const [rows] = await executeQuery(query, params);
         return rows.map(row => {
             if (typeof row.attemptData === "string") {
                 try { row.attemptData = JSON.parse(row.attemptData); } catch (e) { row.attemptData = {}; }
             }
+            delete row.snapshotContentStructure;
+            delete row.snapshotPerformDateCount;
             return row;
         });
     }

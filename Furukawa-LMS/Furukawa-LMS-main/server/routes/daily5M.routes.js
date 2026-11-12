@@ -1,7 +1,7 @@
 import { Router } from "express";
 import verifyJWT from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/authrization.middleware.js";
-import { get5MConfig, save5MConfig, getConfigHistory, getAllConfigHistory, send5MPDF } from "../controllers/daily5M.controller.js";
+import { get5MConfig, save5MConfig, save5MConfigWithRevision, getConfigHistory, getAllConfigHistory, send5MPDF } from "../controllers/daily5M.controller.js";
 import { create5MRecord, get5MRecords, getUser5MRecords, get5MRecordById, delete5MRecord, get5MRecordByDate, submit5MRecord, send5MEmail, approve5MRecord, decline5MRecord, getApprovalStatus, getDaily5MStats, getDaily5MRowStats } from "../controllers/daily5MRecord.controller.js";
 import { getAssignments, addAssignment, removeAssignment } from "../controllers/daily5MAssignment.controller.js";
 
@@ -17,8 +17,9 @@ router.get("/stats/rows/:departmentId", verifyJWT, getDaily5MRowStats);
 // Config Routes
 router.get("/config/:departmentId", verifyJWT, get5MConfig); // Changed path to disambiguate
 router.post("/config/save", verifyJWT, authorizeRoles("ADMIN", "SUPERADMIN"), save5MConfig);
+router.post("/config/save-with-revision", verifyJWT, authorizeRoles("ADMIN", "SUPERADMIN", "daily5m:edit_layout", "revision:update"), save5MConfigWithRevision);
 router.get("/history/all", verifyJWT, authorizeRoles("ADMIN", "SUPERADMIN"), getAllConfigHistory);
-router.get("/history/:departmentId", verifyJWT, authorizeRoles("ADMIN", "SUPERADMIN"), getConfigHistory);
+router.get("/history/:departmentId", verifyJWT, authorizeRoles("ADMIN", "SUPERADMIN", "daily5m:edit_layout", "revision:update"), getConfigHistory);
 
 // Assignment Routes
 router.get("/assignments/:departmentId", verifyJWT, getAssignments);

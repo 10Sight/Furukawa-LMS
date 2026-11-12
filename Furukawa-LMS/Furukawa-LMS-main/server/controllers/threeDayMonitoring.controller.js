@@ -10,6 +10,7 @@ import EmailConfiguration from "../models/emailConfiguration.model.js";
 import { generateThreeDayMonitoringEmail } from "../utils/emailTemplates.js";
 import sendMail from "../utils/mail.util.js";
 import RevisionRecordService from "../services/revisionRecord.service.js";
+import logAudit from "../utils/auditLogger.js";
 
 // Helper to parse emails from various formats (JSON array or comma-separated string)
 const parseEmails = (input) => {
@@ -469,12 +470,28 @@ export const sendThreeDayMonitoringEmail = asyncHandler(async (req, res) => {
     return res.status(200).json(new ApiResponse(200, null, "Monitoring report emailed successfully"));
 });
 
+// Layout scope helpers, mirroring the 16-Day controller. The route param uses the
+// literal 'global' for the global template (departmentId IS NULL in monitoring_configs).
+const resolveDeptParam = (departmentId) => (!departmentId || departmentId === 'global' ? null : departmentId);
+// revision_records stores the global scope as NULL department / NULL section.
+const toRevisionDepartmentId = (departmentId) => (!departmentId || departmentId === 'global' ? null : (parseInt(departmentId, 10) || null));
+const toRevisionSectionId = (sectionId) => {
+    const parsed = parseInt(sectionId, 10);
+    return Number.isNaN(parsed) || parsed === 0 ? null : parsed;
+};
+
 export const getThreeDayMonitoringConfig = asyncHandler(async (req, res) => {
-    const { departmentId } = req.params;
+    const departmentId = resolveDeptParam(req.params.departmentId);
     const sectionId = req.query.sectionId || 0;
-    const config = await MonitoringConfig.findByTypeAndDepartment('3DAY', departmentId, sectionId);
+    const resolved = await MonitoringConfig.findByFilters('3DAY', departmentId, sectionId, 0, 0);
+    // Tells the client which scope actually matched (Section > Department > Global
+    // fallback), so the layout editor can say when a config is inherited.
+    const resolvedScope = resolved ? {
+        departmentId: resolved.departmentId,
+        sectionId: resolved.sectionId,
+    } : null;
     return res.status(200).json(
-        new ApiResponse(200, { config: config?.config || null }, "3 Day Monitoring config fetched")
+        new ApiResponse(200, { config: resolved?.config || null, resolvedScope }, "3 Day Monitoring config fetched")
     );
 });
 
@@ -482,7 +499,7 @@ export const saveThreeDayMonitoringConfig = asyncHandler(async (req, res) => {
     const { departmentId, sectionId = 0, config, remark } = req.body;
     await MonitoringConfig.upsert({
         type: '3DAY',
-        departmentId,
+        departmentId: resolveDeptParam(departmentId),
         sectionId,
         config,
         remark,
@@ -493,8 +510,57 @@ export const saveThreeDayMonitoringConfig = asyncHandler(async (req, res) => {
     );
 });
 
+// Atomic save used by the dedicated 3-Day layout editor: the layout config and the
+// Revision Table record for the same scope are written together, and the revision
+// write propagates the new doc/rev header onto already-saved three_day_monitorings rows.
+export const saveThreeDayMonitoringConfigWithRevision = asyncHandler(async (req, res) => {
+    const { departmentId, sectionId = 0, config, remark, revision } = req.body || {};
+
+    if (!config) throw new ApiError("Config is required", 400);
+    if (!revision?.docNo?.trim() || !revision?.revNo?.trim()) {
+        throw new ApiError("Document No. and Revision No. are required", 400);
+    }
+
+    const deptId = resolveDeptParam(departmentId);
+    const scopedSectionId = deptId ? (sectionId || 0) : 0;
+
+    await MonitoringConfig.upsert({
+        type: '3DAY',
+        departmentId: deptId,
+        sectionId: scopedSectionId,
+        config,
+        remark,
+        updatedBy: req.user?.fullName || req.user?.name || req.user?.userName || "",
+    });
+
+    const savedRevision = await RevisionRecordService.upsertForScope(
+        'three-day-monitoring',
+        toRevisionDepartmentId(deptId),
+        toRevisionSectionId(scopedSectionId),
+        {
+            sheetName: "3 Day Monitoring",
+            docNo: revision.docNo,
+            revNo: revision.revNo,
+            issueDate: revision.issueDate,
+            revDate: revision.revDate,
+            affectedSrNoPage: revision.affectedSrNoPage,
+            affectedSrNoPageHi: revision.affectedSrNoPageHi,
+            changeDetails: revision.changeDetails,
+            changeDetailsHi: revision.changeDetailsHi,
+        },
+        req.user
+    );
+
+    logAudit(req.user?.id, "SAVE_THREE_DAY_MONITORING_CONFIG_WITH_REVISION",
+        { departmentId: deptId, sectionId: scopedSectionId, remark, revisionRecordId: savedRevision.id, docNo: revision.docNo, revNo: revision.revNo },
+        { resourceType: "MonitoringConfig", resourceId: deptId || 'global', req }
+    ).catch(err => console.error("logAudit(SAVE_THREE_DAY_MONITORING_CONFIG_WITH_REVISION) failed:", err.message));
+
+    return res.status(200).json(new ApiResponse(200, { revision: savedRevision }, "3 Day Monitoring layout and revision saved"));
+});
+
 export const getThreeDayMonitoringHistory = asyncHandler(async (req, res) => {
-    const { departmentId } = req.params;
+    const departmentId = resolveDeptParam(req.params.departmentId);
     const sectionId = req.query.sectionId || 0;
     const history = await MonitoringConfig.getHistory('3DAY', departmentId, sectionId);
     return res.status(200).json(

@@ -2,6 +2,14 @@ import DailyProductionReportConfig from "../models/dailyProductionReportConfig.m
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import logAudit from "../utils/auditLogger.js";
+import RevisionRecordService from "../services/revisionRecord.service.js";
+import {
+    DPR_GLOBAL_KEY,
+    resolveDprPresentation,
+    validateDprPresentation,
+    mergeDprPresentation,
+} from "../../shared/dprLayout.js";
 
 // Default Configuration matching the current hardcoded table in DailyProductionReport.jsx
 const DEFAULT_DPR_CONFIG = {
@@ -148,10 +156,94 @@ export const saveDPRConfig = asyncHandler(async (req, res) => {
     res.json(new ApiResponse(200, updated, "Configuration saved successfully"));
 });
 
+// ── Presentation layout (DPR Layout & Revision editor) ────────────────────────
+// Presentation (titles, header text, row labels, row counts) resolves Department →
+// Global → defaults. Manpower rows (moral.rows / attendance.rows) are separate: they
+// resolve Line → Global → Department on the client and are edited in DPRManage only.
+
+// Config row key: a department id, or DPR_GLOBAL_KEY. Line rows (LINE_<id>) belong to
+// DPRManage and are not a valid presentation scope.
+const toPresentationKey = (departmentId) => {
+    const raw = String(departmentId || "").trim();
+    if (!raw || raw.toLowerCase() === "global") return DPR_GLOBAL_KEY;
+    if (raw.toUpperCase().startsWith("LINE_")) throw new ApiError(400, "Line configs hold manpower rows only; edit them in DPR setup");
+    return raw;
+};
+// revision_records stores the global scope as a NULL department.
+const toRevisionDepartmentId = (key) => (key === DPR_GLOBAL_KEY ? null : (parseInt(key, 10) || null));
+
+const findPresentationSource = async (key) => {
+    if (key !== DPR_GLOBAL_KEY) {
+        const own = await DailyProductionReportConfig.findByDepartmentId(key);
+        if (own) return { record: own, scope: "department" };
+    }
+    const global = await DailyProductionReportConfig.findByDepartmentId(DPR_GLOBAL_KEY);
+    if (global) return { record: global, scope: "global" };
+    return { record: null, scope: "default" };
+};
+
+export const getDPRPresentation = asyncHandler(async (req, res) => {
+    const key = toPresentationKey(req.params.departmentId);
+    const { record, scope } = await findPresentationSource(key);
+    res.json(new ApiResponse(200, { presentation: resolveDprPresentation(record?.config), scope }, "DPR layout fetched"));
+});
+
+// Atomic save for the layout editor: writes ONLY the presentation keys into the
+// department (or Global) row — its manpower rows are kept untouched — and updates the
+// Revision Table record for the same scope, which propagates the doc/rev header onto
+// already-saved daily_production_reports.
+export const saveDPRPresentationWithRevision = asyncHandler(async (req, res) => {
+    const { departmentId, presentation, remark, revision } = req.body || {};
+    if (!presentation) throw new ApiError(400, "Layout is required");
+    if (!remark?.trim()) throw new ApiError(400, "Remark is required when updating configuration");
+    if (!revision?.docNo?.trim() || !revision?.revNo?.trim()) {
+        throw new ApiError(400, "Document No. and Revision No. are required");
+    }
+
+    const key = toPresentationKey(departmentId);
+    const { record: source } = await findPresentationSource(key);
+    const errors = validateDprPresentation(presentation, resolveDprPresentation(source?.config));
+    if (errors.length) throw new ApiError(400, errors.join("; "));
+
+    // Merge into this scope's own row. A brand-new row gets presentation only, so it never
+    // shadows manpower rows that another scope (line / department) already provides.
+    const ownRow = await DailyProductionReportConfig.findByDepartmentId(key);
+    const merged = mergeDprPresentation(ownRow?.config || {}, resolveDprPresentation(presentation));
+    const userName = req.user?.fullName || req.user?.name || "Admin";
+    await DailyProductionReportConfig.upsert(key, merged, remark.trim(), userName);
+
+    const savedRevision = await RevisionRecordService.upsertForScope(
+        "daily-production-report",
+        toRevisionDepartmentId(key),
+        null, // DPR layouts are department-wide; section-level revision overrides are edited in the Revision Table.
+        {
+            sheetName: "Daily Production Report",
+            docNo: revision.docNo,
+            revNo: revision.revNo,
+            issueDate: revision.issueDate,
+            revDate: revision.revDate,
+            affectedSrNoPage: revision.affectedSrNoPage,
+            affectedSrNoPageHi: revision.affectedSrNoPageHi,
+            changeDetails: revision.changeDetails,
+            changeDetailsHi: revision.changeDetailsHi,
+        },
+        req.user
+    );
+
+    logAudit(req.user?.id, "SAVE_DPR_LAYOUT_WITH_REVISION",
+        { departmentId: key, remark: remark.trim(), revisionRecordId: savedRevision.id, docNo: revision.docNo, revNo: revision.revNo },
+        { resourceType: "DPR_CONFIG", resourceId: key, req }
+    ).catch(err => console.error("logAudit(SAVE_DPR_LAYOUT_WITH_REVISION) failed:", err.message));
+
+    res.json(new ApiResponse(200, { revision: savedRevision }, "DPR layout and revision saved"));
+});
+
 export const getDPRConfigHistory = asyncHandler(async (req, res) => {
     const { departmentId } = req.params;
     if (!departmentId) throw new ApiError(400, "Department ID is required");
 
-    const history = await DailyProductionReportConfig.getHistory(departmentId);
+    // 'global' (layout editor) and 'GLOBAL' (DPR setup) are the same row.
+    const key = String(departmentId).toLowerCase() === "global" ? DPR_GLOBAL_KEY : departmentId;
+    const history = await DailyProductionReportConfig.getHistory(key);
     res.json(new ApiResponse(200, history, "Configuration history fetched"));
 });

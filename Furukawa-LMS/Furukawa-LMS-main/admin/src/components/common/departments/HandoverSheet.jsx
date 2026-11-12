@@ -1,5 +1,5 @@
 import brandLogoUrl from "@/assets/logos/fme-transparent.png";
-import React, { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect, useCallback, useMemo } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/common/ui/card.jsx";
 import { Button } from "@/components/common/ui/button.jsx";
@@ -12,10 +12,9 @@ import { toast } from "sonner";
 import { exportToExcel } from "@/utils/exportHelper.js";
 import { Loader2, Save } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/common/ui/dialog.jsx";
-import { Textarea } from "@/components/forms/primitives/textarea.jsx";
 import { Label } from "@/components/forms/primitives/label.jsx";
 import { Badge } from "@/components/common/ui/badge.jsx";
-import { IconSettings, IconHistory, IconPlus, IconTrash } from "@tabler/icons-react";
+import { IconSettings, IconPlus, IconTrash } from "@tabler/icons-react";
 import { format } from "date-fns";
 import UserAutocomplete from "../../forms/filters/UserAutocomplete.jsx";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/forms/primitives/select.jsx";
@@ -24,6 +23,12 @@ import { useGetAllMentorsQuery } from "@/services/api/InstructorApi.js";
 import { useGetSectionsByDepartmentQuery } from "@/services/api/SectionApi.js";
 import { departmentApi } from "@/services/api/DepartmentApi.js";
 import { useLogActionMutation } from "@/services/api/AuditApi.js";
+import { useLocation, useNavigate } from "react-router-dom";
+import { HandoverHeaderCells, HandoverTitle, HandoverFromLabel } from "./HandoverLayoutParts.jsx";
+import { resolveHandoverLayout, visibleHandoverColumns } from "../../../../../shared/handoverSheetLayout.js";
+
+// Built-in layout used until the section/department/global layout has loaded.
+const DEFAULT_LAYOUT = resolveHandoverLayout(null);
 
 const INTERVIEW_OPTIONS = [
     { value: "Pass", label: "Pass" },
@@ -165,7 +170,7 @@ const MentorSelect = ({ departmentId, sectionId, value, onValueChange, className
 const HandoverRow = React.memo(function HandoverRow({
     entry,
     index,
-    tableConfig,
+    columns,
     canManage,
     isEditable,
     canApprove,
@@ -183,231 +188,162 @@ const HandoverRow = React.memo(function HandoverRow({
 }) {
     return (
         <tr className="hover:bg-gray-50">
-            {tableConfig && tableConfig.columns ? (
-                tableConfig.columns.map((col, colIdx) => (
-                    <td key={colIdx} className="border p-1">
-                        {col.field === 'sn' ? (
-                            <div className="text-center">{index + 1}</div>
-                        ) : col.field === 'employeeName' && !col.readOnly && canManage && isEditable ? (
-                            <UserAutocomplete
-                                mode="all"
-                                departmentId={departmentId}
-                                excludeAdmins={true}
-                                excludeTrainers={true}
-                                value={entry.employeeName}
-                                onChange={(user) => onUserSelect(index, user)}
-                                onTextChange={(val) => onEntryChange(index, 'employeeName', val)}
-                                placeholder="Search..."
-                                compact={true}
-                                includeTemporary="only"
-                                dojoHandoverPassedOnly={dojoHandoverPassedOnly}
-                                includeHandoverMarks={true}
-                                includeLeft={true}
-                                includeDeleted={true}
-                                options={eligibleUsers.length > 0 ? eligibleUsers : null}
-                                className="w-full"
-                                inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-blue-600 font-medium"
-                            />
-                        ) : col.field === 'mentor' && !col.readOnly && canManage && isEditable ? (
-                            <MentorSelect
-                                departmentId={departmentId}
-                                sectionId={sectionId}
-                                value={entry.mentor}
-                                onValueChange={(val) => onEntryChange(index, 'mentor', val)}
-                                className="text-center"
-                            />
-                        ) : (col.field === 'department' || col.field === 'departmentId') ? (
-                            <div className="text-center text-xs font-medium text-blue-600 px-1">
-                                {departmentName}
-                            </div>
-                        ) : col.field === 'process' && canManage && isEditable ? (
-                            <ProcessSelect
-                                key={`process-select-${index}`}
-                                departmentId={departmentId}
-                                sectionId={localSectionId}
-                                value={entry.process || ""}
-                                onValueChange={(val) => onEntryChange(index, 'process', val)}
-                            />
-                        ) : (col.field === 'interview1' || col.field === 'interview2') && canManage && isEditable ? (
-                            <InterviewSelect
-                                value={entry[col.field] || ""}
-                                onChange={(val) => onEntryChange(index, col.field, val)}
-                            />
-                        ) : (col.readOnly || !canManage || !isEditable) ? (
-                            <div className={`p-1 ${col.field === 'employeeName' ? 'font-medium text-blue-600' : 'text-center'}`}>
-                                {(col.field === 'interview1' || col.field === 'interview2')
-                                    ? (INTERVIEW_OPTIONS.find(o => o.value === entry[col.field])?.label || entry[col.field])
-                                    : entry[col.field]}
-                            </div>
-                        ) : (
-                            <AutoResizeInput
-                                value={(entry[col.field] || "").toString()}
-                                onChange={(e) => onEntryChange(index, col.field, e.target.value)}
-                                className="h-7 text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 bg-transparent text-xs outline-none"
-                                minWidth={40}
-                            />
-                        )}
-                    </td>
-                ))
-            ) : (
-                <>
-                    <td className="border p-1 text-center font-medium">
-                        {index + 1}
-                    </td>
-                    <td className="border p-1">
-                        {canManage && isEditable ? (
-                            <UserAutocomplete
-                                mode="all"
-                                departmentId={departmentId}
-                                excludeAdmins={true}
-                                excludeTrainers={true}
-                                value={entry.employeeName}
-                                onChange={(user) => onUserSelect(index, user)}
-                                onTextChange={(val) => onEntryChange(index, 'employeeName', val)}
-                                placeholder="Search Employee..."
-                                compact={true}
-                                includeTemporary="only"
-                                dojoHandoverPassedOnly={dojoHandoverPassedOnly}
-                                includeHandoverMarks={true}
-                                includeLeft={true}
-                                includeDeleted={true}
-                                options={eligibleUsers.length > 0 ? eligibleUsers : null}
-                                className="min-w-[150px]"
-                                inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-blue-600 font-medium"
-                            />
-                        ) : (
-                            <div className="p-1 font-medium text-blue-600">
-                                {entry.employeeName}
-                            </div>
-                        )}
-                    </td>
-                    <td className="border p-1 text-center">
-                        {canManage && isEditable ? (
-                            <AutoResizeInput
-                                value={entry.empCode || ""}
-                                onChange={(e) => onEntryChange(index, 'empCode', e.target.value)}
-                                className="h-7 text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 bg-transparent text-xs outline-none"
-                                minWidth={60}
-                            />
-                        ) : (
-                            <div className="p-1 text-center">{entry.empCode}</div>
-                        )}
-                    </td>
-                    <td className="border p-1 text-center">
-                        {canManage && isEditable ? (
-                            <AutoResizeInput
-                                value={entry.marks || ""}
-                                onChange={(e) => onEntryChange(index, 'marks', e.target.value)}
-                                className="h-7 text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 bg-transparent text-xs outline-none"
-                                minWidth={40}
-                            />
-                        ) : (
-                            <div className="p-1 text-center">{entry.marks}</div>
-                        )}
-                    </td>
-                    <td className="border p-1 text-center">
-                        <div className="text-xs font-medium text-blue-600 px-1">
-                            {departmentName}
-                        </div>
-                    </td>
-                    <td className="border p-1 text-center">
-                        {canManage && isEditable ? (
-                            <ProcessSelect
-                                key={`process-select-def-${index}`}
-                                departmentId={departmentId}
-                                sectionId={localSectionId}
-                                value={entry.process || ""}
-                                onValueChange={(val) => onEntryChange(index, 'process', val)}
-                            />
-                        ) : (
-                            <div className="p-1 text-center">{entry.process}</div>
-                        )}
-                    </td>
-                    <td className="border p-1">
-                        {canManage && isEditable ? (
-                            <MentorSelect
-                                departmentId={departmentId}
-                                sectionId={sectionId}
-                                value={entry.mentor}
-                                onValueChange={(val) => onEntryChange(index, 'mentor', val)}
-                                className="min-w-[120px] text-center"
-                            />
-                        ) : (
-                            <div className="p-1 text-center">{entry.mentor}</div>
-                        )}
-                    </td>
-                    <td className="border p-1 text-center">
-                        {canManage && isEditable ? (
-                            <InterviewSelect
-                                value={entry.interview1}
-                                onChange={(val) => onEntryChange(index, 'interview1', val)}
-                            />
-                        ) : (
-                            <div className="p-1 text-center">
-                                {INTERVIEW_OPTIONS.find(o => o.value === entry.interview1)?.label || entry.interview1 || "—"}
-                            </div>
-                        )}
-                    </td>
-                    <td className="border p-1 text-center">
-                        {canManage && isEditable ? (
-                            <InterviewSelect
-                                value={entry.interview2}
-                                onChange={(val) => onEntryChange(index, 'interview2', val)}
-                            />
-                        ) : (
-                            <div className="p-1 text-center">
-                                {INTERVIEW_OPTIONS.find(o => o.value === entry.interview2)?.label || entry.interview2 || "—"}
-                            </div>
-                        )}
-                    </td>
-                    <td className="border p-1">
-                        {!entry.interviewStatus ? (
-                            canApprove ? (
-                                <div className="flex items-center justify-center gap-2">
-                                    <Button
-                                        variant="ghost"
-                                        className="h-7 px-2 text-[10px] font-bold text-green-600 hover:text-green-700 hover:bg-green-50 border border-green-200"
-                                        onClick={() => onStatusAction(index, 'APPROVE')}
-                                    >
-                                        APPROVE
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        className="h-7 px-2 text-[10px] font-bold text-red-600 hover:bg-red-50 border border-red-200"
-                                        onClick={() => onStatusAction(index, 'REJECT')}
-                                    >
-                                        REJECT
-                                    </Button>
-                                </div>
-                            ) : (
-                                <div className="text-center text-slate-400 italic text-[10px]">
-                                    Pending Approval
-                                </div>
-                            )
-                        ) : (
-                            <div className="flex flex-col items-center justify-center py-1">
-                                <div className={`text-[10px] font-bold uppercase ${entry.interviewStatus === 'APPROVE' ? 'text-green-600' : 'text-red-600'}`}>
-                                    {entry.interviewStatus === 'APPROVE' ? 'Approved' : 'Rejected'}
-                                </div>
-                                <div className="text-[9px] text-gray-500 leading-tight text-center">
-                                    by: {entry.statusActionBy}
-                                    {entry.statusActionAt && (
-                                        <div>{format(new Date(entry.statusActionAt), "dd MMM yyyy, hh:mm a")}</div>
-                                    )}
-                                </div>
-                                {canApprove && (
-                                    <button
-                                        onClick={() => onStatusAction(index, "")}
-                                        className="mt-1 text-[8px] text-blue-500 hover:underline no-print"
-                                    >
-                                        Reset
-                                    </button>
+            {columns.map((col) => {
+                // Built-in field cells (shared/handoverSheetLayout.js); a read-only column
+                // always shows the plain value.
+                const editable = canManage && isEditable && !col.readOnly;
+                switch (col.field) {
+                    case 'sn':
+                        return <td key={col.field} className="border p-1 text-center font-medium">{index + 1}</td>;
+                    case 'employeeName':
+                        return (
+                            <td key={col.field} className="border p-1">
+                                {editable ? (
+                                    <UserAutocomplete
+                                        mode="all"
+                                        departmentId={departmentId}
+                                        excludeAdmins={true}
+                                        excludeTrainers={true}
+                                        value={entry.employeeName}
+                                        onChange={(user) => onUserSelect(index, user)}
+                                        onTextChange={(val) => onEntryChange(index, 'employeeName', val)}
+                                        placeholder="Search Employee..."
+                                        compact={true}
+                                        includeTemporary="only"
+                                        dojoHandoverPassedOnly={dojoHandoverPassedOnly}
+                                        includeHandoverMarks={true}
+                                        includeLeft={true}
+                                        includeDeleted={true}
+                                        options={eligibleUsers.length > 0 ? eligibleUsers : null}
+                                        className="min-w-[150px]"
+                                        inputClassName="border-none shadow-none focus-visible:ring-1 focus-visible:ring-blue-400 text-blue-600 font-medium"
+                                    />
+                                ) : (
+                                    <div className="p-1 font-medium text-blue-600">{entry.employeeName}</div>
                                 )}
-                            </div>
+                            </td>
+                        );
+                    case 'empCode':
+                    case 'marks':
+                        return (
+                            <td key={col.field} className="border p-1 text-center">
+                                {editable ? (
+                                    <AutoResizeInput
+                                        value={(entry[col.field] || "").toString()}
+                                        onChange={(e) => onEntryChange(index, col.field, e.target.value)}
+                                        className="h-7 text-center border-none shadow-none focus:ring-1 focus:ring-blue-400 bg-transparent text-xs outline-none"
+                                        minWidth={col.field === 'empCode' ? 60 : 40}
+                                    />
+                                ) : (
+                                    <div className="p-1 text-center">{entry[col.field]}</div>
+                                )}
+                            </td>
+                        );
+                    case 'department':
+                        return (
+                            <td key={col.field} className="border p-1 text-center">
+                                <div className="text-xs font-medium text-blue-600 px-1">{departmentName}</div>
+                            </td>
+                        );
+                    case 'process':
+                        return (
+                            <td key={col.field} className="border p-1 text-center">
+                                {editable ? (
+                                    <ProcessSelect
+                                        key={`process-select-${index}`}
+                                        departmentId={departmentId}
+                                        sectionId={localSectionId}
+                                        value={entry.process || ""}
+                                        onValueChange={(val) => onEntryChange(index, 'process', val)}
+                                    />
+                                ) : (
+                                    <div className="p-1 text-center">{entry.process}</div>
+                                )}
+                            </td>
+                        );
+                    case 'mentor':
+                        return (
+                            <td key={col.field} className="border p-1">
+                                {editable ? (
+                                    <MentorSelect
+                                        departmentId={departmentId}
+                                        sectionId={sectionId}
+                                        value={entry.mentor}
+                                        onValueChange={(val) => onEntryChange(index, 'mentor', val)}
+                                        className="min-w-[120px] text-center"
+                                    />
+                                ) : (
+                                    <div className="p-1 text-center">{entry.mentor}</div>
+                                )}
+                            </td>
+                        );
+                    case 'interview1':
+                    case 'interview2':
+                        return (
+                            <td key={col.field} className="border p-1 text-center">
+                                {editable ? (
+                                    <InterviewSelect
+                                        value={entry[col.field]}
+                                        onChange={(val) => onEntryChange(index, col.field, val)}
+                                    />
+                                ) : (
+                                    <div className="p-1 text-center">
+                                        {INTERVIEW_OPTIONS.find(o => o.value === entry[col.field])?.label || entry[col.field] || "—"}
+                                    </div>
+                                )}
+                            </td>
+                        );
+                    default:
+                        return null;
+                }
+            })}
+            {/* Approve / Reject — always shown, whatever the layout. */}
+            <td className="border p-1">
+                {!entry.interviewStatus ? (
+                    canApprove ? (
+                        <div className="flex items-center justify-center gap-2">
+                            <Button
+                                variant="ghost"
+                                className="h-7 px-2 text-[10px] font-bold text-green-600 hover:text-green-700 hover:bg-green-50 border border-green-200"
+                                onClick={() => onStatusAction(index, 'APPROVE')}
+                            >
+                                APPROVE
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                className="h-7 px-2 text-[10px] font-bold text-red-600 hover:bg-red-50 border border-red-200"
+                                onClick={() => onStatusAction(index, 'REJECT')}
+                            >
+                                REJECT
+                            </Button>
+                        </div>
+                    ) : (
+                        <div className="text-center text-slate-400 italic text-[10px]">
+                            Pending Approval
+                        </div>
+                    )
+                ) : (
+                    <div className="flex flex-col items-center justify-center py-1">
+                        <div className={`text-[10px] font-bold uppercase ${entry.interviewStatus === 'APPROVE' ? 'text-green-600' : 'text-red-600'}`}>
+                            {entry.interviewStatus === 'APPROVE' ? 'Approved' : 'Rejected'}
+                        </div>
+                        <div className="text-[9px] text-gray-500 leading-tight text-center">
+                            by: {entry.statusActionBy}
+                            {entry.statusActionAt && (
+                                <div>{format(new Date(entry.statusActionAt), "dd MMM yyyy, hh:mm a")}</div>
+                            )}
+                        </div>
+                        {canApprove && (
+                            <button
+                                onClick={() => onStatusAction(index, "")}
+                                className="mt-1 text-[8px] text-blue-500 hover:underline no-print"
+                            >
+                                Reset
+                            </button>
                         )}
-                    </td>
-                </>
-            )}
+                    </div>
+                )}
+            </td>
             {canManage && isEditable && canDeleteRow && (
                 <td className="border p-1 text-center no-print">
                     <Button
@@ -485,15 +421,13 @@ const HandoverSheet = ({ departmentId, sectionId = null, setSectionId, sheetId =
 
     const isEditable = !viewOnly && (isNewSheet || canEditSaved);
 
-    // Layout Config State
-    const [tableConfig, setTableConfig] = useState(null);
-    const [isEditingLayout, setIsEditingLayout] = useState(false);
-    const [jsonConfigStr, setJsonConfigStr] = useState("");
-    const [layoutRemark, setLayoutRemark] = useState("");
-    const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-    const [configHistory, setConfigHistory] = useState([]);
-    const [loadingHistory, setLoadingHistory] = useState(false);
-    const [loadingConfig, setLoadingConfig] = useState(false);
+    // Layout (title, From label, columns): Section → Department → Global → defaults.
+    // Edited in the dedicated Handover Sheet Layout & Revision editor.
+    const [layout, setLayout] = useState(DEFAULT_LAYOUT);
+    // Stable identity so the memoized rows don't all re-render on every parent render.
+    const visibleColumns = useMemo(() => visibleHandoverColumns(layout), [layout]);
+    const location = useLocation();
+    const navigate = useNavigate();
 
     // Export State
     const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
@@ -503,73 +437,25 @@ const HandoverSheet = ({ departmentId, sectionId = null, setSectionId, sheetId =
 
     const [logAction] = useLogActionMutation();
 
-    const fetchConfig = async () => {
+    const fetchLayout = async () => {
         if (!departmentId) return;
         try {
-            setLoadingConfig(true);
-            const response = await axiosInstance.get(`/api/departments/handover-sheet/config/${departmentId}?sectionId=${sectionId || ""}`);
-            if (response.data.success && response.data.data.config) {
-                setTableConfig(response.data.data.config);
-                setJsonConfigStr(JSON.stringify(response.data.data.config, null, 2));
-            } else {
-                setTableConfig(null);
-                setJsonConfigStr("");
-            }
+            const response = await axiosInstance.get(`/api/departments/handover-sheet/layout/${departmentId}?sectionId=${sectionId || ""}`);
+            setLayout(response.data?.data?.layout || DEFAULT_LAYOUT);
         } catch (error) {
-            console.error("Error fetching handover sheet config:", error);
-        } finally {
-            setLoadingConfig(false);
+            console.error("Error fetching handover sheet layout:", error);
+            setLayout(DEFAULT_LAYOUT);
         }
     };
 
-    const handleSaveConfig = async () => {
-        if (!layoutRemark.trim()) {
-            toast.error("Please enter a remark detailing your layout changes.");
-            return;
-        }
-
-        try {
-            let parsedConfig;
-            try {
-                parsedConfig = JSON.parse(jsonConfigStr);
-            } catch (e) {
-                toast.error("Invalid JSON format");
-                return;
-            }
-
-            await axiosInstance.post(`/api/departments/handover-sheet/config/save`, {
-                departmentId,
-                sectionId: sectionId || null,
-                config: parsedConfig,
-                remark: layoutRemark
-            });
-
-            setTableConfig(parsedConfig);
-            setIsEditingLayout(false);
-            setLayoutRemark("");
-            toast.success("Configuration saved successfully");
-            logAction({ action: "SAVE_HANDOVER_SHEET_CONFIG", details: { departmentId, sectionId, remark: layoutRemark } }).catch(() => { });
-        } catch (error) {
-            console.error("Error saving handover sheet config:", error);
-            toast.error("Failed to save configuration");
-        }
-    };
-
-    const fetchHistory = async () => {
-        try {
-            setLoadingHistory(true);
-            const response = await axiosInstance.get(`/api/departments/handover-sheet/history/${departmentId}?sectionId=${sectionId || ""}`);
-            if (response.data.success) {
-                setConfigHistory(response.data.data);
-                setIsHistoryOpen(true);
-                logAction({ action: "VIEW_HANDOVER_SHEET_LAYOUT_HISTORY", details: { departmentId, sectionId } }).catch(() => { });
-            }
-        } catch (error) {
-            console.error("Error fetching handover sheet history:", error);
-            toast.error("Failed to load history");
-        } finally {
-            setLoadingHistory(false);
-        }
+    // /admin is admin-only, so non-admin layout editors in the portal get the portal copy.
+    const openLayoutEditor = () => {
+        const params = new URLSearchParams();
+        params.set('departmentId', String(departmentId));
+        if (sectionId) params.set('sectionId', String(sectionId));
+        const editorPath = location.pathname.startsWith('/portal') ? '/portal/handover-sheet/layout' : '/admin/handover-sheet/layout';
+        logAction({ action: "OPEN_HANDOVER_SHEET_LAYOUT_EDITOR", details: { departmentId, sectionId } }).catch(() => { });
+        navigate(`${editorPath}?${params.toString()}`, { state: { from: `${location.pathname}${location.search}` } });
     };
 
     // Fetch handover sheet data whenever department, section, or date changes
@@ -579,8 +465,8 @@ const HandoverSheet = ({ departmentId, sectionId = null, setSectionId, sheetId =
         const fetchData = async () => {
             setLoading(true);
             try {
-                // Fetch layout config
-                await fetchConfig();
+                // Fetch layout
+                await fetchLayout();
 
                 const sheetIdParam = sheetId ? `&sheetId=${sheetId}` : "";
                 const shiftParam = propShift ? `&shift=${encodeURIComponent(propShift)}` : "";
@@ -765,9 +651,8 @@ const HandoverSheet = ({ departmentId, sectionId = null, setSectionId, sheetId =
         setSignatures(prev => ({ ...prev, [field]: value }));
     };
 
-    const handleMetadataChange = (field, value) => {
-        setMetadata(prev => ({ ...prev, [field]: value }));
-    };
+    // Document No. / Revision fields are read-only here: they come from the Revision Table
+    // (the server ignores client edits to them), so there is no metadata change handler.
 
     const handleStatusAction = useCallback((index, status) => {
         const userName = authUser?.fullName || authUser?.name || "Unknown User";
@@ -1062,44 +947,24 @@ const HandoverSheet = ({ departmentId, sectionId = null, setSectionId, sheetId =
                                 <img src={brandLogoUrl} alt="FURUKAWA" className="h-12 w-auto object-contain" />
                             </div>
                             <CardTitle className="text-xl font-bold text-center uppercase self-center">
-                                List of Employees Handed Over to Shop Floor After Induction Training
+                                <HandoverTitle title={layout.title} />
                             </CardTitle>
                             <div className="text-[10px] text-right text-muted-foreground space-y-1 self-start">
                                 <div className="flex items-center justify-end gap-1">
                                     <span className="font-semibold whitespace-nowrap">DOCUMENT NO.</span>
-                                    <Input
-                                        className="h-5 w-24 text-[10px] px-1 py-0 bg-transparent border-slate-300"
-                                        value={metadata.docNo}
-                                        onChange={(e) => handleMetadataChange('docNo', e.target.value)}
-                                        disabled={!canManage || !isEditable}
-                                    />
+                                    <span className="w-24 text-left text-[10px] px-1 font-semibold text-slate-700">{metadata.docNo || "—"}</span>
                                 </div>
                                 <div className="flex items-center justify-end gap-1">
                                     <span className="font-semibold whitespace-nowrap">REVISION No.</span>
-                                    <Input
-                                        className="h-5 w-24 text-[10px] px-1 py-0 bg-transparent border-slate-300"
-                                        value={metadata.revNo}
-                                        onChange={(e) => handleMetadataChange('revNo', e.target.value)}
-                                        disabled={!canManage || !isEditable}
-                                    />
+                                    <span className="w-24 text-left text-[10px] px-1 font-semibold text-slate-700">{metadata.revNo || "—"}</span>
                                 </div>
                                 <div className="flex items-center justify-end gap-1">
                                     <span className="font-semibold whitespace-nowrap">REVISION DATE:</span>
-                                    <Input
-                                        className="h-5 w-24 text-[10px] px-1 py-0 bg-transparent border-slate-300"
-                                        value={metadata.revDate}
-                                        onChange={(e) => handleMetadataChange('revDate', e.target.value)}
-                                        disabled={!canManage || !isEditable}
-                                    />
+                                    <span className="w-24 text-left text-[10px] px-1 font-semibold text-slate-700">{metadata.revDate || "—"}</span>
                                 </div>
                                 <div className="flex items-center justify-end gap-1">
                                     <span className="font-semibold whitespace-nowrap">ISSUE DT.</span>
-                                    <Input
-                                        className="h-5 w-24 text-[10px] px-1 py-0 bg-transparent border-slate-300"
-                                        value={metadata.issueDate}
-                                        onChange={(e) => handleMetadataChange('issueDate', e.target.value)}
-                                        disabled={!canManage || !isEditable}
-                                    />
+                                    <span className="w-24 text-left text-[10px] px-1 font-semibold text-slate-700">{metadata.issueDate || "—"}</span>
                                 </div>
                             </div>
                         </div>
@@ -1110,7 +975,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, setSectionId, sheetId =
                             <div className="space-y-4">
                                 <div className="flex items-center gap-2">
                                     <span>From:</span>
-                                    <span className="text-blue-600">Education Centre</span>
+                                    <span className="text-blue-600"><HandoverFromLabel value={layout.fromLabel} /></span>
                                 </div>
                             </div>
                             <div className="space-y-4 text-right">
@@ -1158,22 +1023,10 @@ const HandoverSheet = ({ departmentId, sectionId = null, setSectionId, sheetId =
                                         </div>
                                     )}
                                     {canEditLayout && (
-                                        <>
-                                            <Button variant="outline" onClick={fetchHistory}>
-                                                <IconHistory className="h-4 w-4 mr-2" />
-                                                History
-                                            </Button>
-                                            <Button
-                                                variant="outline"
-                                                onClick={() => {
-                                                    setIsEditingLayout(true);
-                                                    logAction({ action: "TOGGLE_HANDOVER_SHEET_LAYOUT_EDIT", details: { departmentId, sectionId } }).catch(() => { });
-                                                }}
-                                            >
-                                                <IconSettings className="h-4 w-4 mr-2" />
-                                                Edit Layout
-                                            </Button>
-                                        </>
+                                        <Button variant="outline" onClick={openLayoutEditor} title="Document No. / Revision are managed in the Revision Table">
+                                            <IconSettings className="h-4 w-4 mr-2" />
+                                            Edit Layout & Revision
+                                        </Button>
                                     )}
                                     <Button
                                         variant="outline"
@@ -1219,26 +1072,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, setSectionId, sheetId =
                             <table className="w-full text-xs border-collapse">
                                 <thead>
                                     <tr className="bg-gray-100">
-                                        {tableConfig && tableConfig.columns ? (
-                                            tableConfig.columns.map((col, idx) => (
-                                                <th key={idx} className={`border p-2 ${col.className || ""}`} style={col.style || {}}>
-                                                    {col.header}
-                                                </th>
-                                            ))
-                                        ) : (
-                                            <>
-                                                <th className="border p-2">SN.</th>
-                                                <th className="border p-2">Employee Name</th>
-                                                <th className="border p-2">Emp. Code</th>
-                                                <th className="border p-2">Marks Secured in Induction Training</th>
-                                                <th className="border p-2">Department</th>
-                                                <th className="border p-2">Process</th>
-                                                <th className="border p-2">Mentor</th>
-                                                <th className="border p-2">1st Interview Accident</th>
-                                                <th className="border p-2">2nd Interview Practical</th>
-                                                <th className="border p-2">Approve / Reject</th>
-                                            </>
-                                        )}
+                                        <HandoverHeaderCells columns={visibleColumns} statusHeader={layout.statusHeader} />
                                         {canManage && isEditable && canDeleteRow && (
                                             <th className="border p-2 no-print">Action</th>
                                         )}
@@ -1250,7 +1084,7 @@ const HandoverSheet = ({ departmentId, sectionId = null, setSectionId, sheetId =
                                             key={entry.studentId || index}
                                             entry={entry}
                                             index={index}
-                                            tableConfig={tableConfig}
+                                            columns={visibleColumns}
                                             canManage={canManage}
                                             isEditable={isEditable}
                                             canApprove={canApprove}
@@ -1417,65 +1251,6 @@ const HandoverSheet = ({ departmentId, sectionId = null, setSectionId, sheetId =
                 </DialogContent>
             </Dialog>
 
-            {/* Edit Layout Dialog */}
-            <Dialog open={isEditingLayout} onOpenChange={setIsEditingLayout}>
-                <DialogContent className="max-w-[800px] max-h-[90vh] flex flex-col">
-                    <DialogHeader>
-                        <DialogTitle>Edit Handover Sheet Configuration (JSON)</DialogTitle>
-                    </DialogHeader>
-                    <div className="flex-1 overflow-auto p-1 space-y-4">
-                        <Textarea
-                            className="font-mono text-xs h-[400px]"
-                            value={jsonConfigStr}
-                            onChange={(e) => setJsonConfigStr(e.target.value)}
-                            placeholder='e.g. { "columns": [{"header": "SN.", "field": "sn"}] }'
-                        />
-                        <div className="space-y-2">
-                            <Label htmlFor="hs-remark">Remark (Required)</Label>
-                            <Input
-                                id="hs-remark"
-                                placeholder="Briefly describe the changes made to the layout..."
-                                value={layoutRemark}
-                                onChange={(e) => setLayoutRemark(e.target.value)}
-                            />
-                        </div>
-                    </div>
-                    <div className="flex justify-between p-4 border-t">
-                        <Button variant="ghost" onClick={() => setIsEditingLayout(false)}>Cancel</Button>
-                        <Button onClick={handleSaveConfig} disabled={!layoutRemark.trim()}>
-                            Save Configuration
-                        </Button>
-                    </div>
-                </DialogContent>
-            </Dialog>
-
-            {/* History Dialog */}
-            <Dialog open={isHistoryOpen} onOpenChange={setIsHistoryOpen}>
-                <DialogContent className="max-w-[600px] max-h-[80vh] flex flex-col">
-                    <DialogHeader>
-                        <DialogTitle>Layout Change History</DialogTitle>
-                    </DialogHeader>
-                    <div className="flex-1 overflow-auto p-4 space-y-4">
-                        {loadingHistory ? (
-                            <div className="flex justify-center py-10"><Loader2 className="animate-spin w-8 h-8 text-blue-600" /></div>
-                        ) : configHistory.length === 0 ? (
-                            <div className="text-center text-muted-foreground py-8">No history found.</div>
-                        ) : (
-                            configHistory.map((entry, idx) => (
-                                <div key={idx} className="border p-3 rounded-lg space-y-2 bg-slate-50">
-                                    <div className="flex justify-between text-sm">
-                                        <span className="font-semibold">{entry.updatedBy}</span>
-                                        <span className="text-muted-foreground text-xs">{format(new Date(entry.createdAt), "PP p")}</span>
-                                    </div>
-                                    <div className="text-sm border-l-2 border-blue-400 pl-2">
-                                        {entry.remark}
-                                    </div>
-                                </div>
-                            ))
-                        )}
-                    </div>
-                </DialogContent>
-            </Dialog>
             {/* Edit Remark Dialog */}
             <Dialog open={isRemarkDialogOpen} onOpenChange={setIsRemarkDialogOpen}>
                 <DialogContent className="max-w-[500px]">

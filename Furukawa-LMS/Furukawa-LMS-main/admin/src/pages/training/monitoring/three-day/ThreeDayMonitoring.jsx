@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import axios from 'axios';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/common/ui/card.jsx";
 import {
@@ -34,7 +34,6 @@ import {
     IconUsersGroup, 
     IconArrowLeft, 
     IconPlus, 
-    IconDatabase,
     IconLayoutDashboard,
     IconChevronLeft,
     IconChevronRight
@@ -73,7 +72,11 @@ const ThreeDayMonitoring = () => {
             permissions.includes('three_day:edit') ||
             permissions.includes('three_day:edit_submitted') ||
             isAdmin;
-        const editLayoutPerm = permissions.includes('three_day:edit_layout') || isAdmin;
+        // Matches who the layout editor and its save-with-revision endpoint accept.
+        const editLayoutPerm = isAdmin || !!authUser?.isTrainer ||
+            permissions.includes('three_day:edit_layout') ||
+            permissions.includes('three_day:manage') ||
+            permissions.includes('revision:update');
 
         const isSubject = authUser?.role === 'STUDENT' ||
             (authUser?.role === 'CUSTOM' && authUser.customRole?.targetLayout === 'operator') ||
@@ -86,11 +89,9 @@ const ThreeDayMonitoring = () => {
         };
     }, [authUser, isAdmin]);
 
-    // Mode selection: 'stack' or 'layout'
-    const [activeTab, setActiveTab] = useState('stack');
-
     const { studentId: paramStudentId } = useParams();
     const navigate = useNavigate();
+    const location = useLocation();
 
     // Selections
     const [dept, setDept] = useState(() => '');
@@ -171,7 +172,7 @@ const ThreeDayMonitoring = () => {
     // filters or typing in search never lets a slower, stale response overwrite a newer one.
     const listAbortRef = useRef(null);
     const fetchMonitoringList = async () => {
-        if (!dept || activeTab !== 'stack' || studentId) return;
+        if (!dept || studentId) return;
         listAbortRef.current?.abort();
         const controller = new AbortController();
         listAbortRef.current = controller;
@@ -205,10 +206,10 @@ const ThreeDayMonitoring = () => {
     };
 
     useEffect(() => {
-        if (dept && !studentId && activeTab === 'stack') {
+        if (dept && !studentId) {
             fetchMonitoringList();
         }
-    }, [dept, section, line, studentId, activeTab, monitoringPage, monitoringPageSize, debouncedSearchTerm]);
+    }, [dept, section, line, studentId, monitoringPage, monitoringPageSize, debouncedSearchTerm]);
 
     // Drop any in-flight list request when leaving the page.
     useEffect(() => () => listAbortRef.current?.abort(), []);
@@ -277,7 +278,7 @@ const ThreeDayMonitoring = () => {
 
     // Staff open a sheet from the stack into a full-screen view; employees only ever see their
     // own sheet (there's no stack to return to), so they keep the regular in-layout page.
-    const isFullScreenSheet = Boolean(studentId) && !isEmployee && activeTab === 'stack';
+    const isFullScreenSheet = Boolean(studentId) && !isEmployee;
 
     // Header context — selectedStudent comes from the stack list, which isn't fetched on a
     // deep link, so fall back to the operator looked up from the URL param.
@@ -359,6 +360,22 @@ const ThreeDayMonitoring = () => {
         || assignableDepartments.find(d => String(d.id || d._id) === String(dept))?.name;
     const operatorSection = sheetOperator?.sectionName || sheetOperator?.section?.name
         || sections.find(s => String(s.id) === String(section))?.name;
+    // Scopes the sheet's layout config and revision header (Section > Department > Global).
+    const operatorSectionId = sheetOperator?.sectionId || sheetOperator?.section?.id
+        || (section && section !== '0' ? section : null);
+
+    const openLayoutEditor = () => {
+        const params = new URLSearchParams();
+        if (dept) {
+            params.set('departmentId', String(dept));
+            if (section && section !== '0') params.set('sectionId', String(section));
+        } else {
+            params.set('global', '1');
+        }
+        navigate(`/admin/revision-table/three-day-monitoring/layout?${params.toString()}`, {
+            state: { from: `${location.pathname}${location.search}` },
+        });
+    };
 
     // Portaled to <body> so the view escapes the layout's stacking contexts and covers the
     // sidebar and top navbar; Radix popovers/dialogs portal in after it and still sit on top.
@@ -426,6 +443,7 @@ const ThreeDayMonitoring = () => {
                         <ThreeDayMonitoringSheet
                             studentId={studentId}
                             departmentId={dept}
+                            sectionId={operatorSectionId}
                             departmentName={operatorDept}
                             sectionName={operatorSection}
                             readOnly={false}
@@ -453,30 +471,14 @@ const ThreeDayMonitoring = () => {
                     </div>
                 </div>
 
-                <div className="flex bg-slate-100/80 p-1 rounded-xl border border-slate-200 shadow-inner">
-                    <button
-                        onClick={() => { setActiveTab('stack'); setStudentId(""); }}
-                        className={cn(
-                            "flex items-center gap-2 px-4 py-2 text-sm font-bold transition-all rounded-lg",
-                            activeTab === 'stack' ? "bg-white text-amber-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
-                        )}
-                    >
-                        <IconDatabase size={18} />
-                        Monitoring Stack
-                    </button>
-                    {(isAdmin || hasManagePermission) && (
-                        <button
-                            onClick={() => { setActiveTab('layout'); setStudentId(""); }}
-                            className={cn(
-                                "flex items-center gap-2 px-4 py-2 text-sm font-bold transition-all rounded-lg",
-                                activeTab === 'layout' ? "bg-white text-amber-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
-                            )}
-                        >
-                            <IconLayoutDashboard size={18} />
-                            Layout Management
-                        </button>
-                    )}
-                </div>
+                {/* Layout is edited in the dedicated editor (layout + revision saved together),
+                    scoped to the department/section picked below — or Global if none is picked. */}
+                {canEditLayout && !isEmployee && (
+                    <Button variant="outline" size="sm" className="gap-1.5" onClick={openLayoutEditor}>
+                        <IconLayoutDashboard size={16} />
+                        Edit Layout & Revision
+                    </Button>
+                )}
             </div>
 
             {/* Selection Panel */}
@@ -540,19 +542,17 @@ const ThreeDayMonitoring = () => {
                                 </Select>
                             </div>
                             
-                            {activeTab === 'stack' && (
-                                <div className="space-y-1.5 flex items-end">
-                                    <div className="relative w-full">
-                                        <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                                        <Input 
-                                            className="pl-10 h-10 border-slate-200" 
-                                            placeholder="Search Operator..." 
-                                            value={searchTerm}
-                                            onChange={(e) => setSearchTerm(e.target.value)}
-                                        />
-                                    </div>
+                            <div className="space-y-1.5 flex items-end">
+                                <div className="relative w-full">
+                                    <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                    <Input
+                                        className="pl-10 h-10 border-slate-200"
+                                        placeholder="Search Operator..."
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                    />
                                 </div>
-                            )}
+                            </div>
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -576,14 +576,7 @@ const ThreeDayMonitoring = () => {
             {/* Content Area */}
             {dept ? (
                 <div className="space-y-6">
-                    {activeTab === 'layout' ? (
-                        <ThreeDayMonitoringSheet
-                            departmentId={dept}
-                            departmentName={assignableDepartments.find(d => String(d.id || d._id) === String(dept))?.name}
-                            sectionName={sections.find(s => String(s.id) === String(section))?.name}
-                            canEditConfig={canEditLayout}
-                        />
-                    ) : studentId ? (
+                    {studentId ? (
                         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
                             {!isEmployee && (
                                 <Button
@@ -600,6 +593,7 @@ const ThreeDayMonitoring = () => {
                             <ThreeDayMonitoringSheet
                                 studentId={studentId}
                                 departmentId={dept}
+                                sectionId={operatorSectionId}
                                 departmentName={operatorDept}
                                 sectionName={operatorSection}
                                 readOnly={isEmployee && (String(authUser?._id || authUser?.id) !== String(studentId))}
@@ -809,7 +803,7 @@ const ThreeDayMonitoring = () => {
                     </div>
                     <h3 className="text-xl font-bold text-slate-700">Select Department</h3>
                     <p className="text-sm text-slate-500 max-w-xs text-center mt-2 leading-relaxed">
-                        Choose a department to view and manage its monitoring {activeTab === 'layout' ? 'configuration' : 'stack'}.
+                        Choose a department to view and manage its monitoring stack.
                     </p>
                 </div>
             )}

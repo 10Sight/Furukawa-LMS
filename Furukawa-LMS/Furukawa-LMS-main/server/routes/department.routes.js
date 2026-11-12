@@ -37,6 +37,8 @@ import {
     getHandoverSheetConfig,
     saveHandoverSheetConfig,
     getHandoverSheetHistory,
+    getHandoverSheetLayout,
+    saveHandoverSheetLayoutWithRevision,
     sendHandoverPDF,
     getStudentHandoverHistory,
     getHandoverEligibilityDetails,
@@ -131,9 +133,13 @@ router.delete("/handover-sheet/:id", verifyJWT, authorizeRole([SYSTEM_PERMISSION
 router.post("/handover-sheet/bulk-delete", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.HANDOVER_SHEET_DELETE]), bulkDeleteHandoverSheets);
 router.get("/:id/handover-sheet", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.HANDOVER_SHEET_READ]), getHandoverSheet);
 router.post("/:id/handover-sheet", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.HANDOVER_SHEET_MANAGE]), saveHandoverSheet);
+// Layout & Revision editor (any of: admin / edit_layout / revision:update). Registered before
+// "/:id/handover-sheet" style routes; paths are distinct from the legacy config routes below.
+router.get("/handover-sheet/layout/:id", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN", SYSTEM_PERMISSIONS.HANDOVER_SHEET_READ, SYSTEM_PERMISSIONS.HANDOVER_SHEET_EDIT_LAYOUT, "revision:update"), getHandoverSheetLayout);
+router.post("/handover-sheet/layout/save-with-revision", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN", SYSTEM_PERMISSIONS.HANDOVER_SHEET_EDIT_LAYOUT, "revision:update"), saveHandoverSheetLayoutWithRevision);
 router.get("/handover-sheet/config/:id", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.HANDOVER_SHEET_READ]), getHandoverSheetConfig);
 router.post("/handover-sheet/config/save", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.HANDOVER_SHEET_EDIT_LAYOUT]), saveHandoverSheetConfig);
-router.get("/handover-sheet/history/:id", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.HANDOVER_SHEET_READ]), getHandoverSheetHistory);
+router.get("/handover-sheet/history/:id", verifyJWT, authorizeRoles("isAdmin", "SUPERADMIN", SYSTEM_PERMISSIONS.HANDOVER_SHEET_READ, SYSTEM_PERMISSIONS.HANDOVER_SHEET_EDIT_LAYOUT, "revision:update"), getHandoverSheetHistory);
 router.post("/handover-sheet/pdf/send", verifyJWT, sendHandoverPDF);
 router.get("/handover-sheet/student/:studentId", verifyJWT, getStudentHandoverHistory);
 router.get("/handover-sheet/eligibility-check/:studentId", verifyJWT, authorizeRole([SYSTEM_PERMISSIONS.HANDOVER_SHEET_READ]), getHandoverEligibilityDetails);

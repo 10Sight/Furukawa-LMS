@@ -14,11 +14,22 @@ import RevisionHistoryModal from "@/pages/reports/components/revision/RevisionHi
 import { formatPropagatedToast } from "@/hooks/usePropagationPreview.js";
 
 // Sheets whose revisions are tied to structural layout changes (questions/instruments/
-// columns for 10-Cycle, categories/checkpoints/weightages for 16-Day) deep-link Edit/Add
-// Override into their own dedicated layout editor page instead of the plain text modal.
+// columns for 10-Cycle, categories/checkpoints/weightages for 16-Day and 3-Day) deep-link
+// Edit/Add Override into their own dedicated layout editor page instead of the plain text modal.
+// Each key needs a matching `revision-table/<key>/layout` route in AppRoutes.jsx.
 const TEN_CYCLE_SHEET_KEY = 'ten-cycle-sheet';
 const SIXTEEN_DAY_SHEET_KEY = 'sixteen-day-monitoring';
-const LAYOUT_EDITOR_SHEET_KEYS = [TEN_CYCLE_SHEET_KEY, SIXTEEN_DAY_SHEET_KEY];
+const THREE_DAY_SHEET_KEY = 'three-day-monitoring';
+const DAILY_5M_SHEET_KEY = 'daily-5m';
+const DPR_SHEET_KEY = 'daily-production-report';
+const ABNORMAL_CONDITION_SHEET_KEY = 'abnormal-condition'; // department-only by design (no section records)
+const HANDOVER_SHEET_KEY = 'handover-sheet'; // has section scope, so section records open the editor too
+const LAYOUT_EDITOR_SHEET_KEYS = [TEN_CYCLE_SHEET_KEY, SIXTEEN_DAY_SHEET_KEY, THREE_DAY_SHEET_KEY, DAILY_5M_SHEET_KEY, DPR_SHEET_KEY, ABNORMAL_CONDITION_SHEET_KEY, HANDOVER_SHEET_KEY];
+// Daily 5M and DPR layouts are department-wide, so their editors only handle Global/Department
+// records; a section-level revision override for them keeps using the plain text modal.
+const DEPARTMENT_SCOPED_LAYOUT_KEYS = [DAILY_5M_SHEET_KEY, DPR_SHEET_KEY];
+const usesLayoutEditor = (sheetKey, record) =>
+    LAYOUT_EDITOR_SHEET_KEYS.includes(sheetKey) && !(DEPARTMENT_SCOPED_LAYOUT_KEYS.includes(sheetKey) && record?.sectionId);
 
 // Per-sheet detail page: the global default plus every department/section
 // override for this sheetKey, and the sheet's full audit log history.
@@ -81,7 +92,7 @@ const RevisionSheetHistory = () => {
     }, [fetchRecords, fetchHistory]);
 
     const handleEdit = (record) => {
-        if (LAYOUT_EDITOR_SHEET_KEYS.includes(sheetKey)) {
+        if (usesLayoutEditor(sheetKey, record)) {
             const params = new URLSearchParams();
             if (record.departmentId) {
                 params.set('departmentId', String(record.departmentId));

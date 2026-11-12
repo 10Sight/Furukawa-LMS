@@ -769,8 +769,7 @@ export const generateCombinedMonitoringEmail = ({
         <p style="margin:0 0 14px;color:#475569;font-size:14px;">Hi there,</p>
         <p style="margin:0 0 20px;color:#475569;font-size:14px;line-height:1.7;">
             Here's the 16-Day Monitoring and Mentee Feedback report for
-            <strong style="color:#334155;">${operatorName}</strong>. Both sheets are attached as Excel files,
-            in the same layout as the on-screen sheet.
+            <strong style="color:#334155;">${operatorName}</strong>. You can review the details below or open the live sheet in the portal.
         </p>
 
         <div style="background:#f8fafc;border:1px solid #eef2f6;border-radius:10px;padding:16px 20px;margin-bottom:24px;">
@@ -812,13 +811,6 @@ export const generateCombinedMonitoringEmail = ({
                     <td style="padding:5px 0;color:#334155;">${headerInfo?.verifiedByEduCell || 'Pending'}</td>
                 </tr>
             </table>
-        </div>
-
-        <div style="background:#f5f9ff;border-left:3px solid #93c5fd;border-radius:6px;padding:14px 18px;margin-bottom:24px;">
-            <p style="margin:0;color:#475569;font-size:13px;line-height:1.7;">
-                The attached Excel workbook has two sheets — 16-Day Monitoring and Mentee Feedback —
-                matching the exact layout of the sheets in the portal.
-            </p>
         </div>
 
         <div style="text-align:center;margin:28px 0 8px;">

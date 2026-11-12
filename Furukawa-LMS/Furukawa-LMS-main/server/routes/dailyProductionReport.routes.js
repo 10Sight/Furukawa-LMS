@@ -8,7 +8,7 @@ import {
     getBatchMachineAssignments,
     checkDailyProductionReport
 } from '../controllers/dailyProductionReport.controller.js';
-import { getDPRConfig, saveDPRConfig, getDPRConfigHistory } from '../controllers/dailyProductionReportConfig.controller.js';
+import { getDPRConfig, saveDPRConfig, getDPRConfigHistory, getDPRPresentation, saveDPRPresentationWithRevision } from '../controllers/dailyProductionReportConfig.controller.js';
 import { getDPRManualStats, saveDPRManualStats, getDPRFilledDates } from '../controllers/dprManualStatistics.controller.js';
 import verifyJWT from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/authrization.middleware.js";
@@ -37,8 +37,10 @@ router.delete('/:id', authorizeRoles('ADMIN', 'SUPERADMIN'), deleteDailyProducti
 router.post('/check', authorizeRoles('ADMIN', 'SUPERADMIN', 'SHIFT_INCHARGE', 'INSTRUCTOR'), checkDailyProductionReport);
 
 // Config routes
+router.get("/config/presentation/:departmentId", getDPRPresentation);
+router.post("/config/save-with-revision", authorizeRoles("ADMIN", "SUPERADMIN", "dpr:edit_layout", "revision:update"), saveDPRPresentationWithRevision);
 router.get("/config/:departmentId", getDPRConfig);
 router.post("/config/save", authorizeRoles("ADMIN", "SUPERADMIN"), saveDPRConfig);
-router.get("/history/:departmentId", authorizeRoles("ADMIN", "SUPERADMIN"), getDPRConfigHistory);
+router.get("/history/:departmentId", authorizeRoles("ADMIN", "SUPERADMIN", "dpr:edit_layout", "revision:update"), getDPRConfigHistory);
 
 export default router;

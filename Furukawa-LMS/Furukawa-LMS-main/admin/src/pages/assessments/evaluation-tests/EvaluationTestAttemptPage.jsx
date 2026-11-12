@@ -186,15 +186,16 @@ const EvaluationTestAttemptPage = ({
     const activeTemplate = (isView || isEdit) ? attemptResponse?.data : templateResponse?.data;
     const testTitle = activeTemplate?.title || activeTemplate?.testTitle || "Evaluation Test";
 
-    // Department/section only resolve once a saved attempt is loaded (view/edit) —
-    // in create mode there's no persisted trainee-department link yet, so the doc
-    // header falls back to the global default until the attempt is saved.
+    // The doc header is read live from the Revision Table (attempts keep no copy, by design).
+    // A saved attempt (view/edit) resolves it for the trainee's department/section; while a new
+    // attempt is being graded there's no saved trainee link yet, so it uses the test's own
+    // department — not the global default — so the header doesn't jump when the attempt is saved.
     const revisionInfo = useRevisionInfo(
         "evaluation-test-attempt",
-        { docNo: "ST-S16-01 FORMAT 4 -E", revNo: "01", revDate: "28.02.2025" },
+        { docNo: "ST-S16-01 FORMAT 4 -E", revNo: "01", revDate: "28.02.2025", issueDate: "17.01.2024" },
         (isView || isEdit)
             ? { departmentId: attemptResponse?.data?.departmentId, sectionId: attemptResponse?.data?.sectionId }
-            : {}
+            : { departmentId: templateResponse?.data?.departmentId || undefined }
     );
     const contentStructure = React.useMemo(() => {
         return normalizeContentStructure(activeTemplate?.contentStructure || [], testTitle);
@@ -601,7 +602,7 @@ const EvaluationTestAttemptPage = ({
                             <div>{revisionInfo.docNo}</div>
                             <div>Revision No. {revisionInfo.revNo}</div>
                             <div>Revision Date : {revisionInfo.revDate}</div>
-                            <div>Issue date : 17.01.2024</div>
+                            <div>Issue date : {revisionInfo.issueDate}</div>
                         </div>
                     </div>
 

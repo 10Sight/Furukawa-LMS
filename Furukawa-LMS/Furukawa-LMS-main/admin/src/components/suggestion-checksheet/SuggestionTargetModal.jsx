@@ -40,19 +40,19 @@ export const STORAGE_KEY_SUGGESTION_TARGETS = 'fme_suggestion_dept_targets';
 export const STORAGE_KEY_SUGGESTION_TARGETS_V2 = 'fme_suggestion_dept_targets_v2';
 
 export const DEFAULT_DEPARTMENT_TARGETS = {
-  PE: 10,
-  IT: 10,
-  Quality: 15,
-  Assembly: 20,
-  SRC: 10,
-  Store: 10,
-  HR: 8,
-  Safety: 12,
-  FG: 10,
-  PPC: 10,
-  Maintenance: 12,
-  'D&D': 10,
-  'C&C': 15
+  PE: 0,
+  IT: 0,
+  Quality: 0,
+  Assembly: 0,
+  SRC: 0,
+  Store: 0,
+  HR: 0,
+  Safety: 0,
+  FG: 0,
+  PPC: 0,
+  Maintenance: 0,
+  'D&D': 0,
+  'C&C': 0
 };
 
 let memoryTargets = null;
@@ -233,6 +233,32 @@ export default function SuggestionTargetModal({
       return acc;
     }, {});
     setFormTargets(zeroTargets);
+
+    // Persist 0 for all selected months to storage & server immediately
+    saveStoredDepartmentTargets(zeroTargets);
+    const v2 = getStoredDepartmentTargetsV2();
+    const yStr = String(selectedYear);
+    if (!v2[yStr]) v2[yStr] = {};
+
+    const monthsToReset = selectedMonths.length > 0 ? selectedMonths : [currentMonthNum];
+    monthsToReset.forEach((m) => {
+      v2[yStr][String(m)] = { ...zeroTargets, unselected: false };
+    });
+    saveStoredDepartmentTargetsV2(v2);
+
+    try {
+      saveTargetsMutation({ targets: zeroTargets, targetsV2: v2 });
+    } catch (err) {
+      console.warn('Could not sync targets to server:', err);
+    }
+
+    if (typeof onSaveTargets === 'function') {
+      onSaveTargets(zeroTargets, {
+        year: selectedYear,
+        months: monthsToReset,
+        targetsByYearMonth: v2
+      });
+    }
   };
 
   const handleSave = (e) => {

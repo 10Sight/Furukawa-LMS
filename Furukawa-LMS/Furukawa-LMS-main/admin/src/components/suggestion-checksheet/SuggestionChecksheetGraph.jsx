@@ -978,7 +978,7 @@ export default function SuggestionChecksheetGraph({
         isOpen={isTargetModalOpen}
         onClose={() => setIsTargetModalOpen(false)}
         targets={targets}
-        onSaveTargets={(newTargets) => setTargets(newTargets)}
+        onSaveTargets={(newTargets) => setTargets({ ...newTargets })}
       />
     </div>
   );

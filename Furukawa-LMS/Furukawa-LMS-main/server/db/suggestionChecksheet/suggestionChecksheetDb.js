@@ -13,19 +13,19 @@ export const SUGGESTION_STORE_PATH = path.join(__dirname, "suggestion_checksheet
 export const SUGGESTION_TARGETS_STORE_PATH = path.join(__dirname, "suggestion_targets_store.json");
 
 export const DEFAULT_SUGGESTION_TARGETS = {
-  PE: 10,
-  IT: 10,
-  Quality: 15,
-  Assembly: 20,
-  SRC: 10,
-  Store: 10,
-  HR: 8,
-  Safety: 12,
-  FG: 10,
-  PPC: 10,
-  Maintenance: 12,
-  'D&D': 10,
-  'C&C': 15
+  PE: 0,
+  IT: 0,
+  Quality: 0,
+  Assembly: 0,
+  SRC: 0,
+  Store: 0,
+  HR: 0,
+  Safety: 0,
+  FG: 0,
+  PPC: 0,
+  Maintenance: 0,
+  'D&D': 0,
+  'C&C': 0
 };
 
 const DUMMY_RECORD_IDS = new Set([

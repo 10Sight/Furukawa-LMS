@@ -89,11 +89,12 @@ const isLpaRecordForSection = (rec, section, unit) => {
 
 export const isDummyLpaPdcaSheet = (sheet) => {
   if (!sheet) return false;
-  const sId = String(sheet.id || sheet.recordId || '').toUpperCase();
+  const sId = String(sheet.id || sheet.recordId || '').trim().toUpperCase();
   const sTitle = String(sheet.title || sheet.topic || '').trim().toLowerCase();
   if (sId === 'PDCA-LPA-ASSEMBLY-BAWAL' || sId === 'PDCA-LPA-CC-BAWAL') return true;
-  if (sTitle === 'assembly - lpa observation (pdca)' && (sId.startsWith('PDCA-LPA-ASSEMBLY-BAWAL') || !sheet.createdAt)) return true;
-  if (sTitle === 'c&c - lpa observation (pdca)' && (sId.startsWith('PDCA-LPA-CC-BAWAL') || !sheet.createdAt)) return true;
+  if (sId === 'PDCA-LPA-ASSEMBLY-GUJRAT' || sId === 'PDCA-LPA-CC-GUJRAT') return true;
+  if (sTitle === 'assembly - lpa observation (pdca)') return true;
+  if (sTitle === 'c&c - lpa observation (pdca)') return true;
   return false;
 };
 
@@ -169,29 +170,8 @@ function LpaPageContent({ viewContext }) {
     try {
       setIsPdcaLoading(true);
       const res = await pdcaApi.getRecords({ limit: 100 });
-      const recordsList = Array.isArray(res) ? res : (res?.records || []);
+      const recordsList = (Array.isArray(res) ? res : (res?.records || [])).filter(r => !isDummyLpaPdcaSheet(r));
       setBackendPdcaSheets(recordsList);
-
-      const hasContent = (s) => Array.isArray(s?.rows) && s.rows.some(r => Boolean(
-        r?.date?.trim() || r?.observation?.trim() || r?.rootCause?.trim() || r?.counterMeasure?.trim() ||
-        (r?.status && r?.status !== 'Not-Started') || r?.staffEmployee?.trim() || r?.department?.trim()
-      ));
-
-      const currentUnit = selectedUnit || 'Bawal';
-      const baseSheetIds = [
-        `PDCA-LPA-CC-${currentUnit}`,
-        `PDCA-LPA-ASSEMBLY-${currentUnit}`
-      ];
-      for (const sId of baseSheetIds) {
-        try {
-          const sh = await pdcaApi.getSheet(sId);
-          if (hasContent(sh)) {
-            try {
-              localStorage.setItem(`lpa_pdca_saved_${sId}`, JSON.stringify(sh));
-            } catch {}
-          }
-        } catch {}
-      }
     } catch (err) {
       console.warn('Could not fetch backend PDCA records:', err);
     } finally {
@@ -953,7 +933,7 @@ function LpaPageContent({ viewContext }) {
       .filter(rec => !isDummyLpaPdcaSheet(rec))
       .map(rec => ({
         id: rec.id || rec.recordId,
-        title: rec.topic || `${activeSection === 'assembly' ? 'Assembly' : 'C&C'} - LPA Observation (PDCA)`,
+        title: rec.topic || `${activeSection === 'assembly' ? 'Assembly' : 'C&C'} Observation Sheet`,
         date: normalizeLpaDate(rec.date) || rec.date || todayIso,
         unit: rec.plant || selectedUnit || 'Bawal',
         department: rec.department || (typeof rec.createdBy === 'object' ? (rec.createdBy?.department || rec.createdBy?.deptName) : '') || (activeSection === 'assembly' ? 'Assembly' : 'C&C'),
@@ -1138,8 +1118,8 @@ function LpaPageContent({ viewContext }) {
     const newSheet = {
       id: newId,
       recordId: newId,
-      topic: newPdcaForm.title.trim() || `${activeSection === 'assembly' ? 'Assembly' : 'C&C'} - LPA Observation (PDCA)`,
-      title: newPdcaForm.title.trim() || `${activeSection === 'assembly' ? 'Assembly' : 'C&C'} - LPA Observation (PDCA)`,
+      topic: newPdcaForm.title.trim() || `${activeSection === 'assembly' ? 'Assembly' : 'C&C'} Observation Sheet`,
+      title: newPdcaForm.title.trim() || `${activeSection === 'assembly' ? 'Assembly' : 'C&C'} Observation Sheet`,
       date: newPdcaForm.date || pdcaDate || todayIso,
       plant: targetUnit,
       unit: targetUnit,

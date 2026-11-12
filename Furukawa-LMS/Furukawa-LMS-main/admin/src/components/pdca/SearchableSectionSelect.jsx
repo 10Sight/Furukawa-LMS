@@ -4,7 +4,8 @@ import { Search, ChevronDown, X, Check, Building2, AlertCircle } from 'lucide-re
 import { fetchPdcaSections } from './CascadingLineAreaSelect.jsx';
 
 import { VERIFIED_SECTION_MASTER, isSectionRelatedToDepartment } from '../../pages/pdca/data/pdcaSections.js';
-export { VERIFIED_SECTION_MASTER, isSectionRelatedToDepartment };
+import { getSectionsForDepartment, doesSectionBelongToDept, VERIFIED_SECTIONS_WITH_LINES } from '../../pages/pdca/data/pdcaHierarchy.js';
+export { VERIFIED_SECTION_MASTER, isSectionRelatedToDepartment, doesSectionBelongToDept };
 
 const POPOVER_WIDTH = 300;
 const POPOVER_MAX_HEIGHT = 340;
@@ -115,12 +116,12 @@ export default function SearchableSectionSelect({
 
   // Filter sections by search and department relationship
   const filteredSections = useMemo(() => {
-    let list = sections;
-
-    // If department is selected, strictly filter to only related sections
-    if (department && department.trim()) {
-      list = list.filter((s) => isSectionRelatedToDepartment(s, department));
+    // If no department is selected, return empty list (Rule: Section depends on Department)
+    if (!department || !String(department).trim()) {
+      return [];
     }
+
+    let list = getSectionsForDepartment(department, sections);
 
     const q = searchTerm.toLowerCase().trim();
     if (q) {
@@ -283,7 +284,11 @@ export default function SearchableSectionSelect({
               ) : (
                 <div className="p-4 text-center text-xs text-slate-400 flex flex-col items-center gap-1">
                   <AlertCircle className="w-4 h-4 text-slate-300" />
-                  <span>No matching sections found</span>
+                  <span>
+                    {!department || !String(department).trim()
+                      ? 'Please select a Department first'
+                      : 'No matching sections found'}
+                  </span>
                 </div>
               )}
             </div>

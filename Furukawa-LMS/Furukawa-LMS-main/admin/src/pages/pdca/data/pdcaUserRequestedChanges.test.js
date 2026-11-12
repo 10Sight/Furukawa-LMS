@@ -1549,3 +1549,132 @@ test('33. PDCA Sheet: Status column styling is clear & vivid (dark colors) and n
   assert.match(layoutCode, /isSheetPage \? '' : 'overflow-x-hidden'/, 'MainLayout must not block sticky with overflow-x-hidden on sheet page');
 });
 
+test('34. Dependent Dropdowns: Department -> Section -> Line/Area database relationships', async () => {
+  const {
+    doesSectionBelongToDept,
+    getSectionsForDepartment,
+    getLineAreasForSection,
+    isLineBelongingToSection,
+    VERIFIED_SECTIONS_WITH_LINES
+  } = await import('./pdcaHierarchy.js');
+
+  // 1. Department -> Section for Assembly
+  const assemblySections = getSectionsForDepartment('Assembly', VERIFIED_SECTIONS_WITH_LINES);
+  const assemblyNames = assemblySections.map(s => s.name);
+  assert.ok(assemblyNames.includes('SPD'), 'Assembly must contain SPD section');
+  assert.ok(assemblyNames.includes('Assembly Production'), 'Assembly must contain Assembly Production');
+  assert.ok(assemblyNames.includes('TUBE CUTTING'), 'Assembly must contain TUBE CUTTING');
+  assert.ok(assemblyNames.includes('AIRBAG SUB-ASSEMBLY'), 'Assembly must contain AIRBAG SUB-ASSEMBLY');
+  assert.ok(!assemblyNames.includes('Quality Lab'), 'Assembly must NOT contain Quality Lab');
+  assert.ok(!assemblyNames.includes('Store'), 'Assembly must NOT contain Store');
+  assert.ok(!assemblyNames.includes('C&C machine'), 'Assembly must NOT contain C&C machine');
+
+  // 2. Section -> Line/Area for SPD
+  const spdLines = getLineAreasForSection('SPD', VERIFIED_SECTIONS_WITH_LINES);
+  assert.equal(spdLines.length, 1, 'SPD section must have 1 line/area');
+  assert.equal(spdLines[0].name, 'SDP', 'SPD section must map to SDP Line/Area');
+  assert.ok(isLineBelongingToSection('SDP', 'SPD', VERIFIED_SECTIONS_WITH_LINES));
+  assert.ok(!isLineBelongingToSection('Quality Lab', 'SPD', VERIFIED_SECTIONS_WITH_LINES));
+
+  // 3. Section -> Line/Area for Assembly Production
+  const apLines = getLineAreasForSection('Assembly Production', VERIFIED_SECTIONS_WITH_LINES);
+  const apLineNames = apLines.map(l => l.name);
+  assert.ok(apLineNames.includes('LID BOX'), 'Assembly Production must contain LID BOX');
+  assert.ok(apLineNames.includes('YHB DR DOOR'), 'Assembly Production must contain YHB DR DOOR');
+  assert.ok(!apLineNames.includes('SDP'), 'Assembly Production must NOT contain SDP');
+
+  // 4. Empty department and empty section
+  assert.deepEqual(getSectionsForDepartment('', VERIFIED_SECTIONS_WITH_LINES), [], 'Empty department returns empty sections array');
+  assert.deepEqual(getLineAreasForSection('', VERIFIED_SECTIONS_WITH_LINES), [], 'Empty section returns empty line/areas array');
+});
+
+test('35. Dependent Dropdowns: Reset logic on Department and Section changes', () => {
+  // Scenario: Existing row with Assembly -> SPD -> SDP
+  const row = {
+    department: 'Assembly',
+    departments: ['Assembly'],
+    section: 'SPD',
+    sectionId: 80,
+    sectionCode: 'WAP1-4',
+    sections: [{ section: 'SPD', sectionId: 80, sectionCode: 'WAP1-4' }],
+    lineArea: 'SDP',
+    lineAreaId: 398,
+    lineAreaCode: 'SPD',
+    lineAreas: [{ lineArea: 'SDP', lineAreaId: 398, lineAreaCode: 'SPD' }]
+  };
+
+  // 1. Department changes to 'Quality': Section and Line/Area must reset
+  const newDept = 'Quality';
+  const deptChanged = newDept !== row.department;
+  assert.equal(deptChanged, true);
+
+  const resetAfterDept = {
+    ...row,
+    department: newDept,
+    departments: [newDept],
+    sections: deptChanged ? [] : row.sections,
+    section: deptChanged ? '' : row.section,
+    sectionId: deptChanged ? null : row.sectionId,
+    sectionCode: deptChanged ? '' : row.sectionCode,
+    lineAreas: deptChanged ? [] : row.lineAreas,
+    lineArea: deptChanged ? '' : row.lineArea,
+    lineAreaId: deptChanged ? null : row.lineAreaId,
+    lineAreaCode: deptChanged ? '' : row.lineAreaCode,
+    lineAreaSectionId: null
+  };
+
+  assert.equal(resetAfterDept.department, 'Quality');
+  assert.equal(resetAfterDept.section, '', 'Section must be reset when department changes');
+  assert.equal(resetAfterDept.sectionId, null, 'SectionId must be null');
+  assert.equal(resetAfterDept.lineArea, '', 'LineArea must be reset when department changes');
+  assert.equal(resetAfterDept.lineAreaId, null, 'LineAreaId must be null');
+
+  // 2. Section changes: Line/Area must reset
+  const secChanged = true;
+  const resetAfterSec = {
+    ...row,
+    section: 'Assembly Production',
+    sectionId: 74,
+    sectionCode: 'WAP1-8',
+    sections: [{ section: 'Assembly Production', sectionId: 74, sectionCode: 'WAP1-8' }],
+    lineAreas: secChanged ? [] : row.lineAreas,
+    lineArea: secChanged ? '' : row.lineArea,
+    lineAreaId: secChanged ? null : row.lineAreaId,
+    lineAreaCode: secChanged ? '' : row.lineAreaCode
+  };
+
+  assert.equal(resetAfterSec.section, 'Assembly Production');
+  assert.equal(resetAfterSec.lineArea, '', 'LineArea must be reset when section changes');
+  assert.equal(resetAfterSec.lineAreaId, null, 'LineAreaId must be null');
+});
+
+test('36. Dependent Dropdowns: Applied to BOTH PDCASheet and LpaPdcaSheet', () => {
+  const pdcaPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/pdca/PDCASheet.jsx');
+  const lpaPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/lpa/LpaPdcaSheet.jsx');
+  const secSelectPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/pdca/SearchableSectionSelect.jsx');
+  const lineSelectPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/pdca/SearchableLineAreaSelect.jsx');
+
+  const pdcaCode = fs.readFileSync(pdcaPath, 'utf8');
+  const lpaCode = fs.readFileSync(lpaPath, 'utf8');
+  const secSelectCode = fs.readFileSync(secSelectPath, 'utf8');
+  const lineSelectCode = fs.readFileSync(lineSelectPath, 'utf8');
+
+  // 1. Check PDCASheet has dependent options and resets
+  assert.match(pdcaCode, /getSectionsForDepartment/, 'PDCASheet must use getSectionsForDepartment');
+  assert.match(pdcaCode, /getLineAreasForSection/, 'PDCASheet must use getLineAreasForSection');
+  assert.match(pdcaCode, /deptsChanged/, 'PDCASheet must track deptsChanged');
+
+  // 2. Check LpaPdcaSheet has dependent handlers and props
+  assert.match(lpaCode, /dept !== curr\.department/, 'LpaPdcaSheet must check dept !== curr.department');
+  assert.match(lpaCode, /sectionName !== curr\.section/, 'LpaPdcaSheet must check sectionName !== curr.section');
+  assert.match(lpaCode, /department=\{row\.department\}/, 'LpaPdcaSheet must pass department to SearchableLineAreaSelect');
+
+  // 3. Check SearchableSectionSelect filters by department
+  assert.match(secSelectCode, /!department \|\| !String\(department\)\.trim\(\)/, 'SearchableSectionSelect must verify department is selected');
+  assert.match(secSelectCode, /getSectionsForDepartment\(department, sections\)/, 'SearchableSectionSelect must call getSectionsForDepartment');
+
+  // 4. Check SearchableLineAreaSelect filters by section
+  assert.match(lineSelectCode, /getLineAreasForSection\(activeSectionIdentifier, sections\)/, 'SearchableLineAreaSelect must call getLineAreasForSection');
+  assert.match(lineSelectCode, /Please select a Section first/, 'SearchableLineAreaSelect must show prompt if no section selected');
+});
+

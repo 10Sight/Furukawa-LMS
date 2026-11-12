@@ -826,10 +826,11 @@ export class PDCAModel {
         if (dbActive) {
             try {
                 const [secRows] = await executeQuery(`
-                    SELECT id, name, uniCode, departmentId, category
-                    FROM [sections]
-                    WHERE (isActive = 1 OR isActive IS NULL)
-                    ORDER BY name ASC
+                    SELECT s.id, s.name, s.uniCode, s.departmentId, s.category, d.name AS departmentName
+                    FROM [sections] s
+                    LEFT JOIN departments d ON s.departmentId = d.id
+                    WHERE (s.isActive = 1 OR s.isActive IS NULL)
+                    ORDER BY s.name ASC
                 `);
                 const [lineRows] = await executeQuery(`
                     SELECT id, name, uniCode, sectionId, department
@@ -846,6 +847,7 @@ export class PDCAModel {
                             name: s.name,
                             uniCode: s.uniCode || '',
                             departmentId: s.departmentId,
+                            departmentName: s.departmentName || '',
                             category: s.category || '',
                             lines: []
                         });

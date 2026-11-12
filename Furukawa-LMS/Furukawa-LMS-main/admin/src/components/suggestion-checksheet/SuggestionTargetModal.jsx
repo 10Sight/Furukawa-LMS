@@ -40,19 +40,19 @@ export const STORAGE_KEY_SUGGESTION_TARGETS = 'fme_suggestion_dept_targets';
 export const STORAGE_KEY_SUGGESTION_TARGETS_V2 = 'fme_suggestion_dept_targets_v2';
 
 export const DEFAULT_DEPARTMENT_TARGETS = {
-  PE: 10,
-  IT: 10,
-  Quality: 15,
-  Assembly: 20,
-  SRC: 10,
-  Store: 10,
-  HR: 8,
-  Safety: 12,
-  FG: 10,
-  PPC: 10,
-  Maintenance: 12,
-  'D&D': 10,
-  'C&C': 15
+  PE: 0,
+  IT: 0,
+  Quality: 0,
+  Assembly: 0,
+  SRC: 0,
+  Store: 0,
+  HR: 0,
+  Safety: 0,
+  FG: 0,
+  PPC: 0,
+  Maintenance: 0,
+  'D&D': 0,
+  'C&C': 0
 };
 
 let memoryTargets = null;
@@ -154,6 +154,7 @@ export default function SuggestionTargetModal({
   isOpen,
   onClose,
   targets: initialTargets,
+  targetsV2: initialTargetsV2,
   onSaveTargets
 }) {
   const [saveTargetsMutation] = useSaveSuggestionTargetsMutation();
@@ -161,20 +162,20 @@ export default function SuggestionTargetModal({
   const currentMonthNum = (new Date().getMonth() + 1) || 11;
 
   const [selectedYear, setSelectedYear] = useState(currentYear);
-  const [selectedMonths, setSelectedMonths] = useState([3, 4, 5, 6]); // March, April, May, June by default or current
+  const [selectedMonths, setSelectedMonths] = useState([currentMonthNum]);
   const [formTargets, setFormTargets] = useState(() => initialTargets || getStoredDepartmentTargets());
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   // Sync targets when opened or when year selection changes
   useEffect(() => {
     if (isOpen) {
-      const v2 = getStoredDepartmentTargetsV2();
+      const v2 = initialTargetsV2 || getStoredDepartmentTargetsV2();
       const yStr = String(selectedYear);
       if (v2[yStr]) {
         const active = Object.keys(v2[yStr])
           .map(Number)
           .filter((n) => n >= 1 && n <= 12 && v2[yStr][String(n)] && !v2[yStr][String(n)].unselected);
-        setSelectedMonths(active);
+        setSelectedMonths(active.length > 0 ? active : [currentMonthNum]);
         const firstMonth = active[0] || currentMonthNum;
         if (v2[yStr][String(firstMonth)] && !v2[yStr][String(firstMonth)].unselected) {
           setFormTargets({ ...DEFAULT_DEPARTMENT_TARGETS, ...v2[yStr][String(firstMonth)] });
@@ -187,7 +188,7 @@ export default function SuggestionTargetModal({
       }
       setSaveSuccess(false);
     }
-  }, [isOpen, selectedYear]);
+  }, [isOpen, selectedYear, initialTargetsV2, initialTargets]);
 
   // Prevent background scroll when modal is open
   useEffect(() => {
@@ -227,19 +228,48 @@ export default function SuggestionTargetModal({
     }));
   };
 
-  const handleReset = () => {
+  const handleReset = async () => {
     const zeroTargets = TARGET_DEPARTMENTS.reduce((acc, dept) => {
       acc[dept] = 0;
       return acc;
     }, {});
     setFormTargets(zeroTargets);
+
+    // Persist 0 for all selected months to storage & server immediately
+    saveStoredDepartmentTargets(zeroTargets);
+    const v2 = { ...getStoredDepartmentTargetsV2() };
+    const yStr = String(selectedYear);
+    v2[yStr] = { ...(v2[yStr] || {}) };
+
+    const monthsToReset = selectedMonths.length > 0 ? selectedMonths : [currentMonthNum];
+    monthsToReset.forEach((m) => {
+      v2[yStr][String(m)] = { ...zeroTargets, unselected: false };
+    });
+    saveStoredDepartmentTargetsV2(v2);
+
+    if (typeof onSaveTargets === 'function') {
+      onSaveTargets(zeroTargets, {
+        year: selectedYear,
+        months: monthsToReset,
+        targetsByYearMonth: v2
+      });
+    }
+
+    try {
+      await saveTargetsMutation({ targets: zeroTargets, targetsV2: v2 }).unwrap();
+    } catch (err) {
+      console.warn('Could not sync targets to server:', err);
+    }
   };
 
-  const handleSave = (e) => {
-    e?.preventDefault?.();
+  const handleSave = async (e) => {
+    if (e) {
+      e.preventDefault?.();
+      e.stopPropagation?.();
+    }
     const cleanTargets = {};
     TARGET_DEPARTMENTS.forEach((dept) => {
-      cleanTargets[dept] = formTargets[dept] === '' ? 0 : Number(formTargets[dept]) || 0;
+      cleanTargets[dept] = formTargets[dept] === '' ? 0 : Math.max(0, Number(formTargets[dept]) || 0);
     });
 
     // Save to general storage for fallback
@@ -247,12 +277,14 @@ export default function SuggestionTargetModal({
 
     // Save into V2 storage for all 12 months:
     // Selected months get configured targets; unselected months marked as unselected
-    const v2 = getStoredDepartmentTargetsV2();
+    const v2 = { ...getStoredDepartmentTargetsV2() };
     const yStr = String(selectedYear);
-    if (!v2[yStr]) v2[yStr] = {};
+    v2[yStr] = { ...(v2[yStr] || {}) };
+
+    const monthsToSave = selectedMonths.length > 0 ? selectedMonths : [currentMonthNum];
 
     for (let m = 1; m <= 12; m++) {
-      if (selectedMonths.includes(m)) {
+      if (monthsToSave.includes(m)) {
         v2[yStr][String(m)] = { ...cleanTargets, unselected: false };
       } else {
         v2[yStr][String(m)] = { unselected: true };
@@ -260,19 +292,20 @@ export default function SuggestionTargetModal({
     }
     saveStoredDepartmentTargetsV2(v2);
 
+    if (typeof onSaveTargets === 'function') {
+      onSaveTargets(cleanTargets, {
+        year: selectedYear,
+        months: monthsToSave,
+        targetsByYearMonth: v2
+      });
+    }
+
     try {
-      saveTargetsMutation({ targets: cleanTargets, targetsV2: v2 });
+      await saveTargetsMutation({ targets: cleanTargets, targetsV2: v2 }).unwrap();
     } catch (err) {
       console.warn('Could not sync targets to server:', err);
     }
 
-    if (typeof onSaveTargets === 'function') {
-      onSaveTargets(cleanTargets, {
-        year: selectedYear,
-        months: selectedMonths,
-        targetsByYearMonth: v2
-      });
-    }
     setSaveSuccess(true);
     setTimeout(() => {
       setSaveSuccess(false);
@@ -460,7 +493,8 @@ export default function SuggestionTargetModal({
                 Cancel
               </button>
               <button
-                type="submit"
+                type="button"
+                onClick={handleSave}
                 className={`px-5 py-2 rounded-xl text-xs font-bold text-white flex items-center gap-1.5 shadow-md transition-all cursor-pointer ${
                   saveSuccess
                     ? 'bg-emerald-600 shadow-emerald-500/20'

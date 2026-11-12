@@ -65,9 +65,10 @@ import {
   stripEmployeeId,
   VERIFIED_EMPLOYEE_MASTER
 } from '../../pages/pdca/data/pdcaEmployees.js';
-import SearchableLineAreaSelect, { getCachedDbSections } from './SearchableLineAreaSelect';
+import SearchableLineAreaSelect, { getCachedDbSections, fetchPdcaSections } from './SearchableLineAreaSelect';
 import { getDefaultSectionsWithLines } from './CascadingLineAreaSelect.jsx';
 import SearchableSectionSelect, { VERIFIED_SECTION_MASTER, isSectionRelatedToDepartment } from './SearchableSectionSelect';
+import { getSectionsForDepartment, getLineAreasForSection, VERIFIED_SECTIONS_WITH_LINES } from '../../pages/pdca/data/pdcaHierarchy.js';
 import { getMediaUrl } from '@/utils/mediaUtils.js';
 
 function CheckboxMultiSelect({ value = [], options = [], onChange, disabled = false, placeholder, renderTrigger = null }) {
@@ -799,6 +800,12 @@ export default function PDCASheet({
     ['assembly', 'c&c', 'c & c', 'assembly pdca', 'c&c pdca', 'c & c pdca'].includes(lpaSheetTitle) ||
     ['assembly', 'cc', 'c&c', 'c & c'].includes(String(topic?.section || '').trim().toLowerCase());
   const usesCheckboxMultiSelects = true;
+  const [dbSections, setDbSections] = useState(() => getCachedDbSections() || VERIFIED_SECTIONS_WITH_LINES);
+  useEffect(() => {
+    fetchPdcaSections().then((data) => {
+      if (Array.isArray(data) && data.length) setDbSections(data);
+    }).catch(() => {});
+  }, []);
   const effectiveUser = currentUser || userContext?.user;
   const lpaDefaultUnit = isLpaObservationSheet
     ? (topic?.plant || topic?.unit || '')
@@ -3799,31 +3806,31 @@ export default function PDCASheet({
       if (!curr) return prev;
       let depts = Array.isArray(curr.departments) ? [...curr.departments] : (curr.department ? [curr.department] : []);
       if (depts.length === 0) depts = [''];
+      const oldVal = depts[dIdx];
       depts[dIdx] = val;
       const primary = depts[0] || '';
 
-      // If user selected a department and existing section for this slot is no longer valid, clear it
-      let secs = Array.isArray(curr.sections) ? [...curr.sections] : (curr.section ? [{ section: curr.section, sectionId: curr.sectionId, sectionCode: curr.sectionCode }] : []);
-      const targetSecIdx = dIdx < secs.length ? dIdx : 0;
-      if (val && secs[targetSecIdx]?.section) {
-        const secObj = VERIFIED_SECTION_MASTER.find(
-          (s) => String(s.id) === String(secs[targetSecIdx].sectionId) || s.name?.toLowerCase() === secs[targetSecIdx].section?.toLowerCase()
-        ) || { name: secs[targetSecIdx].section, id: secs[targetSecIdx].sectionId };
-        if (!isSectionRelatedToDepartment(secObj, val)) {
-          secs[targetSecIdx] = { section: '', sectionId: null, sectionCode: '' };
-        }
-      }
+      const deptChanged = oldVal !== val;
+      let secs = deptChanged
+        ? [{ section: '', sectionId: null, sectionCode: '' }]
+        : (Array.isArray(curr.sections) ? [...curr.sections] : (curr.section ? [{ section: curr.section, sectionId: curr.sectionId, sectionCode: curr.sectionCode }] : []));
+      let lineAreas = deptChanged
+        ? [{ lineArea: '', lineAreaId: null, lineAreaCode: '', sectionId: null }]
+        : (Array.isArray(curr.lineAreas) ? [...curr.lineAreas] : (curr.lineArea ? [{ lineArea: curr.lineArea, lineAreaId: curr.lineAreaId, lineAreaCode: curr.lineAreaCode, sectionId: curr.lineAreaSectionId }] : []));
 
       updated[rowIndex] = {
         ...curr,
         departments: depts,
         department: primary,
-        ...(secs.length > 0 ? {
-          sections: secs,
-          section: secs[0]?.section || '',
-          sectionId: secs[0]?.sectionId ?? null,
-          sectionCode: secs[0]?.sectionCode || ''
-        } : {})
+        sections: secs,
+        section: secs[0]?.section || '',
+        sectionId: secs[0]?.sectionId ?? null,
+        sectionCode: secs[0]?.sectionCode || '',
+        lineAreas: lineAreas,
+        lineArea: lineAreas[0]?.lineArea || '',
+        lineAreaId: lineAreas[0]?.lineAreaId ?? null,
+        lineAreaCode: lineAreas[0]?.lineAreaCode || '',
+        lineAreaSectionId: null
       };
       return updated;
     });
@@ -3875,19 +3882,33 @@ export default function PDCASheet({
       if (!curr) return prev;
       let secs = Array.isArray(curr.sections) ? [...curr.sections] : (curr.section ? [{ section: curr.section, sectionId: curr.sectionId, sectionCode: curr.sectionCode }] : []);
       if (secs.length === 0) secs = [{ section: '', sectionId: null, sectionCode: '' }];
+      const oldSec = secs[sIdx];
+      const secChanged = oldSec?.section !== sectionName || oldSec?.sectionId !== (meta?.sectionId ?? null);
+
       secs[sIdx] = {
         section: sectionName,
         sectionId: meta?.sectionId ?? null,
         sectionCode: meta?.sectionCode || ''
       };
       const primary = secs[0] || { section: '', sectionId: null, sectionCode: '' };
+
+      // Rule: If Section changes, reset Line/Area
+      let las = secChanged
+        ? [{ lineArea: '', lineAreaId: null, lineAreaCode: '', sectionId: primary.sectionId ?? null }]
+        : (Array.isArray(curr.lineAreas) ? [...curr.lineAreas] : (curr.lineArea ? [{ lineArea: curr.lineArea, lineAreaId: curr.lineAreaId, lineAreaCode: curr.lineAreaCode, sectionId: curr.lineAreaSectionId }] : []));
+      const primaryLine = las[0] || { lineArea: '', lineAreaId: null, lineAreaCode: '', sectionId: null };
+
       updated[rowIndex] = {
         ...curr,
         sections: secs,
         section: primary.section || '',
         sectionId: primary.sectionId ?? null,
         sectionCode: primary.sectionCode || '',
-        lineAreaSectionId: primary.sectionId ?? null
+        lineAreaSectionId: primary.sectionId ?? null,
+        lineAreas: las,
+        lineArea: primaryLine.lineArea || '',
+        lineAreaId: primaryLine.lineAreaId ?? null,
+        lineAreaCode: primaryLine.lineAreaCode || ''
       };
       return updated;
     });
@@ -5121,9 +5142,9 @@ export default function PDCASheet({
   );
 
   return (
-    <div className="pdca-form-root w-full min-w-0 flex-1 flex flex-col min-h-0 space-y-2 animate-in fade-in duration-150 overflow-hidden">
-      {/* Control Bar: Back Button, Save, Calendar Date, Excel Export, Search & Add Row */}
-      <div className="sticky top-0 shrink-0 z-30 w-full min-w-0 bg-white rounded-xl border border-[#D5DCE5] shadow-[0_1px_3px_rgba(0,0,0,0.03)] overflow-hidden">
+    <div className="pdca-form-root w-full min-w-0 flex-1 flex flex-col min-h-0 space-y-2 animate-in fade-in duration-150">
+      {/* Control Bar: Back Button, Save, Calendar Date, Excel Export, Search & Add Row (Frozen with screen) */}
+      <div className="sticky top-0 shrink-0 z-50 w-full min-w-0 bg-white rounded-xl border border-[#D5DCE5] shadow-[0_2px_8px_rgba(0,0,0,0.08)]">
         {/* Control Toolbar */}
         <div className="px-4 py-2 flex flex-wrap items-center justify-between gap-2.5 text-xs bg-white">
           <div className="flex flex-wrap items-center gap-2 text-slate-500 font-medium">
@@ -5862,7 +5883,7 @@ export default function PDCASheet({
                       {sNo}
                     </td>
 
-                    {/* 4. Status (Frozen - visible dropdown styling but user cannot select) */}
+                    {/* 4. Status (Frozen - clearly visible, vivid & darker colors without browser fade) */}
                     <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[124px] min-w-[118px]">
                       {(() => {
                         const hasDate = Boolean(row.date?.trim());
@@ -5872,24 +5893,36 @@ export default function PDCASheet({
                           : (norm && norm !== 'Not-Started' ? norm : '');
                         return (
                           <div className="w-full flex items-center justify-center">
-                            <select
-                              disabled={true}
+                            <div
                               tabIndex={-1}
                               aria-label={`Status for row ${sNo}`}
-                              value={rowStatus}
-                              className={`w-full min-w-full rounded-md border px-1.5 py-1 text-[14px] font-medium outline-none whitespace-nowrap cursor-not-allowed pointer-events-none select-none text-center ${rowStatus === 'Done' ? 'bg-green-50 text-green-700 border-green-200' :
-                                rowStatus === 'In- Progress' ? 'bg-yellow-50 text-yellow-800 border-yellow-300' :
-                                  rowStatus === 'Delay' ? 'bg-red-50 text-red-700 border-red-200' :
-                                    rowStatus === 'Not-Started' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                                      'bg-slate-50 text-slate-400 border-slate-200'
-                                }`}
+                              className={`w-full min-w-full rounded-md border px-2 py-1 text-[13px] font-bold outline-none whitespace-nowrap select-none flex items-center justify-between cursor-default shadow-xs ${
+                                rowStatus === 'Done' ? 'bg-[#dcfce7] text-[#14532d] border-[#86efac]' :
+                                rowStatus === 'In- Progress' ? 'bg-[#fef3c7] text-[#78350f] border-[#fcd34d]' :
+                                rowStatus === 'Delay' ? 'bg-[#fee2e2] text-[#991b1b] border-[#fca5a5]' :
+                                rowStatus === 'Not-Started' ? 'bg-[#dbeafe] text-[#1e40af] border-[#93c5fd]' :
+                                'bg-slate-50 text-slate-500 border-slate-200'
+                              }`}
+                              style={{
+                                color: rowStatus === 'Done' ? '#14532d' :
+                                  rowStatus === 'In- Progress' ? '#78350f' :
+                                  rowStatus === 'Delay' ? '#991b1b' :
+                                  rowStatus === 'Not-Started' ? '#1e40af' : '#64748b',
+                                backgroundColor: rowStatus === 'Done' ? '#dcfce7' :
+                                  rowStatus === 'In- Progress' ? '#fef3c7' :
+                                  rowStatus === 'Delay' ? '#fee2e2' :
+                                  rowStatus === 'Not-Started' ? '#dbeafe' : '#f8fafc',
+                                borderColor: rowStatus === 'Done' ? '#86efac' :
+                                  rowStatus === 'In- Progress' ? '#fcd34d' :
+                                  rowStatus === 'Delay' ? '#fca5a5' :
+                                  rowStatus === 'Not-Started' ? '#93c5fd' : '#cbd5e1'
+                              }}
                             >
-                              <option value="">Select</option>
-                              <option value="Not-Started" style={{ color: '#1d4ed8', backgroundColor: '#eff6ff' }}>Not-Started</option>
-                              <option value="Done" style={{ color: '#15803d', backgroundColor: '#f0fdf4' }}>Done</option>
-                              <option value="In- Progress" style={{ color: '#854d0e', backgroundColor: '#fefce8' }}>In- Progress</option>
-                              <option value="Delay" style={{ color: '#b91c1c', backgroundColor: '#fef2f2' }}>Delay</option>
-                            </select>
+                              <span className="flex-1 text-center font-bold tracking-wide">
+                                {rowStatus || 'Select'}
+                              </span>
+                              <ChevronDown className="w-3.5 h-3.5 opacity-70 flex-shrink-0" />
+                            </div>
                           </div>
                         );
                       })()}
@@ -5920,15 +5953,27 @@ export default function PDCASheet({
                         placeholder="Dept..."
                         onChange={values => setRows(prev => prev.map((item, rowIndex) => {
                           if (rowIndex !== idx) return item;
-                          const sections = (item.sections || []).filter(section => !values.length || values.some(department => {
-                            const master = VERIFIED_SECTION_MASTER.find(option => String(option.id) === String(section.sectionId)) || { id: section.sectionId, name: section.section };
-                            return isSectionRelatedToDepartment(master, department);
-                          }));
-                          const sectionIds = new Set(sections.map(section => String(section.sectionId)));
-                          const lineAreas = (item.lineAreas || []).filter(line => !sections.length ? false : (!line.sectionId || sectionIds.has(String(line.sectionId))));
-                          const firstSection = sections[0] || {};
-                          const firstLine = lineAreas[0] || {};
-                          return { ...item, departments: values, department: values[0] || '', sections, section: firstSection.section || '', sectionId: firstSection.sectionId ?? null, sectionCode: firstSection.sectionCode || '', lineAreas, lineArea: firstLine.lineArea || '', lineAreaId: firstLine.lineAreaId ?? null, lineAreaCode: firstLine.lineAreaCode || '', lineAreaSectionId: firstLine.sectionId ?? null };
+                          const prevDepts = item.departments || (item.department ? [item.department] : []);
+                          const deptsChanged = prevDepts.join(',') !== values.join(',');
+
+                          // Rule: If Department changes, reset Section and Line/Area
+                          if (deptsChanged) {
+                            return {
+                              ...item,
+                              departments: values,
+                              department: values[0] || '',
+                              sections: [],
+                              section: '',
+                              sectionId: null,
+                              sectionCode: '',
+                              lineAreas: [],
+                              lineArea: '',
+                              lineAreaId: null,
+                              lineAreaCode: '',
+                              lineAreaSectionId: null
+                            };
+                          }
+                          return { ...item, departments: values, department: values[0] || '' };
                         }))}
                       /> : <div className="flex flex-col h-full justify-between">
                         <div className="flex flex-col divide-y divide-[#CBD5E1]">
@@ -5946,24 +5991,39 @@ export default function PDCASheet({
                     {/* 7. Section */}
                     <td style={{ width: `${sectionColWidth}px`, minWidth: `${sectionColWidth}px` }} className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150">
                       {usesCheckboxMultiSelects ? <CheckboxMultiSelect
-                        disabled={!canEditEntireRow}
+                        disabled={!canEditEntireRow || !(row.departments?.length || row.department)}
                         value={row.sections?.length ? row.sections.map(section => section.sectionId ?? section.section) : (row.sectionId || row.section ? [row.sectionId || row.section] : [])}
-                        options={VERIFIED_SECTION_MASTER
-                          .filter(section => !row.departments?.length || row.departments.some(department => isSectionRelatedToDepartment(section, department)))
-                          .map(section => ({ value: section.id, label: section.name }))}
+                        options={getSectionsForDepartment(row.departments || row.department, dbSections).map(section => ({ value: section.id, label: section.name }))}
                         placeholder="Section..."
                         onChange={values => setRows(prev => prev.map((item, rowIndex) => {
                           if (rowIndex !== idx) return item;
+                          const prevSecVals = (item.sections?.length ? item.sections.map(s => s.sectionId ?? s.section) : (item.sectionId || item.section ? [item.sectionId || item.section] : [])).map(String);
+                          const newSecVals = values.map(String);
+                          const secChanged = prevSecVals.join(',') !== newSecVals.join(',');
+
                           const sections = values.map(value => {
-                            const master = VERIFIED_SECTION_MASTER.find(section => String(section.id) === String(value));
+                            const match = (dbSections.length ? dbSections : VERIFIED_SECTIONS_WITH_LINES).find(section => String(section.id) === String(value) || section.name === value);
                             const existing = item.sections?.find(section => String(section.sectionId) === String(value) || section.section === value);
-                            return master ? { section: master.name, sectionId: master.id, sectionCode: master.uniCode || '' } : existing;
+                            return match ? { section: match.name, sectionId: match.id, sectionCode: match.uniCode || '' } : existing;
                           }).filter(Boolean);
                           const first = sections[0] || {};
-                          const sectionIds = new Set(sections.map(section => String(section.sectionId)));
-                          const lineAreas = (item.lineAreas || []).filter(line => !line.sectionId || sectionIds.has(String(line.sectionId)));
+                          
+                          // Rule: If Section changes, reset Line/Area
+                          const lineAreas = secChanged ? [] : (item.lineAreas || []);
                           const firstLine = lineAreas[0] || {};
-                          return { ...item, sections, section: first.section || '', sectionId: first.sectionId ?? null, sectionCode: first.sectionCode || '', lineAreas, lineArea: firstLine.lineArea || '', lineAreaId: firstLine.lineAreaId ?? null, lineAreaCode: firstLine.lineAreaCode || '', lineAreaSectionId: firstLine.sectionId ?? null };
+
+                          return {
+                            ...item,
+                            sections,
+                            section: first.section || '',
+                            sectionId: first.sectionId ?? null,
+                            sectionCode: first.sectionCode || '',
+                            lineAreas,
+                            lineArea: firstLine.lineArea || '',
+                            lineAreaId: firstLine.lineAreaId ?? null,
+                            lineAreaCode: firstLine.lineAreaCode || '',
+                            lineAreaSectionId: firstLine.sectionId ?? (first.sectionId ?? null)
+                          };
                         }))}
                       /> : <div className="flex flex-col h-full justify-between">
                         {((row.sections?.length ? row.sections : (row.section ? [{ section: row.section, sectionId: row.sectionId, sectionCode: row.sectionCode }] : [{ section: '', sectionId: null, sectionCode: '' }]))).map((section, sectionIndex, all) => <div key={sectionIndex} className="relative min-h-[30px] p-0.5">
@@ -5977,41 +6037,68 @@ export default function PDCASheet({
                     {/* 8. Line/Area */}
                     <td style={{ width: `${lineAreaColWidth}px`, minWidth: `${lineAreaColWidth}px` }} className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150">
                       {usesCheckboxMultiSelects ? <CheckboxMultiSelect
-                        disabled={!canEditEntireRow || !(row.sections?.length || row.section)}
+                        disabled={!canEditEntireRow || !(row.sections?.length || row.section || row.sectionId)}
                         value={row.lineAreas?.length ? row.lineAreas.map(line => line.lineArea) : (row.lineArea ? [row.lineArea] : [])}
-                        options={[...new Set([
-                          ...(() => {
-                            const cachedSections = getCachedDbSections() || [];
-                            const fallbackSections = getDefaultSectionsWithLines();
-                            const selectedSections = cachedSections.length ? cachedSections : fallbackSections;
-                            return selectedSections
-                              .filter(section => (row.sections || []).some(selected => String(selected.sectionId) === String(section.id) || selected.section === section.name) || String(row.sectionId) === String(section.id) || row.section === section.name)
-                              .flatMap(section => {
-                                const lines = section.lines?.length
-                                  ? section.lines
-                                  : (fallbackSections.find(fallback => String(fallback.id) === String(section.id))?.lines || []);
-                                return lines.map(line => line?.name || line);
-                              });
-                          })(),
-                          ...(row.lineAreas || []).map(line => line.lineArea)
-                        ].filter(Boolean))].map(line => ({ value: line, label: line }))}
+                        options={(() => {
+                          const activeSecs = (row.sections?.length ? row.sections : (row.section || row.sectionId ? [{ section: row.section, sectionId: row.sectionId }] : []));
+                          if (!activeSecs.length) return [];
+                          const lines = activeSecs.flatMap(s => getLineAreasForSection(s.sectionId ?? s.section, dbSections));
+                          const seen = new Set();
+                          const res = [];
+                          for (const l of lines) {
+                            const name = l.name || l;
+                            if (name && !seen.has(name)) {
+                              seen.add(name);
+                              res.push({ value: name, label: name });
+                            }
+                          }
+                          return res;
+                        })()}
                         placeholder="Line/Area..."
                         onChange={values => setRows(prev => prev.map((item, rowIndex) => {
                           if (rowIndex !== idx) return item;
-                          const hierarchy = getCachedDbSections() || getDefaultSectionsWithLines();
-                          const selectedSections = (item.sections?.length ? item.sections : [{ section: item.section, sectionId: item.sectionId }]).filter(section => section.section || section.sectionId);
+                          const activeSecs = (item.sections?.length ? item.sections : [{ section: item.section, sectionId: item.sectionId }]).filter(s => s.section || s.sectionId);
                           const lineAreas = values.map(lineArea => {
-                            const existing = item.lineAreas?.find(line => line.lineArea === lineArea);
-                            const owner = hierarchy.find(section => selectedSections.some(selected => String(selected.sectionId) === String(section.id) || selected.section === section.name) && (section.lines || []).some(line => (line?.name || line) === lineArea));
-                            const lineRecord = owner?.lines?.find(line => (line?.name || line) === lineArea);
-                            return existing || { lineArea, lineAreaId: lineRecord?.id ?? null, lineAreaCode: lineRecord?.uniCode || '', sectionId: owner?.id ?? selectedSections[0]?.sectionId ?? item.sectionId ?? null };
+                            const existing = item.lineAreas?.find(l => l.lineArea === lineArea);
+                            let matchedLine = null;
+                            let ownerSec = null;
+                            for (const sec of activeSecs) {
+                              const sLines = getLineAreasForSection(sec.sectionId ?? sec.section, dbSections);
+                              const found = sLines.find(l => (l.name || l) === lineArea);
+                              if (found) {
+                                matchedLine = found;
+                                ownerSec = sec;
+                                break;
+                              }
+                            }
+                            return existing || {
+                              lineArea,
+                              lineAreaId: matchedLine?.id ?? null,
+                              lineAreaCode: matchedLine?.uniCode || '',
+                              sectionId: ownerSec?.sectionId ?? item.sectionId ?? null
+                            };
                           });
                           const first = lineAreas[0] || {};
-                          return { ...item, lineAreas, lineArea: first.lineArea || '', lineAreaId: first.lineAreaId ?? null, lineAreaCode: first.lineAreaCode || '', lineAreaSectionId: first.sectionId ?? null };
+                          return {
+                            ...item,
+                            lineAreas,
+                            lineArea: first.lineArea || '',
+                            lineAreaId: first.lineAreaId ?? null,
+                            lineAreaCode: first.lineAreaCode || '',
+                            lineAreaSectionId: first.sectionId ?? null
+                          };
                         }))}
                       /> : <div className="flex flex-col h-full justify-between">
                         {((row.lineAreas?.length ? row.lineAreas : (row.lineArea ? [{ lineArea: row.lineArea, lineAreaId: row.lineAreaId, lineAreaCode: row.lineAreaCode, sectionId: row.lineAreaSectionId }] : [{ lineArea: '', lineAreaId: null, lineAreaCode: '', sectionId: null }]))).map((line, lineIndex, all) => <div key={lineIndex} className="relative min-h-[30px] p-0.5">
-                          <SearchableLineAreaSelect disabled={!canEditEntireRow} value={line.lineArea} sectionId={line.sectionId ?? row.sections?.[lineIndex]?.sectionId ?? row.sectionId} lineId={line.lineAreaId} onChange={(value, meta) => handleUpdateLineArea(idx, lineIndex, value, meta)} />
+                          <SearchableLineAreaSelect
+                            disabled={!canEditEntireRow || !(row.sections?.[lineIndex]?.sectionId ?? row.sections?.[lineIndex]?.section ?? row.sectionId ?? row.section)}
+                            value={line.lineArea}
+                            sectionId={line.sectionId ?? row.sections?.[lineIndex]?.sectionId ?? row.sectionId}
+                            section={row.sections?.[lineIndex]?.section ?? row.section}
+                            department={row.departments?.[lineIndex] || row.departments?.[0] || row.department}
+                            lineId={line.lineAreaId}
+                            onChange={(value, meta) => handleUpdateLineArea(idx, lineIndex, value, meta)}
+                          />
                           {all.length > 1 && canEditEntireRow && <button type="button" onClick={() => handleRemoveLineArea(idx, lineIndex)} className="absolute right-0 top-1 text-slate-400 hover:text-rose-600" title="Remove Line/Area"><X className="h-2.5 w-2.5" /></button>}
                         </div>)}
                         {canEditEntireRow && <button type="button" onClick={() => handleAddLineArea(idx)} className="border-t border-slate-100 bg-slate-50/50 px-1 py-0.5 text-[9px] text-blue-600"><Plus className="inline h-2.5 w-2.5" /> Add</button>}

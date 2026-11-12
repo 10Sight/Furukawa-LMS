@@ -118,6 +118,7 @@ export default function SuggestionChecksheetGraph({
   const [cumulativeYear, setCumulativeYear] = useState(currentYear);
   const [isTargetModalOpen, setIsTargetModalOpen] = useState(false);
   const [targets, setTargets] = useState(() => getStoredDepartmentTargets());
+  const [targetsV2, setTargetsV2] = useState(() => getStoredDepartmentTargetsV2());
 
   // Fetch shared targets from backend so all user IDs (Admin, Employee 1, Employee 2) see identical data
   const { data: serverTargetsRes } = useGetSuggestionTargetsQuery(undefined, {
@@ -130,6 +131,9 @@ export default function SuggestionChecksheetGraph({
       syncServerTargets(sTargets, sTargetsV2);
       if (sTargets) {
         setTargets(sTargets);
+      }
+      if (sTargetsV2) {
+        setTargetsV2(sTargetsV2);
       }
     }
   }, [serverTargetsRes]);
@@ -214,6 +218,7 @@ export default function SuggestionChecksheetGraph({
           }
         });
 
+        const v2Store = targetsV2 || getStoredDepartmentTargetsV2();
         const deptTarget = getTargetForDeptAndMonth(dept, targetYear, targetMonth, v2Store, targets);
 
         return {
@@ -298,7 +303,7 @@ export default function SuggestionChecksheetGraph({
     const pastShort = pastMonthObj ? pastMonthObj.short : 'Past';
     const curShort = curMonthObj ? curMonthObj.short : 'Current';
 
-    const v2Store = getStoredDepartmentTargetsV2();
+    const v2Store = targetsV2 || getStoredDepartmentTargetsV2();
 
     const computeMonthStats = (yr, mo) => {
       let totalCreated = 0;
@@ -421,7 +426,7 @@ export default function SuggestionChecksheetGraph({
     });
 
     return [...cumulativeBuckets, ...dailySorted];
-  }, [filteredRecords, graphTab, suggestionScope, targets, cumulativeYear, graphFromDate, currentMonthNum]);
+  }, [filteredRecords, graphTab, suggestionScope, targets, targetsV2, cumulativeYear, graphFromDate, currentMonthNum]);
 
   // Overall totals for quick summary badges
   const summaryTotals = useMemo(() => {
@@ -447,7 +452,7 @@ export default function SuggestionChecksheetGraph({
 
   // Active target value calculation: sum of all department targets set by admin (or specific dept target)
   const targetLineValue = useMemo(() => {
-    const v2Store = getStoredDepartmentTargetsV2();
+    const v2Store = targetsV2 || getStoredDepartmentTargetsV2();
     let targetYear = cumulativeYear;
     let targetMonth = currentMonthNum;
     if (graphFromDate) {
@@ -466,11 +471,11 @@ export default function SuggestionChecksheetGraph({
     return TARGET_DEPARTMENTS.reduce((sum, d) => {
       return sum + getTargetForDeptAndMonth(d, targetYear, targetMonth, v2Store, targets);
     }, 0);
-  }, [graphDept, targets, cumulativeYear, currentMonthNum, graphFromDate]);
+  }, [graphDept, targets, targetsV2, cumulativeYear, currentMonthNum, graphFromDate]);
 
   // Cumulative monthly data calculation (Target vs Current by Month)
   const cumulativeMonthData = useMemo(() => {
-    const v2Store = getStoredDepartmentTargetsV2();
+    const v2Store = targetsV2 || getStoredDepartmentTargetsV2();
     return MONTHS.map((m) => {
       // Count records created in this month of cumulativeYear
       const monthRecords = records.filter((item) => {
@@ -521,7 +526,7 @@ export default function SuggestionChecksheetGraph({
         isCurrentMonth
       };
     });
-  }, [records, selectedUnit, graphDept, cumulativeYear, targets, currentMonthNum, suggestionScope]);
+  }, [records, selectedUnit, graphDept, cumulativeYear, targets, targetsV2, currentMonthNum, suggestionScope]);
 
   const cumulativeTotals = useMemo(() => {
     return cumulativeMonthData.reduce(
@@ -978,7 +983,13 @@ export default function SuggestionChecksheetGraph({
         isOpen={isTargetModalOpen}
         onClose={() => setIsTargetModalOpen(false)}
         targets={targets}
-        onSaveTargets={(newTargets) => setTargets(newTargets)}
+        targetsV2={targetsV2}
+        onSaveTargets={(newTargets, meta) => {
+          setTargets({ ...newTargets });
+          if (meta?.targetsByYearMonth) {
+            setTargetsV2({ ...meta.targetsByYearMonth });
+          }
+        }}
       />
     </div>
   );

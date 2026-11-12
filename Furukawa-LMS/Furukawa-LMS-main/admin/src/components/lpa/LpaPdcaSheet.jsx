@@ -1398,17 +1398,15 @@ export default function LpaPdcaSheet({
       let nextLineAreaCode = curr.lineAreaCode;
       let nextLineAreaSectionId = curr.lineAreaSectionId;
 
-      if (dept && (curr.sectionId || curr.section)) {
-        const secMatch = VERIFIED_SECTION_MASTER.find((s) => String(s.id) === String(curr.sectionId)) || { id: curr.sectionId, name: curr.section };
-        if (!isSectionRelatedToDepartment(secMatch, dept)) {
-          nextSection = '';
-          nextSectionId = null;
-          nextSectionCode = '';
-          nextLineArea = '';
-          nextLineAreaId = null;
-          nextLineAreaCode = '';
-          nextLineAreaSectionId = null;
-        }
+      // Rule: If Department changes, reset Section and Line/Area
+      if (dept !== curr.department) {
+        nextSection = '';
+        nextSectionId = null;
+        nextSectionCode = '';
+        nextLineArea = '';
+        nextLineAreaId = null;
+        nextLineAreaCode = '';
+        nextLineAreaSectionId = null;
       }
 
       updated[rowIndex] = {
@@ -1439,22 +1437,14 @@ export default function LpaPdcaSheet({
       let nextLineArea = curr.lineArea;
       let nextLineAreaId = curr.lineAreaId;
       let nextLineAreaCode = curr.lineAreaCode;
+      let nextLineAreaSectionId = meta?.sectionId ?? curr.lineAreaSectionId;
 
-      if (curr.lineAreaId && newSectionId != null) {
-        const dbSections = getCachedDbSections() || [];
-        const secMatch = dbSections.find((s) => String(s.id) === String(newSectionId));
-        if (secMatch && Array.isArray(secMatch.lines) && secMatch.lines.length > 0) {
-          const lineBelongs = secMatch.lines.some((l) => String(l.id) === String(curr.lineAreaId));
-          if (!lineBelongs) {
-            nextLineArea = '';
-            nextLineAreaId = null;
-            nextLineAreaCode = '';
-          }
-        }
-      } else if (!sectionName) {
+      // Rule: If Section changes, reset Line/Area
+      if (sectionName !== curr.section || newSectionId !== curr.sectionId) {
         nextLineArea = '';
         nextLineAreaId = null;
         nextLineAreaCode = '';
+        nextLineAreaSectionId = newSectionId;
       }
 
       updated[rowIndex] = {
@@ -1462,10 +1452,10 @@ export default function LpaPdcaSheet({
         section: sectionName,
         sectionId: newSectionId,
         sectionCode: newSectionCode,
-        lineAreaSectionId: newSectionId,
         lineArea: nextLineArea,
         lineAreaId: nextLineAreaId,
-        lineAreaCode: nextLineAreaCode
+        lineAreaCode: nextLineAreaCode,
+        lineAreaSectionId: nextLineAreaSectionId
       };
       return updated;
     });
@@ -2437,14 +2427,16 @@ export default function LpaPdcaSheet({
                           disabled={!canEditEntireRow}
                           value={row.lineArea}
                           sectionId={row.sectionId ?? row.lineAreaSectionId}
+                          section={row.section}
+                          department={row.department}
                           lineId={row.lineAreaId}
                           onChange={(val, meta) =>
                             setRows((prev) => {
                               const updated = [...prev];
                               const curr = updated[idx];
-                              const newSectionId = meta?.sectionId ?? curr.sectionId;
-                              const newSection = meta?.section || curr.section;
-                              const newSectionCode = meta?.sectionCode || curr.sectionCode;
+                              const newSectionId = meta?.sectionId ?? curr.sectionId ?? row.sectionId;
+                              const newSection = meta?.section || curr.section || row.section;
+                              const newSectionCode = meta?.sectionCode || curr.sectionCode || row.sectionCode;
 
                               updated[idx] = {
                                 ...curr,

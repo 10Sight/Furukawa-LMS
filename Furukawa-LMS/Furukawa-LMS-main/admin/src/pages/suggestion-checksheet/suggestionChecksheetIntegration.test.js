@@ -719,3 +719,21 @@ test('42. Consistent Graph data across all User IDs (Admin and Employees) via ba
   assert.ok(graphCode.includes("suggestionScope === 'BEST'"), 'computeMonthStats must check suggestionScope === BEST');
 });
 
+test('43. Target line Save Button saves targets via direct onClick, async mutation await, and targetsV2 state sync', () => {
+  const modalCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionTargetModal.jsx', import.meta.url), 'utf8');
+  const graphCode = fs.readFileSync(new URL('../../components/suggestion-checksheet/SuggestionChecksheetGraph.jsx', import.meta.url), 'utf8');
+
+  // 1. Save Targets button has explicit onClick={handleSave} to guarantee execution
+  assert.ok(modalCode.includes('onClick={handleSave}'), 'Save Targets button must have explicit onClick={handleSave}');
+  assert.ok(modalCode.includes('<span>Save Targets</span>'), 'Save Targets button label must exist');
+
+  // 2. handleSave is async and awaits saveTargetsMutation
+  assert.ok(modalCode.includes('const handleSave = async'), 'handleSave must be an async function');
+  assert.ok(modalCode.includes('await saveTargetsMutation'), 'handleSave must await saveTargetsMutation');
+
+  // 3. SuggestionChecksheetGraph synchronizes and maintains targetsV2 in React state
+  assert.ok(graphCode.includes('const [targetsV2, setTargetsV2] = useState'), 'Graph must maintain targetsV2 state');
+  assert.ok(graphCode.includes('targetsV2={targetsV2}'), 'Graph must pass targetsV2 to SuggestionTargetModal');
+  assert.ok(graphCode.includes('setTargetsV2({ ...meta.targetsByYearMonth })'), 'onSaveTargets must update targetsV2 state in Graph');
+});
+

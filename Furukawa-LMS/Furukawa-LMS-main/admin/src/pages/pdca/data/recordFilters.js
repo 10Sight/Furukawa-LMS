@@ -9,6 +9,7 @@ export function matchesPlant(item, plant) {
   if (!plant) return false;
   const normalizedPlant = String(plant).trim().toLowerCase();
   if (
+    normalizedPlant === 'all' ||
     normalizedPlant === 'all unit' ||
     normalizedPlant === 'all units' ||
     normalizedPlant === 'all plants'

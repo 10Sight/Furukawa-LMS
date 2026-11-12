@@ -9,13 +9,20 @@ import PTMTable from '../../components/ptm/PTM/PTMTable';
 import PTMHeader from '../../components/ptm/PTM/PTMHeader';
 import LoginPage from '../../components/ptm/Auth/LoginPage';
 import FormZoomControls from '../../components/shared/FormZoomControls';
+import PTMTabNavigation from '../../components/ptm/PTM/PTMTabNavigation';
+import {
+  PTM_VALID_UNITS,
+  getPTMVisibleSheets,
+  filterPTMRecordsBySection,
+  getPTMSectionCounts,
+} from './data/ptmRecordFilters';
 import { authApi, ptmApi, sheetApi } from './services/api';
 import { initialPTMData } from './data/mockData';
 import { initialHeaderInfo, initialPTMRows } from './data/ptmData';
-import { ChevronDown, Check, Plus, Download, ArrowLeft, Undo2, Redo2, Save } from 'lucide-react';
+import { ChevronDown, Check, Plus, Download, ArrowLeft, Undo2, Redo2, Save, Clock, CheckCircle2 } from 'lucide-react';
 
 const ProcessAudit = lazy(() => import('../process-audit/ProcessAudit'));
-const VALID_UNITS = ['Bawal', 'Gujrat', 'All Units'];
+const VALID_UNITS = ['Bawal', 'Gujrat', 'All'];
 
 function getStoredJson(key, fallback) {
   try {
@@ -66,6 +73,14 @@ function createBlankRow(index, unit = 'Both') {
     noOfTimesRevised: '',
     reasonOfFailure: '',
     actionTaken: '',
+    respUnits: [unit && ['Bawal', 'Gujrat'].includes(unit) ? unit : 'Bawal'],
+    respUnit: unit && ['Bawal', 'Gujrat'].includes(unit) ? unit : 'Bawal',
+    respDeptsByUnit: {},
+    staffEmployees: [],
+    staffEmployee: '',
+    staffName: '',
+    staffId: '',
+    responsiblePersonDept: '',
     status: '',
     remarks: '',
     unit: unit && unit !== 'All Units' ? unit : 'Both',
@@ -297,8 +312,11 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
     });
   }, [currentUser]);
 
-  const activeTab = 'Company';
+  const [activeTab, setActiveTab] = useState('Company'); // 'Company' (Plant) | 'Department' | 'Self PTM'
+  const [activePtmSection, setActivePtmSection] = useState('Ongoing'); // 'Ongoing' | 'Done'
   const [listSearch, setListSearch] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -390,23 +408,22 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
   };
 
   const handleSelectUnit = (unit) => {
-    const nextUnit = VALID_UNITS.includes(unit) ? unit : null;
-    if (nextUnit) {
-      try {
-        sessionStorage.setItem('ptm_selected_unit', nextUnit);
-      } catch {}
-      const nextRows = loadUnitRows(nextUnit);
-      const nextHeaderInfo = loadUnitHeaderInfo(nextUnit);
-      setPtmRows(nextRows);
-      setHeaderInfo(nextHeaderInfo);
-      formStateRef.current = { ptmRows: nextRows, headerInfo: nextHeaderInfo };
-      historyRef.current = { undo: [], redo: [] };
-    }
-    if (!nextUnit) setIsAddModalOpen(false);
+    const isAll = unit === 'All' || unit === 'All Units';
+    const nextUnit = isAll ? 'All' : (VALID_UNITS.includes(unit) ? unit : 'Bawal');
+    try {
+      sessionStorage.setItem('ptm_selected_unit', nextUnit);
+    } catch {}
+    const targetUnit = isAll ? 'All Units' : nextUnit;
+    const nextRows = loadUnitRows(targetUnit);
+    const nextHeaderInfo = loadUnitHeaderInfo(targetUnit);
+    setPtmRows(nextRows);
+    setHeaderInfo(nextHeaderInfo);
+    formStateRef.current = { ptmRows: nextRows, headerInfo: nextHeaderInfo };
+    historyRef.current = { undo: [], redo: [] };
     setSelectedUnit(nextUnit);
+    setCurrentPage(1);
     setCurrentView('list');
     setSelectedTopicItem(null);
-    setCurrentPage(1);
   };
 
   const [ptmSearch, setPtmSearch] = useState('');
@@ -446,27 +463,26 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
   };
 
   /* ── Handlers for PTM Dashboard List ── */
-  const filteredListItems = useMemo(() => {
-    if (!selectedUnit) return [];
-    return listItems.filter((item) => {
-      // Plant match
-      const plantMatch = selectedUnit === 'All Units' ? true : item.plant === selectedUnit;
-      // Scope match
-      const scopeMatch = activeTab === 'Self PDCA'
-        ? item.scope === 'Self PDCA' || item.scope === 'Self PTM'
-        : item.scope === activeTab;
-      // Search match
-      const q = listSearch.toLowerCase().trim();
-      const searchMatch =
-        !q ||
-        item.topic?.toLowerCase().includes(q) ||
-        item.description?.toLowerCase().includes(q) ||
-        item.id?.toLowerCase().includes(q) ||
-        item.createdBy?.name?.toLowerCase().includes(q);
-
-      return plantMatch && scopeMatch && searchMatch;
+  const visibleListItems = useMemo(() => {
+    return getPTMVisibleSheets(listItems, selectedUnit, activeTab, {
+      currentUser,
+      search: listSearch,
+      fromDate,
+      toDate
     });
-  }, [listItems, selectedUnit, activeTab, listSearch]);
+  }, [listItems, selectedUnit, activeTab, currentUser, listSearch, fromDate, toDate]);
+
+  const ptmSectionCounts = useMemo(() => {
+    return getPTMSectionCounts(visibleListItems, activeTab, {
+      currentUser
+    });
+  }, [visibleListItems, activeTab, currentUser]);
+
+  const filteredListItems = useMemo(() => {
+    return filterPTMRecordsBySection(visibleListItems, activeTab, activePtmSection, {
+      currentUser
+    });
+  }, [visibleListItems, activeTab, activePtmSection, currentUser]);
 
   const paginatedItems = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
@@ -694,11 +710,18 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
       'No. of Times Revised',
       'Reason of Failure',
       'Action Taken Against Failure',
+      'Responsible Unit',
+      'Responsible Dept',
+      'Responsible Staff Name',
       'Status',
       'Remarks',
     ];
 
     const dataRows = ptmRows.map((r) => {
+      const respUnitsStr = Array.isArray(r.respUnits) && r.respUnits.length > 0 ? r.respUnits.join(', ') : (r.respUnit || '');
+      const respDeptsStr = r.responsiblePersonDept || (r.respDeptsByUnit ? Object.values(r.respDeptsByUnit).flat().join(', ') : '') || '';
+      const respStaffStr = r.staffEmployee || r.staffName || '';
+
       return [
         `"${r.phaseNo || ''}"`,
         `"${(r.phaseName || '').replace(/"/g, '""')}"`,
@@ -730,6 +753,9 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
         `"${r.noOfTimesRevised || ''}"`,
         `"${(r.reasonOfFailure || '').replace(/"/g, '""')}"`,
         `"${(r.actionTaken || '').replace(/"/g, '""')}"`,
+        `"${respUnitsStr.replace(/"/g, '""')}"`,
+        `"${respDeptsStr.replace(/"/g, '""')}"`,
+        `"${respStaffStr.replace(/"/g, '""')}"`,
         `"${r.status || ''}"`,
         `"${(r.remarks || '').replace(/"/g, '""')}"`,
       ].join(',');
@@ -803,40 +829,112 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
         {/* ── VIEW 1: PTM DASHBOARD LIST VIEW ── */}
         {currentView === 'list' && (
           <main className="p-4 md:p-6 space-y-4 flex-1 w-full mx-auto max-w-[1600px]">
-            {/* 1. Unit Selector Pill Dropdown */}
-            <div className="flex items-center justify-between">
-              <div className="relative inline-block">
+            {/* 1. Scope Tabs: Plant (with Dropdown), Department, Self PTM and Calendar Filter */}
+            <div className="flex flex-wrap items-center gap-3">
+              <PTMTabNavigation
+                activeTab={activeTab}
+                setActiveTab={(tab) => {
+                  setActiveTab(tab);
+                  setActivePtmSection('Ongoing');
+                  setCurrentPage(1);
+                }}
+                selectedUnit={selectedUnit}
+                setSelectedUnit={handleSelectUnit}
+              />
+
+              {/* Calendar Filter in the Green Marked Place */}
+              <div id="ptm-date-filter-bar" className="flex flex-wrap items-center gap-2 bg-white rounded-2xl p-2 px-3 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-[#ECEFF3]">
+                <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+                  <span className="text-[11px] font-bold text-slate-500">From Date</span>
+                  <input
+                    type="date"
+                    value={fromDate}
+                    max={toDate || undefined}
+                    onChange={e => { setFromDate(e.target.value); setCurrentPage(1); }}
+                    className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </label>
+                <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+                  <span className="text-[11px] font-bold text-slate-500">To Date</span>
+                  <input
+                    type="date"
+                    value={toDate}
+                    min={fromDate || undefined}
+                    onChange={e => { setToDate(e.target.value); setCurrentPage(1); }}
+                    className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </label>
+                {(fromDate || toDate) && (
+                  <button
+                    type="button"
+                    onClick={() => { setFromDate(''); setToDate(''); setCurrentPage(1); }}
+                    className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer"
+                  >
+                    Clear dates
+                  </button>
+                )}
+                {fromDate && toDate && fromDate > toDate && (
+                  <span role="alert" className="text-xs text-red-600 font-medium">From Date must not be later than To Date.</span>
+                )}
+              </div>
+            </div>
+
+            {/* 2. Section Navigation: Ongoing & Done (No sub-filter bar!) */}
+            <div className="bg-white rounded-2xl p-3 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-[#ECEFF3] flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setUnitDropdownOpen(!unitDropdownOpen)}
-                  className="flex items-center gap-2.5 bg-white px-4 py-2 rounded-2xl border border-[#E2E8F0] shadow-[0_1px_4px_rgba(0,0,0,0.03)] text-xs font-bold text-slate-800 hover:bg-slate-50 transition-colors cursor-pointer"
-                  title="Switch Plant Unit"
+                  type="button"
+                  onClick={() => {
+                    setActivePtmSection('Ongoing');
+                    setCurrentPage(1);
+                  }}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                    activePtmSection === 'Ongoing'
+                      ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
                 >
-                  <span>{selectedUnit || 'Unit'}</span>
-                  <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                  <Clock className="w-4 h-4" />
+                  <span>Ongoing</span>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-xs font-black ${
+                      activePtmSection === 'Ongoing'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    {ptmSectionCounts.Ongoing}
+                  </span>
                 </button>
 
-                {unitDropdownOpen && (
-                  <div className="absolute left-0 mt-2 w-44 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-40 text-xs font-semibold animate-fade-in">
-                    <div className="px-3.5 py-1 text-[10px] uppercase tracking-wider text-slate-400 font-bold">
-                      Plant Unit
-                    </div>
-                    {VALID_UNITS.map((u) => (
-                      <button
-                        key={u}
-                        onClick={() => {
-                          handleSelectUnit(u);
-                          setUnitDropdownOpen(false);
-                        }}
-                        className={`w-full text-left px-3.5 py-2 hover:bg-blue-50 hover:text-blue-600 flex items-center justify-between transition-colors ${
-                          selectedUnit === u ? 'font-bold text-blue-600 bg-blue-50/60' : 'text-slate-700'
-                        }`}
-                      >
-                        <span>{u}</span>
-                        {selectedUnit === u && <Check className="w-3.5 h-3.5 text-blue-600 stroke-[2.5]" />}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActivePtmSection('Done');
+                    setCurrentPage(1);
+                  }}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                    activePtmSection === 'Done'
+                      ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/20'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Done</span>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-xs font-black ${
+                      activePtmSection === 'Done'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    {ptmSectionCounts.Done}
+                  </span>
+                </button>
+              </div>
+
+              <div className="text-xs text-slate-500 font-medium">
+                Showing <strong>{filteredListItems.length}</strong> {activePtmSection.toLowerCase()} {filteredListItems.length === 1 ? 'sheet' : 'sheets'}
               </div>
             </div>
 

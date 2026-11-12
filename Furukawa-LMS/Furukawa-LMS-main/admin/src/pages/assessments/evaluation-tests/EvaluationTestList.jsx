@@ -167,15 +167,23 @@ const EvaluationTestList = () => {
                             Build and manage custom practical DOJO evaluation test papers with dynamic checking items and result structures.
                         </p>
                     </div>
-                    {canCreate && (
-                        <Button 
-                            onClick={() => navigate("/admin/add-evaluation-test")}
-                            className="bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-md shadow-blue-200 flex items-center gap-2 transition-all duration-300 transform hover:scale-[1.02]"
-                        >
-                            <IconPlus className="h-4 w-4" />
-                            Create DOJO Evaluation Test
-                        </Button>
-                    )}
+                    <div className="flex items-center gap-2">
+                        {/* Doc No. / Revision for every evaluation sheet lives in the Revision Table (admin-only area). */}
+                        {isAdmin && (
+                            <Button variant="outline" onClick={() => navigate("/admin/revision-table/evaluation-test-attempt")}>
+                                Doc No. / Revision
+                            </Button>
+                        )}
+                        {canCreate && (
+                            <Button
+                                onClick={() => navigate("/admin/add-evaluation-test")}
+                                className="bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-md shadow-blue-200 flex items-center gap-2 transition-all duration-300 transform hover:scale-[1.02]"
+                            >
+                                <IconPlus className="h-4 w-4" />
+                                Create DOJO Evaluation Test
+                            </Button>
+                        )}
+                    </div>
                 </div>
 
                 {/* List and Search Card */}

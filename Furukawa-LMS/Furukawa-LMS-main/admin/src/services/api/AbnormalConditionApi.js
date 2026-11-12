@@ -4,7 +4,7 @@ import axiosBaseQuery from "@/services/requests/axiosBaseQuery.js";
 export const AbnormalConditionApi = createApi({
     reducerPath: "AbnormalConditionApi",
     baseQuery: axiosBaseQuery,
-    tagTypes: ["AbnormalCondition"],
+    tagTypes: ["AbnormalCondition", "AbnormalConditionLayout"],
     endpoints: (builder) => ({
         getAbnormalConditionSheet: builder.query({
             query: (params) => ({
@@ -57,6 +57,25 @@ export const AbnormalConditionApi = createApi({
             }),
             invalidatesTags: ["AbnormalCondition"],
         }),
+
+        // Sheet layout (title, column headers, Remarks, default rows):
+        // Department → Global → defaults. Pass a department id or "global".
+        getAbnormalConditionLayout: builder.query({
+            query: (departmentId) => ({
+                url: `/api/abnormal-conditions/layout/${departmentId}`,
+                method: "GET",
+            }),
+            providesTags: ["AbnormalConditionLayout"],
+        }),
+
+        saveAbnormalConditionLayoutWithRevision: builder.mutation({
+            query: (data) => ({
+                url: "/api/abnormal-conditions/layout/save-with-revision",
+                method: "POST",
+                data,
+            }),
+            invalidatesTags: ["AbnormalConditionLayout"],
+        }),
     }),
 });
 
@@ -69,4 +88,6 @@ export const {
     useUpdateAbnormalConditionSheetMutation,
     useApproveAbnormalConditionEntryMutation,
     useDeleteAbnormalConditionSheetMutation,
+    useGetAbnormalConditionLayoutQuery,
+    useSaveAbnormalConditionLayoutWithRevisionMutation,
 } = AbnormalConditionApi;

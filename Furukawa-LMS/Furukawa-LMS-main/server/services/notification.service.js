@@ -94,7 +94,8 @@ class NotificationService {
             // templates below).
             const skipAttachment = formName === "Skill Matrix Sheet"
                 || formName === "On Job Training Record Sheet"
-                || formName === "On Job Training Evaluation Sheet";
+                || formName === "On Job Training Evaluation Sheet"
+                || formName === "16-Day Monitoring Sheet";
             let filename = null;
             let buffer = null;
             if (!skipAttachment) {
@@ -117,6 +118,29 @@ class NotificationService {
                     <p>Best Regards,<br/>Furukawa Minda Electric</p>
                 </div>
             `;
+
+            if (formName === "16-Day Monitoring Sheet") {
+                const adminUrl = ENV.ADMIN_URL || "http://localhost:5173";
+                const reviewUrl = studentId
+                    ? `${adminUrl}/admin/16-day-monitoring/${studentId}`
+                    : `${adminUrl}/admin/16-day-monitoring`;
+
+                htmlMessage = `
+                    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                        <p>Hello,</p>
+                        <p>The <strong>16-Day Monitoring Sheet</strong> for department <strong>${deptName}</strong> has been updated.</p>
+                        <p>Click below to open and review the sheet directly in the portal:</p>
+                        <div style="margin: 25px 0;">
+                            <a href="${reviewUrl}"
+                               style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+                                Open 16-Day Monitoring Sheet
+                            </a>
+                        </div>
+                        <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
+                        <p>Regards,<br/><strong>Furukawa Minda Electric</strong></p>
+                    </div>
+                `;
+            }
 
             if (formName === "Skill Upgradation Sheet" || formName === "Multi Skill Sheet") {
                 const adminUrl = ENV.ADMIN_URL || "http://192.168.90.19:5174";

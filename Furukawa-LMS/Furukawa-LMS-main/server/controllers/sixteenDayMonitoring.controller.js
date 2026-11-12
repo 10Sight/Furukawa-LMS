@@ -1,4 +1,3 @@
-import ExcelJS from "exceljs";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
@@ -6,7 +5,6 @@ import NotificationService from "../services/notification.service.js";
 import SixteenDayMonitoring from "../models/sixteenDayMonitoring.model.js";
 import SkillUpgradationPlan from "../models/skillUpgradationPlan.model.js";
 import CourseLevelConfig from "../models/courseLevelConfig.model.js";
-import MenteeFeedback from "../models/menteeFeedback.model.js";
 import MonitoringConfig from "../models/monitoringConfig.model.js";
 import EmailConfiguration from "../models/emailConfiguration.model.js";
 import sendMail from "../utils/mail.util.js";
@@ -806,10 +804,7 @@ export const sendCombinedMonitoringEmail = asyncHandler(async (req, res) => {
     const sid = await resolveStudentId(studentId);
     if (!sid) throw new ApiError("Invalid student ID", 400);
 
-    const [sheet, feedback] = await Promise.all([
-        SixteenDayMonitoring.findByStudentId(sid),
-        MenteeFeedback.findByStudentId(sid),
-    ]);
+    const sheet = await SixteenDayMonitoring.findByStudentId(sid);
 
     if (!sheet) throw new ApiError("16-Day monitoring record not found", 404);
 
@@ -854,15 +849,12 @@ export const sendCombinedMonitoringEmail = asyncHandler(async (req, res) => {
     if (!to) throw new ApiError("No recipient emails found in configuration.", 400);
     const cc = [...ccSet].join(", ");
 
-    const monitoringConfig = await MonitoringConfig.findByTypeAndDepartment('16DAY', student?.departmentId, student?.sectionId);
     const portalUrl = `${ENV.ADMIN_URL || 'http://localhost:5173'}/admin/16-day-monitoring/${studentId}`;
 
     const operatorName = student?.fullName || sheet.employeeName;
     const employeeCode = student?.empId || sheet.employeeCode;
     const departmentName = student?.departmentName || sheet.dept || "N/A";
     const processName = sheet.processName || "N/A";
-    const topTableData = feedback?.topTableData || {};
-    const dailyLogs = feedback?.dailyLogs || Array(16).fill({ associatesFeedback: '', mentorAction: '', status1: '', areaEngineer: '', status2: '' });
 
     const html = emailTemplates.generateCombinedMonitoringEmail({
         operatorName,
@@ -879,40 +871,11 @@ export const sendCombinedMonitoringEmail = asyncHandler(async (req, res) => {
         portalUrl,
     });
 
-    // Build a two-sheet workbook matching the on-screen 16-Day Monitoring + Mentee Feedback layouts
-    const workbook = new ExcelJS.Workbook();
-    const monitoringSheet = workbook.addWorksheet('16-Day Monitoring');
-    await NotificationService._fillSixteenDaySheet(monitoringSheet, {
-        gridData: sheet.gridData || {},
-        employeeName: sheet.employeeName,
-        employeeCode: sheet.employeeCode,
-        dept: sheet.dept,
-        processName: sheet.processName,
-        handoverDate: sheet.handoverDate,
-        trgResult: sheet.trgResult,
-        workingWith: sheet.workingWith,
-        lineLeaderName: sheet.lineLeaderName,
-        config: monitoringConfig?.config || [],
-    });
-
-    const feedbackSheet = workbook.addWorksheet('Mentee Feedback');
-    await NotificationService._fillMenteeFeedbackSheet(feedbackSheet, {
-        operatorName,
-        employeeCode,
-        departmentName,
-        processName,
-        topTableData,
-        dailyLogs,
-    });
-
-    const buffer = await workbook.xlsx.writeBuffer();
-    const filename = `16-Day_Monitoring_Report_${(operatorName || 'associate').replace(/\s+/g, '_')}.xlsx`;
-
     await sendMail(
         to,
         `16-Day Monitoring & Mentee Feedback Report: ${operatorName}`,
         html,
-        [{ filename, content: buffer }],
+        [],
         cc
     );
 
@@ -934,8 +897,6 @@ export const sendCombinedMonitoringEmail = asyncHandler(async (req, res) => {
 // `req` is optional — pass it (from a real HTTP request) to get ip/userAgent on the
 // audit log; the automatic save-triggered path has no request of its own to attach.
 export async function dispatchTrainingCellEmail(sid, sheet, triggeringUser, req = null) {
-    const feedback = await MenteeFeedback.findByStudentId(sid);
-
     const [users] = await executeQuery(`
         SELECT u.id, u.fullName, u.empId, u.departmentId, u.sectionId, d.name as departmentName
         FROM users u
@@ -987,15 +948,12 @@ export async function dispatchTrainingCellEmail(sid, sheet, triggeringUser, req 
     if (!to) throw new ApiError("No recipient emails found in configuration.", 400);
     const cc = [...ccSet].join(", ");
 
-    const monitoringConfig = await MonitoringConfig.findByTypeAndDepartment('16DAY', student?.departmentId, student?.sectionId);
     const portalUrl = `${ENV.ADMIN_URL || 'http://localhost:5173'}/admin/16-day-monitoring/${sid}`;
 
     const operatorName = student?.fullName || sheet.employeeName;
     const employeeCode = student?.empId || sheet.employeeCode;
     const departmentName = student?.departmentName || sheet.dept || "N/A";
     const processName = sheet.processName || "N/A";
-    const topTableData = feedback?.topTableData || {};
-    const dailyLogs = feedback?.dailyLogs || Array(16).fill({ associatesFeedback: '', mentorAction: '', status1: '', areaEngineer: '', status2: '' });
 
     const html = emailTemplates.generateCombinedMonitoringEmail({
         operatorName,
@@ -1012,39 +970,11 @@ export async function dispatchTrainingCellEmail(sid, sheet, triggeringUser, req 
         portalUrl,
     });
 
-    const workbook = new ExcelJS.Workbook();
-    const monitoringSheet = workbook.addWorksheet('16-Day Monitoring');
-    await NotificationService._fillSixteenDaySheet(monitoringSheet, {
-        gridData: sheet.gridData || {},
-        employeeName: sheet.employeeName,
-        employeeCode: sheet.employeeCode,
-        dept: sheet.dept,
-        processName: sheet.processName,
-        handoverDate: sheet.handoverDate,
-        trgResult: sheet.trgResult,
-        workingWith: sheet.workingWith,
-        lineLeaderName: sheet.lineLeaderName,
-        config: monitoringConfig?.config || [],
-    });
-
-    const feedbackSheet = workbook.addWorksheet('Mentee Feedback');
-    await NotificationService._fillMenteeFeedbackSheet(feedbackSheet, {
-        operatorName,
-        employeeCode,
-        departmentName,
-        processName,
-        topTableData,
-        dailyLogs,
-    });
-
-    const buffer = await workbook.xlsx.writeBuffer();
-    const filename = `16-Day_Monitoring_Report_TrainingCell_${(operatorName || 'associate').replace(/\s+/g, '_')}.xlsx`;
-
     await sendMail(
         to,
         `16-Day Monitoring Report (Training Cell): ${operatorName}`,
         html,
-        [{ filename, content: buffer }],
+        [],
         cc
     );
 

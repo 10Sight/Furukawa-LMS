@@ -35,6 +35,21 @@ import {
 import { Label } from "@/components/forms/primitives/label.jsx";
 import { ALL_FORM_TYPES, DEFAULT_10CYCLE_CONFIG, normalizeConfig } from "@/constants/monitoring/compatibility/tenCycleSheetConfig.js";
 
+// Sheet rows rendered per page; pagination controls appear once a sheet exceeds this.
+const ROWS_PER_PAGE = 20;
+
+// Page numbers to show: first, last, and a window around the current page, with "…" gaps.
+const getPageItems = (current, total) => {
+    const pages = new Set([1, total, current - 1, current, current + 1]);
+    const sorted = [...pages].filter(p => p >= 1 && p <= total).sort((a, b) => a - b);
+    const items = [];
+    sorted.forEach((p, i) => {
+        if (i > 0 && p - sorted[i - 1] > 1) items.push(`gap-${p}`);
+        items.push(p);
+    });
+    return items;
+};
+
 // Sheet zoom (CSS `zoom`, so scroll sizes stay correct), same control as the 16-Day sheet. Persisted per browser.
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 1.5;
@@ -388,6 +403,18 @@ const Cycle10 = () => {
 
     const [rows, setRows] = useState([]);
 
+    // Row pagination: large sheets (400+ rows) are slow to render because every row
+    // mounts dozens of inputs. All rows stay in state (save/submit/export use the full
+    // list); only the current page of ROWS_PER_PAGE rows is rendered.
+    const [rowPage, setRowPage] = useState(1);
+    const totalRowPages = Math.max(1, Math.ceil(rows.length / ROWS_PER_PAGE));
+    const currentRowPage = Math.min(rowPage, totalRowPages);
+    const rowOffset = (currentRowPage - 1) * ROWS_PER_PAGE;
+    const pagedRows = useMemo(
+        () => rows.slice(rowOffset, rowOffset + ROWS_PER_PAGE),
+        [rows, rowOffset]
+    );
+
     const getAvailableFormTypes = () => {
         let configuredTypes = [];
         if (createLineId) {
@@ -685,7 +712,10 @@ const Cycle10 = () => {
     };
 
     const addRow = () => {
-        setRows([...rows, createNewRow()]);
+        const nextRows = [...rows, createNewRow()];
+        setRows(nextRows);
+        // Jump to the page holding the new row so the user sees it.
+        setRowPage(Math.ceil(nextRows.length / ROWS_PER_PAGE));
     };
 
     const removeRow = (id) => {
@@ -799,6 +829,45 @@ const Cycle10 = () => {
     };
 
     const isAutoSign = (value, autoValue) => !!value && !!autoValue && value === autoValue;
+
+    // Start each newly opened sheet on page 1 (re-fetching the same sheet after save keeps the page).
+    useEffect(() => {
+        setRowPage(1);
+    }, [selectedSheetId]);
+
+    const renderRowPagination = () => {
+        if (rows.length <= ROWS_PER_PAGE) return null;
+        const goTo = (p) => setRowPage(Math.min(Math.max(1, p), totalRowPages));
+        const btn = "h-7 min-w-7 px-2 text-xs";
+        return (
+            <div className="sticky left-0 w-fit flex flex-wrap items-center gap-1 p-2 print:hidden">
+                <span className="text-xs text-slate-600 mr-2">
+                    Rows {rowOffset + 1}–{Math.min(rowOffset + ROWS_PER_PAGE, rows.length)} of {rows.length}
+                </span>
+                <Button size="sm" variant="outline" className={btn} disabled={currentRowPage === 1} onClick={() => goTo(currentRowPage - 1)}>
+                    Prev
+                </Button>
+                {getPageItems(currentRowPage, totalRowPages).map(item =>
+                    typeof item === 'string' ? (
+                        <span key={item} className="px-1 text-xs text-slate-400">…</span>
+                    ) : (
+                        <Button
+                            key={item}
+                            size="sm"
+                            variant={item === currentRowPage ? "default" : "outline"}
+                            className={btn}
+                            onClick={() => goTo(item)}
+                        >
+                            {item}
+                        </Button>
+                    )
+                )}
+                <Button size="sm" variant="outline" className={btn} disabled={currentRowPage === totalRowPages} onClick={() => goTo(currentRowPage + 1)}>
+                    Next
+                </Button>
+            </div>
+        );
+    };
 
     const renderInspectorSignCell = (row) => (
         <td className={`border border-black p-0 align-middle ${FIXED_COL.sign}`}>
@@ -1573,10 +1642,10 @@ const Cycle10 = () => {
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    {rows.map((row, index) => (
+                                                    {pagedRows.map((row, index) => (
                                                         <tr key={row.id} className="text-center group hover:bg-gray-50 h-8">
                                                             <td className={`border border-black relative text-[11px] font-bold ${FIXED_COL.srNo}`}>
-                                                                {index + 1}
+                                                                {rowOffset + index + 1}
                                                                 {isEditMode && <button onClick={() => removeRow(row.id)} className="absolute left-0 top-0 text-red-500 opacity-0 group-hover:opacity-100 p-0.5 print:hidden"><Trash2 size={10} /></button>}
                                                             </td>
                                                             <td className={`border border-black p-0 align-middle ${FIXED_COL.date}`}>
@@ -1688,6 +1757,7 @@ const Cycle10 = () => {
                                                     ))}
                                                 </tbody>
                                             </table>
+                                            {renderRowPagination()}
 
                                             <div className="mt-4 p-2 border-t-2 border-black grid grid-cols-1 md:grid-cols-4 gap-4 text-[9px]">
                                                 <div className="border border-gray-300 p-2 rounded">
@@ -1790,10 +1860,10 @@ const Cycle10 = () => {
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    {rows.map((row, index) => (
+                                                    {pagedRows.map((row, index) => (
                                                         <tr key={row.id} className="text-center group hover:bg-gray-50">
                                                             <td className={`border border-black relative text-[11px] font-bold ${FIXED_COL.srNo}`}>
-                                                                {index + 1}
+                                                                {rowOffset + index + 1}
                                                                 {isEditMode && <button onClick={() => removeRow(row.id)} className="absolute left-0 top-0 text-red-500 opacity-0 group-hover:opacity-100 p-0.5"><Trash2 size={10} /></button>}
                                                             </td>
                                                             <td className={`border border-black p-0 align-middle ${FIXED_COL.date}`}>
@@ -1874,6 +1944,7 @@ const Cycle10 = () => {
                                                     ))}
                                                 </tbody>
                                             </table>
+                                            {renderRowPagination()}
 
                                             <div className="mt-4 p-2 border-t-2 border-black grid grid-cols-1 md:grid-cols-4 gap-4 text-[9px]">
                                                 <div className="border border-gray-300 p-2 rounded">
@@ -1980,10 +2051,10 @@ const Cycle10 = () => {
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    {rows.map((row, index) => (
+                                                    {pagedRows.map((row, index) => (
                                                         <tr key={row.id} className="text-center group hover:bg-gray-50">
                                                             <td className={`border border-black relative text-[11px] font-bold ${FIXED_COL.srNo}`}>
-                                                                {index + 1}
+                                                                {rowOffset + index + 1}
                                                                 {isEditMode && <button onClick={() => removeRow(row.id)} className="absolute left-0 top-0 text-red-500 opacity-0 group-hover:opacity-100 p-0.5"><Trash2 size={10} /></button>}
                                                             </td>
                                                             <td className={`border border-black p-0 align-middle ${FIXED_COL.date}`}>
@@ -2065,6 +2136,7 @@ const Cycle10 = () => {
                                                     ))}
                                                 </tbody>
                                             </table>
+                                            {renderRowPagination()}
 
                                             <div className="mt-4 p-2 border-t-2 border-black grid grid-cols-1 md:grid-cols-4 gap-4 text-[9px]">
                                                 <div className="border border-gray-300 p-2 rounded">

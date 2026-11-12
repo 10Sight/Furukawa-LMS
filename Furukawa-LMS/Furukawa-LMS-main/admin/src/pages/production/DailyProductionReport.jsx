@@ -37,8 +37,7 @@ import {
     useCheckDailyProductionReportMutation,
     useListDailyProductionReportsQuery,
     useGetDPRConfigQuery,
-    useSaveDPRConfigMutation,
-    useGetDPRConfigHistoryQuery,
+    useGetDPRPresentationQuery,
     useLazyGetManpowerStatsQuery,
     useLazyGetBatchMachineAssignmentsQuery,
 } from "@/services/api/DailyProductionReportApi.js";
@@ -49,9 +48,19 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/common/ui/dialog.jsx";
-import { Textarea } from "@/components/forms/primitives/textarea.jsx";
 import DPRChart from "@/components/common/charts/DPRChart.jsx";
 import DPRManualChartsContainer from "@/components/common/charts/DPRManualChartsContainer.jsx";
+import {
+    DPRSectionTitle,
+    DPRHeaderCells,
+    DPRQualityRows,
+    DPRDownTimeRows,
+    DPRLayoutText,
+} from "./components/DPRLayoutParts.jsx";
+import { resolveDprPresentation } from "../../../../shared/dprLayout.js";
+
+// Built-in presentation used until the department/global layout has loaded.
+const DEFAULT_PRESENTATION = resolveDprPresentation(null);
 
 // ----- Subcomponents for the Complex Table Sections -----
 
@@ -405,6 +414,10 @@ const DailyProductionReport = () => {
     const isAdmin = user?.role === "ADMIN" || user?.role === "SUPERADMIN" || user?.isAdmin;
     const isShiftIncharge = user?.role === "SHIFT_INCHARGE" || user?.customRole?.name?.toUpperCase() === "SHIFT INCHARGE";
     const canApprove = isAdmin || isShiftIncharge;
+    // Matches who the layout editor and its save-with-revision endpoint accept.
+    const canEditLayout = isAdmin
+        || user?.customRole?.permissions?.includes('dpr:edit_layout')
+        || user?.customRole?.permissions?.includes('revision:update');
 
     const [searchParams, setSearchParams] = useSearchParams();
     const activeReportKey = React.useRef("");
@@ -550,14 +563,15 @@ const DailyProductionReport = () => {
         }
     }, [user?.name, formData.madeBy]);
 
-    // Template Configuration State
-    const [tableConfig, setTableConfig] = useState(null);
-    const [isEditing, setIsEditing] = useState(false);
-    const [editingSection, setEditingSection] = useState(null); // 'delivery', 'quality', etc.
-    const [jsonConfigStr, setJsonConfigStr] = useState("");
-    const [layoutRemark, setLayoutRemark] = useState("");
-    const [isViewingHistory, setIsViewingHistory] = useState(false);
+    // Presentation layout (titles, header text, row labels, row counts): Department → Global
+    // → defaults. Edited in the DPR Layout & Revision editor (DPRLayoutEditor.jsx).
+    const { data: presentationResp, isFetching: presentationFetching } = useGetDPRPresentationQuery(
+        selectedDepartment,
+        { skip: !selectedDepartment }
+    );
+    const layout = presentationResp?.data?.presentation || DEFAULT_PRESENTATION;
 
+    // Manpower-row configs below (moral.rows / attendance.rows): Line → Global → Department.
     // Fetch Config Query (Department Specific)
     const { data: configResp, isFetching: configFetching } = useGetDPRConfigQuery(
         selectedDepartment,
@@ -581,29 +595,35 @@ const DailyProductionReport = () => {
     );
 
     // Mutations
-    const [saveConfig, { isLoading: isSavingConfig }] = useSaveDPRConfigMutation();
     const [saveReport, { isLoading: isSaving }] = useSaveDailyProductionReportMutation();
 
     // Resolve Active Template Config based on Priority:
     // 1. Line Custom (LINE_${id})
     // 2. Global Custom (GLOBAL)
     // 3. Department Custom
-    // 4. Fallback to default config (either from lineConfigResp, globalConfigResp, configResp, tableConfig or DEFAULT_DPR_CONFIG)
+    // 4. Fallback to the server default config
     const activeTableConfig = React.useMemo(() => {
-        if (lineConfigResp?.data && !lineConfigResp.data.isDefault && lineConfigResp.data.config) {
-            return lineConfigResp.data.config;
-        }
-        if (globalConfigResp?.data && !globalConfigResp.data.isDefault && globalConfigResp.data.config) {
-            return globalConfigResp.data.config;
-        }
-        if (configResp?.data && !configResp.data.isDefault && configResp.data.config) {
-            return configResp.data.config;
-        }
-        return lineConfigResp?.data?.config ||
+        const saved = [lineConfigResp, globalConfigResp, configResp]
+            .filter(resp => resp?.data && !resp.data.isDefault && resp.data.config)
+            .map(resp => resp.data.config);
+        const base = saved[0] ||
+            lineConfigResp?.data?.config ||
             globalConfigResp?.data?.config ||
             configResp?.data?.config ||
-            tableConfig;
-    }, [lineConfigResp, globalConfigResp, configResp, tableConfig]);
+            null;
+        if (!base) return base;
+        // Manpower rows fall through per field: a saved scope that has no rows of its own (e.g. a
+        // Global row created by the layout editor, which holds presentation only) doesn't hide
+        // the rows a lower-priority scope provides.
+        const pickRows = (section) => saved.find(cfg => Array.isArray(cfg?.[section]?.rows))?.[section]?.rows;
+        const moralRows = pickRows('moral');
+        const attendanceRows = pickRows('attendance');
+        return {
+            ...base,
+            ...(moralRows ? { moral: { ...(base.moral || {}), rows: moralRows } } : {}),
+            ...(attendanceRows ? { attendance: { ...(base.attendance || {}), rows: attendanceRows } } : {}),
+        };
+    }, [lineConfigResp, globalConfigResp, configResp]);
 
     // Daily Stats & Reports List
     const { data: reportListData, isFetching: isListFetching } = useListDailyProductionReportsQuery(
@@ -794,17 +814,9 @@ const DailyProductionReport = () => {
         fetchAssignments();
     }, [selectedDate, selectedShift, activeTableConfig, getBatchAssignments, formData.manpowerAttendance]);
 
-    // Initialize/Update form data when report fetch results are available
-    useEffect(() => {
-        if (configResp?.data?.config) {
-            setTableConfig(configResp.data.config);
-            // We don't initialize formData here anymore to avoid conflicts with the report effect
-        }
-    }, [configResp]);
-
     // Populate form data on fetch
     useEffect(() => {
-        if (reportFetching || lineConfigFetching || globalConfigFetching || configFetching) return;
+        if (reportFetching || lineConfigFetching || globalConfigFetching || configFetching || presentationFetching) return;
 
         const currentKey = `${selectedDate}-${selectedDepartment}-${selectedLine}-${selectedShift}`;
         const selectionChanged = currentKey !== activeReportKey.current;
@@ -845,12 +857,13 @@ const DailyProductionReport = () => {
             }
 
             // Pad arrays if they don't have enough entries
-            const deliveryCount = activeTableConfig?.delivery?.rows || 6;
+            // Row counts are presentation (Department → Global → defaults).
+            const deliveryCount = layout.delivery.rows;
             const paddedDelivery = [...(loadedData.delivery || [])];
             while (paddedDelivery.length < deliveryCount) paddedDelivery.push({ ...emptyDeliveryRow });
 
             const paddedShiftComm = [...(loadedData.shiftCommunication || [])];
-            const shiftCommCount = activeTableConfig?.shiftComm?.rows || 3;
+            const shiftCommCount = layout.shiftComm.rows;
             while (paddedShiftComm.length < shiftCommCount) paddedShiftComm.push({ issue: "" });
 
             // Merge moral: prioritize saved report data, fallback to config rows, then to default
@@ -946,7 +959,7 @@ const DailyProductionReport = () => {
             activeReportKey.current = currentKey;
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [reportResp, reportFetching, activeTableConfig, configFetching, globalConfigFetching, lineConfigFetching, selectedDate, selectedDepartment, selectedLine, selectedShift]);
+    }, [reportResp, reportFetching, activeTableConfig, layout, configFetching, globalConfigFetching, lineConfigFetching, presentationFetching, selectedDate, selectedDepartment, selectedLine, selectedShift]);
 
     // Auto-populate Leader Name when Line changes
     useEffect(() => {
@@ -1117,36 +1130,19 @@ const DailyProductionReport = () => {
         setIsReportOpen(true);
     };
 
-    const openEditor = (section) => {
-        setEditingSection(section);
-        setJsonConfigStr(JSON.stringify(tableConfig[section], null, 2));
-        setIsEditing(true);
-    };
-
-    const handleSaveConfig = async () => {
-        if (!layoutRemark.trim()) {
-            toast.error("Please enter a remark detailing your layout changes.");
-            return;
-        }
-        try {
-            let parsedSectionConfig;
-            try {
-                parsedSectionConfig = JSON.parse(jsonConfigStr);
-            } catch (e) {
-                toast.error("Invalid JSON format", e.message);
-                return;
-            }
-
-            const updatedConfig = { ...tableConfig, [editingSection]: parsedSectionConfig };
-            await saveConfig({ departmentId: selectedDepartment, config: updatedConfig, remark: layoutRemark }).unwrap();
-
-            setTableConfig(updatedConfig);
-            setIsEditing(false);
-            setLayoutRemark("");
-            toast.success("Configuration saved successfully");
-        } catch (error) {
-            toast.error("Failed to save configuration", error?.data?.message || error.message);
-        }
+    // Layout is edited in the dedicated DPR Layout & Revision editor (layout + Revision Table
+    // record saved together). /admin is admin-only, so non-admin layout editors in the portal
+    // get the portal-mounted copy of the editor.
+    const openLayoutEditor = () => {
+        const params = new URLSearchParams();
+        if (selectedDepartment) params.set('departmentId', String(selectedDepartment));
+        else params.set('global', '1');
+        const editorPath = location.pathname.startsWith('/portal')
+            ? '/portal/daily-production-report/layout'
+            : '/admin/revision-table/daily-production-report/layout';
+        navigate(`${editorPath}?${params.toString()}`, {
+            state: { from: `${location.pathname}${location.search}` },
+        });
     };
 
     // Extract selected names for header
@@ -1160,14 +1156,22 @@ const DailyProductionReport = () => {
         const reports = reportListData?.data || [];
         return (
             <Tabs defaultValue="dpr-report" className="w-full space-y-6">
-                <TabsList className="bg-slate-100 p-1 rounded-xl h-11 w-fit">
-                    <TabsTrigger value="dpr-report" className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
-                        DPR Report
-                    </TabsTrigger>
-                    <TabsTrigger value="dpr-setup" className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
-                        DPR Setup
-                    </TabsTrigger>
-                </TabsList>
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <TabsList className="bg-slate-100 p-1 rounded-xl h-11 w-fit">
+                        <TabsTrigger value="dpr-report" className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
+                            DPR Report
+                        </TabsTrigger>
+                        <TabsTrigger value="dpr-setup" className="rounded-lg px-6 font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
+                            DPR Setup
+                        </TabsTrigger>
+                    </TabsList>
+                    {canEditLayout && (
+                        <Button variant="outline" size="sm" onClick={openLayoutEditor}>
+                            <IconSettings className="w-4 h-4 mr-2" />
+                            Edit Layout & Revision
+                        </Button>
+                    )}
+                </div>
 
                 <TabsContent value="dpr-report">
                     <div className="space-y-6">
@@ -1573,6 +1577,12 @@ const DailyProductionReport = () => {
                 </div>
 
                 <div className="flex gap-2">
+                    {canEditLayout && (
+                        <Button variant="outline" size="sm" onClick={openLayoutEditor}>
+                            <IconSettings className="w-4 h-4 mr-2" />
+                            Edit Layout & Revision
+                        </Button>
+                    )}
                     <Button
                         variant="outline"
                         size="sm"
@@ -1677,37 +1687,11 @@ const DailyProductionReport = () => {
 
                             {/* Delivery Table (Left) */}
                             <div className="w-[70%] border-r-[2px] border-black pr-1">
-                                <div className="flex justify-between items-center bg-blue-100 border border-black pr-1">
-                                    <div className="flex-1 text-center font-bold text-sm py-1">
-                                        {tableConfig?.delivery?.title || "Delivery (Schedule Adherence)"}
-                                    </div>
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-6 w-6 p-0 print:hidden"
-                                        onClick={() => openEditor('delivery')}
-                                        disabled={!tableConfig || !canEdit}
-                                    >
-                                        <IconSettings className="w-3 h-3" />
-                                    </Button>
-                                </div>
+                                <DPRSectionTitle title={layout.delivery.title} />
                                 <table className="w-full border-collapse border border-black text-center mt-1">
                                     <thead>
                                         <tr className="bg-gray-100">
-                                            {(tableConfig?.delivery?.headers || [
-                                                { text: "S.No", width: "w-8" },
-                                                { text: "W-H CODE", width: "w-24" },
-                                                { text: "PLAN", width: "w-16" },
-                                                { text: "Lot No.", width: "w-16" },
-                                                { text: "Start Time", width: "w-16" },
-                                                { text: "1st 2 Hrs", width: "w-16" },
-                                                { text: "2nd 2 Hrs", width: "w-16" },
-                                                { text: "3rd 2 Hrs", width: "w-16" },
-                                                { text: "4th 2 Hrs", width: "w-16" },
-                                                { text: "Total", width: "w-16" }
-                                            ]).map((h, i) => (
-                                                <th key={i} className={`border border-black p-1 ${h.width || ''}`} dangerouslySetInnerHTML={{ __html: h.text }}></th>
-                                            ))}
+                                            <DPRHeaderCells headers={layout.delivery.headers} thClassName="p-1" />
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -1744,53 +1728,23 @@ const DailyProductionReport = () => {
 
                             {/* Quality Table (Right) */}
                             <div className="w-[30%] pl-1">
-                                <div className="flex justify-between items-center bg-blue-100 border border-black pr-1">
-                                    <div className="flex-1 text-center font-bold text-sm py-1">
-                                        {tableConfig?.quality?.title || "Quality (Defect Summary)"}
-                                    </div>
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-6 w-6 p-0 print:hidden"
-                                        onClick={() => openEditor('quality')}
-                                        disabled={!tableConfig || !canEdit}
-                                    >
-                                        <IconSettings className="w-3 h-3" />
-                                    </Button>
-                                </div>
+                                <DPRSectionTitle title={layout.quality.title} />
                                 <table className="w-full border-collapse border border-black mt-1 text-left">
-                                    <tbody>
-                                        <tr>
-                                            <th colSpan={2} className="border border-black p-1 bg-gray-100">Customer End Defect</th>
-                                        </tr>
-                                        <tr>
-                                            <td className="border border-black p-1">Production Qty.</td>
-                                            <td className="border border-black p-0 w-20"><NumberCell value={formData.quality?.customerEndDefect?.productionQty ?? 0} onChange={(v) => handleQualityChange('customerEndDefect', 'productionQty', v)} disabled={!canEdit} /></td>
-                                        </tr>
-                                        <tr>
-                                            <td className="border border-black p-1">Defect Qty.</td>
-                                            <td className="border border-black p-0 w-20"><NumberCell value={formData.quality?.customerEndDefect?.defectQty ?? 0} onChange={(v) => handleQualityChange('customerEndDefect', 'defectQty', v)} disabled={!canEdit} /></td>
-                                        </tr>
-                                        <tr>
-                                            <td className="border border-black p-1">PPM</td>
-                                            <td className="border border-black p-1 text-center bg-gray-50">{formData.quality?.customerEndDefect?.ppm ?? 0}</td>
-                                        </tr>
-                                        <tr>
-                                            <th colSpan={2} className="border border-black p-1 bg-gray-100 mt-2">Internal Defect</th>
-                                        </tr>
-                                        <tr>
-                                            <td className="border border-black p-1">Production Qty.</td>
-                                            <td className="border border-black p-0 w-20"><NumberCell value={formData.quality?.internalDefect?.productionQty ?? 0} onChange={(v) => handleQualityChange('internalDefect', 'productionQty', v)} disabled={!canEdit} /></td>
-                                        </tr>
-                                        <tr>
-                                            <td className="border border-black p-1">Defect Qty.</td>
-                                            <td className="border border-black p-0 w-20"><NumberCell value={formData.quality?.internalDefect?.defectQty ?? 0} onChange={(v) => handleQualityChange('internalDefect', 'defectQty', v)} disabled={!canEdit} /></td>
-                                        </tr>
-                                        <tr>
-                                            <td className="border border-black p-1">PPM</td>
-                                            <td className="border border-black p-1 text-center bg-gray-50">{formData.quality?.internalDefect?.ppm ?? 0}</td>
-                                        </tr>
-                                    </tbody>
+                                    <DPRQualityRows
+                                        sections={layout.quality.sections}
+                                        renderValue={(section, fieldIdx) => {
+                                            // Fields: 0 = production qty, 1 = defect qty (inputs), 2 = PPM (computed).
+                                            if (fieldIdx === 2) {
+                                                return <td className="border border-black p-1 text-center bg-gray-50">{formData.quality?.[section]?.ppm ?? 0}</td>;
+                                            }
+                                            const field = fieldIdx === 0 ? 'productionQty' : 'defectQty';
+                                            return (
+                                                <td className="border border-black p-0 w-20">
+                                                    <NumberCell value={formData.quality?.[section]?.[field] ?? 0} onChange={(v) => handleQualityChange(section, field, v)} disabled={!canEdit} />
+                                                </td>
+                                            );
+                                        }}
+                                    />
                                 </table>
                             </div>
                         </div>
@@ -1800,154 +1754,36 @@ const DailyProductionReport = () => {
 
                             {/* DownTime Summary (Left spanning roughly half) */}
                             <div className="w-[55%] border-r-[2px] border-black pr-1 flex flex-col">
-                                <div className="flex justify-between items-center bg-blue-100 border border-black pr-1">
-                                    <div className="flex-1 text-center font-bold text-sm py-1">
-                                        {tableConfig?.downTime?.title || "Down Time Summary"}
-                                    </div>
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-6 w-6 p-0 print:hidden"
-                                        onClick={() => openEditor('downTime')}
-                                        disabled={!tableConfig || !canEdit}
-                                    >
-                                        <IconSettings className="w-3 h-3" />
-                                    </Button>
-                                </div>
+                                <DPRSectionTitle title={layout.downTime.title} />
                                 <table className="w-full border-collapse border border-black mt-1 text-[10px]">
                                     <thead>
                                         <tr className="bg-gray-100 text-center text-[9px]">
-                                            {(tableConfig?.downTime?.headers || [
-                                                { text: "Down Time :", colSpan: 2 },
-                                                { text: "1st 2 Hrs", width: "w-10" },
-                                                { text: "2nd 2 Hrs", width: "w-10" },
-                                                { text: "3rd 2 Hrs", width: "w-10" },
-                                                { text: "4th 2 Hrs", width: "w-10" },
-                                                { text: "Total", width: "w-10" }
-                                            ]).map((h, i) => (
-                                                <th key={i} className={`border border-black p-0.5 ${h.width || ''}`} colSpan={h.colSpan || 1} dangerouslySetInnerHTML={{ __html: h.text }}></th>
-                                            ))}
+                                            <DPRHeaderCells headers={layout.downTime.headers} thClassName="p-0.5" />
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {/* Render standard down time rows. Extracting a unified row render function for brevity */}
-                                        {(() => {
-                                            const DownTimeRow = ({ label, objKey, colSpan = 2 }) => (
-                                                <tr className="h-[18px]">
-                                                    <td className="border border-black px-1" colSpan={colSpan}>{label}</td>
-                                                    <td className="border border-black p-0"><NumberCell value={formData.downTime?.[objKey]?.hr1 ?? 0} onChange={(v) => handleDownTimeChange(objKey, 'hr1', v)} disabled={!canEdit} /></td>
-                                                    <td className="border border-black p-0"><NumberCell value={formData.downTime?.[objKey]?.hr2 ?? 0} onChange={(v) => handleDownTimeChange(objKey, 'hr2', v)} disabled={!canEdit} /></td>
-                                                    <td className="border border-black p-0"><NumberCell value={formData.downTime?.[objKey]?.hr3 ?? 0} onChange={(v) => handleDownTimeChange(objKey, 'hr3', v)} disabled={!canEdit} /></td>
-                                                    <td className="border border-black p-0"><NumberCell value={formData.downTime?.[objKey]?.hr4 ?? 0} onChange={(v) => handleDownTimeChange(objKey, 'hr4', v)} disabled={!canEdit} /></td>
-                                                    <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime?.[objKey]?.total ?? 0}</td>
-                                                </tr>
-                                            );
-
-                                            return (
+                                        {/* Row labels come from the layout; data keys are fixed (shared/dprLayout.js). */}
+                                        <DPRDownTimeRows
+                                            rows={layout.downTime.rows}
+                                            renderValues={(objKey) => (
                                                 <>
-                                                    <DownTimeRow label="Circuits shortage from Charging" objKey="circuitsShortageFromCharging" />
-                                                    <DownTimeRow label="Components shortage from store" objKey="componentsShortageFromStore" />
-                                                    <DownTimeRow label="Tube shortage" objKey="tubeShortage" />
-                                                    <DownTimeRow label="Changeover time" objKey="changeoverTime" />
-                                                    <DownTimeRow label="Quality issues from C&C" objKey="qualityIssuesFromCC" />
-                                                    <DownTimeRow label="Quality issues in assembly" objKey="qualityIssuesInAssembly" />
-
-                                                    {/* Nested Inspection Delays */}
-                                                    <tr>
-                                                        <td className="border border-black px-1 w-24" rowSpan={3}>Delay in Inspection</td>
-                                                        <td className="border border-black px-1">Dim</td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.delayInInspectionDim?.hr1 ?? 0} onChange={(v) => handleDownTimeChange('delayInInspectionDim', 'hr1', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.delayInInspectionDim?.hr2 ?? 0} onChange={(v) => handleDownTimeChange('delayInInspectionDim', 'hr2', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.delayInInspectionDim?.hr3 ?? 0} onChange={(v) => handleDownTimeChange('delayInInspectionDim', 'hr3', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.delayInInspectionDim?.hr4 ?? 0} onChange={(v) => handleDownTimeChange('delayInInspectionDim', 'hr4', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime?.delayInInspectionDim?.total ?? 0}</td>
-                                                    </tr>
-                                                    <tr>
-                                                        <td className="border border-black px-1">ECT</td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.delayInInspectionECT?.hr1 ?? 0} onChange={(v) => handleDownTimeChange('delayInInspectionECT', 'hr1', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.delayInInspectionECT?.hr2 ?? 0} onChange={(v) => handleDownTimeChange('delayInInspectionECT', 'hr2', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.delayInInspectionECT?.hr3 ?? 0} onChange={(v) => handleDownTimeChange('delayInInspectionECT', 'hr3', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.delayInInspectionECT?.hr4 ?? 0} onChange={(v) => handleDownTimeChange('delayInInspectionECT', 'hr4', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime?.delayInInspectionECT?.total ?? 0}</td>
-                                                    </tr>
-                                                    <tr>
-                                                        <td className="border border-black px-1">Visual</td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.delayInInspectionVisual?.hr1 ?? 0} onChange={(v) => handleDownTimeChange('delayInInspectionVisual', 'hr1', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.delayInInspectionVisual?.hr2 ?? 0} onChange={(v) => handleDownTimeChange('delayInInspectionVisual', 'hr2', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.delayInInspectionVisual?.hr3 ?? 0} onChange={(v) => handleDownTimeChange('delayInInspectionVisual', 'hr3', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.delayInInspectionVisual?.hr4 ?? 0} onChange={(v) => handleDownTimeChange('delayInInspectionVisual', 'hr4', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime?.delayInInspectionVisual?.total ?? 0}</td>
-                                                    </tr>
-
-                                                    {/* Nested Machine Breakdown */}
-                                                    <tr>
-                                                        <td className="border border-black px-1" rowSpan={7}>Machine Under Break Down</td>
-                                                        <td className="border border-black px-1">CPG</td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownCPG?.hr1 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownCPG', 'hr1', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownCPG?.hr2 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownCPG', 'hr2', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownCPG?.hr3 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownCPG', 'hr3', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownCPG?.hr4 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownCPG', 'hr4', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime?.machineBreakDownCPG?.total ?? 0}</td>
-                                                    </tr>
-                                                    <tr><td className="border border-black px-1">Conveyor</td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownConveyor?.hr1 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownConveyor', 'hr1', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownConveyor?.hr2 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownConveyor', 'hr2', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownConveyor?.hr3 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownConveyor', 'hr3', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownConveyor?.hr4 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownConveyor', 'hr4', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime?.machineBreakDownConveyor?.total ?? 0}</td>
-                                                    </tr>
-                                                    <tr><td className="border border-black px-1">Torque Tight</td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownTorqueTight?.hr1 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownTorqueTight', 'hr1', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownTorqueTight?.hr2 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownTorqueTight', 'hr2', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownTorqueTight?.hr3 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownTorqueTight', 'hr3', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownTorqueTight?.hr4 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownTorqueTight', 'hr4', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime?.machineBreakDownTorqueTight?.total ?? 0}</td>
-                                                    </tr>
-                                                    <tr><td className="border border-black px-1">Grease Insert</td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownGreaseInsert?.hr1 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownGreaseInsert', 'hr1', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownGreaseInsert?.hr2 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownGreaseInsert', 'hr2', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownGreaseInsert?.hr3 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownGreaseInsert', 'hr3', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownGreaseInsert?.hr4 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownGreaseInsert', 'hr4', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime?.machineBreakDownGreaseInsert?.total ?? 0}</td>
-                                                    </tr>
-                                                    <tr><td className="border border-black px-1">F/A Board</td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownFABoard?.hr1 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownFABoard', 'hr1', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownFABoard?.hr2 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownFABoard', 'hr2', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownFABoard?.hr3 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownFABoard', 'hr3', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownFABoard?.hr4 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownFABoard', 'hr4', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime?.machineBreakDownFABoard?.total ?? 0}</td>
-                                                    </tr>
-                                                    <tr><td className="border border-black px-1">A/B Crimping</td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownABCrimping?.hr1 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownABCrimping', 'hr1', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownABCrimping?.hr2 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownABCrimping', 'hr2', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownABCrimping?.hr3 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownABCrimping', 'hr3', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownABCrimping?.hr4 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownABCrimping', 'hr4', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime?.machineBreakDownABCrimping?.total ?? 0}</td>
-                                                    </tr>
-                                                    <tr><td className="border border-black px-1">Gromett</td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownGromett?.hr1 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownGromett', 'hr1', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownGromett?.hr2 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownGromett', 'hr2', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownGromett?.hr3 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownGromett', 'hr3', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0"><NumberCell value={formData.downTime?.machineBreakDownGromett?.hr4 ?? 0} onChange={(v) => handleDownTimeChange('machineBreakDownGromett', 'hr4', v)} disabled={!canEdit} /></td>
-                                                        <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime?.machineBreakDownGromett?.total ?? 0}</td>
-                                                    </tr>
-
-                                                    <DownTimeRow label="Test paper for skill evaluation" objKey="testPaperForSkillEvaluation" />
-                                                    <DownTimeRow label="Meeting Time/Training Time" objKey="meetingTimeTrainingTime" />
-                                                    <DownTimeRow label="Plan Not Available" objKey="planNotAvailable" />
-
-                                                    {/* Total Row */}
-                                                    <tr className="bg-gray-100 font-bold h-[20px]">
-                                                        <td className="border border-black px-1 text-center" colSpan={2}>Total</td>
-                                                        <td className="border border-black text-center">{Object.values(formData.downTime || {}).reduce((s, o) => s + (o?.hr1 || 0), 0)}</td>
-                                                        <td className="border border-black text-center">{Object.values(formData.downTime || {}).reduce((s, o) => s + (o?.hr2 || 0), 0)}</td>
-                                                        <td className="border border-black text-center">{Object.values(formData.downTime || {}).reduce((s, o) => s + (o?.hr3 || 0), 0)}</td>
-                                                        <td className="border border-black text-center">{Object.values(formData.downTime || {}).reduce((s, o) => s + (o?.hr4 || 0), 0)}</td>
-                                                        <td className="border border-black text-center">{Object.values(formData.downTime || {}).reduce((s, o) => s + (o?.total || 0), 0)}</td>
-                                                    </tr>
+                                                    {['hr1', 'hr2', 'hr3', 'hr4'].map((hr) => (
+                                                        <td key={hr} className="border border-black p-0"><NumberCell value={formData.downTime?.[objKey]?.[hr] ?? 0} onChange={(v) => handleDownTimeChange(objKey, hr, v)} disabled={!canEdit} /></td>
+                                                    ))}
+                                                    <td className="border border-black p-0 font-bold bg-gray-50 text-center">{formData.downTime?.[objKey]?.total ?? 0}</td>
                                                 </>
-                                            );
-                                        })()}
+                                            )}
+                                        />
+                                
+                                        {/* Total Row */}
+                                        <tr className="bg-gray-100 font-bold h-[20px]">
+                                            <td className="border border-black px-1 text-center" colSpan={2}>Total</td>
+                                            <td className="border border-black text-center">{Object.values(formData.downTime || {}).reduce((s, o) => s + (o?.hr1 || 0), 0)}</td>
+                                            <td className="border border-black text-center">{Object.values(formData.downTime || {}).reduce((s, o) => s + (o?.hr2 || 0), 0)}</td>
+                                            <td className="border border-black text-center">{Object.values(formData.downTime || {}).reduce((s, o) => s + (o?.hr3 || 0), 0)}</td>
+                                            <td className="border border-black text-center">{Object.values(formData.downTime || {}).reduce((s, o) => s + (o?.hr4 || 0), 0)}</td>
+                                            <td className="border border-black text-center">{Object.values(formData.downTime || {}).reduce((s, o) => s + (o?.total || 0), 0)}</td>
+                                        </tr>
 
                                     </tbody>
                                 </table>
@@ -1957,25 +1793,12 @@ const DailyProductionReport = () => {
                             <div className="w-[45%] pl-1 flex flex-col pt-1">
 
                                 {/* Shift Communication */}
-                                <div className="flex justify-between items-center bg-blue-100 border border-black pr-1">
-                                    <div className="flex-1 text-center font-bold text-sm py-1">
-                                        {tableConfig?.shiftComm?.title || "Shift Communication"}
-                                    </div>
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-6 w-6 p-0 print:hidden"
-                                        onClick={() => openEditor('shiftComm')}
-                                        disabled={!tableConfig || !canEdit}
-                                    >
-                                        <IconSettings className="w-3 h-3" />
-                                    </Button>
-                                </div>
+                                <DPRSectionTitle title={layout.shiftComm.title} />
                                 <table className="w-full border-collapse border border-black text-center mb-1 text-[10px]">
                                     <thead>
                                         <tr className="bg-gray-100 h-5">
                                             <th className="border border-black" colSpan={2}>
-                                                {tableConfig?.shiftComm?.headerText || "Previous shift issues and general information during start up :"}
+                                                <DPRLayoutText value={layout.shiftComm.headerText} />
                                             </th>
                                         </tr>
                                         <tr className="bg-gray-100 h-5">
@@ -2000,33 +1823,11 @@ const DailyProductionReport = () => {
                                 </table>
 
                                 {/* Moral (Manpower Summary) */}
-                                <div className="flex justify-between items-center bg-blue-100 border border-black pr-1 mt-1">
-                                    <div className="flex-1 text-center font-bold text-sm py-1">
-                                        {tableConfig?.moral?.title || "Moral (Manpower Summary)"}
-                                    </div>
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-6 w-6 p-0 print:hidden"
-                                        onClick={() => openEditor('moral')}
-                                        disabled={!tableConfig || !canEdit}
-                                    >
-                                        <IconSettings className="w-3 h-3" />
-                                    </Button>
-                                </div>
+                                <DPRSectionTitle title={layout.moral.title} className="mt-1" />
                                 <table className="w-full border-collapse border border-black text-[10px] mt-1 text-center">
                                     <thead>
                                         <tr className="bg-gray-100 h-5">
-                                            {(tableConfig?.moral?.headers || [
-                                                { text: "Sr. No.", width: "w-8" },
-                                                { text: "Process" },
-                                                { text: "Section Count", width: "w-16" },
-                                                { text: "Present", width: "w-12" },
-                                                { text: "Absent", width: "w-12" },
-                                                { text: "Present %", width: "w-12" }
-                                            ]).map((h, i) => (
-                                                <th key={i} className={`border border-black ${h.width || ''}`} dangerouslySetInnerHTML={{ __html: h.text }}></th>
-                                            ))}
+                                            <DPRHeaderCells headers={layout.moral.headers} />
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -2067,20 +1868,7 @@ const DailyProductionReport = () => {
                         </div>
 
                         {/* Direct Efficiency Section */}
-                        <div className="flex justify-between items-center bg-blue-100 border border-black pr-1 mt-1">
-                            <div className="flex-1 text-center font-bold text-sm py-1">
-                                {tableConfig?.footer?.efficiencyTitle || "Direct Efficiency"}
-                            </div>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-6 w-6 p-0 print:hidden"
-                                onClick={() => openEditor('footer')}
-                                disabled={!tableConfig || !canEdit}
-                            >
-                                <IconSettings className="w-3 h-3" />
-                            </Button>
-                        </div>
+                        <DPRSectionTitle title={layout.footer.efficiencyTitle} className="mt-1" />
                         <table className="w-full border-collapse border border-black font-bold mt-1 text-[11px]">
                             <tbody>
                                 <tr>
@@ -2132,13 +1920,13 @@ const DailyProductionReport = () => {
                         {/* Signatures Section (Now at the Bottom) */}
                         <div className="flex justify-between items-center bg-blue-100 border border-black pr-1 mt-2">
                             <div className="flex-1 text-center font-bold text-sm py-1">
-                                {tableConfig?.footer?.signatureTitle || "Approvals & Signatures"}
+                                <DPRLayoutText value={layout.footer.signatureTitle} />
                             </div>
                         </div>
                         <table className="w-full border-collapse border border-black font-bold mt-1 text-[11px]">
                             <tbody>
                                 <tr>
-                                    <td className="border border-black p-1 text-right pr-4 bg-gray-100 w-[40%]">{tableConfig?.footer?.madeByLabel || "Made By (Line Leader):"}</td>
+                                    <td className="border border-black p-1 text-right pr-4 bg-gray-100 w-[40%]"><DPRLayoutText value={layout.footer.madeByLabel} /></td>
                                     <td className="border border-black p-0 w-[60%]">
                                         <TextCell
                                             value={formData.madeBy || (formData.isSubmitted ? "..." : "")}
@@ -2148,7 +1936,7 @@ const DailyProductionReport = () => {
                                     </td>
                                 </tr>
                                 <tr>
-                                    <td className="border border-black p-1 text-right pr-4 bg-gray-100">{tableConfig?.footer?.checkedByLabel || "Checked By (Shift Incharge):"}</td>
+                                    <td className="border border-black p-1 text-right pr-4 bg-gray-100"><DPRLayoutText value={layout.footer.checkedByLabel} /></td>
                                     <td className="border border-black p-1">
                                         <div className="flex items-center justify-between">
                                             <span className="font-bold">
@@ -2243,39 +2031,6 @@ const DailyProductionReport = () => {
                     <Button onClick={() => setIsReportOpen(false)}>Back to List</Button>
                 </div>
             )}
-
-            {/* Template Editor Dialog */}
-            <Dialog open={isEditing} onOpenChange={setIsEditing}>
-                <DialogContent className="max-w-[800px] max-h-[90vh] flex flex-col bg-white">
-                    <DialogHeader>
-                        <DialogTitle>
-                            Edit {editingSection ? editingSection.charAt(0).toUpperCase() + editingSection.slice(1) : "Section"} Template
-                        </DialogTitle>
-                    </DialogHeader>
-                    <div className="flex-1 overflow-auto p-1 space-y-4">
-                        <Textarea
-                            className="font-mono text-xs h-[400px]"
-                            value={jsonConfigStr}
-                            onChange={(e) => setJsonConfigStr(e.target.value)}
-                        />
-                        <div className="space-y-2">
-                            <Label htmlFor="remark">Remark (Required)</Label>
-                            <Input
-                                id="remark"
-                                placeholder="Describe the changes made to the template..."
-                                value={layoutRemark}
-                                onChange={(e) => setLayoutRemark(e.target.value)}
-                            />
-                        </div>
-                    </div>
-                    <div className="flex justify-between">
-                        <Button variant="ghost" onClick={() => setIsEditing(false)}>Cancel</Button>
-                        <Button onClick={handleSaveConfig} disabled={!layoutRemark.trim() || isSavingConfig}>
-                            {isSavingConfig ? "Saving..." : "Save Template"}
-                        </Button>
-                    </div>
-                </DialogContent>
-            </Dialog>
 
         </div>
     );

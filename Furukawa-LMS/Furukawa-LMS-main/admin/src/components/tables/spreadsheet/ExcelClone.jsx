@@ -432,6 +432,21 @@ const cellStyleFor = (cell) => ({
     ...(cell?.indent ? { [cell.align === "right" ? "paddingRight" : "paddingLeft"]: `${6 + cell.indent * 9}px` } : null),
     ...rotationStyleFor(cell?.rotation),
 });
+// The in-cell editor's font: the cell's own size, family, weight and slant, so
+// text being typed looks the same as it does once entered (the editor's
+// `text-xs` alone would show every cell at the 12px default). Line height
+// grows with a larger font so the caret and text aren't clipped.
+const cellEditorFontStyle = (cell) => {
+    const size = cell?.fontSize || DEFAULT_FONT_SIZE;
+    return {
+        fontSize: `${size}px`,
+        lineHeight: `${Math.max(16, Math.round(size * 1.35))}px`,
+        fontFamily: cell?.fontFamily ? `${cell.fontFamily}, sans-serif` : undefined,
+        fontWeight: cell?.bold ? "bold" : undefined,
+        fontStyle: cell?.italic ? "italic" : undefined,
+        textAlign: cell?.align || undefined,
+    };
+};
 // A cell's own style with its conditional formatting laid over it: the rule's
 // font settings win, and an icon takes a strip on the left of the cell.
 // A stretch of a cell's text that has a style of its own (see richText.js), as the
@@ -712,10 +727,10 @@ const tokenizeFormulaForDisplay = (text) => {
 // — or the colored characters here drift out of alignment with the invisible
 // caret/text in the input on top of it. The same goes for font size, and for
 // scrollLeft once the text is wider than the input (see syncFormulaOverlayScroll).
-const FormulaTextOverlay = ({ text, mono = false, className, ref }) => {
+const FormulaTextOverlay = ({ text, mono = false, className, style, ref }) => {
     const { segments } = tokenizeFormulaForDisplay(text);
     return (
-        <div ref={ref} aria-hidden="true" className={cn("absolute inset-0 whitespace-pre overflow-hidden pointer-events-none", mono && "font-mono", className)}>
+        <div ref={ref} aria-hidden="true" style={style} className={cn("absolute inset-0 whitespace-pre overflow-hidden pointer-events-none", mono && "font-mono", className)}>
             {segments.map((seg, i) => <span key={i} style={{ color: seg.color || "#0f172a" }}>{seg.text}</span>)}
         </div>
     );
@@ -2311,8 +2326,18 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // hundreds of thousands of strings rebuilt on every drag tick.
     // A range that covers part of a merged cell covers all of it, as in Excel: so
     // that clicking a merged cell selects (and copies, fills, formats) the whole of it.
-    const selectionBounds = useMemo(() => growBoundsToMerges(drawnBounds(selection), merges), [selection, merges, drawnBounds]);
-    const extraBounds = useMemo(() => extraRanges.map(drawnBounds).filter(Boolean).map((b) => growBoundsToMerges(b, merges)), [extraRanges, merges, drawnBounds]);
+    // Except a whole-row or whole-column selection (a header click): growing that
+    // to a merge it crosses reaches further merges in the new rows/columns, and so
+    // on, until the selection swallowed the whole sheet. It stays the rows or
+    // columns that were picked.
+    const growSelectionToMerges = useCallback((b) => {
+        if (!b) return b;
+        const fullColumns = b.minRow === 0 && b.maxRow >= rowCount - 1;
+        const fullRows = b.minCol === 0 && b.maxCol >= columnCount - 1;
+        return fullColumns || fullRows ? b : growBoundsToMerges(b, merges);
+    }, [merges, rowCount, columnCount]);
+    const selectionBounds = useMemo(() => growSelectionToMerges(drawnBounds(selection)), [selection, growSelectionToMerges, drawnBounds]);
+    const extraBounds = useMemo(() => extraRanges.map(drawnBounds).filter(Boolean).map(growSelectionToMerges), [extraRanges, growSelectionToMerges, drawnBounds]);
     const allSelectionBounds = useMemo(() => (selectionBounds ? [...extraBounds, selectionBounds] : extraBounds), [extraBounds, selectionBounds]);
     const hasMultipleRanges = extraRanges.length > 0;
     const isCellSelected = (row, col) => {
@@ -2674,6 +2699,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
     // and from there wraps and gets taller. Never smaller than the cell itself.
     // Sizes are CSS px inside the grid's zoom; rects are screen px, hence `scale`.
     const editingCellWraps = !!(editingCell && cells[editingCell]?.wrap);
+    const editingCellFontSize = editingCell ? cells[editingCell]?.fontSize : undefined;
     useLayoutEffect(() => {
         const el = cellEditInputRef.current;
         const td = el?.closest("td");
@@ -2705,7 +2731,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             overlay.style.whiteSpace = wrap ? "pre-wrap" : "pre";
             overlay.style.overflowWrap = wrap ? "break-word" : "normal";
         }
-    }, [editingCell, editValue, editingCellWraps, isEditingFormula, widthForCol, heightForRow, zoom]);
+    }, [editingCell, editValue, editingCellWraps, isEditingFormula, widthForCol, heightForRow, zoom, editingCellFontSize]);
 
     // Keeps the scroll position and viewport size in sync with the actual DOM so
     // virtualization can compute which rows and columns are visible. The offsets
@@ -6749,7 +6775,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                             className="absolute left-0 top-0 z-[5] outline outline-2 outline-indigo-500 -outline-offset-2"
                             style={{ backgroundColor: cell?.bg || "#ffffff" }}
                         >
-                            {isEditingFormula && <FormulaTextOverlay ref={cellEditOverlayRef} text={editValue} className="px-1.5 py-[6px] text-xs leading-4" />}
+                            {isEditingFormula && <FormulaTextOverlay ref={cellEditOverlayRef} text={editValue} className="px-1.5 py-[6px] text-xs leading-4" style={cellEditorFontStyle(cell)} />}
                             {/* A textarea (not an input) so Alt+Enter can add a line
                                 break. Enter/Tab/Esc/F4/Ctrl+Enter are handled by the
                                 sheet-level key handler (handleKeyDown). Its width,
@@ -6763,6 +6789,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                                 // Transparent text so the colored-reference overlay behind it shows.
                                 isEditingFormula && "text-transparent caret-slate-900"
                             )}
+                            style={{ ...cellEditorFontStyle(cell), color: isEditingFormula ? undefined : cell?.color || undefined }}
                             value={editValue}
                             onChange={(e) => { setEditValue(e.target.value); setEditCaret(e.target.selectionEnd); formulaInsertRange.current = null; }}
                             onSelect={trackEditorCaret}

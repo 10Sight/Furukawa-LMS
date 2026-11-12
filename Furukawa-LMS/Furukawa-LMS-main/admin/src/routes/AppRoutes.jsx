@@ -25,6 +25,7 @@ const DailyMeetingLayout = lazy(() => import("../components/layout/DailyMeetingL
 const AddQuestionPaper = lazy(() => import("../pages/assessments/question-papers/AddQuestionPaper.jsx"));
 const Daily5MRecording = lazy(() => import("../pages/production/daily-5m/Daily5MRecording.jsx"));
 const Daily5MDashboard = lazy(() => import("../pages/production/daily-5m/Daily5MDashboard.jsx"));
+const Daily5MLayoutEditor = lazy(() => import("../pages/production/daily-5m/Daily5MLayoutEditor.jsx"));
 const DailyMeeting = lazy(() => import("../pages/meetings/DailyMeeting.jsx"));
 const MisPortalHub = lazy(() => import("../pages/meetings/MisPortalHub.jsx"));
 const MonthlyMeetingReport = lazy(() => import("../pages/meetings/MonthlyMeetingReport.jsx"));
@@ -100,11 +101,15 @@ const LineRequirementManager = lazy(() => import("../pages/requirements/LineRequ
 const RevisionTable = lazy(() => import("../pages/reports/admin/RevisionTable.jsx"));
 const RevisionSheetHistory = lazy(() => import("../pages/reports/admin/RevisionSheetHistory.jsx"));
 const DPRManage = lazy(() => import("../pages/production/DPRManage.jsx"));
+const DPRLayoutEditor = lazy(() => import("../pages/production/DPRLayoutEditor.jsx"));
 const SixteenDayMonitoring = lazy(() => import("../pages/training/monitoring/sixteen-day/index.js"));
 const SixteenDayMonitoringLayoutEditor = lazy(() => import("../pages/training/monitoring/sixteen-day/SixteenDayMonitoringLayoutEditor.jsx"));
 const ThreeDayMonitoring = lazy(() => import("../pages/training/monitoring/three-day/ThreeDayMonitoring.jsx"));
+const ThreeDayMonitoringLayoutEditor = lazy(() => import("../pages/training/monitoring/three-day/ThreeDayMonitoringLayoutEditor.jsx"));
 const HandoverSheetPage = lazy(() => import("../pages/training/monitoring/handover-sheet/HandoverSheetPage.jsx"));
+const HandoverSheetLayoutEditor = lazy(() => import("../pages/training/monitoring/handover-sheet/HandoverSheetLayoutEditor.jsx"));
 const AbnormalCondition = lazy(() => import("../pages/training/admin/AbnormalCondition.jsx"));
+const AbnormalConditionLayoutEditor = lazy(() => import("../pages/training/admin/AbnormalConditionLayoutEditor.jsx"));
 const MultiSkilling = lazy(() => import("../pages/skills/multi-skilling/MultiSkillingPage.jsx"));
 const DojoHiring = lazy(() => import("../pages/dojo-hiring/DojoHiringPage.jsx"));
 const DojoCandidateDetail = lazy(() => import("../pages/dojo-hiring/DojoCandidateDetail.jsx"));
@@ -315,7 +320,13 @@ const AppRoutes = () => {
             <Route path="16-day-monitoring/:studentId?" element={<SixteenDayMonitoring />} />
             <Route path="16-day-monitoring/layout" element={<SixteenDayMonitoringLayoutEditor />} />
             <Route path="3-day-monitoring/:studentId?" element={<ThreeDayMonitoring />} />
+            <Route path="3-day-monitoring/layout" element={<ThreeDayMonitoringLayoutEditor />} />
             <Route path="handover-sheet" element={<HandoverSheetPage />} />
+            <Route path="handover-sheet/layout" element={
+              <RequireAccess allow={["handover_sheet:edit_layout", "revision:update"]}>
+                <HandoverSheetLayoutEditor />
+              </RequireAccess>
+            } />
             <Route path="multi-skilling" element={<MultiSkilling />} />
             <Route path="dojo-hiring" element={<DojoHiring />} />
             <Route path="dojo-hiring/:studentId" element={<DojoCandidateDetail />} />
@@ -337,7 +348,10 @@ const AppRoutes = () => {
                 <RevisionSheetHistory />
               </RequireAccess>
             } />
-            <Route path="revision-table/:sheetKey/layout" element={
+            {/* One explicit route per layout-editor sheet key (see LAYOUT_EDITOR_SHEET_KEYS in
+                RevisionSheetHistory.jsx). Not a `:sheetKey` wildcard — that silently opened the
+                10-Cycle editor for any other sheet key. */}
+            <Route path="revision-table/ten-cycle-sheet/layout" element={
               <RequireAccess allow={["revision:read", "dept_revision_logs:read", "revision:update", "ten_cycle:edit_layout", "ten_cycle:manage"]}>
                 <Cycle10LayoutEditor />
               </RequireAccess>
@@ -345,6 +359,31 @@ const AppRoutes = () => {
             <Route path="revision-table/sixteen-day-monitoring/layout" element={
               <RequireAccess allow={["revision:read", "dept_revision_logs:read", "revision:update", "sixteen_day:edit_layout", "sixteen_day:manage"]}>
                 <SixteenDayMonitoringLayoutEditor />
+              </RequireAccess>
+            } />
+            <Route path="revision-table/three-day-monitoring/layout" element={
+              <RequireAccess allow={["revision:read", "dept_revision_logs:read", "revision:update", "three_day:edit_layout", "three_day:manage"]}>
+                <ThreeDayMonitoringLayoutEditor />
+              </RequireAccess>
+            } />
+            <Route path="revision-table/handover-sheet/layout" element={
+              <RequireAccess allow={["revision:update", "handover_sheet:edit_layout"]}>
+                <HandoverSheetLayoutEditor />
+              </RequireAccess>
+            } />
+            <Route path="revision-table/abnormal-condition/layout" element={
+              <RequireAccess allow={["revision:update", "abnormal_condition:edit_layout"]}>
+                <AbnormalConditionLayoutEditor />
+              </RequireAccess>
+            } />
+            <Route path="revision-table/daily-production-report/layout" element={
+              <RequireAccess allow={["revision:update", "dpr:edit_layout"]}>
+                <DPRLayoutEditor />
+              </RequireAccess>
+            } />
+            <Route path="revision-table/daily-5m/layout" element={
+              <RequireAccess allow={["revision:update", "daily5m:edit_layout"]}>
+                <Daily5MLayoutEditor />
               </RequireAccess>
             } />
             <Route path="resource-preview/:resourceId" element={<ResourcePreview />} />
@@ -407,7 +446,17 @@ const AppRoutes = () => {
                 <Daily5MRecording />
               </RequireAccess>
             } />
+            <Route path="daily-5m-recording/layout" element={
+              <RequireAccess allow={["daily5m:edit_layout", "revision:update"]}>
+                <Daily5MLayoutEditor />
+              </RequireAccess>
+            } />
             <Route path="abnormal-condition" element={<AbnormalCondition />} />
+            <Route path="abnormal-condition/layout" element={
+              <RequireAccess allow={["abnormal_condition:edit_layout", "revision:update"]}>
+                <AbnormalConditionLayoutEditor />
+              </RequireAccess>
+            } />
             <Route path="ptm" element={<FmeDashboardPage key="ptm" page="ptm" />} />
             <Route path="ptm/:sheetTopic" element={<FmeDashboardPage key="ptm" page="ptm" />} />
             <Route path="pdca" element={
@@ -572,6 +621,11 @@ const AppRoutes = () => {
 
             {/* Common Admin/Trainer Pages mapped to Portal */}
             <Route path="daily-5m-recording" element={<Daily5MRecording />} />
+            <Route path="daily-5m-recording/layout" element={
+              <RequireAccess allow={["daily5m:edit_layout", "revision:update"]}>
+                <Daily5MLayoutEditor />
+              </RequireAccess>
+            } />
             <Route path="daily-5m-dashboard" element={<Daily5MDashboard />} />
             <Route path="analytics" element={<Analytics />} />
             <Route path="report" element={<Report />} />
@@ -602,6 +656,11 @@ const AppRoutes = () => {
             <Route path="10-cycle" element={<Cycle10 />} />
             <Route path="10-cycle/layout" element={<Cycle10LayoutEditor />} />
             <Route path="daily-production-report" element={<DailyProductionReport />} />
+            <Route path="daily-production-report/layout" element={
+              <RequireAccess allow={["dpr:edit_layout", "revision:update"]}>
+                <DPRLayoutEditor />
+              </RequireAccess>
+            } />
             <Route path="on-job-training" element={<OnJobTraining />} />
             <Route path="onboarding-id" element={<OnboardingID />} />
             <Route path="attendance" element={<Attendance />} />
@@ -613,8 +672,19 @@ const AppRoutes = () => {
             <Route path="16-day-monitoring" element={<SixteenDayMonitoring />} />
             <Route path="16-day-monitoring/layout" element={<SixteenDayMonitoringLayoutEditor />} />
             <Route path="3-day-monitoring" element={<ThreeDayMonitoring />} />
+            <Route path="3-day-monitoring/layout" element={<ThreeDayMonitoringLayoutEditor />} />
             <Route path="handover-sheet" element={<HandoverSheetPage />} />
+            <Route path="handover-sheet/layout" element={
+              <RequireAccess allow={["handover_sheet:edit_layout", "revision:update"]}>
+                <HandoverSheetLayoutEditor />
+              </RequireAccess>
+            } />
             <Route path="abnormal-condition" element={<AbnormalCondition />} />
+            <Route path="abnormal-condition/layout" element={
+              <RequireAccess allow={["abnormal_condition:edit_layout", "revision:update"]}>
+                <AbnormalConditionLayoutEditor />
+              </RequireAccess>
+            } />
             <Route path="daily-meeting" element={<MisPortalHub />} />
             <Route path="daily-meeting/hr-meeting" element={<LegacyHrMeetingRedirect />} />
             <Route path="daily-meeting/morning-meeting" element={<DailyMeeting />} />

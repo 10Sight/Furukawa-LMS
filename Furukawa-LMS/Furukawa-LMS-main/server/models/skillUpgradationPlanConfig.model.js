@@ -88,7 +88,8 @@ class SkillUpgradationPlanConfig {
     }
 }
 
-// Initialize tables
-SkillUpgradationPlanConfig.init().catch(err => console.error("Failed to initialize SkillUpgradationPlanConfig tables:", err));
+// Initialization is awaited in index.js's startup sequence (and scripts/initializeTables.js),
+// not self-invoked here: running it at import time too made every boot init this table twice,
+// once unawaited and racing the ordered startup migrations for schema locks.
 
 export default SkillUpgradationPlanConfig;

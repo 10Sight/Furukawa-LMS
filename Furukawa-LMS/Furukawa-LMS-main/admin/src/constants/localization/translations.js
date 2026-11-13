@@ -190,6 +190,8 @@ export const translations = {
     "misPortal.dailyMorningMeetingDesc": "Section-wise standup spreadsheet with charts, tracked by department and section.",
     "misPortal.monthlyMeetingReportTitle": "Monthly Meeting Report",
     "misPortal.monthlyMeetingReportDesc": "Browse folders of monthly PowerPoint reviews and view them slide by slide.",
+    "misPortal.itAccessControlTitle": "IT Access Control",
+    "misPortal.itAccessControlDesc": "Access Control Register: system, network and SAP access of ST staff, and access removal for leavers.",
     "landing.enterPortal": "Enter Portal",
     "landing.copyright": "© 2024 Furukawa Minda Electric Pvt Ltd. All rights reserved.",
 
@@ -1128,6 +1130,8 @@ export const translations = {
     "misPortal.dailyMorningMeetingDesc": "विभाग और अनुभाग के अनुसार स्टैंडअप स्प्रेडशीट और चार्ट।",
     "misPortal.monthlyMeetingReportTitle": "मासिक बैठक रिपोर्ट (Monthly Meeting Report)",
     "misPortal.monthlyMeetingReportDesc": "मासिक पावरपॉइंट समीक्षाओं के फ़ोल्डर ब्राउज़ करें और स्लाइड दर स्लाइड देखें।",
+    "misPortal.itAccessControlTitle": "आईटी एक्सेस कंट्रोल (IT Access Control)",
+    "misPortal.itAccessControlDesc": "एक्सेस कंट्रोल रजिस्टर: ST स्टाफ़ की सिस्टम, नेटवर्क और SAP एक्सेस, और छोड़ने वालों की एक्सेस हटाना।",
     "landing.enterPortal": "पोर्टल में प्रवेश करें",
     "landing.copyright": "© 2024 फुरुकावा मिंडा इलेक्ट्रिक प्राइवेट लिमिटेड। सर्वाधिकार सुरक्षित।",
 
@@ -2039,6 +2043,8 @@ export const translations = {
     "misPortal.dailyMorningMeetingDesc": "部門・セクション別のスタンドアップ・スプレッドシートとチャート。",
     "misPortal.monthlyMeetingReportTitle": "月次会議レポート",
     "misPortal.monthlyMeetingReportDesc": "月次PowerPointレビューのフォルダーを閲覧し、スライドごとに表示します。",
+    "misPortal.itAccessControlTitle": "ITアクセス管理",
+    "misPortal.itAccessControlDesc": "アクセス管理台帳：STスタッフのシステム・ネットワーク・SAPアクセスと、退職者のアクセス削除。",
     "landing.enterPortal": "ポータルに入る",
     "landing.copyright": "© 2024 Furukawa Minda Electric Pvt Ltd. All rights reserved.",
 
@@ -2931,6 +2937,8 @@ export const translations = {
     "misPortal.dailyMorningMeetingDesc": "按部门和科室跟踪的站立会议电子表格与图表。",
     "misPortal.monthlyMeetingReportTitle": "月度会议报告",
     "misPortal.monthlyMeetingReportDesc": "浏览月度 PowerPoint 报告文件夹，并逐张幻灯片查看。",
+    "misPortal.itAccessControlTitle": "IT 访问控制",
+    "misPortal.itAccessControlDesc": "访问控制登记册：ST 员工的系统、网络和 SAP 访问权限，以及离职人员的权限移除。",
     "landing.enterPortal": "进入门户",
     "landing.copyright": "© 2024 Furukawa Minda Electric Pvt Ltd. 保留所有权利。",
 
@@ -3823,6 +3831,8 @@ export const translations = {
     "misPortal.dailyMorningMeetingDesc": "Таблица для планёрок по отделам и секциям с диаграммами.",
     "misPortal.monthlyMeetingReportTitle": "Ежемесячный отчёт о совещании",
     "misPortal.monthlyMeetingReportDesc": "Просматривайте папки с ежемесячными презентациями PowerPoint постранично.",
+    "misPortal.itAccessControlTitle": "Контроль ИТ-доступа",
+    "misPortal.itAccessControlDesc": "Реестр контроля доступа: системный, сетевой и SAP-доступ сотрудников ST и отзыв доступа у уволившихся.",
     "landing.enterPortal": "Войти в портал",
     "landing.copyright": "© 2024 Furukawa Minda Electric Pvt Ltd. Все права защищены.",
 

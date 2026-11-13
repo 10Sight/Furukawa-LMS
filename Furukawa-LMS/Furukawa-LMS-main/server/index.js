@@ -62,6 +62,7 @@ import monthlyReportFolderRoutes from "./routes/monthlyReportFolder.routes.js";
 import monthlyReportRecordRoutes from "./routes/monthlyReportRecord.routes.js";
 import monthlyReportConfigRoutes from "./routes/monthlyReportConfig.routes.js";
 import dailyManpowerReportRoutes from "./routes/dailyManpowerReport.routes.js";
+import itAccessControlRoutes from "./routes/itAccessControl.routes.js";
 import OnJobTraining from "./models/onJobTraining.model.js"; // Initialize table
 import User from "./models/auth.model.js";
 import timelineScheduler from "./services/timelineScheduler.js";
@@ -376,6 +377,7 @@ app.use("/api/monthly-report-folders", monthlyReportFolderRoutes);
 app.use("/api/monthly-report-records", monthlyReportRecordRoutes);
 app.use("/api/monthly-report-configs", monthlyReportConfigRoutes);
 app.use("/api/v1/daily-manpower-report", dailyManpowerReportRoutes);
+app.use("/api/v1/it-access-control", itAccessControlRoutes);
 app.use("/api/report-clubs", reportClubRoutes);
 app.use("/api/mentee-feedback", menteeFeedbackRoutes);
 app.use("/api/learning-comparisons", learningComparisonRoutes);

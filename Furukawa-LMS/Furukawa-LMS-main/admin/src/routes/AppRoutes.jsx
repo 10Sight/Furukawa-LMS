@@ -29,6 +29,7 @@ const Daily5MLayoutEditor = lazy(() => import("../pages/production/daily-5m/Dail
 const DailyMeeting = lazy(() => import("../pages/meetings/DailyMeeting.jsx"));
 const MisPortalHub = lazy(() => import("../pages/meetings/MisPortalHub.jsx"));
 const MonthlyMeetingReport = lazy(() => import("../pages/meetings/MonthlyMeetingReport.jsx"));
+const ITAccessControlSheet = lazy(() => import("../pages/meetings/ITAccessControlSheet.jsx"));
 const DashboardHome = lazy(() => import("../pages/dashboard/admin/DashboardHome.jsx"));
 const AssemblyDashboard = lazy(() => import("../pages/dashboard/admin/AssemblyDashboard.jsx"));
 const Attendance = lazy(() => import("../pages/attendance/Attendance.jsx"));
@@ -492,6 +493,7 @@ const AppRoutes = () => {
             <Route path="hr-meeting" element={<LegacyHrMeetingRedirect />} />
             <Route path="morning-meeting" element={<DailyMeeting />} />
             <Route path="monthly-report" element={<MonthlyMeetingReport />} />
+            <Route path="it-access-control" element={<ITAccessControlSheet />} />
           </Route>
 
           {/* Instructor routes */}
@@ -689,6 +691,7 @@ const AppRoutes = () => {
             <Route path="daily-meeting/hr-meeting" element={<LegacyHrMeetingRedirect />} />
             <Route path="daily-meeting/morning-meeting" element={<DailyMeeting />} />
             <Route path="daily-meeting/monthly-report" element={<MonthlyMeetingReport />} />
+            <Route path="daily-meeting/it-access-control" element={<ITAccessControlSheet />} />
             <Route path="pdca" element={
               <RequireAccess allow="pdca:read">
                 <FmeDashboardPage key="pdca" page="pdca" />

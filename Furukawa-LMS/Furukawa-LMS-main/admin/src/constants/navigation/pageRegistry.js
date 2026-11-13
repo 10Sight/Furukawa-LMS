@@ -6,6 +6,9 @@ export const MIS_PORTAL_KEY = "daily-meeting";
 export const MIS_HR_MEETING_KEY = "mis-hr-meeting";
 export const MIS_MORNING_MEETING_KEY = "mis-morning-meeting";
 export const MIS_MONTHLY_REPORT_KEY = "mis-monthly-report";
+// Granted only by ticking it: a role holding just the MIS Portal key does not get it, so it is
+// deliberately not in MIS_PAGE_KEYS (mirrors `explicitOnly` in server rolesPermissions.controller.js).
+export const MIS_IT_ACCESS_CONTROL_KEY = "mis-it-access-control";
 const MIS_PAGE_KEYS = [MIS_HR_MEETING_KEY, MIS_MORNING_MEETING_KEY, MIS_MONTHLY_REPORT_KEY];
 
 // The efficiency charts used to live on the admin Dashboard.
@@ -404,6 +407,7 @@ export const PAGE_REGISTRY = [
     { key: MIS_HR_MEETING_KEY, label: "Daily HR Meeting", labelKey: "misPortal.dailyHrMeetingTitle", layout: "daily-meeting", link: "/daily-meeting/hr-meeting", icon: "IconUsers" },
     { key: MIS_MORNING_MEETING_KEY, label: "Daily Morning Meeting", labelKey: "misPortal.dailyMorningMeetingTitle", layout: "daily-meeting", link: "/daily-meeting/morning-meeting", icon: "IconCalendar" },
     { key: MIS_MONTHLY_REPORT_KEY, label: "Monthly Meeting Report", labelKey: "misPortal.monthlyMeetingReportTitle", layout: "daily-meeting", link: "/daily-meeting/monthly-report", icon: "IconFileText" },
+    { key: MIS_IT_ACCESS_CONTROL_KEY, label: "IT Access Control", labelKey: "misPortal.itAccessControlTitle", layout: "daily-meeting", link: "/daily-meeting/it-access-control", icon: "IconUserShield" },
 
     { key: "landing-page", label: "Landing Page", labelKey: "nav.landingPage", layout: "custom", link: "/", icon: "IconLayoutGrid" },
 ];

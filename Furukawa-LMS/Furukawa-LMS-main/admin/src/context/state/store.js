@@ -46,6 +46,7 @@ import { contractorApi } from "../../services/api/ContractorApi.js";
 import { leftRequestApi } from "../../services/api/LeftRequestApi.js";
 import { monthlyMeetingReportApi } from "../../services/api/MonthlyMeetingReportApi.js";
 import { dailyHrMeetingApi } from "../../services/api/DailyHrMeetingApi.js";
+import { itAccessControlApi } from "../../services/api/ITAccessControlApi.js";
 import { suggestionChecksheetApi } from "../../services/api/SuggestionChecksheetApi.js";
 
 
@@ -116,6 +117,7 @@ const store = configureStore({
         [leftRequestApi.reducerPath]: leftRequestApi.reducer,
         [monthlyMeetingReportApi.reducerPath]: monthlyMeetingReportApi.reducer,
         [dailyHrMeetingApi.reducerPath]: dailyHrMeetingApi.reducer,
+        [itAccessControlApi.reducerPath]: itAccessControlApi.reducer,
         [suggestionChecksheetApi.reducerPath]: suggestionChecksheetApi.reducer,
     },
     middleware: (getDefaultMiddleware) =>
@@ -160,6 +162,7 @@ const store = configureStore({
             leftRequestApi.middleware,
             monthlyMeetingReportApi.middleware,
             dailyHrMeetingApi.middleware,
+            itAccessControlApi.middleware,
             suggestionChecksheetApi.middleware,
         ),
 });

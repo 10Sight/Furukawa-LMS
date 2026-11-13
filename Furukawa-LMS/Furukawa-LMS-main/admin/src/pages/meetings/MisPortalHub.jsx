@@ -1,15 +1,15 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
-import { Calendar, FileText } from "lucide-react";
+import { Calendar, FileText, ShieldCheck } from "lucide-react";
 import PortalTile from "@/components/common/PortalTile.jsx";
 import useTranslate from "@/hooks/useTranslate.js";
-import { canOpenPage, MIS_MORNING_MEETING_KEY, MIS_MONTHLY_REPORT_KEY } from "@/constants/navigation/pageRegistry.js";
+import { canOpenPage, MIS_IT_ACCESS_CONTROL_KEY, MIS_MORNING_MEETING_KEY, MIS_MONTHLY_REPORT_KEY } from "@/constants/navigation/pageRegistry.js";
 
 // Mirrors the admin check used across the Daily Meeting / Monthly Report
 // feature family (see server/utils/dailyMeetingAccess.util.js and
 // monthlyReportAccess.util.js) — kept local since it's only needed here to
-// decide which of the two tiles to show.
+// decide which tiles to show.
 const isMisAdmin = (user) => (
     user?.role === "SUPERADMIN" || user?.role === "ADMIN" || user?.isAdmin === 1 || user?.isAdmin === true
 );
@@ -30,10 +30,14 @@ export default function MisPortalHub() {
     // tile: it opens as tabs inside the Daily Morning Meeting workspace.
     const canSeeDailyMeeting = hasPermission(user, "daily_meeting:read") && canOpenPage(MIS_MORNING_MEETING_KEY, user);
     const canSeeMonthlyReport = hasPermission(user, "monthly_report:read") && canOpenPage(MIS_MONTHLY_REPORT_KEY, user);
-    const visibleTiles = [canSeeDailyMeeting, canSeeMonthlyReport].filter(Boolean).length;
+    const canSeeItAccessControl = hasPermission(user, "it_access_control:read") && canOpenPage(MIS_IT_ACCESS_CONTROL_KEY, user);
+    const visibleTiles = [canSeeDailyMeeting, canSeeMonthlyReport, canSeeItAccessControl].filter(Boolean).length;
+    const gridClass = visibleTiles >= 3
+        ? "sm:grid-cols-2 lg:grid-cols-3 max-w-5xl"
+        : visibleTiles === 2 ? "sm:grid-cols-2 max-w-2xl" : "max-w-md";
 
     return (
-        <div className="max-w-3xl mx-auto py-8 px-3 sm:px-4">
+        <div className="max-w-5xl mx-auto py-8 px-3 sm:px-4">
             <div className="text-center mb-8">
                 <h1 className={`text-xl sm:text-2xl font-extrabold tracking-tight ${darkMode ? "text-slate-100" : "text-slate-900"}`}>
                     {t("landing.dailyMeetingTitle")}
@@ -43,7 +47,7 @@ export default function MisPortalHub() {
                 </p>
             </div>
 
-            <div className={`grid grid-cols-1 gap-4 sm:gap-5 mx-auto ${visibleTiles >= 2 ? "sm:grid-cols-2 max-w-2xl" : "max-w-md"}`}>
+            <div className={`grid grid-cols-1 gap-4 sm:gap-5 mx-auto ${gridClass}`}>
                 {canSeeDailyMeeting && (
                     <PortalTile
                         accent="amber"
@@ -68,7 +72,19 @@ export default function MisPortalHub() {
                     />
                 )}
 
-                {!canSeeDailyMeeting && !canSeeMonthlyReport && (
+                {canSeeItAccessControl && (
+                    <PortalTile
+                        accent="blue"
+                        darkMode={darkMode}
+                        icon={ShieldCheck}
+                        title={t("misPortal.itAccessControlTitle")}
+                        desc={t("misPortal.itAccessControlDesc")}
+                        ctaLabel="Open"
+                        onClick={() => navigate("it-access-control")}
+                    />
+                )}
+
+                {visibleTiles === 0 && (
                     <div className={`col-span-full text-center py-12 rounded-2xl border-2 border-dashed ${darkMode ? "border-slate-800 text-slate-500" : "border-slate-200 text-slate-500"}`}>
                         You do not have access to any MIS Portal workspace. Contact an administrator if you believe this is a mistake.
                     </div>

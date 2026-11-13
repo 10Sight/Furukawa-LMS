@@ -360,7 +360,7 @@ function AutoResizeTextarea({
   );
 }
 
-// Auto-adjusting input for revision reason with dynamic width based on content
+// Auto-adjusting input for revision reason with dynamic width based on content and Shift+Enter multiline support
 function AutoWidthInput({
   value = '',
   onChange,
@@ -371,17 +371,21 @@ function AutoWidthInput({
   readOnly = false,
   className = '',
   title = '',
-  minChars = 8,
-  maxChars = 40,
 }) {
-  const currentLen = (value || '').length;
-  const placeholderLen = (placeholder || '').length;
-  const chLen = Math.min(maxChars, Math.max(minChars, currentLen, placeholderLen));
+  const localTextareaRef = useRef(null);
+
+  useEffect(() => {
+    const el = localTextareaRef.current;
+    if (el) {
+      el.style.height = 'auto';
+      el.style.height = `${Math.max(28, el.scrollHeight)}px`;
+    }
+  }, [value]);
 
   if (readOnly) {
     return (
       <span
-        className="text-[12px] font-medium text-slate-700 italic px-1 py-0.5 truncate block max-w-full select-text text-center"
+        className="text-[12px] font-medium text-slate-700 italic px-1 py-0.5 whitespace-pre-wrap break-words block max-w-full select-text text-left"
         title={title || value || '-'}
       >
         {value || '-'}
@@ -389,24 +393,45 @@ function AutoWidthInput({
     );
   }
 
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && e.shiftKey) {
+      // Shift + Enter: standard multiline insertion
+      // Allow default textarea newline insertion
+      return;
+    }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      // Enter without shift: finish editing / blur to avoid accidental extra blank line
+      e.preventDefault();
+      e.target.blur();
+    }
+  };
+
   return (
-    <input
-      ref={inputRef}
-      type="text"
+    <textarea
+      ref={(element) => {
+        localTextareaRef.current = element;
+        if (typeof inputRef === 'function') inputRef(element);
+        else if (inputRef) inputRef.current = element;
+      }}
+      rows={1}
       value={value}
       onChange={onChange}
+      onKeyDown={handleKeyDown}
       placeholder={placeholder}
       title={title || value || placeholder}
       required={required}
       aria-required={required || undefined}
       data-required-action-allowed={dataRequiredActionAllowed ? 'true' : undefined}
       style={{
-        fieldSizing: 'content',
-        width: `${chLen + 2}ch`,
-        maxWidth: '100%',
-        minWidth: '80px',
+        width: '100%',
+        minWidth: '100px',
+        resize: 'none',
+        overflowY: 'hidden',
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+        lineHeight: '1.25'
       }}
-      className={className || "text-[12px] font-medium text-slate-800 bg-white border border-slate-200 focus:border-blue-500 rounded px-1.5 py-1 text-center"}
+      className={className || "w-full text-[13px] font-medium text-slate-800 bg-white border border-slate-300 focus:border-blue-500 rounded px-2 py-1 text-left shadow-2xs focus:outline-none"}
     />
   );
 }
@@ -1225,6 +1250,37 @@ export default function PDCASheet({
   const [selectedImageAction, setSelectedImageAction] = useState(null);
   const [sheetSearch, setSheetSearch] = useState('');
 
+  // Status Column Header multi-select filter state
+  const STATUS_FILTER_OPTIONS = useMemo(() => ['In-Progress', 'Done', 'Delay', 'Not-Started'], []);
+  const [statusFilters, setStatusFilters] = useState([]);
+  const [isStatusFilterOpen, setIsStatusFilterOpen] = useState(false);
+  const statusFilterRef = useRef(null);
+
+  useEffect(() => {
+    if (!isStatusFilterOpen) return undefined;
+    const handleOutside = (e) => {
+      if (statusFilterRef.current && !statusFilterRef.current.contains(e.target)) {
+        setIsStatusFilterOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [isStatusFilterOpen]);
+
+  const getRowStatusForFilter = useCallback((row) => {
+    if (!row) return '';
+    const hasDate = Boolean(row.date?.trim());
+    const norm = normalizePDCAStatus(row.status);
+    const rowStatus = hasDate
+      ? (norm || 'Not-Started')
+      : (norm && norm !== 'Not-Started' ? norm : '');
+    if (rowStatus === 'Done') return 'Done';
+    if (rowStatus === 'Delay') return 'Delay';
+    if (rowStatus === 'In- Progress' || rowStatus === 'In-Progress' || rowStatus === 'In Progress') return 'In-Progress';
+    if (rowStatus === 'Not-Started') return 'Not-Started';
+    return '';
+  }, []);
+
   // Evidence Viewer Modal state (Multiple Images for Before / After): { isOpen, rowIndex, field }
   const [evidenceModal, setEvidenceModal] = useState({
     isOpen: false,
@@ -1277,13 +1333,45 @@ export default function PDCASheet({
     rows: initialRows.map((r) => ({ ...r })),
     headerInfo: { ...initialHeaderInfo }
   });
+  const lastSavedSnapshotRef = useRef(null);
   const isDirtyRef = useRef(false);
+  const userHasEditedRef = useRef(false);
+  const isInternalUpdateRef = useRef(false);
+  const isInitialMountRef = useRef(true);
 
   useEffect(() => {
-    if (initialSnapshotRef.current) {
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false;
+      return;
+    }
+    if (isInternalUpdateRef.current) {
+      userHasEditedRef.current = false;
+      isDirtyRef.current = false;
+      return;
+    }
+    const snap = initialSnapshotRef.current;
+    const lastSaved = lastSavedSnapshotRef.current;
+    if (snap || lastSaved) {
       const current = serializeSheet(rows, headerInfo);
-      if (current !== initialSnapshotRef.current) {
-        isDirtyRef.current = true;
+      if (current === snap || current === lastSaved) {
+        isDirtyRef.current = false;
+        userHasEditedRef.current = false;
+      } else {
+        const sanitizedRows = rows.map((r) => {
+          const hasDate = Boolean(r.date?.trim());
+          const norm = normalizePDCAStatus(r.status);
+          if (!hasDate && (!norm || norm === 'Not-Started')) return { ...r, status: '' };
+          if (hasDate && !norm) return { ...r, status: 'Not-Started' };
+          return r;
+        });
+        const sanitizedCurrent = serializeSheet(sanitizedRows, headerInfo);
+        if (sanitizedCurrent === snap || sanitizedCurrent === lastSaved) {
+          isDirtyRef.current = false;
+          userHasEditedRef.current = false;
+        } else {
+          isDirtyRef.current = true;
+          userHasEditedRef.current = true;
+        }
       }
     }
   }, [rows, headerInfo]);
@@ -1870,7 +1958,8 @@ export default function PDCASheet({
     pdcaApi.getSheet(topic.id).then(savedSheet => {
       if (!active || !savedSheet) return;
       // If user has already started typing in this session, protect their in-progress work
-      if (isDirtyRef.current) return;
+      if (isDirtyRef.current || userHasEditedRef.current) return;
+      isInternalUpdateRef.current = true;
 
       let finalHeader = headerInfo;
       if (savedSheet.headerInfo && Object.keys(savedSheet.headerInfo).length > 0) {
@@ -1928,8 +2017,14 @@ export default function PDCASheet({
         headerInfo: { ...finalHeader }
       };
       initialSnapshotRef.current = serializeSheet(finalRows, finalHeader);
+      userHasEditedRef.current = false;
+      isDirtyRef.current = false;
+      setTimeout(() => {
+        isInternalUpdateRef.current = false;
+      }, 300);
     }).catch(err => {
       console.warn('Could not fetch sheet from backend:', err);
+      isInternalUpdateRef.current = false;
     });
     return () => { active = false; };
   }, [topic?.id]);
@@ -2237,15 +2332,19 @@ export default function PDCASheet({
           console.warn('Backend saveSheet error:', apiErr?.message || apiErr);
         }
       }
+      isInternalUpdateRef.current = true;
       persistSheet(snapshotToSave);
       setRows(sanitizedRows);
       isDirtyRef.current = false;
+      userHasEditedRef.current = false;
       // Update baseline after successful save so subsequent navigation knows all edits are saved
       initialStateRef.current = {
         rows: sanitizedRows.map((r) => ({ ...r })),
         headerInfo: { ...headerInfo }
       };
-      initialSnapshotRef.current = serializeSheet(sanitizedRows, headerInfo);
+      const savedSnapshot = serializeSheet(sanitizedRows, headerInfo);
+      initialSnapshotRef.current = savedSnapshot;
+      lastSavedSnapshotRef.current = savedSnapshot;
       if (backendError) {
         showToast(`Saved locally, but server update failed: ${backendError?.response?.data?.message || backendError?.message || 'Check network connection'}`);
       } else {
@@ -2254,17 +2353,27 @@ export default function PDCASheet({
       if (typeof refreshData === 'function') {
         refreshData();
       }
+      setTimeout(() => {
+        isInternalUpdateRef.current = false;
+      }, 300);
       return true;
     } catch (error) {
+      isInternalUpdateRef.current = true;
       persistSheet(sheetSnapshot);
       isDirtyRef.current = false;
+      userHasEditedRef.current = false;
       initialStateRef.current = {
         rows: rows.map((r) => ({ ...r })),
         headerInfo: { ...headerInfo }
       };
-      initialSnapshotRef.current = serializeSheet(rows, headerInfo);
+      const fallbackSnapshot = serializeSheet(rows, headerInfo);
+      initialSnapshotRef.current = fallbackSnapshot;
+      lastSavedSnapshotRef.current = fallbackSnapshot;
       const errorMsg = error?.response?.data?.message || error?.response?.data?.error || error?.message || 'Could not save PDCA. Keep the form open and try again.';
       showToast(errorMsg);
+      setTimeout(() => {
+        isInternalUpdateRef.current = false;
+      }, 300);
       return false;
     } finally {
       setIsSaving(false);
@@ -2312,11 +2421,13 @@ export default function PDCASheet({
   // Determine if user has made unsaved changes in the current editing session
   const hasUnsavedChanges = () => {
     if (effectiveReadOnly) return false;
+    if (!userHasEditedRef.current && !isDirtyRef.current) return false;
     if (!isDirtyRef.current) return false;
-    if (!initialSnapshotRef.current) return false;
+    if (!initialSnapshotRef.current && !lastSavedSnapshotRef.current) return false;
     const current = serializeSheet(rows, headerInfo);
-    if (current === initialSnapshotRef.current) {
+    if (current === initialSnapshotRef.current || current === lastSavedSnapshotRef.current) {
       isDirtyRef.current = false;
+      userHasEditedRef.current = false;
       return false;
     }
     const sanitizedRows = rows.map(r => {
@@ -2330,8 +2441,10 @@ export default function PDCASheet({
       }
       return r;
     });
-    if (serializeSheet(sanitizedRows, headerInfo) === initialSnapshotRef.current) {
+    const sanitizedCurrent = serializeSheet(sanitizedRows, headerInfo);
+    if (sanitizedCurrent === initialSnapshotRef.current || sanitizedCurrent === lastSavedSnapshotRef.current) {
       isDirtyRef.current = false;
+      userHasEditedRef.current = false;
       return false;
     }
     return true;
@@ -2340,6 +2453,10 @@ export default function PDCASheet({
   // Navigation Back: Prompt if unsaved changes exist
   const handleBack = () => {
     if (requireConfirmationReasonBeforeContinuing()) return;
+    if (isSaving) {
+      onBack?.();
+      return;
+    }
     if (hasUnsavedChanges()) {
       setAlertModal({
         isOpen: true,
@@ -2502,7 +2619,9 @@ export default function PDCASheet({
   const handleDiscardAndGoBack = () => {
     if (requireConfirmationReasonBeforeContinuing()) return;
     setShowDiscardModal(false);
+    isInternalUpdateRef.current = true;
     isDirtyRef.current = false;
+    userHasEditedRef.current = false;
     if (topic?.id && initialStateRef.current) {
       setData((items) => {
         if (!items) return items;
@@ -2516,6 +2635,9 @@ export default function PDCASheet({
       setHeaderInfo(initialStateRef.current.headerInfo);
       initialSnapshotRef.current = serializeSheet(initialStateRef.current.rows, initialStateRef.current.headerInfo);
     }
+    setTimeout(() => {
+      isInternalUpdateRef.current = false;
+    }, 300);
     onBack?.();
   };
 
@@ -4133,6 +4255,7 @@ export default function PDCASheet({
       : row);
 
     // 1. Immediately apply the deletion to state so the date is removed from the UI instantly
+    isInternalUpdateRef.current = true;
     setRows(nextRows);
 
     // 2. Persist to local cache / parent snapshot
@@ -4142,7 +4265,14 @@ export default function PDCASheet({
       rows: nextRows.map((row) => ({ ...row })),
       headerInfo: { ...headerInfo }
     };
-    initialSnapshotRef.current = serializeSheet(nextRows, headerInfo);
+    const nextSerialized = serializeSheet(nextRows, headerInfo);
+    initialSnapshotRef.current = nextSerialized;
+    lastSavedSnapshotRef.current = nextSerialized;
+    isDirtyRef.current = false;
+    userHasEditedRef.current = false;
+    setTimeout(() => {
+      isInternalUpdateRef.current = false;
+    }, 300);
 
     // 3. Persist to backend asynchronously without blocking the local deletion
     const targetId = topic?.id || topic?.recordId || (headerInfo.topicName?.trim() ? encodeURIComponent(headerInfo.topicName.trim()) : 'current_topic');
@@ -5029,12 +5159,14 @@ export default function PDCASheet({
     sectionColWidth,
     lineAreaColWidth,
     imageBeforeColWidth,
-    imageAfterColWidth
+    imageAfterColWidth,
+    revisedColWidth
   } = useMemo(() => {
     let maxDateLen = 0;
     let maxDepartmentLen = 0;
     let maxSectionLen = 0;
     let maxLineAreaLen = 0;
+    let maxRevisedLineLen = 0;
 
     for (const r of rows) {
       maxDateLen = Math.max(maxDateLen, formatDisplayDate(r.date).length);
@@ -5054,12 +5186,25 @@ export default function PDCASheet({
       lineList.forEach(l => {
         maxLineAreaLen = Math.max(maxLineAreaLen, String(l).trim().length);
       });
+
+      if (Array.isArray(r.revisedDates)) {
+        for (const item of r.revisedDates) {
+          const reason = typeof item === 'object' && item !== null ? (item.reason || '') : '';
+          if (reason) {
+            const lines = String(reason).split('\n');
+            for (const line of lines) {
+              maxRevisedLineLen = Math.max(maxRevisedLineLen, line.length);
+            }
+          }
+        }
+      }
     }
 
     const calculatedDateWidth = Math.min(MAX_DATE_WIDTH, Math.max(dateWidth, Math.round(maxDateLen * 10 + 40)));
     const calculatedDeptWidth = Math.min(MAX_DEPARTMENT_WIDTH, Math.max(departmentWidth, Math.round(maxDepartmentLen * 8 + 36)));
     const calculatedSecWidth = Math.min(MAX_SECTION_WIDTH, Math.max(sectionWidth, Math.round(maxSectionLen * 8 + 36)));
     const calculatedLineAreaWidth = Math.min(MAX_LINE_AREA_WIDTH, Math.max(lineAreaWidth, Math.round(maxLineAreaLen * 7.5 + 36)));
+    const calculatedRevisedWidth = Math.min(420, Math.max(135, Math.round(maxRevisedLineLen * 7.5 + 50)));
 
     // Auto-adjust Image Before & After column widths according to uploaded images
     let maxBeforeRatio = 0;
@@ -5108,7 +5253,8 @@ export default function PDCASheet({
       sectionColWidth: calculatedSecWidth,
       lineAreaColWidth: calculatedLineAreaWidth,
       imageBeforeColWidth: calculatedImageBeforeWidth,
-      imageAfterColWidth: calculatedImageAfterWidth
+      imageAfterColWidth: calculatedImageAfterWidth,
+      revisedColWidth: calculatedRevisedWidth
     };
   }, [rows, dateWidth, departmentWidth, sectionWidth, lineAreaWidth, imageDimensions]);
 
@@ -5330,7 +5476,7 @@ export default function PDCASheet({
             <col style={{ width: `${imageAfterColWidth}px`, minWidth: `${imageAfterColWidth}px` }} />
             <col style={{ width: '115px', minWidth: '105px' }} />
             <col style={{ width: '105px', minWidth: '95px' }} />
-            <col style={{ width: '135px', minWidth: '120px' }} />
+            <col style={{ width: `${revisedColWidth}px`, minWidth: `${revisedColWidth}px` }} />
             <col style={{ width: '110px', minWidth: '100px' }} />
             <col style={{ width: '145px', minWidth: '135px' }} />
             <col style={{ width: '160px', minWidth: '150px' }} />
@@ -5513,8 +5659,105 @@ export default function PDCASheet({
               <th rowSpan={2} className="py-1.5 px-0.5 w-[34px] min-w-[30px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[11px]">
                 S.No
               </th>
-              <th rowSpan={2} className="py-1.5 px-1 w-[124px] min-w-[118px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] whitespace-nowrap">
-                <span>Status</span> <span className="text-red-500 font-bold">*</span>
+              <th
+                rowSpan={2}
+                ref={statusFilterRef}
+                className="relative py-1.5 px-1 w-[124px] min-w-[118px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] select-none"
+              >
+                <div className="flex items-center justify-center gap-1 font-bold text-slate-800">
+                  <span>Status</span>
+                  <span className="text-red-500 font-bold">*</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsStatusFilterOpen((prev) => !prev);
+                    }}
+                    title={statusFilters.length > 0 ? `Filtered by: ${statusFilters.join(', ')}` : 'Filter by Status'}
+                    className={`ml-0.5 p-0.5 rounded transition-colors cursor-pointer flex items-center justify-center ${
+                      statusFilters.length > 0
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'text-slate-500 hover:text-blue-600 hover:bg-slate-200/70'
+                    }`}
+                  >
+                    <Filter className="w-3.5 h-3.5 stroke-[2.5]" />
+                  </button>
+                  {statusFilters.length > 0 && (
+                    <span className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold text-white bg-blue-600 rounded-full">
+                      {statusFilters.length}
+                    </span>
+                  )}
+                </div>
+
+                {/* Status Multi-select Filter Popover */}
+                {isStatusFilterOpen && (
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-50 w-52 bg-white rounded-xl shadow-xl border border-slate-200 p-2.5 text-left text-xs font-normal"
+                    style={{ minWidth: '190px' }}
+                  >
+                    <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-slate-100">
+                      <span className="font-bold text-slate-800 text-[12px] flex items-center gap-1">
+                        <Filter className="w-3 h-3 text-blue-600" /> Filter Status
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setIsStatusFilterOpen(false)}
+                        className="text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="space-y-1.5 py-1">
+                      {STATUS_FILTER_OPTIONS.map((opt) => {
+                        const isChecked = statusFilters.includes(opt);
+                        const badgeColor =
+                          opt === 'Done' ? 'bg-[#dcfce7] text-[#14532d] border-[#86efac]' :
+                          opt === 'In-Progress' ? 'bg-[#fef3c7] text-[#78350f] border-[#fcd34d]' :
+                          opt === 'Delay' ? 'bg-[#fee2e2] text-[#991b1b] border-[#fca5a5]' :
+                          'bg-[#dbeafe] text-[#1e40af] border-[#93c5fd]';
+                        return (
+                          <label
+                            key={opt}
+                            className="flex items-center gap-2 px-1.5 py-1 rounded-md hover:bg-slate-50 cursor-pointer select-none"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {
+                                setStatusFilters((prev) =>
+                                  prev.includes(opt) ? prev.filter((s) => s !== opt) : [...prev, opt]
+                                );
+                              }}
+                              className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                            />
+                            <span className={`px-2 py-0.5 rounded text-[11px] font-semibold border ${badgeColor}`}>
+                              {opt}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2 mt-1 border-t border-slate-100 text-[11px]">
+                      <button
+                        type="button"
+                        onClick={() => setStatusFilters([...STATUS_FILTER_OPTIONS])}
+                        className="text-blue-600 hover:text-blue-800 font-semibold cursor-pointer"
+                      >
+                        Select All
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setStatusFilters([])}
+                        className="text-slate-500 hover:text-slate-800 font-semibold cursor-pointer"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                )}
               </th>
               <th rowSpan={2} className="py-1.5 px-1 w-[115px] min-w-[100px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px]">
                 <span>Unit</span> <span className="text-red-500 font-bold">*</span>
@@ -5777,7 +6020,8 @@ export default function PDCASheet({
               </th>
               <th
                 rowSpan={2}
-                className="py-1.5 px-2 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 leading-tight select-none min-w-[130px] w-auto"
+                style={{ width: `${revisedColWidth}px`, minWidth: `${revisedColWidth}px` }}
+                className="py-1.5 px-2 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 leading-tight select-none"
                 title="Past revisions of Response Date. Only administrators have permission to delete revised dates."
               >
                 <div>No. of time</div>
@@ -5842,6 +6086,12 @@ export default function PDCASheet({
                 if (isDepartmentView && effectiveDept) {
                   const belongs = doesRowBelongToDepartment(row, effectiveDept, dbEmployees);
                   if (!belongs) return null;
+                }
+
+                // Status Filter rule: display ONLY points matching selected statuses
+                if (statusFilters.length > 0) {
+                  const rowStatus = getRowStatusForFilter(row);
+                  if (!statusFilters.includes(rowStatus)) return null;
                 }
 
                 const sNo = idx + 1;
@@ -6497,7 +6747,10 @@ export default function PDCASheet({
                     </td>
 
                     {/* No. of time Revised - Stacked past and current response dates */}
-                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] min-w-[130px] w-auto">
+                    <td
+                      style={{ width: `${revisedColWidth}px`, minWidth: `${revisedColWidth}px` }}
+                      className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC]"
+                    >
                       {Array.isArray(row.revisedDates) && row.revisedDates.length > 0 ? (
                         <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
                           {row.revisedDates.map((rItem, rIdx) => {
@@ -7248,6 +7501,26 @@ export default function PDCASheet({
                   candidateRows = rows.filter(r => isUserResponsibleForRow(r, effectiveUser) || (isCreatorOrAdmin && (topic?.scope === 'Self PDCA' || topic?.isSelf) && !r.staffName && !r.staffEmployee));
                 } else if (isDepartmentView && effectiveDept) {
                   candidateRows = rows.filter(r => doesRowBelongToDepartment(r, effectiveDept, dbEmployees));
+                }
+
+                if (statusFilters.length > 0 && candidateRows.length > 0) {
+                  return (
+                    <tr>
+                      <td colSpan={totalCols} className="py-8 text-center text-slate-500 bg-slate-50/50">
+                        <div className="flex flex-col items-center justify-center gap-2">
+                          <Filter className="w-8 h-8 text-blue-500" />
+                          <span className="font-semibold text-slate-700">No PDCA points match the selected status filter ({statusFilters.join(', ')}).</span>
+                          <button
+                            type="button"
+                            onClick={() => setStatusFilters([])}
+                            className="mt-1 px-3 py-1 text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 cursor-pointer"
+                          >
+                            Clear Status Filter
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
                 }
 
                 if (candidateRows.length === 0) {

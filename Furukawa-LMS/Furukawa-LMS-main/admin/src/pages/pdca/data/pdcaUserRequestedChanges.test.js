@@ -1764,3 +1764,45 @@ test('38. Suggestion Graph: Best Suggestion displays only Total & Implemented ba
   assert.match(graphCode, /!\(suggestionScope === 'BEST' && graphTab !== 'DEPARTMENT'\)[\s\S]*?key="bar-notFeasible"/, 'Not-Feasible candle must be hidden in Best Suggestion');
 });
 
+test('39. PDCASheet: Clean Back navigation after Save, Status Header multi-select filter, and No. of time Revised Auto-Width & Shift+Enter Multiline', () => {
+  const pdcaSheetPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/pdca/PDCASheet.jsx');
+  const pdcaSheetCode = fs.readFileSync(pdcaSheetPath, 'utf8');
+
+  // 1. Clean back navigation without false-positive unsaved changes popup
+  assert.match(pdcaSheetCode, /lastSavedSnapshotRef\s*=\s*useRef\(null\)/, 'PDCASheet must track lastSavedSnapshotRef to verify clean saved state');
+  assert.match(pdcaSheetCode, /lastSavedSnapshotRef\.current\s*=\s*savedSnapshot/, 'saveSheet must update lastSavedSnapshotRef on save');
+  assert.match(pdcaSheetCode, /current === lastSavedSnapshotRef\.current/, 'hasUnsavedChanges must recognize last saved snapshot as clean');
+
+  // 2. Status column header multi-select filter with checkboxes
+  assert.match(pdcaSheetCode, /STATUS_FILTER_OPTIONS/, 'PDCASheet must define STATUS_FILTER_OPTIONS');
+  assert.match(pdcaSheetCode, /statusFilters,\s*setStatusFilters/, 'PDCASheet must track multi-select statusFilters');
+  assert.match(pdcaSheetCode, /statusFilterRef/, 'Status column header must mount the filter dropdown on Status column text');
+  assert.match(pdcaSheetCode, /type="checkbox"/, 'Status filter popover must render checkboxes for multi-selection');
+  assert.match(pdcaSheetCode, /Select All/, 'Status filter popover must include Select All option');
+  assert.match(pdcaSheetCode, /Clear/, 'Status filter popover must include Clear option');
+
+  // 3. Status filter matches correctly
+  assert.match(pdcaSheetCode, /statusFilters\.includes\(rowStatus\)/, 'renderedRows must filter rows by selected statusFilters');
+
+  // 4. No. of time Revised dynamic auto-width and Shift + Enter multiline support
+  assert.match(pdcaSheetCode, /revisedColWidth/, 'PDCASheet must dynamically compute revisedColWidth based on reason length');
+  assert.match(pdcaSheetCode, /<textarea/, 'AutoWidthInput must use textarea to support multiline');
+  assert.match(pdcaSheetCode, /e\.key === 'Enter' && e\.shiftKey/, 'AutoWidthInput must support Shift + Enter for multiline text insertion');
+});
+
+test('40. PDCASheet: Explicit user edit tracking and zero false-positive Unsaved Changes popup after Save', () => {
+  const pdcaSheetPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/pdca/PDCASheet.jsx');
+  const pdcaSheetCode = fs.readFileSync(pdcaSheetPath, 'utf8');
+
+  // Verify explicit user edit tracking refs
+  assert.match(pdcaSheetCode, /userHasEditedRef\s*=\s*useRef\(false\)/, 'PDCASheet must initialize userHasEditedRef as false');
+  assert.match(pdcaSheetCode, /isInternalUpdateRef\s*=\s*useRef\(false\)/, 'PDCASheet must track isInternalUpdateRef');
+  assert.match(pdcaSheetCode, /isInitialMountRef\s*=\s*useRef\(true\)/, 'PDCASheet must track isInitialMountRef');
+
+  // Verify saveSheet resets userHasEditedRef and marks clean
+  assert.match(pdcaSheetCode, /userHasEditedRef\.current\s*=\s*false/, 'saveSheet and handlers must reset userHasEditedRef when clean');
+  assert.match(pdcaSheetCode, /!userHasEditedRef\.current\s*&&\s*!isDirtyRef\.current/, 'hasUnsavedChanges must return false if user has not edited anything');
+});
+
+
+

@@ -38,6 +38,7 @@ import {
   SelectValue,
 } from "@/components/forms/primitives/select.jsx";
 import useFileUpload from "@/hooks/useFileUpload.js";
+import TestPaperDocControl from "@/components/common/training/TestPaperDocControl.jsx";
 import { getMediaUrl } from "@/utils/mediaUtils.js";
 
 const EditTestPaper = () => {
@@ -747,6 +748,8 @@ const EditTestPaper = () => {
                 <p className="text-[11px] text-muted-foreground">Shown below the title. Leave blank for no subtitle.</p>
               </div>
             </div>
+
+            <TestPaperDocControl departmentIds={formData.departmentId} />
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="grid gap-2">

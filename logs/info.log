@@ -345,3 +345,5 @@
 [05 Nov, 2026 - 22:46:57:4657] [31merror[39m: [31mMSSQL long-running pool connection failed: Failed to connect to 127.0.0.1:1433 - Could not connect (sequence)[39m
 [05 Nov, 2026 - 22:46:57:4657] [34minfo[39m: [34mMigration: Successfully created index 'idx_audits_createdAt' on 'audits'.[39m
 [05 Nov, 2026 - 22:46:57:4657] [34minfo[39m: [34mMigration: Successfully created index 'idx_attempted_quizzes_student' on 'attempted_quizzes'.[39m
+[13 Nov, 2026 - 13:12:53:1253] [31merror[39m: [31mMSSQL Connection Failed: Failed to connect to 127.0.0.1:1433 - Could not connect (sequence)[39m
+[13 Nov, 2026 - 13:12:53:1253] [31merror[39m: [31mMSSQL long-running pool connection failed: Failed to connect to 127.0.0.1:1433 - Could not connect (sequence)[39m

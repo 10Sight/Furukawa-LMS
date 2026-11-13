@@ -1346,6 +1346,28 @@ test('29. Confirmation dropdown restricted strictly to Admin, Sheet Creator, and
   assert.equal(canUserEditPDCARow(targetRow, diffDeptUser, pdcaSheet, 'date'), false, 'Responsible person CANNOT edit date');
   assert.equal(canUserEditPDCARow(targetRow, diffDeptUser, pdcaSheet, 'observation'), false, 'Responsible person CANNOT edit observation');
   assert.equal(canUserEditPDCARow(targetRow, diffDeptUser, pdcaSheet, 'department'), false, 'Responsible person CANNOT edit department');
+
+  // 7. Responsible person in the SAME department as sheet creator still CANNOT select confirmation and CANNOT edit entire row
+  const sameDeptResponsiblePerson = {
+    id: 'u-qa-same-dept-resp',
+    code: 'BW051299',
+    name: 'Same Dept Responsible Staff',
+    department: 'Quality',
+    section: 'Quality Assurance',
+    role: 'EMPLOYEE'
+  };
+  const rowWithSameDeptResp = {
+    ...targetRow,
+    staffName: sameDeptResponsiblePerson.name,
+    staffId: sameDeptResponsiblePerson.code,
+    staffEmployee: `${sameDeptResponsiblePerson.name} (${sameDeptResponsiblePerson.code})`,
+    staffEmployees: [sameDeptResponsiblePerson]
+  };
+  assert.equal(canUserEditPDCARow(rowWithSameDeptResp, sameDeptResponsiblePerson, pdcaSheet, 'confirmation'), false, 'Same-dept responsible person CANNOT select confirmation');
+  const sameDeptRespCheck = canUserSelectConfirmation(rowWithSameDeptResp, pdcaSheet, sameDeptResponsiblePerson);
+  assert.equal(sameDeptRespCheck.allowed, false, 'Same-dept responsible person confirmation check blocked');
+  const sameDeptRespPerms = canUserEditPDCARow(rowWithSameDeptResp, sameDeptResponsiblePerson, pdcaSheet);
+  assert.deepEqual(sameDeptRespPerms, { canEditEntireRow: false, canEditActionCols: true }, 'Same-dept responsible person can only edit action columns');
 });
 
 test('30. PDCA Page Structure: Ongoing (Not-Started, In-Progress, Delay) and Done (Done) for Plant, Department, and Self PDCA', () => {

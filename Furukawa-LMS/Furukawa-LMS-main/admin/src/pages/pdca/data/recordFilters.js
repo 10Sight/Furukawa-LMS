@@ -927,6 +927,27 @@ export function canUserSelectConfirmation(row, recordOrIsCreator, currentUser = 
   const isCreator = typeof recordOrIsCreator === 'boolean'
     ? recordOrIsCreator
     : isRecordCreator(recordOrIsCreator, currentUser);
+
+  // Responsible person cannot select Confirmation
+  const sheetRows = typeof recordOrIsCreator === 'object' && Array.isArray(recordOrIsCreator?.sheet?.rows)
+    ? recordOrIsCreator.sheet.rows
+    : [];
+  const isResponsible = Boolean(
+    !isAdmin && !isCreator && (
+      (row && isUserResponsibleForRow(row, currentUser)) ||
+      (sheetRows.length > 0 && isUserResponsibleForAnyRow(sheetRows, currentUser))
+    )
+  );
+  if (isResponsible) {
+    return {
+      allowed: false,
+      isCreator: false,
+      isAdmin,
+      reason: 'creator_only',
+      missingFields: getMissingConfirmationMandatoryFields(row)
+    };
+  }
+
   const isSameDeptSec = typeof recordOrIsCreator === 'object' && recordOrIsCreator
     ? isUserInSameDepartmentAsRecord(recordOrIsCreator, currentUser, employeeDatabase)
     : false;

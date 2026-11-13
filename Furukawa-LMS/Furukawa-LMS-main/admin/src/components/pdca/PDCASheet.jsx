@@ -932,15 +932,11 @@ export default function PDCASheet({
   );
   const isCreatorOrSameDept = Boolean(isCreator || isSameDepartmentAsSheet);
   const isCreatorOrAdmin = Boolean(isAdmin || isCreator || isSameDepartmentAsSheet);
-  const canEditEntireSheet = Boolean(!readOnly && isCreatorOrAdmin);
 
   // Granular capability flags
   const canCreateSheet = Boolean(!readOnly && (hasFullAccess || hasPermission('pdca:create') || hasPermission('pdca:create_sheet') || hasPermission('lpa:create')));
   const canDeleteSheet = Boolean(!readOnly && (hasFullAccess || hasPermission('pdca:delete') || hasPermission('pdca:delete_sheet') || hasPermission('lpa:delete')));
-  const canAddRow = Boolean(!readOnly && (isAdmin || isCreator || isSameDepartmentAsSheet || hasPermission('pdca:add_row') || hasPermission('pdca:add_rows') || hasPermission('lpa:pdca_add_row')));
   const canDeleteRow = Boolean(!readOnly && (hasFullAccess || hasPermission('pdca:delete') || hasPermission('pdca:delete_row')));
-  const canConfirmDefault = Boolean(!readOnly && (isAdmin || isCreator || isSameDepartmentAsSheet));
-  const canShowRowActions = Boolean(canEditEntireSheet || canAddRow || canDeleteRow);
   const cftAssignedMembers = topic?.assignedMembers || [];
   const defaultAssignedStr = cftAssignedMembers.length > 0
     ? (cftAssignedMembers.length === 1
@@ -1228,7 +1224,12 @@ export default function PDCASheet({
   const [rows, setRows] = useState(initialRows);
 
   const hasAnyRowResponsible = useMemo(() => isUserResponsibleForAnyRow(rows, effectiveUser), [rows, effectiveUser]);
-  const hasEditAccess = Boolean(!readOnly && (isCreatorOrAdmin || hasAnyRowResponsible));
+  const isSheetManager = Boolean(!readOnly && (isAdmin || isCreator || (isSameDepartmentAsSheet && !hasAnyRowResponsible)));
+  const canEditEntireSheet = isSheetManager;
+  const canAddRow = Boolean(!readOnly && (isAdmin || isCreator || (isSameDepartmentAsSheet && !hasAnyRowResponsible)));
+  const canConfirmDefault = isSheetManager;
+  const canShowRowActions = Boolean(canEditEntireSheet || canAddRow || canDeleteRow);
+  const hasEditAccess = Boolean(!readOnly && (isSheetManager || hasAnyRowResponsible));
   const effectiveReadOnly = Boolean(readOnly || !hasEditAccess);
   const missingRequiredInputs = rows.flatMap((row, rowIndex) => {
     if (!row.date?.trim()) return [];
@@ -4297,9 +4298,14 @@ export default function PDCASheet({
   // Section A: Responsible Person Instruction, etc. Confirmation change handler
   const handleConfirmationChange = (rowIndex, value, userName = '') => {
     const targetRow = rows[rowIndex];
-    const canConfirmThisRow = Boolean(!readOnly && (isAdmin || isCreator || isSameDepartmentAsSheet));
+    const isRowResponsible = targetRow ? isUserResponsibleForRow(targetRow, effectiveUser) : false;
+    const canConfirmThisRow = Boolean(!readOnly && (isAdmin || isCreator || (isSameDepartmentAsSheet && !isRowResponsible && !hasAnyRowResponsible)));
     if (!canConfirmThisRow) {
-      if (typeof showToast === 'function') showToast('Only the sheet creator, employees of the same department & section, or Admin have access to select Confirmation.');
+      if (isRowResponsible || hasAnyRowResponsible) {
+        if (typeof showToast === 'function') showToast('Responsible person cannot select Confirmation.');
+      } else {
+        if (typeof showToast === 'function') showToast('Only the sheet creator, employees of the same department & section, or Admin have access to select Confirmation.');
+      }
       return false;
     }
     const isSelectingConfirmation = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((value || '').trim());
@@ -6106,15 +6112,16 @@ export default function PDCASheet({
                 const isRowResponsible = isResponsiblePerson || isDeptMember;
                 // Responsible Person (assigned from Staff Name) can ONLY edit the 6 action columns:
                 // Root cause, Corrective Action, Counter Measure, Image After, Std. Duration in Min, response Date.
-                // They CANNOT edit the entire row/sheet. Only admin or creator can edit entire row.
-                const canEditEntireRow = Boolean(!readOnly && isCreatorOrAdmin);
+                // They CANNOT edit the entire row/sheet. Only admin or creator (or non-responsible dept colleague) can edit entire row.
+                const canEditEntireRow = Boolean(!readOnly && (isAdmin || isCreator || (isSameDepartmentAsSheet && !isResponsiblePerson && !hasAnyRowResponsible)));
                 const unitSelected = usesCheckboxMultiSelects
                   ? (row.units || (row.unit ? [row.unit] : [])).some(unit => PDCA_UNITS.includes(unit))
                   : ['Bawal', 'Gujrat'].includes(row.unit);
                 const responsibleUnitSelected = usesCheckboxMultiSelects
                   ? (row.respUnits || (row.respUnit || row.responsiblePersonUnit ? [row.respUnit || row.responsiblePersonUnit] : [])).some(unit => PDCA_UNITS.includes(unit))
                   : ['Bawal', 'Gujrat'].includes(row.respUnit || row.responsiblePersonUnit);
-                const canEditActionCols = Boolean(!readOnly && (isCreatorOrAdmin || isRowResponsible));
+                const canEditActionCols = Boolean(!readOnly && (isAdmin || isCreator || isSameDepartmentAsSheet || isRowResponsible));
+                const canConfirmThisRow = Boolean(!readOnly && (isAdmin || isCreator || (isSameDepartmentAsSheet && !isResponsiblePerson && !hasAnyRowResponsible)));
 
                 return (
                   <tr
@@ -7460,7 +7467,7 @@ export default function PDCASheet({
                           reasonRequired={missingRequiredInputs.some((item) => item.type === 'confirmation' && item.rowIndex === idx)}
                           currentUser={effectiveUser}
                           creatorName={headerInfo?.preparedBy || topic?.createdBy?.name || topic?.createdBy || topic?.topicCreatedBy || effectiveUser?.name}
-                          readOnly={!canConfirmDefault}
+                          readOnly={!canConfirmThisRow}
                           missingMandatoryFields={getMissingConfirmationMandatoryFields(row)}
                           onConfirmationChange={(val, uName) => handleConfirmationChange(idx, val, uName)}
                           onInstructionChange={(text) => handleInstructionChange(idx, text)}

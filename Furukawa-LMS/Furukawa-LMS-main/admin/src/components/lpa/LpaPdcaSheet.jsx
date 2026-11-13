@@ -43,6 +43,7 @@ import { PDCA_DEPARTMENTS, PDCA_STATUS_OPTIONS, normalizePDCAStatus, computePDCA
 import {
   isRecordCreator,
   isUserResponsibleForRow,
+  isUserResponsibleForAnyRow,
   isUserInResponsibleDepartment,
   getMissingConfirmationMandatoryFields,
   SAVE_MANDATORY_COLUMNS,
@@ -332,9 +333,7 @@ export default function LpaPdcaSheet({
   );
   const isCreatorOrSameDept = Boolean(isCreator || isSameDepartmentAsSheet);
   const isCreatorOrAdmin = Boolean(isAdmin || isCreator || isSameDepartmentAsSheet);
-  const canEditEntireSheet = Boolean(!readOnly && isCreatorOrAdmin);
   const canDeleteRow = Boolean(!readOnly && isAdmin);
-  const canConfirmDefault = Boolean(!readOnly && (isAdmin || isCreator || isSameDepartmentAsSheet));
 
   const cftAssignedMembers = topic?.assignedMembers || [];
   const defaultAssignedStr = cftAssignedMembers.length > 0
@@ -486,6 +485,11 @@ export default function LpaPdcaSheet({
     }
     return Array.from({ length: 10 }, () => createEmptyRow());
   });
+
+  const hasAnyRowResponsible = useMemo(() => isUserResponsibleForAnyRow(rows, effectiveUser), [rows, effectiveUser]);
+  const isSheetManager = Boolean(!readOnly && (isAdmin || isCreator || (isSameDepartmentAsSheet && !hasAnyRowResponsible)));
+  const canEditEntireSheet = isSheetManager;
+  const canConfirmDefault = isSheetManager;
   const hasValidStdDuration = (value) => {
     const normalized = String(value ?? '').replace(/\s*min$/i, '').trim();
     return normalized !== '' && Number.isFinite(Number(normalized)) && Number(normalized) >= 0;
@@ -1599,8 +1603,16 @@ export default function LpaPdcaSheet({
 
   const handleConfirmationChange = (rowIndex, value, userName = '') => {
     const targetRow = rows[rowIndex];
-    if (readOnly || !(isAdmin || isCreator || isSameDepartmentAsSheet)) {
-      if (typeof showToast === 'function') showToast('Only the sheet creator, employees of the same department & section, or Admin have access to select Confirmation.');
+    const isRowResponsible = targetRow ? isUserResponsibleForRow(targetRow, effectiveUser) : false;
+    const canConfirmThisRow = Boolean(!readOnly && (isAdmin || isCreator || (isSameDepartmentAsSheet && !isRowResponsible && !hasAnyRowResponsible)));
+    if (!canConfirmThisRow) {
+      if (isRowResponsible || hasAnyRowResponsible) {
+        notify('Responsible person cannot select Confirmation.', 'error');
+        if (typeof showToast === 'function') showToast('Responsible person cannot select Confirmation.');
+      } else {
+        notify('Only the sheet creator, employees of the same department & section, or Admin have access to select Confirmation.', 'error');
+        if (typeof showToast === 'function') showToast('Only the sheet creator, employees of the same department & section, or Admin have access to select Confirmation.');
+      }
       return false;
     }
     const isSelectingConfirmation = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((value || '').trim());
@@ -2294,8 +2306,9 @@ export default function LpaPdcaSheet({
                   const isResponsiblePerson = isUserResponsibleForRow(row, effectiveUser);
                   const isDeptMember = isUserInResponsibleDepartment(row, effectiveUser);
                   const isRowResponsible = isResponsiblePerson || isDeptMember;
-                  const canEditEntireRow = Boolean(!readOnly && isCreatorOrAdmin);
-                  const canEditActionCols = Boolean(!readOnly && (isCreatorOrAdmin || isRowResponsible));
+                  const canEditEntireRow = Boolean(!readOnly && (isAdmin || isCreator || (isSameDepartmentAsSheet && !isResponsiblePerson && !hasAnyRowResponsible)));
+                  const canEditActionCols = Boolean(!readOnly && (isAdmin || isCreator || isSameDepartmentAsSheet || isRowResponsible));
+                  const canConfirmThisRow = Boolean(!readOnly && (isAdmin || isCreator || (isSameDepartmentAsSheet && !isResponsiblePerson && !hasAnyRowResponsible)));
 
                   return (
                     <tr
@@ -3018,7 +3031,7 @@ export default function LpaPdcaSheet({
                             reasonRequired={missingConfirmationReasonIndices.includes(idx)}
                             currentUser={effectiveUser}
                             creatorName={topic?.createdBy?.name || topic?.createdBy || topic?.topicCreatedBy || effectiveUser?.name}
-                            readOnly={!canConfirmDefault}
+                            readOnly={!canConfirmThisRow}
                             missingMandatoryFields={getMissingConfirmationMandatoryFields(row)}
                             onConfirmationChange={(val, uName) => handleConfirmationChange(idx, val, uName)}
                             onInstructionChange={(text) => handleInstructionChange(idx, text)}

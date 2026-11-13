@@ -23,8 +23,11 @@ import {
     AlertTriangle,
     Calendar as CalendarIcon,
     Minus,
-    Plus
+    Plus,
+    Eye,
+    EyeOff
 } from "lucide-react";
+import { dayOfInputKey, findDaysMissingDate, missingDateMessage } from "@/utils/sixteenDayDayDates.js";
 import { Badge } from "@/components/common/ui/badge.jsx";
 import {
     Popover,
@@ -149,6 +152,10 @@ const SixteenDayMonitoringSheet = ({
     const canEditLeftHeader = !!(authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN' ||
         authUser?.customRole?.permissions?.includes('sixteen_day:edit_submitted') ||
         authUser?.customRole?.permissions?.includes('sixteen_day:manage'));
+    // Who may change the Day-1..Day-16 column dates of an associate who has LEFT. Mirrors
+    // canEditLeftAssociateDates in server/utils/sixteenDayLeftAssociate.util.js.
+    const canEditLeftDates = !!(authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN' ||
+        authUser?.customRole?.permissions?.includes('sixteen_day:edit_left_dates'));
 
     const [gridData, setGridData] = useState({});
     const [originalGridData, setOriginalGridData] = useState({});
@@ -175,6 +182,9 @@ const SixteenDayMonitoringSheet = ({
     const [selectedAttemptId, setSelectedAttemptId] = useState("");
     const [isForceNewAttempt, setIsForceNewAttempt] = useState(false);
     const [userStatus, setUserStatus] = useState(studentStatus || "PRESENT");
+
+    // Shutter: for LEFT associates, blur day columns that have no date. Off = show all columns.
+    const [isShutterActive, setIsShutterActive] = useState(true);
 
     const [zoom, setZoom] = useState(readStoredZoom);
     const handleZoomChange = (value) => {
@@ -219,6 +229,8 @@ const SixteenDayMonitoringSheet = ({
             if (workflowFields.includes(key)) return false;
             // Performance grid stays frozen; header details open only to authorized users.
             if (type === 'header' && LEFT_EDITABLE_HEADER_FIELDS.includes(key)) return !canEditLeftHeader;
+            // Day-1..Day-16 column dates open only to authorized users.
+            if (type === 'grid' && /^attendance_date_\d+$/.test(key)) return !canEditLeftDates;
             return true;
         }
         // Dojo Hiring renders this sheet fully read-only except for the Education Cell
@@ -241,7 +253,7 @@ const SixteenDayMonitoringSheet = ({
     };
 
     const isDayBlurred = (dayNum) => {
-        if (!isLeftUser) return false;
+        if (!isLeftUser || !isShutterActive) return false;
         const val = gridData[`attendance_date_${dayNum}`];
         return !val || !val.toString().trim();
     };
@@ -557,12 +569,7 @@ const SixteenDayMonitoringSheet = ({
     const isDay1Filled = () => {
         const attDateVal = gridData['attendance_date_1'];
         if (attDateVal && attDateVal.toString().trim()) return true;
-        for (const cat of categories) {
-            for (const row of cat.rows) {
-                if (gridData[`${row.id}_day_1`]?.toString().trim()) return true;
-            }
-        }
-        return false;
+        return Object.keys(gridData).some(key => dayOfInputKey(key) === 1 && gridData[key]?.toString().trim());
     };
 
     const isDay16Filled = () => {
@@ -612,8 +619,16 @@ const SixteenDayMonitoringSheet = ({
 
         const targetStatus = finalStatus || headerInfo.status || "Draft";
 
+        // A day's values need that day's header date. Mirrors the server check: only values
+        // changed since the last save (or a cleared date) count.
+        const daysMissingDate = findDaysMissingDate(gridData, isSheetSaved ? originalGridData : {});
+        if (daysMissingDate.length > 0) {
+            toast.error(missingDateMessage(daysMissingDate));
+            return;
+        }
+
         // Intercept: admin or canEditSubmitted user editing a saved sheet must provide a remark if they modified already saved values
-        if ((isAdmin || canEditSubmitted || (isLeftUser && canEditLeftHeader)) && isSheetSaved && didAdminChangeSavedValues() && !adminRemark) {
+        if ((isAdmin || canEditSubmitted || (isLeftUser && (canEditLeftHeader || canEditLeftDates))) && isSheetSaved && didAdminChangeSavedValues() && !adminRemark) {
             setPendingSaveParams({ finalStatus, isSubmit });
             setAdminRemarkText('');
             setIsAdminRemarkDialogOpen(true);
@@ -1116,6 +1131,22 @@ const SixteenDayMonitoringSheet = ({
         </div>
     );
 
+    const shutterButton = isLeftUser && (
+        <Button
+            variant={isShutterActive ? "default" : "outline"}
+            size="sm"
+            onClick={() => setIsShutterActive(prev => !prev)}
+            className={`h-9 gap-1.5 transition-colors ${isShutterActive
+                ? "bg-slate-800 text-white hover:bg-slate-900 border-slate-700"
+                : "border-slate-300 text-slate-700 hover:bg-slate-100"}`}
+            title={isShutterActive ? "Show all day columns" : "Blur day columns that have no date"}
+            aria-pressed={isShutterActive}
+        >
+            {isShutterActive ? <EyeOff className="h-4 w-4 text-amber-300" /> : <Eye className="h-4 w-4 text-slate-600" />}
+            <span className="text-xs font-semibold">Shutter: {isShutterActive ? "ON" : "OFF"}</span>
+        </Button>
+    );
+
     const day16StatusBadge = studentId && (
         <div className={headerActionsContainer ? "flex items-center" : "flex items-center mr-2"}>
             {isDay16ColFilled ? (
@@ -1270,7 +1301,12 @@ const SixteenDayMonitoringSheet = ({
                     {!headerActionsContainer && attemptHistoryControl}
                 </div>
 
-                {!headerActionsContainer && zoomControl}
+                {!headerActionsContainer && (
+                    <div className="flex items-center gap-2">
+                        {zoomControl}
+                        {shutterButton}
+                    </div>
+                )}
 
                 <div className="flex gap-2">
                     <div className="flex gap-2">
@@ -1329,7 +1365,7 @@ const SixteenDayMonitoringSheet = ({
                         {day16StatusBadge}
                     </div>
                     {/* Middle: sheet zoom */}
-                    <div className="mx-auto">{zoomControl}</div>
+                    <div className="mx-auto flex items-center gap-2">{zoomControl}{shutterButton}</div>
                     {/* Right: save / submit / email, then print set apart */}
                     <div className="flex flex-wrap items-center gap-3 ml-auto">
                         {primaryActionButtons}

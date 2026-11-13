@@ -42,6 +42,8 @@ const DEFAULT_SHEETS = [
     { sheetKey: "operator-observance", sheetName: "Operator Observance", docNo: "FRM-WH-QA-277", revNo: "00", revDate: "01.04.2025" },
     { sheetKey: "mentee-feedback", sheetName: "Mentee Feedback" },
     { sheetKey: "evaluation-test-attempt", sheetName: "DOJO Evaluation Test", docNo: "ST-S16-01 FORMAT 4 -E", revNo: "01", revDate: "28.02.2025" },
+    // Test Paper (quizzes): TakeQuiz, AttemptReviewModal and QuizAttemptReviewPage headers.
+    { sheetKey: "test-paper", sheetName: "Skill Evaluation Test Paper", docNo: "TST-HR-02", revNo: "02", issueDate: "08.04.2021", revDate: "08.04.2021" },
     { sheetKey: "on-job-training", sheetName: "On the Job Training", docNo: "FRM-WH-QA-178", revNo: "02", revDate: "19.06.2021" },
     // Hardcoded fallback for skill-matrix-certificate — only used by the normal
     // "missing" seed path below when no admin-entered value exists yet. If a real

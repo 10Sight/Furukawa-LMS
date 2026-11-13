@@ -16,6 +16,7 @@ import logAudit from "../utils/auditLogger.js";
 import RevisionRecordService from "../services/revisionRecord.service.js";
 import { getNextCalendarDayMidnightIST } from "../utils/istDate.util.js";
 import { resolveLeftAssociateSave } from "../utils/sixteenDayLeftAssociate.util.js";
+import { findDaysMissingDate, missingDateMessage } from "../utils/sixteenDayDayDates.util.js";
 
 // A signature is "validly signed" when it's filled and wasn't a rejection —
 // this is the same notion of validity the client gates its sign-off buttons on.
@@ -454,6 +455,14 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
         } = resolved.header);
         ({ checkedBy, verifiedBy, approvedBy, verifiedByEduCell } = resolved.signatures);
         gridData = resolved.gridData;
+    }
+
+    // A day's values need that day's header date. Only values changed in this save (or a
+    // cleared date) count, so older records that lack dates can still be signed off.
+    const previousGridData = (sheet && !isNewAttempt) ? (sheet.gridData || {}) : {};
+    const daysMissingDate = findDaysMissingDate(gridData, previousGridData);
+    if (daysMissingDate.length > 0) {
+        throw new ApiError(missingDateMessage(daysMissingDate), 400);
     }
 
     validateSignatureProgression({ checkedBy, verifiedBy, approvedBy, verifiedByEduCell }, req.user?.isAdmin);

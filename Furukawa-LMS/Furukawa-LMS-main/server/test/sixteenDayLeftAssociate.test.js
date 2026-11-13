@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
     canEditLeftAssociateHeader,
+    canEditLeftAssociateDates,
     resolveLeftAssociateSave,
 } from "../utils/sixteenDayLeftAssociate.util.js";
 
@@ -48,11 +49,78 @@ test("grid stays frozen except the comment, for every user", () => {
     for (const user of [admin, checker]) {
         const { gridData } = resolveLeftAssociateSave({
             sheet: sheet(),
-            body: { gridData: { row1_1_d1_0: "1", attendance_date_1: "2026-01-01", comment: "new" } },
+            body: { gridData: { row1_1_d1_0: "1", row1_1_day_5: "2", comment: "new" } },
             user,
         });
         assert.deepEqual(gridData, { attendance_date_1: "2026-10-02", row1_1_d1_0: "3", comment: "new" });
     }
+});
+
+const editLeftDates = { role: "CUSTOM", customRole: { permissions: ["sixteen_day:check", "sixteen_day:edit_left_dates"] } };
+const datedSheet = () => ({
+    ...sheet(),
+    gridData: { attendance_date_1: "02-Oct-26", attendance_date_3: "06-Oct-26", row1_1_d1_0: "3", comment: "old" },
+});
+
+test("canEditLeftAssociateDates: admins and edit_left_dates only", () => {
+    assert.equal(canEditLeftAssociateDates(admin), true);
+    assert.equal(canEditLeftAssociateDates({ role: "SUPERADMIN" }), true);
+    assert.equal(canEditLeftAssociateDates(editLeftDates), true);
+    assert.equal(canEditLeftAssociateDates(manage), false);
+    assert.equal(canEditLeftAssociateDates(editSubmitted), false);
+    assert.equal(canEditLeftAssociateDates(undefined), false);
+});
+
+test("authorized user can set Day-1..Day-16 dates; other grid values stay frozen", () => {
+    const { gridData } = resolveLeftAssociateSave({
+        sheet: datedSheet(),
+        body: { gridData: { attendance_date_2: "04-Oct-26", attendance_date_16: "30-Oct-26", row1_1_d1_0: "9", comment: "c" } },
+        user: editLeftDates,
+    });
+    assert.equal(gridData.attendance_date_2, "04-Oct-26");
+    assert.equal(gridData.attendance_date_16, "30-Oct-26");
+    assert.equal(gridData.row1_1_d1_0, "3");
+    assert.equal(gridData.comment, "c");
+});
+
+test("unauthorized user's date changes are ignored", () => {
+    for (const user of [checker, manage]) {
+        const { gridData } = resolveLeftAssociateSave({
+            sheet: datedSheet(),
+            body: { gridData: { attendance_date_1: "01-Oct-26", attendance_date_2: "04-Oct-26" } },
+            user,
+        });
+        assert.equal(gridData.attendance_date_1, "02-Oct-26");
+        assert.equal(gridData.attendance_date_2, undefined);
+    }
+});
+
+test("changing or clearing a saved date needs an audit remark; filling an empty one doesn't", () => {
+    assert.throws(
+        () => resolveLeftAssociateSave({ sheet: datedSheet(), body: { gridData: { attendance_date_1: "01-Oct-26" } }, user: editLeftDates }),
+        /audit remark/
+    );
+    assert.throws(
+        () => resolveLeftAssociateSave({ sheet: datedSheet(), body: { gridData: { attendance_date_3: "" } }, user: editLeftDates }),
+        /audit remark/
+    );
+    const { gridData } = resolveLeftAssociateSave({
+        sheet: datedSheet(),
+        body: { gridData: { attendance_date_1: "01-Oct-26" }, adminRemark: "Wrong date" },
+        user: editLeftDates,
+    });
+    assert.equal(gridData.attendance_date_1, "01-Oct-26");
+    // Resending the saved value unchanged is not a change.
+    resolveLeftAssociateSave({ sheet: datedSheet(), body: { gridData: { attendance_date_1: "02-Oct-26", attendance_date_2: "" } }, user: editLeftDates });
+});
+
+test("day dates must be valid dd-MMM-yy and run strictly forward", () => {
+    const save = (grid) => resolveLeftAssociateSave({ sheet: datedSheet(), body: { gridData: grid }, user: editLeftDates });
+    assert.throws(() => save({ attendance_date_2: "2026-10-04" }), /Invalid date for Day-2/);
+    assert.throws(() => save({ attendance_date_2: "31-Feb-26" }), /Invalid date for Day-2/);
+    assert.throws(() => save({ attendance_date_2: 5 }), /Invalid date for Day-2/);
+    assert.throws(() => save({ attendance_date_2: "06-Oct-26" }), /Day-3 date must be after the Day-2 date/);
+    assert.throws(() => save({ attendance_date_2: "01-Oct-26" }), /Day-2 date must be after the Day-1 date/);
 });
 
 test("authorized user can change header details with a remark; code and start date stay pinned", () => {

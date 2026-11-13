@@ -141,6 +141,7 @@ const SYSTEM_PERMISSIONS = {
   SIXTEEN_DAY_APPROVE: "sixteen_day:approve",
   SIXTEEN_DAY_VERIFY_EDUCATION: "sixteen_day:verify_education",
   SIXTEEN_DAY_EDIT_SUBMITTED: "sixteen_day:edit_submitted",
+  SIXTEEN_DAY_EDIT_LEFT_DATES: "sixteen_day:edit_left_dates",
 
   // 3-Day Monitoring Management
   THREE_DAY_EDIT_LAYOUT: "three_day:edit_layout",
@@ -685,6 +686,7 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_APPROVE, name: "Approve 16-Day Monitoring", description: "Approve 16-day monitoring records (Dept. Head sign-off)" },
         { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_VERIFY_EDUCATION, name: "Verify 16-Day Monitoring (Education Cell)", description: "Verify 16-day monitoring records as Education Cell" },
         { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_EDIT_SUBMITTED, name: "Edit Submitted 16-Day Monitoring", description: "Edit and save 16-day monitoring sheets that have already been submitted" },
+        { id: SYSTEM_PERMISSIONS.SIXTEEN_DAY_EDIT_LEFT_DATES, name: "Edit Left Associate Day Column Dates", description: "Allow editing Day-1 to Day-16 column header dates for associates who have left" },
         { id: SYSTEM_PERMISSIONS.DOJO_SIXTEENDAY_MONITORING, name: "Access All in 16-Day Monitoring", description: "Allows unrestricted access to all departments, sections, lines, and stations in 16-Day Monitoring" }
       ],
       "3-Day Monitoring": [

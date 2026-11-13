@@ -32,10 +32,10 @@ export default function ResponsiblePersonInstructionCell({
   const currentUserName = currentUser?.fullName || currentUser?.name || creatorName || 'Administrator';
   const currentConfirmation = (row.confirmation || (
     row.responsiblePersonConfirmation === 'Confirmed' ||
-    row.responsiblePersonConfirmation === 'Confirm' ||
-    row.responsiblePersonConfirmation === 'Not - Confirmed' ||
-    row.responsiblePersonConfirmation === 'Not-Confirmed' ||
-    row.responsiblePersonConfirmation === 'Not-Confirm'
+      row.responsiblePersonConfirmation === 'Confirm' ||
+      row.responsiblePersonConfirmation === 'Not - Confirmed' ||
+      row.responsiblePersonConfirmation === 'Not-Confirmed' ||
+      row.responsiblePersonConfirmation === 'Not-Confirm'
       ? row.responsiblePersonConfirmation
       : ''
   )).trim();
@@ -47,8 +47,8 @@ export default function ResponsiblePersonInstructionCell({
   const instruction = row.instruction !== undefined && row.instruction !== null
     ? String(row.instruction)
     : (row.responsiblePersonConfirmation && !isConfirmed && !isNotConfirmed
-        ? String(row.responsiblePersonConfirmation)
-        : '');
+      ? String(row.responsiblePersonConfirmation)
+      : '');
 
   const hasReason = Boolean(instruction && instruction.trim().length > 0);
   const shouldShowPartition = isNotConfirmed || (isConfirmed && hasReason);
@@ -73,12 +73,12 @@ export default function ResponsiblePersonInstructionCell({
   const selectTitle = readOnly
     ? 'Only the sheet creator, employees of the same department & section, or Admin have access to select Confirmation'
     : (isConfirmed
-        ? `Confirmed by ${confirmedBy || 'User'}`
-        : isNotConfirmed
+      ? `Confirmed by ${confirmedBy || 'User'}`
+      : isNotConfirmed
         ? `Not-Confirmed by ${confirmedBy || 'User'}`
         : (Array.isArray(missingMandatoryFields) && missingMandatoryFields.length > 0
-            ? `Mandatory columns required to select Confirmation: ${missingMandatoryFields.join(', ')}`
-            : 'Select Confirmation'));
+          ? `Mandatory columns required to select Confirmation: ${missingMandatoryFields.join(', ')}`
+          : 'Select Confirmation'));
 
   return (
     <div className="w-full flex flex-col items-start p-1 justify-center">
@@ -103,15 +103,13 @@ export default function ResponsiblePersonInstructionCell({
           aria-label={`Responsible person confirmation for row ${sNo}`}
           value={selectValue}
           onChange={handleSelectConfirmation}
-          className={`w-full rounded-xl border px-2.5 py-1.5 text-[14px] font-medium outline-none text-left appearance-none transition-all ${
-            readOnly ? 'cursor-default' : 'cursor-pointer focus:ring-2 focus:ring-blue-300'
-          } ${
-            isNotConfirmed
+          className={`w-full rounded-xl border px-2.5 py-1.5 text-[14px] font-medium outline-none text-left appearance-none transition-all ${readOnly ? 'cursor-default' : 'cursor-pointer focus:ring-2 focus:ring-blue-300'
+            } ${isNotConfirmed
               ? 'border-blue-400 text-slate-800 bg-white hover:border-blue-500'
               : isConfirmed
-              ? 'border-blue-400 text-slate-800 bg-white hover:border-blue-500'
-              : 'border-slate-300 text-slate-600 bg-white hover:border-slate-400'
-          }`}
+                ? 'border-blue-400 text-slate-800 bg-white hover:border-blue-500'
+                : 'border-slate-300 text-slate-600 bg-white hover:border-slate-400'
+            }`}
           title={selectTitle}
         >
           <option value="">Select...</option>

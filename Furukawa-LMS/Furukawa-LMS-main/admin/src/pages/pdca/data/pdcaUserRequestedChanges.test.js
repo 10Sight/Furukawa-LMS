@@ -1368,6 +1368,43 @@ test('29. Confirmation dropdown restricted strictly to Admin, Sheet Creator, and
   assert.equal(sameDeptRespCheck.allowed, false, 'Same-dept responsible person confirmation check blocked');
   const sameDeptRespPerms = canUserEditPDCARow(rowWithSameDeptResp, sameDeptResponsiblePerson, pdcaSheet);
   assert.deepEqual(sameDeptRespPerms, { canEditEntireRow: false, canEditActionCols: true }, 'Same-dept responsible person can only edit action columns');
+
+  // 8. Row Isolation: Responsible person A assigned to Row 1 MUST ONLY have access to Row 1, NOT Row 2 (assigned to Employee B)
+  const otherResponsiblePerson = {
+    id: 'u-qa-other-resp',
+    code: 'BW051300',
+    name: 'Other Responsible Staff',
+    department: 'Quality',
+    section: 'Quality Assurance',
+    role: 'EMPLOYEE'
+  };
+  const row2ForOtherStaff = {
+    ...targetRow,
+    staffName: otherResponsiblePerson.name,
+    staffId: otherResponsiblePerson.code,
+    staffEmployee: `${otherResponsiblePerson.name} (${otherResponsiblePerson.code})`,
+    staffEmployees: [otherResponsiblePerson]
+  };
+  const sheetWithTwoRows = {
+    ...pdcaSheet,
+    sheet: {
+      rows: [rowWithSameDeptResp, row2ForOtherStaff]
+    }
+  };
+  // Employee 1 on Row 1 (their own row): can edit action cols
+  assert.deepEqual(
+    canUserEditPDCARow(rowWithSameDeptResp, sameDeptResponsiblePerson, sheetWithTwoRows),
+    { canEditEntireRow: false, canEditActionCols: true },
+    'Employee 1 can edit action cols on their own assigned Row 1'
+  );
+  // Employee 1 on Row 2 (other employee's row): ZERO access!
+  assert.deepEqual(
+    canUserEditPDCARow(row2ForOtherStaff, sameDeptResponsiblePerson, sheetWithTwoRows),
+    { canEditEntireRow: false, canEditActionCols: false },
+    'Employee 1 MUST NOT have access to Row 2 assigned to another employee'
+  );
+  assert.equal(canUserEditPDCARow(row2ForOtherStaff, sameDeptResponsiblePerson, sheetWithTwoRows, 'rootCause'), false, 'Employee 1 cannot edit rootCause on Row 2');
+  assert.equal(canUserSelectConfirmation(row2ForOtherStaff, sheetWithTwoRows, sameDeptResponsiblePerson).allowed, false, 'Employee 1 cannot confirm Row 2');
 });
 
 test('30. PDCA Page Structure: Ongoing (Not-Started, In-Progress, Delay) and Done (Done) for Plant, Department, and Self PDCA', () => {

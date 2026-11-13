@@ -928,8 +928,16 @@ export function canUserSelectConfirmation(row, recordOrIsCreator, currentUser = 
     ? recordOrIsCreator
     : isRecordCreator(recordOrIsCreator, currentUser);
 
-  // Responsible person cannot select Confirmation for their assigned row
-  const isResponsible = Boolean(!isAdmin && !isCreator && row && isUserResponsibleForRow(row, currentUser));
+  // Responsible person cannot select Confirmation on their row or other rows
+  const sheetRows = typeof recordOrIsCreator === 'object' && Array.isArray(recordOrIsCreator?.sheet?.rows)
+    ? recordOrIsCreator.sheet.rows
+    : (Array.isArray(recordOrIsCreator?.rows) ? recordOrIsCreator.rows : []);
+  const isResponsible = Boolean(
+    !isAdmin && !isCreator && (
+      (row && isUserResponsibleForRow(row, currentUser)) ||
+      (sheetRows.length > 0 && sheetRows.some(r => isUserResponsibleForRow(r, currentUser)))
+    )
+  );
   if (isResponsible) {
     return {
       allowed: false,
@@ -1031,7 +1039,18 @@ export function isUserInResponsibleDepartment(row, user) {
   // 1. Direct assignment as responsible staff
   if (isUserResponsibleForRow(row, user)) return true;
 
-  // 2. Department matching: check selected Responsible Person Confirmation department(s)
+  // If a specific staff member is assigned to this row, ONLY that assigned employee has responsible access to this row!
+  const hasExplicitStaffAssignment = Boolean(
+    (row.staffName && String(row.staffName).trim()) ||
+    (row.staffEmployee && String(row.staffEmployee).trim()) ||
+    (row.staffId && String(row.staffId).trim()) ||
+    (Array.isArray(row.staffEmployees) && row.staffEmployees.some(e => e?.name || e?.code || e?.id))
+  );
+  if (hasExplicitStaffAssignment) {
+    return false;
+  }
+
+  // 2. Department matching: check selected Responsible Person Confirmation department(s) when no specific employee is assigned yet
   // When admin/creator selects a department, employees in that department get edit access to action columns
   const candidateDepts = new Set();
 
@@ -1116,13 +1135,21 @@ export function canUserEditPDCARow(row, user, record, targetColumn = null, emplo
     return { canEditEntireRow: true, canEditActionCols: true };
   }
 
-  // 2. Responsible person (assigned from Staff Name column) can ONLY edit the 6 action columns:
+  // 2. Responsible person (assigned from Staff Name column) can ONLY edit the 6 action columns of THEIR OWN assigned row:
   // Root cause, Corrective Action, Counter Measure, Image After, Std. Duration in Min, Response Date
-  // They CANNOT edit any other column or the entire row/sheet, and CANNOT select Confirmation.
+  // They CANNOT edit any other column or the entire row/sheet, CANNOT select Confirmation, and CANNOT edit other rows.
   const isResponsible = isUserResponsibleForRow(row, user);
   if (isResponsible) {
     if (targetColumn) return EDITABLE_RESPONSIBLE_COLUMNS.includes(targetColumn);
     return { canEditEntireRow: false, canEditActionCols: true };
+  }
+
+  // If user is assigned as a responsible person on another row in this sheet, they must ONLY have access to their own row, NOT other rows!
+  const sheetRows = Array.isArray(record?.sheet?.rows) ? record.sheet.rows : (Array.isArray(record?.rows) ? record.rows : []);
+  const isAssignedResponsibleInSheet = sheetRows.length > 0 && sheetRows.some(r => isUserResponsibleForRow(r, user));
+  if (isAssignedResponsibleInSheet) {
+    if (targetColumn) return false;
+    return { canEditEntireRow: false, canEditActionCols: false };
   }
 
   // 3. Colleague in the SAME department AND SAME section has the SAME access as sheet creator (full access of the sheet including Confirmation)

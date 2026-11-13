@@ -487,7 +487,8 @@ export default function LpaPdcaSheet({
   });
 
   const hasAnyRowResponsible = useMemo(() => isUserResponsibleForAnyRow(rows, effectiveUser), [rows, effectiveUser]);
-  const isSheetManager = Boolean(!readOnly && (isAdmin || isCreator || isSameDepartmentAsSheet));
+  const isAssignedStaffAnywhere = useMemo(() => rows.some(r => isUserResponsibleForRow(r, effectiveUser)), [rows, effectiveUser]);
+  const isSheetManager = Boolean(!readOnly && (isAdmin || isCreator || (isSameDepartmentAsSheet && !isAssignedStaffAnywhere)));
   const canEditEntireSheet = isSheetManager;
   const canConfirmDefault = isSheetManager;
   const hasValidStdDuration = (value) => {
@@ -1604,9 +1605,9 @@ export default function LpaPdcaSheet({
   const handleConfirmationChange = (rowIndex, value, userName = '') => {
     const targetRow = rows[rowIndex];
     const isRowResponsible = targetRow ? isUserResponsibleForRow(targetRow, effectiveUser) : false;
-    const canConfirmThisRow = Boolean(!readOnly && (isAdmin || isCreator || isSameDepartmentAsSheet) && !isRowResponsible);
+    const canConfirmThisRow = Boolean(!readOnly && (isAdmin || isCreator || (isSameDepartmentAsSheet && !isAssignedStaffAnywhere)) && !isRowResponsible);
     if (!canConfirmThisRow) {
-      if (isRowResponsible && !isAdmin && !isCreator) {
+      if ((isRowResponsible || isAssignedStaffAnywhere) && !isAdmin && !isCreator) {
         notify('Responsible person cannot select Confirmation.', 'error');
         if (typeof showToast === 'function') showToast('Responsible person cannot select Confirmation.');
       } else {
@@ -2305,10 +2306,10 @@ export default function LpaPdcaSheet({
                   const sNo = idx + 1;
                   const isResponsiblePerson = isUserResponsibleForRow(row, effectiveUser);
                   const isDeptMember = isUserInResponsibleDepartment(row, effectiveUser);
-                  const isRowResponsible = isResponsiblePerson || isDeptMember;
-                  const canEditEntireRow = Boolean(!readOnly && (isAdmin || isCreator || (isSameDepartmentAsSheet && !isResponsiblePerson)));
-                  const canEditActionCols = Boolean(!readOnly && (isAdmin || isCreator || isSameDepartmentAsSheet || isRowResponsible));
-                  const canConfirmThisRow = Boolean(!readOnly && (isAdmin || isCreator || isSameDepartmentAsSheet) && !isResponsiblePerson);
+                  const isRowResponsible = isResponsiblePerson || (isDeptMember && !isAssignedStaffAnywhere);
+                  const canEditEntireRow = Boolean(!readOnly && (isAdmin || isCreator || (isSameDepartmentAsSheet && !isAssignedStaffAnywhere && !isResponsiblePerson)));
+                  const canEditActionCols = Boolean(!readOnly && (isAdmin || isCreator || (isSameDepartmentAsSheet && !isAssignedStaffAnywhere) || isRowResponsible));
+                  const canConfirmThisRow = Boolean(!readOnly && (isAdmin || isCreator || (isSameDepartmentAsSheet && !isAssignedStaffAnywhere)) && !isResponsiblePerson);
 
                   return (
                     <tr

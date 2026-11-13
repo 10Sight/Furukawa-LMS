@@ -94,8 +94,10 @@ export function seriesIdsForRanges(ranges, plotBy, hasHeader = true) {
 
 // Same result shape as the single-range builder in ExcelGraph: one entry per
 // category with a `name` plus one numeric field per series label. Text in a
-// value cell counts as 0 and sets `hadInvalid`.
-export function extractDisjointChartData({ displayGrid, config }) {
+// value cell counts as 0 and sets `hadInvalid`. With `keepBlanks`, a blank or
+// text value cell is null instead of 0 (Actual vs Target needs to tell a missing
+// target from a target of 0).
+export function extractDisjointChartData({ displayGrid, config, keepBlanks = false }) {
     const ranges = chartRanges(config);
     if (!ranges) return { data: [], seriesKeys: [], hadInvalid: false };
     const plotBy = config.plotBy || naturalPlotBy(ranges);
@@ -119,7 +121,7 @@ export function extractDisjointChartData({ displayGrid, config }) {
             const num = parseNumericCell(raw);
             if (raw !== undefined && raw !== "" && num === null) hadInvalid = true;
             if (num !== null) hasValue = true;
-            entry[labels[i]] = num === null ? 0 : num;
+            entry[labels[i]] = num === null ? (keepBlanks ? null : 0) : num;
         });
         if (hasName || hasValue) data.push(entry);
     }

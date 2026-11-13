@@ -12,6 +12,7 @@ export const CHART_VARIANTS = {
     barGrouped: { label: "Clustered Bar", desc: "Compare values across categories — best when category labels are long." },
     barStacked: { label: "Stacked Bar", desc: "Compare parts of a whole across categories, horizontally." },
     barPercent: { label: "100% Stacked Bar", desc: "Compare the percentage each value contributes to a total, horizontally." },
+    actualVsTarget: { label: "Actual vs Target Column", desc: "First series as columns, coloured by whether each meets the second series' target, shown as a dot. Extra series are ignored." },
     line: { label: "Line", desc: "Show trends over time (years, months, days) or ordered categories." },
     lineStacked: { label: "Stacked Line", desc: "Show how the contribution of each value changes over time." },
     linePercent: { label: "100% Stacked Line", desc: "Show the trend of the percentage each value contributes over time." },
@@ -56,7 +57,7 @@ export const comboSettingsForPreset = (preset, valueCols) => Object.fromEntries(
 export const RIBBON_CHART_MENUS = [
     {
         key: "columnBar", title: "Insert Column or Bar Chart", family: "column", more: "More Column Charts...",
-        sections: [{ title: "2-D Column", keys: ["columnGrouped", "columnStacked", "columnPercent"] }, { title: "2-D Bar", keys: ["barGrouped", "barStacked", "barPercent"] }],
+        sections: [{ title: "2-D Column", keys: ["columnGrouped", "columnStacked", "columnPercent"] }, { title: "2-D Bar", keys: ["barGrouped", "barStacked", "barPercent"] }, { title: "Target", keys: ["actualVsTarget"] }],
     },
     {
         key: "hierarchy", title: "Insert Hierarchy Chart", family: "treemap", more: "More Hierarchy Charts...",
@@ -90,7 +91,7 @@ export const RIBBON_CHART_MENUS = [
 
 // Insert Chart dialog > All Charts, left-hand list.
 export const CHART_FAMILIES = [
-    { key: "column", label: "Column", keys: ["columnGrouped", "columnStacked", "columnPercent"] },
+    { key: "column", label: "Column", keys: ["columnGrouped", "columnStacked", "columnPercent", "actualVsTarget"] },
     { key: "line", label: "Line", keys: ["line", "lineStacked", "linePercent", "lineMarkers"] },
     { key: "pie", label: "Pie", keys: ["pie", "doughnut"] },
     { key: "bar", label: "Bar", keys: ["barGrouped", "barStacked", "barPercent"] },
@@ -111,7 +112,7 @@ export const familyOfVariant = (key) => CHART_FAMILIES.find((f) => f.keys.includ
 // Types drawn by chartExtras (anything beyond column/bar/line/area/pie/combo).
 export const EXTRA_CHART_TYPES = new Set([
     "treemap", "sunburst", "histogram", "pareto", "boxWhisker", "scatter", "scatterSmooth", "scatterStraight",
-    "bubble", "waterfall", "funnel", "stock", "radar", "radarFilled",
+    "bubble", "waterfall", "funnel", "stock", "radar", "radarFilled", "actualVsTarget",
 ]);
 export const SPARKLINE_TYPES = new Set(["sparkLine", "sparkColumn", "sparkWinLoss"]);
 
@@ -119,8 +120,38 @@ export const SPARKLINE_TYPES = new Set(["sparkLine", "sparkColumn", "sparkWinLos
 export const chartRequirement = (type, seriesKeys, data) => {
     if (type === "stock" && seriesKeys.length < 3) return "A High-Low-Close stock chart needs three value series, in order: High, Low, Close.";
     if (type === "bubble" && seriesKeys.length < 1) return "A bubble chart needs at least one value series.";
+    if (type === "actualVsTarget" && seriesKeys.length < 2) return "An Actual vs Target chart needs two value series: Actual first, then Target.";
     if ((type === "treemap" || type === "sunburst") && !data.some((row) => seriesKeys.some((k) => row[k] > 0))) {
         return "Treemap and sunburst charts need positive values.";
     }
     return null;
+};
+
+// --- Actual vs Target ---------------------------------------------------------------
+// Series 0 is Actual and series 1 is Target, by position (a series id may be a column
+// letter or, plotted by rows, a row number, so ids aren't stored). `swapped` flips the
+// two without touching the chart's ranges. Only the user's overrides are saved in
+// `cfg.targetConfig`; everything else is read from these defaults.
+export const TARGET_DEFAULTS = Object.freeze({
+    rule: "higherIsBetter", // "higherIsBetter" | "lowerIsBetter"
+    aboveColor: "#16a34a",
+    belowColor: "#dc2626",
+    neutralColor: "#94a3b8", // the target cell is blank, so there's nothing to judge
+    targetDotColor: "#0f172a",
+    targetDotSize: 6,
+    showTargetDot: true,
+    swapped: false,
+});
+export const TARGET_DOT_SIZE_MIN = 4;
+export const TARGET_DOT_SIZE_MAX = 10;
+export const targetConfigOf = (cfg) => ({ ...TARGET_DEFAULTS, ...(cfg?.targetConfig || {}) });
+
+// Chart types that need a blank cell kept as null instead of read as 0.
+export const keepsBlankCells = (type) => type === "actualVsTarget";
+
+// "above" = meets the target, "below" = misses it, "none" = a value is missing.
+export const targetStatus = (actual, target, rule) => {
+    if (!Number.isFinite(actual) || !Number.isFinite(target)) return "none";
+    const ok = rule === "lowerIsBetter" ? actual <= target : actual >= target;
+    return ok ? "above" : "below";
 };

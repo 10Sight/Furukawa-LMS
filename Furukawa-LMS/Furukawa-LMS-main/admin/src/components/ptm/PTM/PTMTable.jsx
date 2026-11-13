@@ -1173,6 +1173,7 @@ export default function PTMTable({
       rankA: 'applicable',
       rankB: '',
       rankC: '',
+      rankS: '',
       critical: false,
       activity: '',
       departments: {
@@ -1351,7 +1352,7 @@ export default function PTMTable({
         <ManualInputOptionsContext.Provider value={manualOptionsByColumn}>
           <table className="w-full border-collapse text-xs">
             <colgroup>
-              <col span={35} />
+              <col span={36} />
               <col
                 style={{
                   width: `${colWidths.actions}px`,
@@ -1435,6 +1436,9 @@ export default function PTMTable({
                 <th rowSpan={2} className="py-2 px-1 w-11 min-w-[42px] max-w-[48px] bg-[#FFF9E6] text-[#975A16] whitespace-normal leading-tight text-center">
                   Rank C1 & C2
                 </th>
+                <th rowSpan={2} className="py-2 px-1 w-9 min-w-[34px] max-w-[38px] bg-[#FFF9E6] text-[#975A16] whitespace-normal leading-tight text-center">
+                  Rank S
+                </th>
 
                 {/* Group 3 Columns (Slate tint) */}
                 <th rowSpan={2} className="py-2 px-1 w-14 min-w-[50px] max-w-[56px] bg-[#F8F9FA] text-[#4A5568] whitespace-normal leading-tight text-center">
@@ -1466,12 +1470,12 @@ export default function PTMTable({
                   </span>
                 </th>
 
-                {/* Group 4 Columns: Depts (Mint Green tint) - compact */}
+                {/* Group 4 Columns: Depts (Mint Green tint) - auto-adjusting width */}
                 {DEPARTMENTS.map((dept) => (
                   <th
                     key={dept.key}
                     rowSpan={2}
-                    className="py-2 px-0.5 w-8 min-w-[30px] max-w-[34px] bg-[#EAF5EC] text-[#276749] text-center whitespace-nowrap text-xs sm:text-[12px]"
+                    className={`py-2 px-1.5 w-auto ${dept.key === 'Quality' ? 'min-w-[54px]' : 'min-w-[42px]'} bg-[#EAF5EC] text-[#276749] text-center whitespace-nowrap text-xs sm:text-[12px]`}
                   >
                     {dept.label}
                   </th>
@@ -1508,29 +1512,29 @@ export default function PTMTable({
                 </th>
 
                 {/* Group 6 Columns (Ice Blue tint) */}
-                <th rowSpan={2} className="py-2 px-1 w-20 min-w-[78px] max-w-[84px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center text-xs sm:text-[12px]">
+                <th rowSpan={2} className="py-2 px-1.5 w-auto min-w-[116px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center text-xs sm:text-[12px]">
                   Start Date (Plan)
                 </th>
-                <th rowSpan={2} className="py-2 px-1 w-20 min-w-[78px] max-w-[84px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center text-xs sm:text-[12px]">
+                <th rowSpan={2} className="py-2 px-1.5 w-auto min-w-[116px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center text-xs sm:text-[12px]">
                   Start Date (Actual)
                 </th>
-                <th rowSpan={2} className="py-2 px-1 w-20 min-w-[78px] max-w-[84px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center text-xs sm:text-[12px]">
+                <th rowSpan={2} className="py-2 px-1.5 w-auto min-w-[116px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center text-xs sm:text-[12px]">
                   End Date (Plan) <span className="text-red-500 font-bold">*</span>
                 </th>
-                <th rowSpan={2} className="py-2 px-1 w-20 min-w-[78px] max-w-[84px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center text-xs sm:text-[12px]">
+                <th rowSpan={2} className="py-2 px-1.5 w-auto min-w-[116px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center text-xs sm:text-[12px]">
                   End Date (Actual)
                 </th>
 
                 {/* Group 7 Columns (Mint Green tint) */}
-                <th rowSpan={2} className="py-2 px-1 w-16 min-w-[64px] max-w-[70px] bg-[#EAF5EC] text-[#276749] whitespace-normal leading-tight text-center">
+                <th rowSpan={2} className="py-2 px-1.5 w-auto min-w-[78px] bg-[#EAF5EC] text-[#276749] whitespace-nowrap leading-tight text-center">
                   HIT/MISS
                 </th>
 
                 {/* Group 8 Columns (Pastel Rose tint) */}
-                <th rowSpan={2} className="py-2 px-1 w-28 min-w-[105px] bg-[#FDF2F2] text-[#9B1C1C] whitespace-normal leading-tight text-center">
+                <th rowSpan={2} className="py-2 px-1.5 w-auto min-w-[148px] bg-[#FDF2F2] text-[#9B1C1C] whitespace-normal leading-tight text-center">
                   No. of Times Revised
                 </th>
-                <th rowSpan={2} className="py-2 px-2 w-48 min-w-[140px] max-w-[200px] bg-[#FDF2F2] text-[#9B1C1C] text-left whitespace-normal leading-tight">
+                <th rowSpan={2} className="py-2 px-2 w-auto min-w-[180px] bg-[#FDF2F2] text-[#9B1C1C] text-left whitespace-normal leading-tight">
                   Reason of Failure
                 </th>
                 <th
@@ -1652,7 +1656,7 @@ export default function PTMTable({
               {filteredRows.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={25 + DEPARTMENTS.length}
+                    colSpan={26 + DEPARTMENTS.length}
                     className="py-12 text-center text-slate-400 font-medium"
                   >
                     No matching rows found.
@@ -1891,6 +1895,23 @@ export default function PTMTable({
                           </div>
                         </td>
 
+                        {/* 7b. Rank S — Interactive checkbox */}
+                        <td
+                          onClick={() => cycleRank(originalIndex, 'rankS')}
+                          className="py-1 px-1 text-center cursor-pointer hover:bg-amber-50/50 transition-colors select-none"
+                          title="Click: ■ Applicable / □ If Required / Clear"
+                        >
+                          <div className="flex items-center justify-center">
+                            {row.rankS === 'applicable' && (
+                              <div className="w-5 h-5 bg-black rounded-xs flex items-center justify-center"></div>
+                            )}
+                            {row.rankS === 'if_required' && (
+                              <div className="w-5 h-5 border-[2.5px] border-black bg-white rounded-xs flex items-center justify-center"></div>
+                            )}
+                            {!row.rankS && <span className="text-slate-300 text-sm">—</span>}
+                          </div>
+                        </td>
+
                         {/* 8. Critical Activity — Yes/No dropdown with automatic symbol */}
                         <td className="p-1 text-center">
                           <CriticalActivityCell
@@ -1927,7 +1948,7 @@ export default function PTMTable({
                             <td
                               key={dept.key}
                               onClick={() => cycleDept(originalIndex, dept.key)}
-                              className={`py-1.5 px-1 text-center cursor-pointer select-none transition-colors ${isHighlighted
+                              className={`py-1.5 px-1.5 w-auto ${dept.key === 'Quality' ? 'min-w-[54px]' : 'min-w-[42px]'} text-center whitespace-nowrap cursor-pointer select-none transition-colors ${isHighlighted
                                 ? 'bg-[#FFFF00] hover:bg-[#FACC15]'
                                 : 'hover:bg-emerald-50/50'
                                 }`}
@@ -2029,7 +2050,7 @@ export default function PTMTable({
                         </td>
 
                         {/* 21. Start Date (Plan) */}
-                        <td className="p-0 text-center w-20 min-w-[78px] max-w-[84px]">
+                        <td className="p-0 text-center w-auto min-w-[116px] whitespace-nowrap">
                           <CalendarDateInput
                             value={row.startDatePlan || ''}
                             onChange={(e) => handleCellChange(originalIndex, 'startDatePlan', e.target.value)}
@@ -2037,12 +2058,12 @@ export default function PTMTable({
                             data-row={originalIndex}
                             data-col="startDatePlan"
                             placeholder="N/A"
-                            className="w-full text-center py-2 px-1 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm font-mono"
+                            className="w-full text-center py-2 px-1.5 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm font-mono"
                           />
                         </td>
 
                         {/* 22. Start Date (Actual) */}
-                        <td className="p-0 text-center w-20 min-w-[78px] max-w-[84px]">
+                        <td className="p-0 text-center w-auto min-w-[116px] whitespace-nowrap">
                           <CalendarDateInput
                             value={row.startDateActual || ''}
                             onChange={(e) => handleCellChange(originalIndex, 'startDateActual', e.target.value)}
@@ -2050,12 +2071,12 @@ export default function PTMTable({
                             data-row={originalIndex}
                             data-col="startDateActual"
                             placeholder="N/A"
-                            className="w-full text-center py-2 px-1 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm font-mono"
+                            className="w-full text-center py-2 px-1.5 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm font-mono"
                           />
                         </td>
 
                         {/* 23. End Date (Plan) */}
-                        <td className="p-0 text-center w-20 min-w-[78px] max-w-[84px]">
+                        <td className="p-0 text-center w-auto min-w-[116px] whitespace-nowrap">
                           <CalendarDateInput
                             value={row.endDatePlan || ''}
                             onChange={(e) => handleCellChange(originalIndex, 'endDatePlan', e.target.value)}
@@ -2063,12 +2084,12 @@ export default function PTMTable({
                             data-row={originalIndex}
                             data-col="endDatePlan"
                             placeholder="N/A"
-                            className="w-full text-center py-2 px-1 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm font-mono"
+                            className="w-full text-center py-2 px-1.5 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm font-mono"
                           />
                         </td>
 
                         {/* 24. End Date (Actual) */}
-                        <td className="p-0 text-center w-20 min-w-[78px] max-w-[84px]">
+                        <td className="p-0 text-center w-auto min-w-[116px] whitespace-nowrap">
                           <CalendarDateInput
                             value={row.endDateActual || ''}
                             onChange={(e) => handleCellChange(originalIndex, 'endDateActual', e.target.value)}
@@ -2076,12 +2097,12 @@ export default function PTMTable({
                             data-row={originalIndex}
                             data-col="endDateActual"
                             placeholder="N/A"
-                            className="w-full text-center py-2 px-1 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm font-mono"
+                            className="w-full text-center py-2 px-1.5 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm font-mono"
                           />
                         </td>
 
-                        {/* 25. HIT/MISS — Compact width dropdown */}
-                        <td className="p-0.5 text-center relative w-16 min-w-[64px] max-w-[70px]">
+                        {/* 25. HIT/MISS — Auto-adjusting width dropdown */}
+                        <td className="p-0.5 text-center relative w-auto min-w-[78px] whitespace-nowrap">
                           <div className="relative flex items-center justify-center">
                             <select
                               value={row.hitMiss || ''}
@@ -2120,8 +2141,8 @@ export default function PTMTable({
                                       className="flex w-full items-stretch divide-x divide-[#CBD5E1] min-h-[34px]"
                                     >
                                       {/* 27. No. of Times Revised child cell */}
-                                      <div className="w-28 min-w-[105px] shrink-0 flex items-center justify-between px-1.5 py-1 bg-white hover:bg-slate-50 transition-colors">
-                                        <span className="text-xs font-semibold text-rose-800 font-mono">
+                                      <div className="w-auto min-w-[148px] whitespace-nowrap shrink-0 flex items-center justify-between gap-1.5 px-2 py-1 bg-white hover:bg-slate-50 transition-colors">
+                                        <span className="text-xs font-semibold text-rose-800 font-mono whitespace-nowrap">
                                           {rev.tag || `${revIdx + 1}) ${rev.date || getFormattedCurrentDate()}`}
                                         </span>
                                         <div className="flex items-center gap-0.5">
@@ -2147,7 +2168,7 @@ export default function PTMTable({
                                       </div>
 
                                       {/* 28. Reason of Failure child cell */}
-                                      <div className="w-48 min-w-[140px] max-w-[200px] flex-1 flex items-center p-0">
+                                      <div className="w-auto min-w-[180px] flex-1 flex items-center p-0">
                                         <ManualInputBox
                                           value={rev.reasonOfFailure || ''}
                                           onChange={(e) => handleRevisionCellChange(originalIndex, revIdx, 'reasonOfFailure', e.target.value)}
@@ -2192,14 +2213,14 @@ export default function PTMTable({
                           return (
                             <>
                               {/* 27. No. of Times Revised */}
-                              <td className="p-0 text-center relative w-28 min-w-[105px]">
-                                <div className="relative flex items-center justify-between px-1">
-                                  <div className="min-w-0 flex-1">
+                              <td className="p-0 text-center relative w-auto min-w-[148px] whitespace-nowrap">
+                                <div className="relative flex items-center justify-between gap-1 px-1.5">
+                                  <div className="min-w-[102px] flex-1">
                                     <ManualInputBox
                                       value={revText || ''}
                                       onChange={(e) => handleCellChange(originalIndex, 'noOfTimesRevised', e.target.value)}
                                       placeholder={isDelayOrMiss ? '1) DD-MM-YY *' : '0'}
-                                      className={`w-full text-center py-2 px-1 text-xs sm:text-sm ${
+                                      className={`w-full text-center py-2 px-1 text-xs sm:text-sm whitespace-nowrap ${
                                         revText
                                           ? 'font-semibold text-rose-800'
                                           : isDelayOrMiss
@@ -2243,7 +2264,7 @@ export default function PTMTable({
                               </td>
 
                               {/* 28. Reason of Failure */}
-                              <td className="p-0 w-48 min-w-[140px] max-w-[200px]">
+                              <td className="p-0 w-auto min-w-[180px]">
                                 <ManualInputBox
                                   value={row.reasonOfFailure || ''}
                                   onChange={(e) => handleCellChange(originalIndex, 'reasonOfFailure', e.target.value)}

@@ -238,8 +238,8 @@ test('10. PTM Sheet: Responsible Person section added immediately before Status 
   const tablePath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/ptm/PTM/PTMTable.jsx');
   const tableContent = fs.readFileSync(tablePath, 'utf8');
 
-  // Verify colgroup was updated to span 35
-  assert.match(tableContent, /<col span=\{35\} \/>/);
+  // Verify colgroup was updated to span 36 (including Rank S)
+  assert.match(tableContent, /<col span=\{36\} \/>/);
 
   // Verify header has Responsible Person with colSpan={3}
   assert.match(tableContent, /Responsible Person/);
@@ -542,6 +542,69 @@ test('22. PTM Sheet: "Revised Date (If MISS)" column is completely removed', () 
   const appContent = fs.readFileSync(appPath, 'utf8');
   assert.doesNotMatch(appContent, /'Revised Date',/);
 });
+
+test('23. PTM Header: Rank dropdown includes option "S"', () => {
+  const headerPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/ptm/PTM/PTMHeader.jsx');
+  const headerContent = fs.readFileSync(headerPath, 'utf8');
+
+  assert.match(headerContent, /<option value="A">A<\/option>/);
+  assert.match(headerContent, /<option value="B">B<\/option>/);
+  assert.match(headerContent, /<option value="C1">C1<\/option>/);
+  assert.match(headerContent, /<option value="C2">C2<\/option>/);
+  assert.match(headerContent, /<option value="S">S<\/option>/);
+});
+
+test('24. PTM Sheet: "Rank S" column added between "Rank C1 & C2" and "Critical Activity" and works like other Rank columns', () => {
+  const tablePath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/ptm/PTM/PTMTable.jsx');
+  const tableContent = fs.readFileSync(tablePath, 'utf8');
+
+  // Verify header placement: Rank C1 & C2 -> Rank S -> Critical Activity
+  const rankCIdx = tableContent.indexOf('Rank C1 & C2');
+  const rankSIdx = tableContent.indexOf('Rank S', rankCIdx);
+  const criticalIdx = tableContent.indexOf('Critical Activity', rankSIdx);
+
+  assert.ok(rankCIdx > 0, 'Rank C1 & C2 header must exist');
+  assert.ok(rankSIdx > rankCIdx, 'Rank S header must be placed after Rank C1 & C2');
+  assert.ok(criticalIdx > rankSIdx, 'Critical Activity header must be placed after Rank S');
+
+  // Verify body cell uses cycleRank(originalIndex, 'rankS') and row.rankS
+  assert.match(tableContent, /cycleRank\(originalIndex, 'rankS'\)/);
+  assert.match(tableContent, /row\.rankS === 'applicable'/);
+  assert.match(tableContent, /row\.rankS === 'if_required'/);
+  assert.match(tableContent, /!row\.rankS/);
+
+  // Verify App.jsx CSV export includes Rank S after Rank C1 & C2
+  const appPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/pages/ptm/App.jsx');
+  const appContent = fs.readFileSync(appPath, 'utf8');
+  assert.match(appContent, /'Rank C1 & C2',\s*'Rank S',\s*'Critical Activity'/);
+  assert.match(appContent, /`"\$\{r\.rankS \|\| ''\}"`/);
+});
+
+test('25. PTM Sheet: Red-marked columns have auto-adjusting widths so dates and text do not clip or overlap', () => {
+  const tablePath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/ptm/PTM/PTMTable.jsx');
+  const tableContent = fs.readFileSync(tablePath, 'utf8');
+
+  // Department columns no longer use restrictive max-w-[34px]
+  assert.doesNotMatch(tableContent, /max-w-\[34px\]/);
+  assert.match(tableContent, /dept\.key === 'Quality' \? 'min-w-\[54px\]' : 'min-w-\[42px\]'/);
+
+  // Date columns no longer use restrictive max-w-[84px]; use w-auto min-w-[116px]
+  assert.doesNotMatch(tableContent, /max-w-\[84px\]/);
+  assert.match(tableContent, /w-auto min-w-\[116px\]/);
+
+  // CalendarDateInput has sufficient width and right padding so date digits never overlap calendar icon
+  const calPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/ptm/PTM/CalendarDateInput.jsx');
+  const calContent = fs.readFileSync(calPath, 'utf8');
+  assert.match(calContent, /min-w-\[112px\] pr-6 whitespace-nowrap/);
+
+  // HIT/MISS, No. of Times Revised, and Reason of Failure use auto-adjusting widths
+  assert.doesNotMatch(tableContent, /max-w-\[70px\]/);
+  assert.match(tableContent, /w-auto min-w-\[78px\]/);
+  assert.match(tableContent, /w-auto min-w-\[148px\]/);
+  assert.doesNotMatch(tableContent, /max-w-\[200px\]/);
+  assert.match(tableContent, /w-auto min-w-\[180px\]/);
+});
+
 
 
 

@@ -33,17 +33,17 @@ export default function CalendarDateInput({
   const pickerRef = useRef(null);
 
   return (
-    <div className={`relative min-w-0 ${containerClassName || 'flex-1'}`}>
+    <div className={`relative min-w-[112px] ${containerClassName || 'flex-1'}`}>
       <input
         type="text"
         value={value}
         onChange={onChange}
-        className={`${className} pr-5`}
+        className={`${className} min-w-[112px] pr-6 whitespace-nowrap`}
         {...props}
       />
       <CalendarDays
         aria-hidden="true"
-        className="pointer-events-none absolute right-1 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
+        className="pointer-events-none absolute right-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
       />
       <input
         ref={pickerRef}

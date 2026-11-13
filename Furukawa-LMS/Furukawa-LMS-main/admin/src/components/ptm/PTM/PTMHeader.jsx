@@ -66,6 +66,7 @@ export default function PTMHeader({ headerInfo, setHeaderInfo, projectLeaderOpti
                     <option value="B">B</option>
                     <option value="C1">C1</option>
                     <option value="C2">C2</option>
+                    <option value="S">S</option>
                   </select>
                 </td>
               </tr>

@@ -48,6 +48,7 @@ function createBlankRow(index, unit = 'Both') {
     rankA: '',
     rankB: '',
     rankC: '',
+    rankS: '',
     critical: false,
     activity: '',
     departments: {
@@ -667,6 +668,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
       rankA: '',
       rankB: '',
       rankC: '',
+      rankS: '',
       critical: null,
       activity: '',
       departments: {
@@ -718,6 +720,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
       'Rank A',
       'Rank B',
       'Rank C1 & C2',
+      'Rank S',
       'Critical Activity',
       'Activity (New)',
       'F&A',
@@ -760,6 +763,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
         `"${r.rankA || ''}"`,
         `"${r.rankB || ''}"`,
         `"${r.rankC || ''}"`,
+        `"${r.rankS || ''}"`,
         `"${r.critical ? 'Yes' : 'No'}"`,
         `"${(r.activity || '').replace(/"/g, '""')}"`,
         `"${r.departments?.FA || ''}"`,

@@ -12,6 +12,146 @@
 
 export const PTM_VALID_UNITS = ['Bawal', 'Gujrat', 'All'];
 
+export const PTM_STATUS_OPTIONS = [
+  { value: 'Not-Started', label: 'Not-Started', color: 'bg-blue-50 text-blue-800 border-blue-300' },
+  { value: 'In-Progress', label: 'In-Progress', color: 'bg-yellow-50 text-yellow-800 border-yellow-300' },
+  { value: 'Done', label: 'Done', color: 'bg-emerald-50 text-emerald-700 border-emerald-300' },
+  { value: 'Delay', label: 'Delay', color: 'bg-rose-50 text-rose-700 border-rose-300' },
+];
+
+export const PTM_STATUS_VALUES = PTM_STATUS_OPTIONS.map((opt) => opt.value);
+
+export const PTM_PHASE_OPTIONS = [
+  '1: Plan & Define',
+  '2: Product & Process Design',
+  '3: Product & Process Development',
+  '4: Product & Process Validation',
+  '5: Feedback & Corrective Action',
+  'Other'
+];
+
+export function normalizePtmStatus(status) {
+  if (!status) return 'Not-Started';
+  const s = String(status).trim().toLowerCase();
+  if (s === 'open' || s === 'not-started' || s === 'not started') return 'Not-Started';
+  if (s === 'in progress' || s === 'in-progress' || s === 'inprogress') return 'In-Progress';
+  if (s === 'closed' || s === 'done' || s === 'completed' || s === 'complete') return 'Done';
+  if (s === 'delay' || s === 'delayed') return 'Delay';
+  return status;
+}
+
+export function normalizeDateToYMD(val) {
+  if (!val) return '';
+  const text = String(val).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  const match = text.match(/^(\d{1,2})[-./](\d{1,2})[-./](\d{2}|\d{4})$/);
+  if (!match) return '';
+  const [, day, month, rawYear] = match;
+  const year = rawYear.length === 2 ? `20${rawYear}` : rawYear;
+  return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+}
+
+export function getFormattedCurrentDate(dateObj = new Date()) {
+  const d = dateObj instanceof Date && !isNaN(dateObj) ? dateObj : new Date();
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = String(d.getFullYear()).slice(-2);
+  return `${day}-${month}-${year}`;
+}
+
+export function getTodayYMD(dateObj = new Date()) {
+  const d = dateObj instanceof Date && !isNaN(dateObj) ? dateObj : new Date();
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${year}-${month}-${day}`;
+}
+
+export function getRowRevisions(row) {
+  if (!row) return [];
+  if (Array.isArray(row.revisions) && row.revisions.length > 0) {
+    return row.revisions;
+  }
+  const rawRev = String(row.noOfTimesRevised || '').trim();
+  if (!rawRev || rawRev === '0') return [];
+
+  const lines = rawRev.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const failureLines = String(row.reasonOfFailure || '').split(/\r?\n/).map(l => l.trim());
+  const actionLines = String(row.actionTaken || '').split(/\r?\n/).map(l => l.trim());
+
+  return lines.map((line, idx) => {
+    let tag = line;
+    if (!/^\d+\)/.test(tag)) {
+      tag = `${idx + 1}) ${tag}`;
+    }
+    return {
+      revisionNo: idx + 1,
+      tag,
+      date: tag.replace(/^\d+\)\s*/, ''),
+      reasonOfFailure: failureLines[idx] || (idx === 0 ? row.reasonOfFailure || '' : ''),
+      actionTaken: actionLines[idx] || (idx === 0 ? row.actionTaken || '' : '')
+    };
+  });
+}
+
+export function evaluatePtmRowStatus(row, currentDate = new Date()) {
+  if (!row) return { hitMiss: '', status: 'Not-Started' };
+
+  const isFilled = (d) => {
+    if (!d) return false;
+    const s = String(d).trim().toUpperCase();
+    return s !== '' && s !== 'N/A' && s !== '—' && s !== '-';
+  };
+
+  const today = getTodayYMD(currentDate);
+  const startActual = isFilled(row.startDateActual) ? normalizeDateToYMD(row.startDateActual) : '';
+  const endPlan = isFilled(row.endDatePlan) ? normalizeDateToYMD(row.endDatePlan) : '';
+  const endActual = isFilled(row.endDateActual) ? normalizeDateToYMD(row.endDateActual) : '';
+  const revised = isFilled(row.revisedDate) ? normalizeDateToYMD(row.revisedDate) : '';
+
+  // Active target deadline to meet
+  const targetDeadline = revised || endPlan;
+
+  let hitMiss = row.hitMiss || '';
+  let status = normalizePtmStatus(row.status || 'Not-Started');
+
+  // Rule 1: When End Date (Actual) is filled
+  if (endActual) {
+    if (targetDeadline) {
+      if (endActual <= targetDeadline) {
+        hitMiss = 'HIT';
+        status = 'Done';
+      } else {
+        hitMiss = 'MISS';
+        status = 'Delay';
+      }
+    } else {
+      hitMiss = 'HIT';
+      status = 'Done';
+    }
+  } else {
+    // End Date (Actual) is NOT filled yet
+    if (targetDeadline && today > targetDeadline) {
+      // Deadline has passed without completion
+      hitMiss = 'MISS';
+      status = 'Delay';
+    } else if (revised) {
+      // Revised date filled, work is ongoing towards new target
+      hitMiss = '';
+      status = 'In-Progress';
+    } else if (startActual) {
+      // Start date actual selected and not missed
+      hitMiss = '';
+      status = 'Not-Started';
+    } else {
+      hitMiss = '';
+      status = 'Not-Started';
+    }
+  }
+
+  return { hitMiss, status };
+}
+
 export const PTM_DEPARTMENTS_LIST = [
   'Quality',
   'PE',

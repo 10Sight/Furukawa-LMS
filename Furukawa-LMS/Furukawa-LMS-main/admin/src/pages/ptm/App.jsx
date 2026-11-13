@@ -61,7 +61,7 @@ function createBlankRow(index, unit = 'Both') {
       SCM: '',
       Quality: '',
     },
-    deliverableRequired: 'No',
+    deliverableRequired: 'Yes',
     deliverable: '',
     duration: '',
     startDatePlan: '',
@@ -81,7 +81,7 @@ function createBlankRow(index, unit = 'Both') {
     staffName: '',
     staffId: '',
     responsiblePersonDept: '',
-    status: '',
+    status: 'Not-Started',
     remarks: '',
     unit: unit && unit !== 'All Units' ? unit : 'Both',
   };
@@ -383,6 +383,36 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
 
   const saveFormChanges = async () => {
     if (!selectedUnit) return;
+
+    // Validate mandatory fields
+    const currentRows = formStateRef.current.ptmRows || [];
+    for (let i = 0; i < currentRows.length; i++) {
+      const r = currentRows[i];
+      const hasContent = Boolean(
+        r.phaseName || r.reqNo || r.customerEvent || r.activity || r.deliverable ||
+        r.startDatePlan || r.endDatePlan || r.startDateActual || r.endDateActual
+      );
+      if (hasContent) {
+        const endPlanVal = String(r.endDatePlan ?? '').trim();
+        if (!endPlanVal || endPlanVal === '—' || endPlanVal === '-') {
+          showToast(`⚠️ Row ${i + 1}: End Date (Plan) is mandatory.`);
+          return;
+        }
+        if (r.status === 'Delay' || r.hitMiss === 'MISS') {
+          const revVal = String(r.noOfTimesRevised ?? '').trim();
+          if (!revVal || revVal === '0') {
+            showToast(`⚠️ Row ${i + 1}: No. of Times Revised is mandatory when status is Delay / MISS.`);
+            return;
+          }
+          const failVal = String(r.reasonOfFailure ?? '').trim();
+          if (!failVal) {
+            showToast(`⚠️ Row ${i + 1}: Reason of Failure is mandatory when status is Delay / MISS.`);
+            return;
+          }
+        }
+      }
+    }
+
     try {
       const isCustomItem = selectedTopicItem?.isBlankPTM || (selectedTopicItem?.id && localStorage.getItem(`ptm_rows_item_${selectedTopicItem.id}`));
       const sheetKey = isCustomItem ? `item_${selectedTopicItem.id}` : `unit_${selectedUnit}`;
@@ -650,6 +680,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
         SCM: '',
         Quality: '',
       },
+      deliverableRequired: 'Yes',
       deliverable: '',
       duration: '',
       startDatePlan: '',
@@ -661,7 +692,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
       noOfTimesRevised: '',
       reasonOfFailure: '',
       actionTaken: '',
-      status: '',
+      status: 'Not-Started',
       remarks: '',
       unit: selectedUnit || 'Both',
     };
@@ -680,8 +711,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
 
   const handleExportMatrixCSV = () => {
     const headers = [
-      'Phase No.',
-      'Phase Name',
+      'Phase No. / Name',
       'AIAG Req No.',
       'AIAG Requirements',
       'Customer Event Name',
@@ -700,13 +730,13 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
       'SCM',
       'Quality',
       'Deliverable Required Yes/No',
+      'Deliverable Attachment',
       'Std. Duration in Hours',
       'Start Date (Plan)',
       'Start Date (Actual)',
       'End Date (Plan)',
       'End Date (Actual)',
       'HIT/MISS',
-      'Revised Date',
       'No. of Times Revised',
       'Reason of Failure',
       'Action Taken Against Failure',
@@ -723,7 +753,6 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
       const respStaffStr = r.staffEmployee || r.staffName || '';
 
       return [
-        `"${r.phaseNo || ''}"`,
         `"${(r.phaseName || '').replace(/"/g, '""')}"`,
         `"${r.reqNo || ''}"`,
         `"${(r.reqName || '').replace(/"/g, '""')}"`,
@@ -742,14 +771,14 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
         `"${r.departments?.PROD || ''}"`,
         `"${r.departments?.SCM || ''}"`,
         `"${r.departments?.Quality || ''}"`,
-        `"${r.deliverableRequired || ''}"`,
+        `"${r.deliverableRequired || 'Yes'}"`,
+        `"${(r.deliverableFile?.name || r.deliverable || '').replace(/"/g, '""')}"`,
         `"${r.duration || ''}"`,
         `"${r.startDatePlan || ''}"`,
         `"${r.startDateActual || ''}"`,
         `"${r.endDatePlan || ''}"`,
         `"${r.endDateActual || ''}"`,
         `"${r.hitMiss || ''}"`,
-        `"${r.revisedDate || ''}"`,
         `"${r.noOfTimesRevised || ''}"`,
         `"${(r.reasonOfFailure || '').replace(/"/g, '""')}"`,
         `"${(r.actionTaken || '').replace(/"/g, '""')}"`,

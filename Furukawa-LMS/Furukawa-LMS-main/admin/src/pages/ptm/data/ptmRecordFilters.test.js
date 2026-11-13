@@ -4,6 +4,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   PTM_VALID_UNITS,
+  PTM_STATUS_OPTIONS,
+  PTM_PHASE_OPTIONS,
+  normalizePtmStatus,
+  normalizeDateToYMD,
+  getFormattedCurrentDate,
+  getRowRevisions,
+  evaluatePtmRowStatus,
   doesPtmRowBelongToDepartment,
   doesPtmRowBelongToUser,
   isPtmRowDone,
@@ -254,7 +261,7 @@ test('10. PTM Sheet: Responsible Person section added immediately before Status 
   // In tbody, verify Responsible Person is placed between actionTaken and status
   const tbodyActionTakenIdx = tableContent.indexOf('data-col="actionTaken"');
   const tbodyRespIdx = tableContent.indexOf('getResponsiblePersonStructure(row)', tbodyActionTakenIdx);
-  const tbodyStatusIdx = tableContent.indexOf('row.status || \'Open\'', tbodyRespIdx);
+  const tbodyStatusIdx = tableContent.indexOf('normalizePtmStatus(row.status', tbodyRespIdx);
   assert.ok(tbodyActionTakenIdx > 0, 'tbody actionTaken cell must exist');
   assert.ok(tbodyRespIdx > tbodyActionTakenIdx, 'tbody Responsible Person must be after actionTaken');
   assert.ok(tbodyStatusIdx > tbodyRespIdx, 'tbody Status must be after Responsible Person');
@@ -300,6 +307,243 @@ test('12. PTM CSV Export includes Responsible Unit, Responsible Dept, and Respon
   assert.ok(respStaffHeaderIdx > respDeptHeaderIdx, 'Responsible Staff Name must be after Responsible Dept');
   assert.ok(statusHeaderIdx > respStaffHeaderIdx, 'Status must be after Responsible Staff Name');
 });
+
+test('13. PTM Status Options and Color mapping: Not-Started (Blue), In-Progress (Yellow), Done (Green), Delay (Red)', () => {
+  const options = PTM_STATUS_OPTIONS;
+  assert.equal(options.length, 4);
+
+  const notStarted = options.find((o) => o.value === 'Not-Started');
+  assert.ok(notStarted, 'Not-Started option exists');
+  assert.match(notStarted.color, /blue/i);
+
+  const inProgress = options.find((o) => o.value === 'In-Progress');
+  assert.ok(inProgress, 'In-Progress option exists');
+  assert.match(inProgress.color, /yellow/i);
+
+  const done = options.find((o) => o.value === 'Done');
+  assert.ok(done, 'Done option exists');
+  assert.match(done.color, /emerald|green/i);
+
+  const delay = options.find((o) => o.value === 'Delay');
+  assert.ok(delay, 'Delay option exists');
+  assert.match(delay.color, /rose|red/i);
+
+  // Normalization of legacy values
+  assert.equal(normalizePtmStatus('Open'), 'Not-Started');
+  assert.equal(normalizePtmStatus('In Progress'), 'In-Progress');
+  assert.equal(normalizePtmStatus('Closed'), 'Done');
+  assert.equal(normalizePtmStatus('Delay'), 'Delay');
+  assert.equal(normalizePtmStatus('Done'), 'Done');
+  assert.equal(normalizePtmStatus('Not-Started'), 'Not-Started');
+});
+
+test('14. PTM Status Column is frozen (view-only select, cannot be changed manually)', () => {
+  const tablePath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/ptm/PTM/PTMTable.jsx');
+  const tableContent = fs.readFileSync(tablePath, 'utf8');
+
+  // Verify select is disabled and pointer-events-none / cursor-default
+  assert.match(tableContent, /<select\s+disabled/);
+  assert.match(tableContent, /pointer-events-none cursor-default select-none/);
+  assert.match(tableContent, /PTM_STATUS_OPTIONS\.map/);
+});
+
+test('15. PTM End Date (Plan) is marked Mandatory with asterisk *', () => {
+  const tablePath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/ptm/PTM/PTMTable.jsx');
+  const tableContent = fs.readFileSync(tablePath, 'utf8');
+
+  // Header must contain End Date (Plan) with red asterisk
+  assert.match(tableContent, /End Date \(Plan\)\s*<span className="text-red-500 font-bold">\*<\/span>/);
+
+  // App.jsx save validation verifies mandatory End Date (Plan)
+  const appPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/pages/ptm/App.jsx');
+  const appContent = fs.readFileSync(appPath, 'utf8');
+  assert.match(appContent, /End Date \(Plan\) is mandatory/);
+  assert.match(appContent, /Reason of Failure is mandatory when status is Delay \/ MISS/);
+});
+
+test('16. Automated Lifecycle Logic: Date evaluation state machine', () => {
+  const fixedToday = new Date('2026-11-13T12:00:00Z');
+
+  // Case 1: Start Date (Actual) entered, End Date Plan in future -> Not-Started, HIT/MISS is blank
+  const row1 = {
+    startDateActual: '10-11-26',
+    endDatePlan: '20-11-26',
+    endDateActual: '',
+    revisedDate: '',
+    status: 'Not-Started',
+    hitMiss: ''
+  };
+  const res1 = evaluatePtmRowStatus(row1, fixedToday);
+  assert.equal(res1.status, 'Not-Started');
+  assert.equal(res1.hitMiss, '');
+
+  // Case 2: End Date (Plan) missed (deadline was 10-11-26, today is 13-11-26) without completion -> Delay, MISS
+  const row2 = {
+    startDateActual: '01-11-26',
+    endDatePlan: '10-11-26',
+    endDateActual: '',
+    revisedDate: '',
+    status: 'Not-Started',
+    hitMiss: ''
+  };
+  const res2 = evaluatePtmRowStatus(row2, fixedToday);
+  assert.equal(res2.status, 'Delay');
+  assert.equal(res2.hitMiss, 'MISS');
+
+  // Case 3: User fills Revised Date (e.g. 25-11-26) -> In-Progress, HIT/MISS blank
+  const row3 = {
+    startDateActual: '01-11-26',
+    endDatePlan: '10-11-26',
+    revisedDate: '25-11-26',
+    endDateActual: '',
+    status: 'Delay',
+    hitMiss: 'MISS'
+  };
+  const res3 = evaluatePtmRowStatus(row3, fixedToday);
+  assert.equal(res3.status, 'In-Progress');
+  assert.equal(res3.hitMiss, '');
+
+  // Case 4: User completes work before or on target date (e.g. 24-11-26 <= 25-11-26) -> Done, HIT
+  const row4 = {
+    startDateActual: '01-11-26',
+    endDatePlan: '10-11-26',
+    revisedDate: '25-11-26',
+    endDateActual: '24-11-26',
+    status: 'In-Progress',
+    hitMiss: ''
+  };
+  const res4 = evaluatePtmRowStatus(row4, fixedToday);
+  assert.equal(res4.status, 'Done');
+  assert.equal(res4.hitMiss, 'HIT');
+
+  // Case 5: User misses the revised date (e.g. endDateActual is 26-11-26 > 25-11-26) -> Delay, MISS
+  const row5 = {
+    startDateActual: '01-11-26',
+    endDatePlan: '10-11-26',
+    revisedDate: '25-11-26',
+    endDateActual: '26-11-26',
+    status: 'In-Progress',
+    hitMiss: ''
+  };
+  const res5 = evaluatePtmRowStatus(row5, fixedToday);
+  assert.equal(res5.status, 'Delay');
+  assert.equal(res5.hitMiss, 'MISS');
+});
+
+test('17. No. of Times Revised format: serial number with date "1) 13-11-26"', () => {
+  const currentDateTag = getFormattedCurrentDate(new Date('2026-11-13T12:00:00Z'));
+  assert.equal(currentDateTag, '13-11-26');
+
+  // getRowRevisions parses string format and ensures 1) tag prefix
+  const rowWithRevs = {
+    noOfTimesRevised: '1) 13-11-26\n2) 15-11-26',
+    reasonOfFailure: 'Reason 1\nReason 2',
+    actionTaken: 'Action 1\nAction 2'
+  };
+  const parsed = getRowRevisions(rowWithRevs);
+  assert.equal(parsed.length, 2);
+  assert.equal(parsed[0].revisionNo, 1);
+  assert.equal(parsed[0].tag, '1) 13-11-26');
+  assert.equal(parsed[0].reasonOfFailure, 'Reason 1');
+  assert.equal(parsed[0].actionTaken, 'Action 1');
+
+  assert.equal(parsed[1].revisionNo, 2);
+  assert.equal(parsed[1].tag, '2) 15-11-26');
+  assert.equal(parsed[1].reasonOfFailure, 'Reason 2');
+  assert.equal(parsed[1].actionTaken, 'Action 2');
+});
+
+test('18. PTM Sheet: Multiple revisions divided horizontally across columns 27-29', () => {
+  const tablePath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/ptm/PTM/PTMTable.jsx');
+  const tableContent = fs.readFileSync(tablePath, 'utf8');
+
+  // Verify multiple revisions logic subdivides with colSpan={3}
+  assert.match(tableContent, /revisions\.length > 1/);
+  assert.match(tableContent, /colSpan=\{3\}/);
+  assert.match(tableContent, /divide-y divide-\[#CBD5E1\]/);
+  assert.match(tableContent, /divide-x divide-\[#CBD5E1\]/);
+  assert.match(tableContent, /handleAddRevision/);
+  assert.match(tableContent, /handleRemoveRevision/);
+  assert.match(tableContent, /handleRevisionCellChange/);
+});
+
+test('19. PTM Sheet: "Phase No." column is completely removed from matrix', () => {
+  const tablePath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/ptm/PTM/PTMTable.jsx');
+  const tableContent = fs.readFileSync(tablePath, 'utf8');
+
+  // Verify header does not contain standalone Phase No. column
+  assert.doesNotMatch(tableContent, /<th[^>]*>\s*Phase No\.\s*<\/th>/);
+
+  // Verify App.jsx CSV headers do not have standalone Phase No. header
+  const appPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/pages/ptm/App.jsx');
+  const appContent = fs.readFileSync(appPath, 'utf8');
+  assert.doesNotMatch(appContent, /'Phase No\.',/);
+  assert.match(appContent, /'Phase No\. \/ Name',/);
+});
+
+test('20. PTM Sheet: "Phase No. / Name" column has dropdown with 5 APQP phases & "Other" manual input', () => {
+  const tablePath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/ptm/PTM/PTMTable.jsx');
+  const tableContent = fs.readFileSync(tablePath, 'utf8');
+
+  // Header has "Phase No. / Name"
+  assert.match(tableContent, /<span>Phase No\. \/ Name<\/span>/);
+
+  // Dropdown options include 1 to 5 and Other
+  assert.ok(PTM_PHASE_OPTIONS.includes('1: Plan & Define'));
+  assert.ok(PTM_PHASE_OPTIONS.includes('2: Product & Process Design'));
+  assert.ok(PTM_PHASE_OPTIONS.includes('3: Product & Process Development'));
+  assert.ok(PTM_PHASE_OPTIONS.includes('4: Product & Process Validation'));
+  assert.ok(PTM_PHASE_OPTIONS.includes('5: Feedback & Corrective Action'));
+  assert.ok(PTM_PHASE_OPTIONS.includes('Other'));
+
+  // Table has select dropdown for phases and manual input fallback for Other
+  assert.match(tableContent, /1: Plan & Define/);
+  assert.match(tableContent, /Other \.\.\.\.\. \(Manual input\)/);
+  assert.match(tableContent, /Enter custom phase\.\.\./);
+});
+
+test('21. PTM Sheet: Deliverable Required defaults to "Yes", manual format input removed, 3-option Upload Modal integrated', () => {
+  const tablePath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/ptm/PTM/PTMTable.jsx');
+  const tableContent = fs.readFileSync(tablePath, 'utf8');
+
+  // Dropdown default value is Yes
+  assert.match(tableContent, /row\.deliverableRequired \|\| 'Yes'/);
+
+  // Manual input placeholder "Format No." removed
+  assert.doesNotMatch(tableContent, /placeholder="Format No\."/);
+
+  // Upload button and modal are present
+  assert.match(tableContent, /<PTMDeliverableUploadModal/);
+  assert.match(tableContent, /setDeliverableModal/);
+  assert.match(tableContent, /handleDeliverableUploadSuccess/);
+
+  // Verify modal component has exactly 3 upload options: Image, PDF, Excel (no PPT or Video)
+  const modalPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/ptm/PTM/PTMDeliverableUploadModal.jsx');
+  const modalContent = fs.readFileSync(modalPath, 'utf8');
+  assert.match(modalContent, /Upload Image/);
+  assert.match(modalContent, /Upload PDF/);
+  assert.match(modalContent, /Upload Excel/);
+  assert.doesNotMatch(modalContent, /Upload PPT/);
+  assert.doesNotMatch(modalContent, /Upload Video/);
+});
+
+test('22. PTM Sheet: "Revised Date (If MISS)" column is completely removed', () => {
+  const tablePath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/ptm/PTM/PTMTable.jsx');
+  const tableContent = fs.readFileSync(tablePath, 'utf8');
+
+  // Header does not have Revised Date (If MISS)
+  assert.doesNotMatch(tableContent, /Revised Date \(If MISS\)/);
+
+  // Body cell does not have revisedDate CalendarDateInput
+  assert.doesNotMatch(tableContent, /data-col="revisedDate"/);
+
+  // CSV export does not have Revised Date
+  const appPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/pages/ptm/App.jsx');
+  const appContent = fs.readFileSync(appPath, 'utf8');
+  assert.doesNotMatch(appContent, /'Revised Date',/);
+});
+
+
 
 
 

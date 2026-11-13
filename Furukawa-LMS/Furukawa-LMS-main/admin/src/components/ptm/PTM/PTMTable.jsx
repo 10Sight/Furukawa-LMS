@@ -18,6 +18,17 @@ import {
   getDepartmentsForUnit
 } from '../../../pages/pdca/data/pdcaConstants.js';
 import { apqpApi } from '../../services/api';
+import PTMDeliverableUploadModal from './PTMDeliverableUploadModal';
+import {
+  PTM_STATUS_OPTIONS,
+  PTM_PHASE_OPTIONS,
+  normalizePtmStatus,
+  normalizeDateToYMD,
+  getFormattedCurrentDate,
+  getTodayYMD,
+  getRowRevisions,
+  evaluatePtmRowStatus,
+} from '../../../pages/ptm/data/ptmRecordFilters.js';
 import {
   Plus,
   Trash2,
@@ -31,7 +42,11 @@ import {
   Clock,
   X,
   Search,
-  User
+  User,
+  Upload,
+  FileText,
+  FileSpreadsheet,
+  Image as ImageIcon
 } from 'lucide-react';
 
 const DEPARTMENTS = [
@@ -100,7 +115,7 @@ const revisedDateFromDuration = (startDate, duration) => {
 
 const DEFAULT_ACTION_COLUMN_WIDTH = 120;
 const MIN_ACTION_COLUMN_WIDTH = 100;
-const STATUS_COLUMN_WIDTH = 80;
+const STATUS_COLUMN_WIDTH = 95;
 const PHASE_NAME_COLUMN_WIDTH = 180;
 const DEFAULT_ROW_HEIGHT = 34;
 const MIN_ROW_HEIGHT = 34;
@@ -238,13 +253,17 @@ export default function PTMTable({
   const tableRef = useRef(null);
   const activeResizeRef = useRef(null);
   const [colWidths, setColWidths] = useState({
-    phaseName: 140,
+    phaseName: 240,
     customerEvent: 120,
     activity: 260,
     deliverable: 180,
     actionTaken: 140,
     remarks: 140,
     actions: DEFAULT_ACTION_COLUMN_WIDTH,
+  });
+  const [deliverableModal, setDeliverableModal] = useState({
+    isOpen: false,
+    rowIndex: null,
   });
   const [watchModal, setWatchModal] = useState({
     isOpen: false,
@@ -904,7 +923,7 @@ export default function PTMTable({
 
     setRows((prev) => {
       const updated = [...prev];
-      const row = { ...updated[rowIndex], [field]: val };
+      let row = { ...updated[rowIndex], [field]: val };
       if (field === 'noOfTimesRevised' && !isRevisedTaken(val)) {
         row.reasonOfFailure = '';
       }
@@ -920,6 +939,106 @@ export default function PTMTable({
       } else if (field === 'revisedDate') {
         row.revisedDateAuto = false;
       }
+
+      // Automated Status and HIT/MISS lifecycle evaluation
+      if (
+        field === 'startDateActual' ||
+        field === 'endDatePlan' ||
+        field === 'endDateActual' ||
+        field === 'revisedDate' ||
+        field === 'hitMiss'
+      ) {
+        if (field === 'hitMiss') {
+          if (val === 'HIT') row.status = 'Done';
+          else if (val === 'MISS') row.status = 'Delay';
+          else if (!val) row.status = row.revisedDate ? 'In-Progress' : 'Not-Started';
+        } else {
+          const evalRes = evaluatePtmRowStatus(row);
+          row.status = evalRes.status;
+          row.hitMiss = evalRes.hitMiss;
+        }
+
+        // When row enters Delay or MISS, initialize 1) current date revision if none exists
+        if (row.status === 'Delay' || row.hitMiss === 'MISS') {
+          const revs = getRowRevisions(row);
+          if (revs.length === 0) {
+            const firstRev = {
+              revisionNo: 1,
+              tag: `1) ${getFormattedCurrentDate()}`,
+              date: getFormattedCurrentDate(),
+              reasonOfFailure: row.reasonOfFailure || '',
+              actionTaken: row.actionTaken || ''
+            };
+            row.revisions = [firstRev];
+            row.noOfTimesRevised = firstRev.tag;
+          }
+        }
+      }
+
+      updated[rowIndex] = row;
+      return updated;
+    });
+  };
+
+  const handleAddRevision = (rowIndex) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const row = { ...updated[rowIndex] };
+      const currentRevs = getRowRevisions(row);
+      const nextNum = currentRevs.length + 1;
+      const todayTag = `${nextNum}) ${getFormattedCurrentDate()}`;
+      const newRev = {
+        revisionNo: nextNum,
+        tag: todayTag,
+        date: getFormattedCurrentDate(),
+        reasonOfFailure: '',
+        actionTaken: ''
+      };
+      const nextRevs = [...currentRevs, newRev];
+      row.revisions = nextRevs;
+      row.noOfTimesRevised = nextRevs.map(r => r.tag).join('\n');
+      row.reasonOfFailure = nextRevs.map(r => r.reasonOfFailure || '').join('\n');
+      row.actionTaken = nextRevs.map(r => r.actionTaken || '').join('\n');
+      updated[rowIndex] = row;
+      return updated;
+    });
+    if (showToast) showToast('✓ Added revision');
+  };
+
+  const handleRemoveRevision = (rowIndex, revIdx) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const row = { ...updated[rowIndex] };
+      const currentRevs = getRowRevisions(row);
+      const nextRevs = currentRevs.filter((_, idx) => idx !== revIdx).map((r, i) => ({
+        ...r,
+        revisionNo: i + 1,
+        tag: `${i + 1}) ${r.date || getFormattedCurrentDate()}`
+      }));
+      row.revisions = nextRevs;
+      row.noOfTimesRevised = nextRevs.map(r => r.tag).join('\n');
+      row.reasonOfFailure = nextRevs.map(r => r.reasonOfFailure || '').join('\n');
+      row.actionTaken = nextRevs.map(r => r.actionTaken || '').join('\n');
+      updated[rowIndex] = row;
+      return updated;
+    });
+  };
+
+  const handleRevisionCellChange = (rowIndex, revIdx, subField, val) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      const row = { ...updated[rowIndex] };
+      const currentRevs = getRowRevisions(row);
+      const nextRevs = currentRevs.map((r, idx) => {
+        if (idx === revIdx) {
+          return { ...r, [subField]: val };
+        }
+        return r;
+      });
+      row.revisions = nextRevs;
+      row.noOfTimesRevised = nextRevs.map(r => r.tag).join('\n');
+      row.reasonOfFailure = nextRevs.map(r => r.reasonOfFailure || '').join('\n');
+      row.actionTaken = nextRevs.map(r => r.actionTaken || '').join('\n');
       updated[rowIndex] = row;
       return updated;
     });
@@ -930,12 +1049,40 @@ export default function PTMTable({
       const updated = [...prev];
       updated[rowIndex] = {
         ...updated[rowIndex],
+        revisions: [],
         noOfTimesRevised: '',
         reasonOfFailure: '',
       };
       return updated;
     });
     if (showToast) showToast('No. of Times Revised removed');
+  };
+
+  const handleDeliverableUploadSuccess = (rowIndex, fileData) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      updated[rowIndex] = {
+        ...updated[rowIndex],
+        deliverableFile: fileData,
+        deliverable: fileData?.name || 'Attached',
+        deliverableRequired: 'Yes'
+      };
+      return updated;
+    });
+    if (showToast) showToast(`✓ Attached ${fileData.name}`);
+  };
+
+  const handleRemoveDeliverableFile = (rowIndex) => {
+    setRows((prev) => {
+      const updated = [...prev];
+      updated[rowIndex] = {
+        ...updated[rowIndex],
+        deliverableFile: null,
+        deliverable: ''
+      };
+      return updated;
+    });
+    if (showToast) showToast('Attachment removed');
   };
 
   const isChildRow = (row) => row.rowType === 'child' || (
@@ -1058,7 +1205,7 @@ export default function PTMTable({
       staffName: '',
       staffId: '',
       responsiblePersonDept: '',
-      status: 'Open',
+      status: 'Not-Started',
       remarks: '',
     };
 
@@ -1176,7 +1323,10 @@ export default function PTMTable({
     if (selectedUnit && selectedUnit !== 'All Units' && r.unit && r.unit !== 'Both' && r.unit !== selectedUnit) return false;
     // Keep the parent's Unhide control reachable even when the hidden group's values don't match filters.
     if (isParentRow(r) && areChildrenHidden(r)) return true;
-    if (phaseFilter && phaseFilter !== 'all' && r.phaseNo !== phaseFilter) return false;
+    if (phaseFilter && phaseFilter !== 'all') {
+      const match = String(r.phaseName || '').startsWith(phaseFilter) || String(r.phaseNo || '') === phaseFilter;
+      if (!match) return false;
+    }
     if (searchQuery && searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const match =
@@ -1221,9 +1371,6 @@ export default function PTMTable({
                 <th rowSpan={2} className="py-2 px-1 w-10 min-w-[36px] max-w-[42px] bg-[#EEF4FA] text-[#2C5282] whitespace-normal leading-tight text-center">
                   S.No
                 </th>
-                <th rowSpan={2} className="py-2 px-1 w-16 min-w-[58px] max-w-[64px] bg-[#EEF4FA] text-[#2C5282] whitespace-normal leading-tight text-center">
-                  Phase No.
-                </th>
                 <th
                   rowSpan={2}
                   className="relative py-2 px-2 bg-[#EEF4FA] text-[#2C5282] text-left whitespace-normal leading-tight"
@@ -1233,7 +1380,7 @@ export default function PTMTable({
                   }}
                 >
                   <div className="flex items-center justify-between pr-2">
-                    <span>Phase Name</span>
+                    <span>Phase No. / Name</span>
                   </div>
                   
                   <span
@@ -1368,7 +1515,7 @@ export default function PTMTable({
                   Start Date (Actual)
                 </th>
                 <th rowSpan={2} className="py-2 px-1 w-20 min-w-[78px] max-w-[84px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center text-xs sm:text-[12px]">
-                  End Date (Plan)
+                  End Date (Plan) <span className="text-red-500 font-bold">*</span>
                 </th>
                 <th rowSpan={2} className="py-2 px-1 w-20 min-w-[78px] max-w-[84px] bg-[#EFF3FA] text-[#2B6CB0] whitespace-normal leading-tight text-center text-xs sm:text-[12px]">
                   End Date (Actual)
@@ -1378,12 +1525,9 @@ export default function PTMTable({
                 <th rowSpan={2} className="py-2 px-1 w-16 min-w-[64px] max-w-[70px] bg-[#EAF5EC] text-[#276749] whitespace-normal leading-tight text-center">
                   HIT/MISS
                 </th>
-                <th rowSpan={2} className="py-2 px-1 w-20 min-w-[78px] bg-[#EAF5EC] text-[#276749] whitespace-normal leading-tight text-center">
-                  Revised Date (If MISS)
-                </th>
 
                 {/* Group 8 Columns (Pastel Rose tint) */}
-                <th rowSpan={2} className="py-2 px-1 w-14 min-w-[50px] bg-[#FDF2F2] text-[#9B1C1C] whitespace-normal leading-tight text-center">
+                <th rowSpan={2} className="py-2 px-1 w-28 min-w-[105px] bg-[#FDF2F2] text-[#9B1C1C] whitespace-normal leading-tight text-center">
                   No. of Times Revised
                 </th>
                 <th rowSpan={2} className="py-2 px-2 w-48 min-w-[140px] max-w-[200px] bg-[#FDF2F2] text-[#9B1C1C] text-left whitespace-normal leading-tight">
@@ -1508,7 +1652,7 @@ export default function PTMTable({
               {filteredRows.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={27 + DEPARTMENTS.length}
+                    colSpan={25 + DEPARTMENTS.length}
                     className="py-12 text-center text-slate-400 font-medium"
                   >
                     No matching rows found.
@@ -1535,7 +1679,7 @@ export default function PTMTable({
                       >
                         {isChildRow(row) ? (
                           <td
-                            colSpan={3}
+                            colSpan={2}
                             className="bg-slate-50/60"
                             style={{
                               borderTopStyle: hideChildTopLine ? 'hidden' : undefined,
@@ -1550,25 +1694,7 @@ export default function PTMTable({
                               {getRowSerial(row, originalIndex)}
                             </td>
 
-                            {/* 1. Phase No. — DROPDOWN with chevron */}
-                            <td className="p-0 text-center relative bg-slate-50/20">
-                              <div className="relative flex items-center justify-center">
-                                <select
-                                  value={row.addedFrom === 'filters' && !row.phaseNo ? '' : row.phaseNo || '1'}
-                                  onChange={(e) => handleCellChange(originalIndex, 'phaseNo', e.target.value)}
-                                  className="appearance-none w-full bg-transparent text-center font-bold text-slate-800 pr-5 pl-2 py-2 text-sm outline-none cursor-pointer hover:bg-blue-50/50 transition-colors"
-                                >
-                                  {row.addedFrom === 'filters' && !row.phaseNo && <option value="">—</option>}
-                                  {Array.from({ length: 25 }, (_, phaseIndex) => {
-                                    const phaseNumber = String(phaseIndex + 1);
-                                    return <option key={phaseNumber} value={phaseNumber}>{phaseNumber}</option>;
-                                  })}
-                                </select>
-                                <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-1.5 pointer-events-none" />
-                              </div>
-                            </td>
-
-                            {/* 2. Phase Name — manual input (no search dropdown, resizable width) */}
+                            {/* Phase No. / Name — DROPDOWN (1-5 & Other Manual Input) */}
                             <td
                               className="p-0 relative"
                               style={{
@@ -1576,16 +1702,72 @@ export default function PTMTable({
                                 minWidth: `${colWidths.phaseName}px`,
                               }}
                             >
-                              <ManualInputBox
-                                value={row.phaseName || ''}
-                                noDropdown={true}
-                                onChange={(event) => handleCellChange(originalIndex, 'phaseName', event.target.value)}
-                                onKeyDown={(event) => handleKeyDown(event, originalIndex, 'phaseName')}
-                                data-row={originalIndex}
-                                data-col="phaseName"
-                                placeholder="Phase Name..."
-                                className="w-full py-2 px-2 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm"
-                              />
+                              {(() => {
+                                const PRESET_PHASES = [
+                                  '1: Plan & Define',
+                                  '2: Product & Process Design',
+                                  '3: Product & Process Development',
+                                  '4: Product & Process Validation',
+                                  '5: Feedback & Corrective Action'
+                                ];
+                                const curVal = row.phaseName || '';
+                                const isPreset = PRESET_PHASES.includes(curVal) || curVal === '5: Feedback % Corrective Action';
+                                const isCustomMode = row._customPhase || (!isPreset && Boolean(curVal));
+
+                                if (isCustomMode) {
+                                  return (
+                                    <div className="flex items-center gap-1 w-full h-full px-1">
+                                      <ManualInputBox
+                                        value={curVal}
+                                        noDropdown={true}
+                                        onChange={(event) => handleCellChange(originalIndex, 'phaseName', event.target.value)}
+                                        onKeyDown={(event) => handleKeyDown(event, originalIndex, 'phaseName')}
+                                        data-row={originalIndex}
+                                        data-col="phaseName"
+                                        placeholder="Enter custom phase..."
+                                        className="w-full py-1.5 px-2 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          handleCellChange(originalIndex, '_customPhase', false);
+                                          handleCellChange(originalIndex, 'phaseName', PRESET_PHASES[0]);
+                                        }}
+                                        className="shrink-0 p-1 text-slate-400 hover:text-blue-600 rounded cursor-pointer"
+                                        title="Switch back to predefined phase dropdown"
+                                      >
+                                        <ChevronDown className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  );
+                                }
+
+                                return (
+                                  <div className="relative flex items-center justify-between w-full h-full px-1">
+                                    <select
+                                      value={isPreset ? curVal : (curVal ? 'Other' : '')}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        if (val === 'Other') {
+                                          handleCellChange(originalIndex, '_customPhase', true);
+                                          handleCellChange(originalIndex, 'phaseName', '');
+                                        } else {
+                                          handleCellChange(originalIndex, '_customPhase', false);
+                                          handleCellChange(originalIndex, 'phaseName', val);
+                                        }
+                                      }}
+                                      className="appearance-none w-full bg-transparent text-left font-semibold text-slate-800 pr-6 pl-1 py-2 text-xs sm:text-sm outline-none cursor-pointer hover:bg-blue-50/50 transition-colors"
+                                    >
+                                      <option value="">Select Phase...</option>
+                                      {PRESET_PHASES.map((p) => (
+                                        <option key={p} value={p}>{p}</option>
+                                      ))}
+                                      <option value="Other">Other ..... (Manual input)</option>
+                                    </select>
+                                    <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" />
+                                  </div>
+                                );
+                              })()}
                             </td>
                           </>
                         )}
@@ -1760,7 +1942,7 @@ export default function PTMTable({
                           );
                         })}
 
-                        {/* 19. Deliverable Required — Yes/No selector & manual format number without search dropdown */}
+                        {/* 19. Deliverable Required — Yes/No selector & Upload File Section with 3-Option Popup */}
                         <td
                           className="p-0"
                           style={{
@@ -1768,27 +1950,67 @@ export default function PTMTable({
                             minWidth: `${colWidths.deliverable}px`,
                           }}
                         >
-                          <div className="flex min-w-0 items-center gap-1 px-1">
+                          <div className="flex min-w-0 items-center justify-between gap-1.5 px-2 py-1">
                             <select
-                              value={row.deliverableRequired || (row.deliverable ? 'Yes' : 'No')}
+                              value={row.deliverableRequired || 'Yes'}
                               onChange={(e) => handleCellChange(originalIndex, 'deliverableRequired', e.target.value)}
                               aria-label="Deliverable required"
-                              className="w-[58px] shrink-0 rounded border border-[#64748B] bg-white px-1 py-1 text-center text-xs sm:text-sm font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                              className="w-[54px] shrink-0 rounded border border-[#64748B] bg-white px-1 py-1 text-center text-xs sm:text-sm font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 cursor-pointer"
                             >
                               <option value="Yes">Yes</option>
                               <option value="No">No</option>
                             </select>
-                            <ManualInputBox
-                              value={row.deliverable || ''}
-                              noDropdown={true}
-                              onChange={(e) => handleCellChange(originalIndex, 'deliverable', e.target.value)}
-                              onKeyDown={(e) => handleKeyDown(e, originalIndex, 'deliverable')}
-                              data-row={originalIndex}
-                              data-col="deliverable"
-                              placeholder="Format No."
-                              disabled={(row.deliverableRequired || (row.deliverable ? 'Yes' : 'No')) === 'No'}
-                              className={`min-w-0 flex-1 py-1.5 px-1.5 text-slate-800 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm truncate ${(row.deliverableRequired || (row.deliverable ? 'Yes' : 'No')) === 'No' ? 'cursor-not-allowed opacity-50' : ''}`}
-                            />
+
+                            {(row.deliverableRequired || 'Yes') === 'Yes' ? (
+                              row.deliverableFile ? (
+                                <div className="flex min-w-0 flex-1 items-center justify-between gap-1 rounded bg-blue-50/90 border border-blue-200 px-1.5 py-0.5" title={row.deliverableFile.name}>
+                                  <div className="flex items-center gap-1 min-w-0 truncate">
+                                    {row.deliverableFile.type === 'pdf' ? (
+                                      <FileText className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                                    ) : row.deliverableFile.type === 'excel' ? (
+                                      <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                    ) : (
+                                      <ImageIcon className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                                    )}
+                                    {row.deliverableFile.url ? (
+                                      <a
+                                        href={row.deliverableFile.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        download={row.deliverableFile.name}
+                                        className="text-xs font-semibold text-blue-700 hover:underline truncate"
+                                      >
+                                        {row.deliverableFile.name}
+                                      </a>
+                                    ) : (
+                                      <span className="text-xs font-semibold text-blue-700 truncate">
+                                        {row.deliverableFile.name}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveDeliverableFile(originalIndex)}
+                                    title="Remove attachment"
+                                    className="p-0.5 rounded text-slate-400 hover:text-rose-600 cursor-pointer shrink-0"
+                                  >
+                                    <X className="w-3 h-3 stroke-[2.5]" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setDeliverableModal({ isOpen: true, rowIndex: originalIndex })}
+                                  className="flex items-center gap-1 px-2.5 py-1 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold cursor-pointer transition-colors shadow-2xs"
+                                  title="Upload Deliverable (Image, PDF, Excel)"
+                                >
+                                  <Upload className="w-3.5 h-3.5" />
+                                  <span>Upload</span>
+                                </button>
+                              )
+                            ) : (
+                              <span className="text-xs text-slate-400 italic px-1">Not required</span>
+                            )}
                           </div>
                         </td>
 
@@ -1879,124 +2101,186 @@ export default function PTMTable({
                           </div>
                         </td>
 
-                        {/* 26. Revised Date (If MISS) */}
-                        <td className="p-0 text-center">
-                          <CalendarDateInput
-                            value={row.revisedDate || ''}
-                            onChange={(e) => handleCellChange(originalIndex, 'revisedDate', e.target.value)}
-                            onKeyDown={(e) => handleKeyDown(e, originalIndex, 'revisedDate')}
-                            data-row={originalIndex}
-                            data-col="revisedDate"
-                            placeholder="—"
-                            className="w-full text-center py-2 px-1 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm font-mono"
-                          />
-                        </td>
+                        {/* 27, 28, 29: No. of Times Revised, Reason of Failure, Action Taken Against Failure */}
+                        {(() => {
+                          const revisions = getRowRevisions(row);
+                          const isDelayOrMiss = row.status === 'Delay' || row.hitMiss === 'MISS';
 
-                        {/* 27. No. of Times Revised */}
-                        <td className="p-0 text-center relative">
-                          <div className="relative flex items-center">
-                            <div className="min-w-0 flex-1">
-                              <ManualInputBox
-                                value={row.noOfTimesRevised || ''}
-                                onChange={(e) => handleCellChange(originalIndex, 'noOfTimesRevised', e.target.value)}
-                                onOptionSelect={(selectedVal) => {
-                                  if (isRevisedTaken(selectedVal)) {
-                                    setTimeout(() => {
-                                      const reasonEl = document.querySelector(
-                                        `[data-row="${originalIndex}"][data-col="reasonOfFailure"]`
-                                      );
-                                      reasonEl?.focus();
-                                    }, 50);
-                                  }
-                                }}
-                                onKeyDown={(e) => {
-                                  if (
-                                    e.key === 'Enter' &&
-                                    !e.shiftKey &&
-                                    isRevisedTaken(row.noOfTimesRevised) &&
-                                    !String(row.reasonOfFailure || '').trim()
-                                  ) {
-                                    e.preventDefault();
-                                    const reasonEl = document.querySelector(
-                                      `[data-row="${originalIndex}"][data-col="reasonOfFailure"]`
-                                    );
-                                    reasonEl?.focus();
-                                    return;
-                                  }
-                                  handleKeyDown(e, originalIndex, 'noOfTimesRevised');
-                                }}
-                                data-row={originalIndex}
-                                data-col="noOfTimesRevised"
-                                placeholder="0"
-                                className={`w-full text-center py-2 ${isRevisedTaken(row.noOfTimesRevised) ? 'pl-1 pr-5 font-semibold text-rose-800' : 'px-1 text-slate-700'} bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm`}
-                              />
-                            </div>
-                            {isRevisedTaken(row.noOfTimesRevised) && (
-                              <button
-                                type="button"
-                                onClick={() => clearRevision(originalIndex)}
-                                title="Remove No. of Times Revised"
-                                aria-label="Remove No. of Times Revised"
-                                className="absolute right-0.5 top-1/2 -translate-y-1/2 z-10 flex h-4 w-4 items-center justify-center rounded-full bg-rose-100 text-rose-700 hover:bg-rose-600 hover:text-white transition-colors cursor-pointer"
+                          // If multiple revisions taken, subdivide into multiple horizontal cells
+                          if (revisions.length > 1) {
+                            return (
+                              <td
+                                colSpan={3}
+                                className="p-0 align-middle text-center bg-white group-hover/row:bg-[#F8FAFC]"
                               >
-                                <X className="h-3 w-3 stroke-[2.5]" />
-                              </button>
-                            )}
-                          </div>
-                        </td>
+                                <div className="flex flex-col w-full h-full divide-y divide-[#CBD5E1]">
+                                  {revisions.map((rev, revIdx) => (
+                                    <div
+                                      key={`rev-${rev.revisionNo || revIdx}-${revIdx}`}
+                                      className="flex w-full items-stretch divide-x divide-[#CBD5E1] min-h-[34px]"
+                                    >
+                                      {/* 27. No. of Times Revised child cell */}
+                                      <div className="w-28 min-w-[105px] shrink-0 flex items-center justify-between px-1.5 py-1 bg-white hover:bg-slate-50 transition-colors">
+                                        <span className="text-xs font-semibold text-rose-800 font-mono">
+                                          {rev.tag || `${revIdx + 1}) ${rev.date || getFormattedCurrentDate()}`}
+                                        </span>
+                                        <div className="flex items-center gap-0.5">
+                                          {revIdx === revisions.length - 1 && (
+                                            <button
+                                              type="button"
+                                              onClick={() => handleAddRevision(originalIndex)}
+                                              title="Add another revision"
+                                              className="p-0.5 text-slate-400 hover:text-blue-600 rounded cursor-pointer"
+                                            >
+                                              <Plus className="w-3.5 h-3.5" />
+                                            </button>
+                                          )}
+                                          <button
+                                            type="button"
+                                            onClick={() => handleRemoveRevision(originalIndex, revIdx)}
+                                            title="Remove revision"
+                                            className="p-0.5 text-slate-400 hover:text-rose-600 rounded cursor-pointer"
+                                          >
+                                            <X className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
+                                      </div>
 
-                        {/* 28. Reason of Failure */}
-                        <td className="p-0">
-                          <ManualInputBox
-                            value={row.reasonOfFailure || ''}
-                            onChange={(e) => handleCellChange(originalIndex, 'reasonOfFailure', e.target.value)}
-                            onKeyDown={(e) => handleKeyDown(e, originalIndex, 'reasonOfFailure')}
-                            readOnly={!isRevisedTaken(row.noOfTimesRevised)}
-                            onDisabledClick={() => {
-                              if (showToast) {
-                                showToast('⚠️ Reason of Failure can only be selected when No. of Times Revised is taken');
-                              }
-                            }}
-                            data-row={originalIndex}
-                            data-col="reasonOfFailure"
-                            placeholder={
-                              isRevisedTaken(row.noOfTimesRevised)
-                                ? 'Enter Reason of Failure *'
-                                : 'Select No. of Times Revised first'
-                            }
-                            title={
-                              isRevisedTaken(row.noOfTimesRevised)
-                                ? 'Select or enter Reason of Failure'
-                                : 'Select No. of Times Revised first to enable Reason of Failure'
-                            }
-                            className={`w-full py-2 px-2 text-sm outline-none ${!isRevisedTaken(row.noOfTimesRevised)
-                              ? 'bg-slate-50/70 text-slate-400 cursor-not-allowed placeholder:text-slate-400'
-                              : !String(row.reasonOfFailure || '').trim()
-                                ? 'bg-rose-50/70 text-slate-800 ring-1 ring-inset ring-rose-400 placeholder:text-rose-600 placeholder:font-semibold focus:bg-amber-50 focus:ring-blue-500'
-                                : 'bg-transparent text-slate-700 focus:bg-amber-50 focus:ring-1 focus:ring-blue-500'
-                              }`}
-                          />
-                        </td>
+                                      {/* 28. Reason of Failure child cell */}
+                                      <div className="w-48 min-w-[140px] max-w-[200px] flex-1 flex items-center p-0">
+                                        <ManualInputBox
+                                          value={rev.reasonOfFailure || ''}
+                                          onChange={(e) => handleRevisionCellChange(originalIndex, revIdx, 'reasonOfFailure', e.target.value)}
+                                          placeholder={`Reason of failure ${rev.revisionNo || revIdx + 1} *`}
+                                          className={`w-full py-1.5 px-2 text-xs sm:text-sm outline-none ${
+                                            !String(rev.reasonOfFailure || '').trim()
+                                              ? 'bg-rose-50/70 text-slate-800 ring-1 ring-inset ring-rose-400 placeholder:text-rose-600 placeholder:font-semibold focus:bg-amber-50 focus:ring-blue-500'
+                                              : 'bg-transparent text-slate-700 focus:bg-amber-50 focus:ring-1 focus:ring-blue-500'
+                                          }`}
+                                        />
+                                      </div>
 
-                        {/* 29. Action Taken Against Failure — Manual input (no search dropdown, resizable width) */}
-                        <td
-                          className="p-0"
-                          style={{
-                            width: `${colWidths.actionTaken}px`,
-                            minWidth: `${colWidths.actionTaken}px`,
-                          }}
-                        >
-                          <ManualInputBox
-                            value={row.actionTaken || ''}
-                            noDropdown={true}
-                            onChange={(e) => handleCellChange(originalIndex, 'actionTaken', e.target.value)}
-                            onKeyDown={(e) => handleKeyDown(e, originalIndex, 'actionTaken')}
-                            data-row={originalIndex}
-                            data-col="actionTaken"
-                            placeholder="Action taken..."
-                            className="w-full py-2 px-2 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm"
-                          />
-                        </td>
+                                      {/* 29. Action Taken Against Failure child cell */}
+                                      <div
+                                        style={{
+                                          width: `${colWidths.actionTaken}px`,
+                                          minWidth: `${colWidths.actionTaken}px`,
+                                        }}
+                                        className="shrink-0 flex items-center p-0"
+                                      >
+                                        <ManualInputBox
+                                          value={rev.actionTaken || ''}
+                                          noDropdown={true}
+                                          onChange={(e) => handleRevisionCellChange(originalIndex, revIdx, 'actionTaken', e.target.value)}
+                                          data-row={originalIndex}
+                                          data-col="actionTaken"
+                                          placeholder={`Action taken ${rev.revisionNo || revIdx + 1}...`}
+                                          className="w-full py-1.5 px-2 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs sm:text-sm"
+                                        />
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </td>
+                            );
+                          }
+
+                          // Single or zero revisions case
+                          const singleRev = revisions[0] || null;
+                          const revText = singleRev ? singleRev.tag : (row.noOfTimesRevised || '');
+
+                          return (
+                            <>
+                              {/* 27. No. of Times Revised */}
+                              <td className="p-0 text-center relative w-28 min-w-[105px]">
+                                <div className="relative flex items-center justify-between px-1">
+                                  <div className="min-w-0 flex-1">
+                                    <ManualInputBox
+                                      value={revText || ''}
+                                      onChange={(e) => handleCellChange(originalIndex, 'noOfTimesRevised', e.target.value)}
+                                      placeholder={isDelayOrMiss ? '1) DD-MM-YY *' : '0'}
+                                      className={`w-full text-center py-2 px-1 text-xs sm:text-sm ${
+                                        revText
+                                          ? 'font-semibold text-rose-800'
+                                          : isDelayOrMiss
+                                            ? 'bg-rose-50/70 ring-1 ring-inset ring-rose-400 placeholder:text-rose-600 font-semibold'
+                                            : 'text-slate-700'
+                                      } bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500`}
+                                    />
+                                  </div>
+                                  <div className="flex items-center gap-0.5 shrink-0">
+                                    {revText ? (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleAddRevision(originalIndex)}
+                                          title="Add 2nd revision"
+                                          className="p-0.5 text-slate-400 hover:text-blue-600 rounded cursor-pointer"
+                                        >
+                                          <Plus className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => clearRevision(originalIndex)}
+                                          title="Remove revision"
+                                          className="p-0.5 text-slate-400 hover:text-rose-600 rounded cursor-pointer"
+                                        >
+                                          <X className="w-3.5 h-3.5" />
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleAddRevision(originalIndex)}
+                                        title="Add revision"
+                                        className="p-0.5 text-slate-400 hover:text-blue-600 rounded cursor-pointer"
+                                      >
+                                        <Plus className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+
+                              {/* 28. Reason of Failure */}
+                              <td className="p-0 w-48 min-w-[140px] max-w-[200px]">
+                                <ManualInputBox
+                                  value={row.reasonOfFailure || ''}
+                                  onChange={(e) => handleCellChange(originalIndex, 'reasonOfFailure', e.target.value)}
+                                  placeholder={
+                                    isDelayOrMiss || revText
+                                      ? 'Enter Reason of Failure *'
+                                      : 'Reason of failure...'
+                                  }
+                                  className={`w-full py-2 px-2 text-xs sm:text-sm outline-none ${
+                                    (isDelayOrMiss || revText) && !String(row.reasonOfFailure || '').trim()
+                                      ? 'bg-rose-50/70 text-slate-800 ring-1 ring-inset ring-rose-400 placeholder:text-rose-600 placeholder:font-semibold focus:bg-amber-50 focus:ring-blue-500'
+                                      : 'bg-transparent text-slate-700 focus:bg-amber-50 focus:ring-1 focus:ring-blue-500'
+                                  }`}
+                                />
+                              </td>
+
+                              {/* 29. Action Taken Against Failure */}
+                              <td
+                                className="p-0"
+                                style={{
+                                  width: `${colWidths.actionTaken}px`,
+                                  minWidth: `${colWidths.actionTaken}px`,
+                                }}
+                              >
+                                <ManualInputBox
+                                  value={row.actionTaken || ''}
+                                  noDropdown={true}
+                                  onChange={(e) => handleCellChange(originalIndex, 'actionTaken', e.target.value)}
+                                  data-row={originalIndex}
+                                  data-col="actionTaken"
+                                  placeholder="Action taken..."
+                                  className="w-full py-2 px-2 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-xs sm:text-sm"
+                                />
+                              </td>
+                            </>
+                          );
+                        })()}
 
                         {/* Responsible Person: When both units chosen, parent cell divided horizontally into Bawal and Gujrat parts */}
                         {(() => {
@@ -2422,7 +2706,7 @@ export default function PTMTable({
                           );
                         })()}
 
-                        {/* 30. Status (Open/Closed) — Compact width */}
+                        {/* 30. Status (Not-Started / In-Progress / Done / Delay) — View-only freeze */}
                         <td
                           className="p-0.5 text-center relative"
                           style={{
@@ -2431,26 +2715,31 @@ export default function PTMTable({
                           }}
                         >
                           <div className="relative flex items-center justify-center">
-                            <select
-                              value={row.addedFrom === 'filters' && !row.status ? '' : row.status || 'Open'}
-                              onChange={(e) => handleCellChange(originalIndex, 'status', e.target.value)}
-                              className={`appearance-none w-full py-1 pr-3.5 pl-1 rounded text-center text-xs sm:text-sm font-semibold cursor-pointer outline-none transition-colors ${row.addedFrom === 'filters' && !row.status
-                                ? 'bg-transparent text-slate-500 border border-transparent'
-                                : row.status === 'Closed'
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                  : row.status === 'In Progress'
-                                    ? 'bg-yellow-50 text-yellow-800 border border-yellow-200'
-                                    : row.status === 'Delay'
-                                      ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                                      : 'bg-blue-50 text-blue-800 border border-blue-300'
-                                }`}
-                            >
-                              {row.addedFrom === 'filters' && !row.status && <option value="">—</option>}
-                              <option value="Open">Open</option>
-                              <option value="In Progress" className="bg-yellow-50 text-yellow-800">In Progress</option>
-                              <option value="Closed">Closed</option>
-                              <option value="Delay" className="bg-rose-50 text-rose-700">Delay</option>
-                            </select>
+                            {(() => {
+                              const currentStatus = normalizePtmStatus(row.status || 'Not-Started');
+                              return (
+                                <select
+                                  disabled
+                                  value={currentStatus}
+                                  className={`appearance-none w-full py-1 pr-3.5 pl-1 rounded text-center text-xs sm:text-sm font-semibold outline-none pointer-events-none cursor-default select-none border transition-colors ${
+                                    currentStatus === 'Done'
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                                      : currentStatus === 'In-Progress'
+                                        ? 'bg-yellow-50 text-yellow-800 border-yellow-300'
+                                        : currentStatus === 'Delay'
+                                          ? 'bg-rose-50 text-rose-700 border-rose-300'
+                                          : 'bg-blue-50 text-blue-800 border-blue-300'
+                                  }`}
+                                  title="Status is automatically determined and view-only"
+                                >
+                                  {PTM_STATUS_OPTIONS.map((opt) => (
+                                    <option key={opt.value} value={opt.value} className={opt.color}>
+                                      {opt.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              );
+                            })()}
                             <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 pointer-events-none" />
                           </div>
                         </td>
@@ -2715,6 +3004,18 @@ export default function PTMTable({
         initialEmployees={staffEmployeeModal.initialEmployees}
         onSave={staffEmployeeModal.department ? handleSaveDepartmentStaff : handleSaveStaffEmployee}
         onClose={() => setStaffEmployeeModal({ isOpen: false, rowIndex: null, unit: null, department: null, initialValue: '', initialEmployees: [] })}
+      />
+
+      {/* Deliverable File Upload Modal (3 options: Image, PDF, Excel) */}
+      <PTMDeliverableUploadModal
+        isOpen={deliverableModal.isOpen}
+        rowIndex={deliverableModal.rowIndex}
+        onClose={() => setDeliverableModal({ isOpen: false, rowIndex: null })}
+        onUploadSuccess={(fileData) => {
+          if (deliverableModal.rowIndex !== null) {
+            handleDeliverableUploadSuccess(deliverableModal.rowIndex, fileData);
+          }
+        }}
       />
 
       {/* Table Footer: Total Rows & Add Row button */}

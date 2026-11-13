@@ -1117,6 +1117,11 @@ test('22. Confirmation Column Spread & Reason Persistence Rule (ResponsiblePerso
 
   // Case 5: Select... without reason -> NO partition
   assert.equal(shouldPartition('', ''), false, 'Empty selection has no partition');
+
+  // Verify visible printing of person's name above Confirm / Not-Confirm dropdown
+  assert.ok(cellCode.includes('{(isConfirmed || isNotConfirmed) && confirmedBy ? ('), 'Must render confirmed person name when confirmed or not-confirmed');
+  assert.ok(cellCode.includes('{confirmedBy}'), 'Must display confirmedBy name text');
+  assert.ok(cellCode.includes('title={`Confirmed by ${confirmedBy}`}'), 'Must set title tooltip on person name');
 });
 
 test('23. Responsible Person: 4 Columns (Unit, Dept, Staff Name, CFT) Divided in Two Parts for Both Units', () => {

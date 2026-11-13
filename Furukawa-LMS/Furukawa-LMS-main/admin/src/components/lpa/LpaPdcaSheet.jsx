@@ -3017,6 +3017,7 @@ export default function LpaPdcaSheet({
                             }}
                             reasonRequired={missingConfirmationReasonIndices.includes(idx)}
                             currentUser={effectiveUser}
+                            creatorName={topic?.createdBy?.name || topic?.createdBy || topic?.topicCreatedBy || effectiveUser?.name}
                             readOnly={!canConfirmDefault}
                             missingMandatoryFields={getMissingConfirmationMandatoryFields(row)}
                             onConfirmationChange={(val, uName) => handleConfirmationChange(idx, val, uName)}

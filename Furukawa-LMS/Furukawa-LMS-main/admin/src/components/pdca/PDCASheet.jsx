@@ -7458,9 +7458,10 @@ export default function PDCASheet({
                             else delete responsibleConfirmationSelectRefs.current[idx];
                           }}
                           reasonRequired={missingRequiredInputs.some((item) => item.type === 'confirmation' && item.rowIndex === idx)}
-                          currentUser={effectiveUser} /*
-                          readOnly={!canEditEntireRow}
-                          */ readOnly={!canConfirmDefault} missingMandatoryFields={getMissingConfirmationMandatoryFields(row)}
+                          currentUser={effectiveUser}
+                          creatorName={headerInfo?.preparedBy || topic?.createdBy?.name || topic?.createdBy || topic?.topicCreatedBy || effectiveUser?.name}
+                          readOnly={!canConfirmDefault}
+                          missingMandatoryFields={getMissingConfirmationMandatoryFields(row)}
                           onConfirmationChange={(val, uName) => handleConfirmationChange(idx, val, uName)}
                           onInstructionChange={(text) => handleInstructionChange(idx, text)}
                           sNo={sNo}

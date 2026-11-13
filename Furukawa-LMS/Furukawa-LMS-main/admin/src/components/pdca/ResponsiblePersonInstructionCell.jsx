@@ -22,13 +22,14 @@ export default function ResponsiblePersonInstructionCell({
   confirmationRef,
   reasonRequired = false,
   currentUser,
+  creatorName = '',
   readOnly = false,
   missingMandatoryFields = [],
   onConfirmationChange,
   onInstructionChange,
   sNo = 1
 }) {
-  const currentUserName = currentUser?.fullName || currentUser?.name || 'Administrator';
+  const currentUserName = currentUser?.fullName || currentUser?.name || creatorName || 'Administrator';
   const currentConfirmation = (row.confirmation || (
     row.responsiblePersonConfirmation === 'Confirmed' ||
     row.responsiblePersonConfirmation === 'Confirm' ||
@@ -81,6 +82,18 @@ export default function ResponsiblePersonInstructionCell({
 
   return (
     <div className="w-full flex flex-col items-start p-1 justify-center">
+      {/* Name of the Person who selected Confirmation */}
+      {(isConfirmed || isNotConfirmed) && confirmedBy ? (
+        <div className="w-full mb-1 px-0.5 text-left">
+          <span
+            className="text-[12px] sm:text-[13px] font-bold text-slate-800 tracking-tight block truncate select-text"
+            title={`Confirmed by ${confirmedBy}`}
+          >
+            {confirmedBy}
+          </span>
+        </div>
+      ) : null}
+
       {/* 1. Dropdown: Select..., Confirmed, Not - Confirmed */}
       <div className="relative w-full">
         <select

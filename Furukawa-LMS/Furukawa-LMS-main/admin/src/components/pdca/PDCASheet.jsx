@@ -424,11 +424,13 @@ function AutoWidthInput({
       data-required-action-allowed={dataRequiredActionAllowed ? 'true' : undefined}
       style={{
         width: '100%',
-        minWidth: '100px',
+        minWidth: '0',
+        maxWidth: '100%',
         resize: 'none',
         overflowY: 'hidden',
         whiteSpace: 'pre-wrap',
         wordBreak: 'break-word',
+        overflowWrap: 'anywhere',
         lineHeight: '1.25'
       }}
       className={className || "w-full text-[13px] font-medium text-slate-800 bg-white border border-slate-300 focus:border-blue-500 rounded px-2 py-1 text-left shadow-2xs focus:outline-none"}
@@ -5204,7 +5206,11 @@ export default function PDCASheet({
     const calculatedDeptWidth = Math.min(MAX_DEPARTMENT_WIDTH, Math.max(departmentWidth, Math.round(maxDepartmentLen * 8 + 36)));
     const calculatedSecWidth = Math.min(MAX_SECTION_WIDTH, Math.max(sectionWidth, Math.round(maxSectionLen * 8 + 36)));
     const calculatedLineAreaWidth = Math.min(MAX_LINE_AREA_WIDTH, Math.max(lineAreaWidth, Math.round(maxLineAreaLen * 7.5 + 36)));
-    const calculatedRevisedWidth = Math.min(420, Math.max(135, Math.round(maxRevisedLineLen * 7.5 + 50)));
+    const isLpaObservationSheet = String(topic?.id || topic?.recordId || '').startsWith('PDCA-LPA') ||
+      topic?.source === 'lpa' || Boolean(topic?.lpaSource) ||
+      /lpa\s*observation/i.test(`${topic?.topic || ''} ${topic?.sheet?.headerInfo?.topicName || ''}`) ||
+      ['assembly', 'cc', 'c&c'].includes(String(topic?.section || '').trim().toLowerCase());
+    const calculatedRevisedWidth = Math.min(isLpaObservationSheet ? counterMeasureWidth : 420, Math.max(135, Math.round(maxRevisedLineLen * 7.5 + 50)));
 
     // Auto-adjust Image Before & After column widths according to uploaded images
     let maxBeforeRatio = 0;
@@ -5256,7 +5262,7 @@ export default function PDCASheet({
       imageAfterColWidth: calculatedImageAfterWidth,
       revisedColWidth: calculatedRevisedWidth
     };
-  }, [rows, dateWidth, departmentWidth, sectionWidth, lineAreaWidth, imageDimensions]);
+  }, [rows, dateWidth, departmentWidth, sectionWidth, lineAreaWidth, imageDimensions, topic?.lpaSource, counterMeasureWidth]);
 
   // Live Cumulative Points calculation across this sheet
   const liveCumulativeStats = useMemo(() => {
@@ -5476,7 +5482,7 @@ export default function PDCASheet({
             <col style={{ width: `${imageAfterColWidth}px`, minWidth: `${imageAfterColWidth}px` }} />
             <col style={{ width: '115px', minWidth: '105px' }} />
             <col style={{ width: '105px', minWidth: '95px' }} />
-            <col style={{ width: `${revisedColWidth}px`, minWidth: `${revisedColWidth}px` }} />
+            <col style={{ width: `${revisedColWidth}px`, minWidth: `${revisedColWidth}px`, maxWidth: `${revisedColWidth}px` }} />
             <col style={{ width: '110px', minWidth: '100px' }} />
             <col style={{ width: '145px', minWidth: '135px' }} />
             <col style={{ width: '160px', minWidth: '150px' }} />
@@ -6020,7 +6026,7 @@ export default function PDCASheet({
               </th>
               <th
                 rowSpan={2}
-                style={{ width: `${revisedColWidth}px`, minWidth: `${revisedColWidth}px` }}
+                style={{ width: `${revisedColWidth}px`, minWidth: `${revisedColWidth}px`, maxWidth: `${revisedColWidth}px` }}
                 className="py-1.5 px-2 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 leading-tight select-none"
                 title="Past revisions of Response Date. Only administrators have permission to delete revised dates."
               >
@@ -6748,7 +6754,7 @@ export default function PDCASheet({
 
                     {/* No. of time Revised - Stacked past and current response dates */}
                     <td
-                      style={{ width: `${revisedColWidth}px`, minWidth: `${revisedColWidth}px` }}
+                      style={{ width: `${revisedColWidth}px`, minWidth: `${revisedColWidth}px`, maxWidth: `${revisedColWidth}px` }}
                       className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC]"
                     >
                       {Array.isArray(row.revisedDates) && row.revisedDates.length > 0 ? (
@@ -6759,7 +6765,7 @@ export default function PDCASheet({
                             return (
                               <div
                                 key={rIdx}
-                                className="group/rev w-full py-1.5 px-1.5 flex flex-col items-center justify-center text-center gap-1.5 hover:bg-slate-50 transition-colors"
+                                className="group/rev w-full min-w-0 py-1.5 px-1.5 flex flex-col items-center justify-center text-center gap-1.5 hover:bg-slate-50 transition-colors"
                               >
                                 <div className="w-full flex items-center justify-between gap-1">
                                   <span className="flex-1 text-[14px] font-semibold text-slate-800 whitespace-nowrap text-center">
@@ -6804,7 +6810,7 @@ export default function PDCASheet({
                                   dataRequiredActionAllowed={!revReason.trim()}
                                   onChange={(e) => handleRevisionReasonChange(idx, rIdx, e.target.value)}
                                   placeholder="Why revised..."
-                                  className="w-full text-[14px] font-medium text-slate-800 bg-white border border-slate-300 focus:border-blue-500 rounded px-2 py-1 text-left shadow-2xs focus:outline-none"
+                                  className="w-full min-w-0 max-w-full text-[14px] font-medium text-slate-800 bg-white border border-slate-300 focus:border-blue-500 rounded px-2 py-1 text-left shadow-2xs focus:outline-none"
                                 />
                               </div>
                             );

@@ -1275,7 +1275,8 @@ function LpaPageContent({ viewContext }) {
 
   const handleSavePDCA = async (sheetSnapshot) => {
     if (!pdcaTopic?.id) return;
-    saveLpaPdcaSnapshot(pdcaTopic.id, sheetSnapshot);
+    const savedTopicId = pdcaTopic.id;
+    saveLpaPdcaSnapshot(savedTopicId, sheetSnapshot);
     let backendError = null;
     try {
       await pdcaApi.saveSheet(pdcaTopic.id, sheetSnapshot);
@@ -1284,8 +1285,9 @@ function LpaPageContent({ viewContext }) {
       console.warn('Backend saveSheet error:', err);
     }
     if (customPdcaTopic) {
-      setCustomPdcaTopic(prev => prev ? { ...prev, sheet: sheetSnapshot } : null);
+      setCustomPdcaTopic(prev => prev && String(prev.id) === String(savedTopicId) ? { ...prev, sheet: sheetSnapshot } : prev);
     }
+    initialSnapshotRef.current = JSON.stringify({ ...pdcaTopic, sheet: sheetSnapshot });
     setPdcaSaveVersion(v => v + 1);
     await loadBackendPdcaSheets();
     if (backendError) {

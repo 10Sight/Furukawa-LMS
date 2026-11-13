@@ -780,7 +780,7 @@ test('18. All sheets restored and visible to all user IDs on PDCA & LPA Observat
 });
 
 
-test('19. Same Department AND Same Section Access Rule: Colleagues must be in same department and same section to access PDCA sheet', () => {
+test('19. Same Department Access Rule: Colleagues in the same department have full access to PDCA sheet (same section is not required)', () => {
   // 1. Creator in Assembly department, Assembly Production section
   const creator = {
     id: 'u-asm-creator',
@@ -868,15 +868,17 @@ test('19. Same Department AND Same Section Access Rule: Colleagues must be in sa
   const sameSecPerms = canUserEditPDCARow(sampleRow, sameDeptSameSecColleague, assemblyPdcaRecord);
   assert.deepEqual(sameSecPerms, { canEditEntireRow: true, canEditActionCols: true }, 'Same dept + same section colleague has full row editing');
 
-  // D. Same Department with DIFFERENT Section Colleague CANNOT access (access is DENIED)
-  assert.equal(isUserInSameDepartmentAsRecord(assemblyPdcaRecord, sameDeptDiffSecColleague), false, 'Same dept different section colleague must NOT have access');
-  assert.equal(canEditRecord(assemblyPdcaRecord, sameDeptDiffSecColleague), false, 'Same dept different section colleague must NOT edit record');
+  // D. Same Department with DIFFERENT Section Colleague HAS FULL ACCESS (same department is sufficient)
+  assert.equal(isUserInSameDepartmentAsRecord(assemblyPdcaRecord, sameDeptDiffSecColleague), true, 'Same dept different section colleague HAS access');
+  assert.equal(canEditRecord(assemblyPdcaRecord, sameDeptDiffSecColleague), true, 'Same dept different section colleague can edit record');
+  const diffSecPerms = canUserEditPDCARow(sampleRow, sameDeptDiffSecColleague, assemblyPdcaRecord);
+  assert.deepEqual(diffSecPerms, { canEditEntireRow: true, canEditActionCols: true }, 'Same dept different section colleague has full row editing');
 
   // E. Different Department AND Different Section Colleague CANNOT access (access is DENIED)
   assert.equal(isUserInSameDepartmentAsRecord(assemblyPdcaRecord, diffDeptUser), false, 'Different dept and diff sec colleague must NOT have access');
   assert.equal(canEditRecord(assemblyPdcaRecord, diffDeptUser), false, 'Different dept and diff sec colleague must NOT edit record');
 
-  // F. Quality department: Same department colleagues have access
+  // F. Quality department: Same department colleagues have access regardless of section
   const qualityRecord = {
     id: 'PDCA-QA-ASM-01',
     topic: 'Assembly Quality PDCA',
@@ -913,7 +915,7 @@ test('19. Same Department AND Same Section Access Rule: Colleagues must be in sa
   };
 
   assert.equal(isUserInSameDepartmentAsRecord(qualityRecord, sameQualitySecUser), true, 'Same Quality section has access');
-  assert.equal(isUserInSameDepartmentAsRecord(qualityRecord, sameQualityDeptUser), false, 'Different section colleague must NOT have access');
+  assert.equal(isUserInSameDepartmentAsRecord(qualityRecord, sameQualityDeptUser), true, 'Same department colleague has access regardless of section');
 
   // G. Responsible Person column access restrictions:
   // When a user is assigned as Responsible Person (from Staff Name column):
@@ -1033,13 +1035,13 @@ test('20. Same Department AND Same Section Employee Access Verification across P
 
   assert.equal(isUserInSameDepartmentAsRecord(standardPdcaRecord, creatorEmployee), true, 'Creator has access');
   assert.equal(isUserInSameDepartmentAsRecord(standardPdcaRecord, sameDeptSameSecColleague), true, 'Same dept + same section colleague has access');
-  assert.equal(isUserInSameDepartmentAsRecord(standardPdcaRecord, sameDeptDiffSecColleague), false, 'Same dept diff section colleague does NOT have access');
+  assert.equal(isUserInSameDepartmentAsRecord(standardPdcaRecord, sameDeptDiffSecColleague), true, 'Same dept diff section colleague HAS access');
   assert.equal(isUserInSameDepartmentAsRecord(standardPdcaRecord, sameSecDiffDeptColleague), false, 'Diff dept colleague does NOT have access');
   assert.equal(isUserInSameDepartmentAsRecord(standardPdcaRecord, diffDeptDiffSecUser), false, 'Different dept + different section colleague does NOT have access');
   assert.equal(isUserInSameDepartmentAsRecord(standardPdcaRecord, adminUser), true, 'Admin has full access');
 
   assert.equal(canEditRecord(standardPdcaRecord, sameDeptSameSecColleague), true);
-  assert.equal(canEditRecord(standardPdcaRecord, sameDeptDiffSecColleague), false);
+  assert.equal(canEditRecord(standardPdcaRecord, sameDeptDiffSecColleague), true);
   assert.equal(canEditRecord(standardPdcaRecord, sameSecDiffDeptColleague), false);
   assert.equal(canEditRecord(standardPdcaRecord, diffDeptDiffSecUser), false);
   assert.equal(canEditRecord(standardPdcaRecord, adminUser), true);
@@ -1058,11 +1060,13 @@ test('20. Same Department AND Same Section Employee Access Verification across P
 
   assert.equal(isUserInSameDepartmentAsRecord(lpaAssemblyPdcaRecord, creatorEmployee), true, 'Creator has access to LPA PDCA');
   assert.equal(isUserInSameDepartmentAsRecord(lpaAssemblyPdcaRecord, sameDeptSameSecColleague), true, 'Colleague in same dept as creator has access');
+  assert.equal(isUserInSameDepartmentAsRecord(lpaAssemblyPdcaRecord, sameDeptDiffSecColleague), true, 'Colleague in same dept as creator has access regardless of section');
   assert.equal(isUserInSameDepartmentAsRecord(lpaAssemblyPdcaRecord, sameSecDiffDeptColleague), true, 'Colleague in Assembly section has access');
   assert.equal(isUserInSameDepartmentAsRecord(lpaAssemblyPdcaRecord, diffDeptDiffSecUser), false, 'IT user does NOT have access to Assembly LPA PDCA');
   assert.equal(isUserInSameDepartmentAsRecord(lpaAssemblyPdcaRecord, adminUser), true, 'Admin has access to LPA PDCA');
 
   assert.equal(canEditRecord(lpaAssemblyPdcaRecord, sameDeptSameSecColleague), true);
+  assert.equal(canEditRecord(lpaAssemblyPdcaRecord, sameDeptDiffSecColleague), true);
   assert.equal(canEditRecord(lpaAssemblyPdcaRecord, sameSecDiffDeptColleague), true);
   assert.equal(canEditRecord(lpaAssemblyPdcaRecord, diffDeptDiffSecUser), false);
   assert.equal(canEditRecord(lpaAssemblyPdcaRecord, adminUser), true);
@@ -1317,10 +1321,10 @@ test('29. Confirmation dropdown restricted strictly to Admin, Sheet Creator, and
   const colleagueCheck = canUserSelectConfirmation(targetRow, pdcaSheet, sameDeptSameSecColleague);
   assert.equal(colleagueCheck.allowed, true, 'Same dept & sec confirmation check allowed');
 
-  // 4. Same dept but DIFFERENT sec colleague does NOT have access
-  assert.equal(canUserEditPDCARow(targetRow, sameDeptDiffSecColleague, pdcaSheet, 'confirmation'), false, 'Different section colleague CANNOT select confirmation');
+  // 4. Same dept but DIFFERENT sec colleague HAS access (same department gives full access to sheet including Confirmation)
+  assert.equal(canUserEditPDCARow(targetRow, sameDeptDiffSecColleague, pdcaSheet, 'confirmation'), true, 'Same dept colleague CAN select confirmation');
   const diffSecCheck = canUserSelectConfirmation(targetRow, pdcaSheet, sameDeptDiffSecColleague);
-  assert.equal(diffSecCheck.allowed, false, 'Different section confirmation check blocked');
+  assert.equal(diffSecCheck.allowed, true, 'Same dept colleague confirmation check allowed');
 
   // 5. Different dept user (even though assigned as Responsible Person in row!) does NOT have confirmation access
   assert.equal(canUserEditPDCARow(targetRow, diffDeptUser, pdcaSheet, 'confirmation'), false, 'Responsible person CANNOT select confirmation');

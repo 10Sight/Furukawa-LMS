@@ -606,16 +606,13 @@ export function isUserInSameDepartmentAsRecord(record, currentUser, employeeData
   }
 
   const userDepts = getUserDepartments(currentUser, employeeDatabase);
-  const userSecs = getUserSections(currentUser, employeeDatabase);
 
-  // 1. Direct Colleague-to-Creator match: check creator's department and section first
+  // 1. Direct Colleague-to-Creator match: check creator's department
   const creator = record.createdBy || record.sheet?.createdBy;
   if (creator && typeof creator === 'object') {
     const creatorDepts = getUserDepartments(creator, employeeDatabase);
-    const creatorSecs = getUserSections(creator, employeeDatabase);
     const isCreatorSameDept = userDepts.length > 0 && creatorDepts.length > 0 && userDepts.some(ud => creatorDepts.includes(ud));
-    const isCreatorSameSec = areSectionsMatching(userSecs, creatorSecs, userDepts, creatorDepts);
-    if (isCreatorSameDept && isCreatorSameSec) {
+    if (isCreatorSameDept) {
       return true;
     }
   }
@@ -624,13 +621,8 @@ export function isUserInSameDepartmentAsRecord(record, currentUser, employeeData
   const recordDepts = getRecordDepartments(record, employeeDatabase);
   const isSameDept = userDepts.length > 0 && recordDepts.length > 0 && userDepts.some(ud => recordDepts.includes(ud));
 
-  // 3. Section match: User and Record belong to the same section
-  const recordSecs = getRecordSections(record, employeeDatabase);
-  const isSameSec = areSectionsMatching(userSecs, recordSecs, userDepts, recordDepts);
-
-  // RULE: Employees must be in BOTH the SAME Department AND the SAME Department Section!
-  // If the employee has the same department but different section, access is DENIED.
-  if (isSameDept && isSameSec) {
+  // RULE: Employees with the SAME Department get full access of the sheet (same section is not required)
+  if (isSameDept) {
     return true;
   }
 

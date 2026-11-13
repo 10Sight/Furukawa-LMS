@@ -422,7 +422,7 @@ const growRowToFit = (sheet, row, cell, columnWidth) => {
 const cellStyleFor = (cell) => ({
     fontWeight: cell?.bold ? "bold" : "normal",
     fontStyle: cell?.italic ? "italic" : "normal",
-    textDecoration: [cell?.underline && "underline", cell?.strike && "line-through"].filter(Boolean).join(" ") || "none",
+    textDecorationLine: [cell?.underline && "underline", cell?.strike && "line-through"].filter(Boolean).join(" ") || "none",
     textDecorationStyle: cell?.underline === "double" ? "double" : undefined,
     textAlign: cell?.align || "left",
     color: cell?.color || undefined,
@@ -457,7 +457,7 @@ const runSpanStyle = (run, cell) => {
     const pick = (key) => (run && run[key] !== undefined ? run[key] : cell?.[key]);
     const underline = pick("underline"), strike = pick("strike");
     const css = {
-        textDecoration: [underline && "underline", strike && "line-through"].filter(Boolean).join(" ") || "none",
+        textDecorationLine: [underline && "underline", strike && "line-through"].filter(Boolean).join(" ") || "none",
         textDecorationStyle: underline === "double" ? "double" : undefined,
     };
     if (!run) return css;
@@ -476,7 +476,7 @@ const conditionalCellStyle = (cell, { style, icon }) => {
         if (style.bold) base.fontWeight = "bold";
         if (style.italic) base.fontStyle = "italic";
         if (style.underline || style.strike) {
-            base.textDecoration = [(style.underline || cell?.underline) && "underline", (style.strike || cell?.strike) && "line-through"].filter(Boolean).join(" ");
+            base.textDecorationLine = [(style.underline || cell?.underline) && "underline", (style.strike || cell?.strike) && "line-through"].filter(Boolean).join(" ");
         }
     }
     if (icon) base.paddingLeft = `${Math.max(22, parseInt(base.paddingLeft, 10) || 0)}px`;
@@ -6802,7 +6802,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                         <div
                             className={cn("px-1.5 text-xs relative", cell?.wrap ? "whitespace-pre-wrap break-words overflow-hidden" : "truncate")}
                             style={richRuns
-                                ? { ...(conditional ? conditionalCellStyle(cell, conditional) : cellStyleFor(cell)), textDecoration: "none" }
+                                ? { ...(conditional ? conditionalCellStyle(cell, conditional) : cellStyleFor(cell)), textDecorationLine: "none" }
                                 : conditional ? conditionalCellStyle(cell, conditional) : cellStyleFor(cell)}
                         >
                             {conditional?.icon && <CfIcon {...conditional.icon} className="absolute left-1 top-1/2 -translate-y-1/2 w-3.5 h-3.5" />}
@@ -7766,7 +7766,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 <div
                     ref={gridContainerRef}
                     className="overflow-auto outline-none select-none"
-                    style={{ maxHeight: gridMaxHeight / zoom, zoom }}
+                    style={{ maxHeight: gridMaxHeight / zoom, zoom, overflowAnchor: "none" }}
                     tabIndex={0}
                     onMouseLeave={() => setHoveredCell(null)}
                 >

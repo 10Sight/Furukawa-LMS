@@ -54,6 +54,21 @@ import { suggestionChecksheetApi } from "../../services/api/SuggestionChecksheet
 // like the plain object it stands for.
 const isSerializable = (value) => isPlain(value) || isChunkedCells(value);
 
+// Development-only checks skip the Daily Meeting workbook in the RTK Query cache:
+// a whole sheet (thousands of cells, styles, merges) is walked on every action,
+// ~100ms each time. The detail query holds the workbook, and the API's mutation
+// entries carry it as originalArgs / the save response.
+const devCheckIgnoredPaths = [
+    /^departmentApi\.queries\.getDailyMorningMeetingDetail\(/,
+    /^departmentApi\.mutations\./,
+];
+// The fulfilled actions carry the same workbook as their payload. Whatever they
+// deliver lands in state, where every other departmentApi entry is still checked.
+const devCheckIgnoredActions = [
+    "departmentApi/executeQuery/fulfilled",
+    "departmentApi/executeMutation/fulfilled",
+];
+
 const store = configureStore({
     reducer: {
         // Slice reducers
@@ -104,7 +119,10 @@ const store = configureStore({
         [suggestionChecksheetApi.reducerPath]: suggestionChecksheetApi.reducer,
     },
     middleware: (getDefaultMiddleware) =>
-        getDefaultMiddleware({ serializableCheck: { isSerializable } }).concat(
+        getDefaultMiddleware({
+            serializableCheck: { isSerializable, ignoredPaths: devCheckIgnoredPaths, ignoredActions: devCheckIgnoredActions },
+            immutableCheck: { ignoredPaths: devCheckIgnoredPaths },
+        }).concat(
             authApi.middleware,
             userApi.middleware,
             instructorApi.middleware,

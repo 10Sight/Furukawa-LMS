@@ -56389,15 +56389,6 @@
       ]
     },
     {
-      "id": 128,
-      "name": "GA",
-      "uniCode": "GA01",
-      "departmentId": 66,
-      "departmentName": "HR",
-      "category": "Direct",
-      "lines": []
-    },
-    {
       "id": 113,
       "name": "IT",
       "uniCode": "IT01-1",
@@ -56608,7 +56599,7 @@
     },
     {
       "id": 117,
-      "name": "Quality Office ( Reports) ",
+      "name": "Quality Office ( Reports) + Kaizen",
       "uniCode": "WQ1-6",
       "departmentId": 61,
       "departmentName": "Quality",

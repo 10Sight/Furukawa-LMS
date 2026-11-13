@@ -121,6 +121,10 @@ const SYSTEM_PERMISSIONS = {
   HR_MEETING_READ: "hr_meeting:read",
   HR_MEETING_UPDATE: "hr_meeting:update",
 
+  // IT Access Control Register (MIS Portal). Granted only explicitly — see ASSIGNABLE_PORTALS.
+  IT_ACCESS_CONTROL_READ: "it_access_control:read",
+  IT_ACCESS_CONTROL_UPDATE: "it_access_control:update",
+
   // Daily Meeting Management
   DAILY_MEETING_READ: "daily_meeting:read",
   DAILY_MEETING_CREATE: "daily_meeting:create",
@@ -504,7 +508,9 @@ const DEFAULT_ROLES = {
 // Page keys match the frontend page registry (constants/navigation/pageRegistry.js).
 // `requires` is the permission a page needs to show anything: the page key lets
 // the user open it, the permission is what the page's own API checks.
-// A role holding only a portal's own key (no page keys) gets all of its pages.
+// A role holding only a portal's own key (no page keys) gets all of its pages,
+// except pages marked `explicitOnly`: those (and their permission) must be ticked
+// one by one, and holding one does not end the portal-only expansion of the rest.
 const ASSIGNABLE_PORTALS = [
   {
     key: "daily-meeting",
@@ -514,7 +520,8 @@ const ASSIGNABLE_PORTALS = [
       { key: "daily-meeting", name: "MIS Portal Home", description: "The MIS Portal tile on the main menu and its workspace chooser" },
       { key: "mis-hr-meeting", name: "Daily HR Meeting", description: "Daily Manpower Report: department-wise present headcount, overtime and gap against requirement", requires: SYSTEM_PERMISSIONS.HR_MEETING_READ },
       { key: "mis-morning-meeting", name: "Daily Morning Meeting", description: "Section-wise standup spreadsheets and charts", requires: SYSTEM_PERMISSIONS.DAILY_MEETING_READ },
-      { key: "mis-monthly-report", name: "Monthly Meeting Report", description: "Monthly report folders and presentations", requires: SYSTEM_PERMISSIONS.MONTHLY_REPORT_READ }
+      { key: "mis-monthly-report", name: "Monthly Meeting Report", description: "Monthly report folders and presentations", requires: SYSTEM_PERMISSIONS.MONTHLY_REPORT_READ },
+      { key: "mis-it-access-control", name: "IT Access Control", description: "Access Control Register: system, network and SAP access of ST staff, and access removal for leavers. Granted separately", requires: SYSTEM_PERMISSIONS.IT_ACCESS_CONTROL_READ, explicitOnly: true }
     ]
   },
   {
@@ -539,9 +546,10 @@ export const withPortalPagePermissions = (allowedPages, permissions) => {
   const pages = new Set(Array.isArray(allowedPages) ? allowedPages : []);
   for (const portal of ASSIGNABLE_PORTALS) {
     const subPages = portal.pages.filter(page => page.key !== portal.key);
-    const portalOnly = pages.has(portal.key) && !subPages.some(page => pages.has(page.key));
+    const portalOnly = pages.has(portal.key) && !subPages.some(page => !page.explicitOnly && pages.has(page.key));
     for (const page of subPages) {
-      if (page.requires && (portalOnly || pages.has(page.key))) result.add(page.requires);
+      const granted = pages.has(page.key) || (portalOnly && !page.explicitOnly);
+      if (page.requires && granted) result.add(page.requires);
     }
   }
   return [...result];
@@ -666,6 +674,10 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
       "MIS Portal - Daily HR Meeting": [
         { id: SYSTEM_PERMISSIONS.HR_MEETING_READ, name: "View Daily HR Meeting", description: "View the Daily Manpower Report (present headcount, overtime and gap per department) and export it to Excel" },
         { id: SYSTEM_PERMISSIONS.HR_MEETING_UPDATE, name: "Edit Daily HR Meeting", description: "Configure report sections, map attendance departments, enter Training figures and recalculate a month. Requires View Daily HR Meeting" }
+      ],
+      "MIS Portal - IT Access Control": [
+        { id: SYSTEM_PERMISSIONS.IT_ACCESS_CONTROL_READ, name: "View IT Access Control", description: "View the Access Control Register (system, network, SAP and physical access of ST staff), its change history, and export it to Excel" },
+        { id: SYSTEM_PERMISSIONS.IT_ACCESS_CONTROL_UPDATE, name: "Edit IT Access Control", description: "Record and change access entries, location and Email/AD deletion dates. Every change is logged. Requires View IT Access Control" }
       ],
       "MIS Portal - Daily Morning Meeting": [
         { id: SYSTEM_PERMISSIONS.DAILY_MEETING_READ, name: "View Daily Meetings", description: "View daily standup meetings and spreadsheet contents across all departments and sections" },

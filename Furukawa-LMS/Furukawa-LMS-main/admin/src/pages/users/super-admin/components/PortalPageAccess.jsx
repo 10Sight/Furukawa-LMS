@@ -16,11 +16,16 @@ const PortalPageAccess = ({ portals = [], allowedPages = [], onChange, roleColor
     else onChange([...allowedPages, page.key], requiredFor([page]));
   };
 
+  // Pages marked `explicitOnly` (e.g. IT Access Control) are never ticked by the portal's
+  // select-all; they have to be ticked on their own. Clearing the portal still clears them.
+  const bulkPages = (portal) => portal.pages.filter(p => !p.explicitOnly);
+
   const togglePortal = (portal) => {
     const keys = portal.pages.map(p => p.key);
-    const allSelected = keys.every(k => allowedPages.includes(k));
+    const bulk = bulkPages(portal);
+    const allSelected = bulk.every(p => allowedPages.includes(p.key));
     if (allSelected) onChange(allowedPages.filter(k => !keys.includes(k)), []);
-    else onChange([...new Set([...allowedPages, ...keys])], requiredFor(portal.pages));
+    else onChange([...new Set([...allowedPages, ...bulk.map(p => p.key)])], requiredFor(bulk));
   };
 
   return (
@@ -32,7 +37,7 @@ const PortalPageAccess = ({ portals = [], allowedPages = [], onChange, roleColor
       {portals.map(portal => {
         const keys = portal.pages.map(p => p.key);
         const selected = keys.filter(k => allowedPages.includes(k));
-        const allSelected = selected.length === keys.length;
+        const allSelected = bulkPages(portal).every(p => allowedPages.includes(p.key));
         const someSelected = selected.length > 0 && !allSelected;
         return (
           <div key={portal.key} className="border border-gray-200 rounded-lg overflow-hidden">
@@ -64,7 +69,12 @@ const PortalPageAccess = ({ portals = [], allowedPages = [], onChange, roleColor
                     style={{ accentColor: roleColor }}
                   />
                   <div>
-                    <p className="text-sm font-medium text-gray-700 group-hover:text-gray-900">{page.name}</p>
+                    <p className="text-sm font-medium text-gray-700 group-hover:text-gray-900">
+                      {page.name}
+                      {page.explicitOnly && (
+                        <span className="ml-1.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">Separate grant</span>
+                      )}
+                    </p>
                     {page.description && <p className="text-xs text-gray-400">{page.description}</p>}
                   </div>
                 </label>

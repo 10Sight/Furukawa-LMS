@@ -928,16 +928,8 @@ export function canUserSelectConfirmation(row, recordOrIsCreator, currentUser = 
     ? recordOrIsCreator
     : isRecordCreator(recordOrIsCreator, currentUser);
 
-  // Responsible person cannot select Confirmation
-  const sheetRows = typeof recordOrIsCreator === 'object' && Array.isArray(recordOrIsCreator?.sheet?.rows)
-    ? recordOrIsCreator.sheet.rows
-    : [];
-  const isResponsible = Boolean(
-    !isAdmin && !isCreator && (
-      (row && isUserResponsibleForRow(row, currentUser)) ||
-      (sheetRows.length > 0 && isUserResponsibleForAnyRow(sheetRows, currentUser))
-    )
-  );
+  // Responsible person cannot select Confirmation for their assigned row
+  const isResponsible = Boolean(!isAdmin && !isCreator && row && isUserResponsibleForRow(row, currentUser));
   if (isResponsible) {
     return {
       allowed: false,

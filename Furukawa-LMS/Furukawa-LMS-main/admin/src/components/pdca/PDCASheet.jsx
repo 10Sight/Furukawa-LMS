@@ -1224,9 +1224,9 @@ export default function PDCASheet({
   const [rows, setRows] = useState(initialRows);
 
   const hasAnyRowResponsible = useMemo(() => isUserResponsibleForAnyRow(rows, effectiveUser), [rows, effectiveUser]);
-  const isSheetManager = Boolean(!readOnly && (isAdmin || isCreator || (isSameDepartmentAsSheet && !hasAnyRowResponsible)));
+  const isSheetManager = Boolean(!readOnly && (isAdmin || isCreator || isSameDepartmentAsSheet));
   const canEditEntireSheet = isSheetManager;
-  const canAddRow = Boolean(!readOnly && (isAdmin || isCreator || (isSameDepartmentAsSheet && !hasAnyRowResponsible)));
+  const canAddRow = Boolean(!readOnly && (isAdmin || isCreator || isSameDepartmentAsSheet || hasPermission('pdca:add_row') || hasPermission('pdca:add_rows') || hasPermission('lpa:pdca_add_row')));
   const canConfirmDefault = isSheetManager;
   const canShowRowActions = Boolean(canEditEntireSheet || canAddRow || canDeleteRow);
   const hasEditAccess = Boolean(!readOnly && (isSheetManager || hasAnyRowResponsible));
@@ -4299,9 +4299,9 @@ export default function PDCASheet({
   const handleConfirmationChange = (rowIndex, value, userName = '') => {
     const targetRow = rows[rowIndex];
     const isRowResponsible = targetRow ? isUserResponsibleForRow(targetRow, effectiveUser) : false;
-    const canConfirmThisRow = Boolean(!readOnly && (isAdmin || isCreator || (isSameDepartmentAsSheet && !isRowResponsible && !hasAnyRowResponsible)));
+    const canConfirmThisRow = Boolean(!readOnly && (isAdmin || isCreator || isSameDepartmentAsSheet) && !isRowResponsible);
     if (!canConfirmThisRow) {
-      if (isRowResponsible || hasAnyRowResponsible) {
+      if (isRowResponsible && !isAdmin && !isCreator) {
         if (typeof showToast === 'function') showToast('Responsible person cannot select Confirmation.');
       } else {
         if (typeof showToast === 'function') showToast('Only the sheet creator, employees of the same department & section, or Admin have access to select Confirmation.');
@@ -6112,8 +6112,8 @@ export default function PDCASheet({
                 const isRowResponsible = isResponsiblePerson || isDeptMember;
                 // Responsible Person (assigned from Staff Name) can ONLY edit the 6 action columns:
                 // Root cause, Corrective Action, Counter Measure, Image After, Std. Duration in Min, response Date.
-                // They CANNOT edit the entire row/sheet. Only admin or creator (or non-responsible dept colleague) can edit entire row.
-                const canEditEntireRow = Boolean(!readOnly && (isAdmin || isCreator || (isSameDepartmentAsSheet && !isResponsiblePerson && !hasAnyRowResponsible)));
+                // They CANNOT edit the entire row/sheet. Only admin, creator, or same-department colleagues (not responsible for this row) can edit entire row.
+                const canEditEntireRow = Boolean(!readOnly && (isAdmin || isCreator || (isSameDepartmentAsSheet && !isResponsiblePerson)));
                 const unitSelected = usesCheckboxMultiSelects
                   ? (row.units || (row.unit ? [row.unit] : [])).some(unit => PDCA_UNITS.includes(unit))
                   : ['Bawal', 'Gujrat'].includes(row.unit);
@@ -6121,7 +6121,7 @@ export default function PDCASheet({
                   ? (row.respUnits || (row.respUnit || row.responsiblePersonUnit ? [row.respUnit || row.responsiblePersonUnit] : [])).some(unit => PDCA_UNITS.includes(unit))
                   : ['Bawal', 'Gujrat'].includes(row.respUnit || row.responsiblePersonUnit);
                 const canEditActionCols = Boolean(!readOnly && (isAdmin || isCreator || isSameDepartmentAsSheet || isRowResponsible));
-                const canConfirmThisRow = Boolean(!readOnly && (isAdmin || isCreator || (isSameDepartmentAsSheet && !isResponsiblePerson && !hasAnyRowResponsible)));
+                const canConfirmThisRow = Boolean(!readOnly && (isAdmin || isCreator || isSameDepartmentAsSheet) && !isResponsiblePerson);
 
                 return (
                   <tr

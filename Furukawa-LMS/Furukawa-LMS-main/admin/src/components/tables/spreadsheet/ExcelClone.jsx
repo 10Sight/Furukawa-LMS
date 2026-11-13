@@ -422,7 +422,7 @@ const growRowToFit = (sheet, row, cell, columnWidth) => {
 const cellStyleFor = (cell) => ({
     fontWeight: cell?.bold ? "bold" : "normal",
     fontStyle: cell?.italic ? "italic" : "normal",
-    textDecoration: [cell?.underline && "underline", cell?.strike && "line-through"].filter(Boolean).join(" ") || "none",
+    textDecorationLine: [cell?.underline && "underline", cell?.strike && "line-through"].filter(Boolean).join(" ") || "none",
     textDecorationStyle: cell?.underline === "double" ? "double" : undefined,
     textAlign: cell?.align || "left",
     color: cell?.color || undefined,
@@ -457,7 +457,7 @@ const runSpanStyle = (run, cell) => {
     const pick = (key) => (run && run[key] !== undefined ? run[key] : cell?.[key]);
     const underline = pick("underline"), strike = pick("strike");
     const css = {
-        textDecoration: [underline && "underline", strike && "line-through"].filter(Boolean).join(" ") || "none",
+        textDecorationLine: [underline && "underline", strike && "line-through"].filter(Boolean).join(" ") || "none",
         textDecorationStyle: underline === "double" ? "double" : undefined,
     };
     if (!run) return css;
@@ -476,7 +476,7 @@ const conditionalCellStyle = (cell, { style, icon }) => {
         if (style.bold) base.fontWeight = "bold";
         if (style.italic) base.fontStyle = "italic";
         if (style.underline || style.strike) {
-            base.textDecoration = [(style.underline || cell?.underline) && "underline", (style.strike || cell?.strike) && "line-through"].filter(Boolean).join(" ");
+            base.textDecorationLine = [(style.underline || cell?.underline) && "underline", (style.strike || cell?.strike) && "line-through"].filter(Boolean).join(" ");
         }
     }
     if (icon) base.paddingLeft = `${Math.max(22, parseInt(base.paddingLeft, 10) || 0)}px`;
@@ -6661,6 +6661,12 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 for (let c = s.col; c <= e.col; c++) if (!hiddenColSet.has(c)) colSpan++;
                 return { rowSpan: Math.max(1, rowSpan), colSpan: Math.max(1, colSpan), rowEnd: e.row, colEnd: e.col };
             })() : null;
+            // The most the cell's text may take up: its row(s), less the 1px the
+            // collapsed border takes. A <td>'s height is only a minimum, so taller
+            // text would stretch the row past rowOffsets — and the virtualization
+            // spacers, sized from rowOffsets, would then jump the view on scroll.
+            // Clipped instead, as Excel clips text to a row's height.
+            const textMaxHeight = Math.max(0, (rowOffsets[(mergeSpan ? mergeSpan.rowEnd : rowIdx) + 1] ?? rowOffsets[rowCount]) - rowOffsets[rowIdx] - 1);
             // Perimeter border for a multi-cell selection: only true on the
             // outer-facing sides of the selection rectangle, accounting for
             // this cell's merge span if it has one.
@@ -6801,9 +6807,11 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                     ) : (
                         <div
                             className={cn("px-1.5 text-xs relative", cell?.wrap ? "whitespace-pre-wrap break-words overflow-hidden" : "truncate")}
-                            style={richRuns
-                                ? { ...(conditional ? conditionalCellStyle(cell, conditional) : cellStyleFor(cell)), textDecoration: "none" }
-                                : conditional ? conditionalCellStyle(cell, conditional) : cellStyleFor(cell)}
+                            style={{
+                                ...(conditional ? conditionalCellStyle(cell, conditional) : cellStyleFor(cell)),
+                                ...(richRuns && { textDecorationLine: "none" }),
+                                maxHeight: textMaxHeight,
+                            }}
                         >
                             {conditional?.icon && <CfIcon {...conditional.icon} className="absolute left-1 top-1/2 -translate-y-1/2 w-3.5 h-3.5" />}
                             {richRuns
@@ -6840,7 +6848,8 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                     }}
                     title={manualHiddenRowSet.has(rowIdx - 1) ? "Hidden row(s) above — select across them and press Ctrl+Shift+9 to unhide" : undefined}
                 >
-                    {rowIdx + 1}
+                    {/* Clipped like a cell's text (see textMaxHeight): a short row's number would stretch it. */}
+                    <div className="overflow-hidden" style={{ maxHeight: Math.max(0, heightForRow(rowIdx) - 1) }}>{rowIdx + 1}</div>
                     {/* Manually hidden rows only — a filtered-out row comes back through its filter. */}
                     {!readOnly && manualHiddenRowSet.has(rowIdx - 1) && unhideExpander("hiddenRows", rowIdx - 1, "▼", "right-0 top-0", "Unhide row(s)")}
                     {!readOnly && manualHiddenRowSet.has(rowIdx + 1) && unhideExpander("hiddenRows", rowIdx + 1, "▲", "right-0 bottom-0", "Unhide row(s)")}
@@ -7766,7 +7775,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
                 <div
                     ref={gridContainerRef}
                     className="overflow-auto outline-none select-none"
-                    style={{ maxHeight: gridMaxHeight / zoom, zoom }}
+                    style={{ maxHeight: gridMaxHeight / zoom, zoom, overflowAnchor: "none" }}
                     tabIndex={0}
                     onMouseLeave={() => setHoveredCell(null)}
                 >

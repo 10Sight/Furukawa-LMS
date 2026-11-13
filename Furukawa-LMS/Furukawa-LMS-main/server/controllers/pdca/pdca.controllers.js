@@ -617,18 +617,12 @@ export const isUserInSameDepartmentAsRecord = (user, record) => {
         }
     }
 
-    // 2. Section match: User and Record belong to the same Department Section
-    const userSecs = getServerUserSections(user);
-    const recordSecs = getServerRecordSections(record);
-    const secMatch = areServerSectionsMatching(userSecs, recordSecs, Array.from(userDepts), Array.from(recordDepts));
-
-    // RULE: Employees must be in BOTH the SAME Department AND the SAME Department Section!
-    // If in the same department but different section, access is DENIED.
-    if (deptMatch && secMatch) {
+    // RULE: Employees with the SAME Department get full access of the sheet (same section is not required)
+    if (deptMatch) {
         return true;
     }
 
-    // 3. Direct Colleague-to-Creator match: must also match BOTH same department AND same section
+    // 2. Direct Colleague-to-Creator match: check creator's department
     if (createdBy && typeof createdBy === 'object') {
         const creatorDepts = new Set();
         const addCD = (v) => {
@@ -656,9 +650,7 @@ export const isUserInSameDepartmentAsRecord = (user, record) => {
                 break;
             }
         }
-        const creatorSecs = getServerUserSections(createdBy);
-        const creatorSecMatch = areServerSectionsMatching(userSecs, creatorSecs, Array.from(userDepts), Array.from(creatorDepts));
-        if (creatorDeptMatch && creatorSecMatch) {
+        if (creatorDeptMatch) {
             return true;
         }
     }

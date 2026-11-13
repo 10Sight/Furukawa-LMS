@@ -12693,7 +12693,7 @@
         {
           "date": "2026-10-06",
           "shift": "G",
-          "status": "Delay",
+          "status": "Done",
           "department": "C&C",
           "unit": "Bawal",
           "section": "C&C machine",
@@ -12718,7 +12718,7 @@
           "imageBeforeName": "image.png",
           "fileTypeBefore": "image",
           "rootCause": "FAS標準に掲載の写真だけでは不十分であれば、FMEでKomax用のNG,OK写真を用いた社内文書を作成し、教育をお願いします\nIf photo indicated in FAS standard pls make FME own instruction with OK NG photo for Komax and educate operators.",
-          "counterMeasure": "",
+          "counterMeasure": "Standard Display the all machine 30 /30",
           "imagesAfter": [
             {
               "id": "img-1794380641056-w2gkk",
@@ -12755,8 +12755,8 @@
           "cftSelectedType": "",
           "cftSelectedName": "",
           "cftSelectedCode": "",
-          "confirmation": "",
-          "responsiblePersonConfirmation": "Rajender Rawat",
+          "confirmation": "Confirmed",
+          "responsiblePersonConfirmation": "Confirmed",
           "initialResponseDate": "2026-10-30",
           "departments": [
             "C&C"
@@ -12773,7 +12773,7 @@
               "C&C"
             ]
           },
-          "confirmedBy": "",
+          "confirmedBy": "LalChand",
           "instruction": "",
           "sections": [
             {
@@ -12790,13 +12790,13 @@
               "sectionId": 121
             }
           ],
-          "actionTaken": "OJT Provide according to FAS Standard OSM-10CB122-Anex-19,  And instruction provide regarding OK NG \nTraining Completed\n\n 57/57\n32/32Machine Completed",
+          "actionTaken": "OJT Provide according to FAS Standard OSM-10CB122-Anex-19,  And instruction provide regarding OK NG \nTraining Completed\n\n 57/57\n30/30 Machine Completed",
           "stdDuration": "02:00"
         },
         {
           "date": "2026-10-06",
           "shift": "G",
-          "status": "Delay",
+          "status": "Done",
           "department": "C&C",
           "unit": "Bawal",
           "section": "C&C machine",
@@ -12829,7 +12829,7 @@
           "imageBeforeName": "image.png",
           "fileTypeBefore": "image",
           "rootCause": "Komaxの仕様を再確認し、作業の手順の明確化と教育をお願いします。（例：①電線を通す。②Scale valueを設定　③Knobを設定　等　今は順番が不明）\nPls confirm Komax specification and make clear procedure how to set wire and educate. (Example: 1 set wire, 2 set scale value, 3 set knob…)",
-          "counterMeasure": "",
+          "counterMeasure": "Standard display the all machine ",
           "imagesAfter": [
             {
               "id": "img-1794380907055-6cl1e",
@@ -12874,8 +12874,8 @@
           "cftSelectedType": "",
           "cftSelectedName": "",
           "cftSelectedCode": "",
-          "confirmation": "",
-          "responsiblePersonConfirmation": "Rajender Rawat",
+          "confirmation": "Confirmed",
+          "responsiblePersonConfirmation": "Confirmed",
           "initialResponseDate": "2026-10-30",
           "departments": [
             "C&C"
@@ -12892,7 +12892,7 @@
               "C&C"
             ]
           },
-          "confirmedBy": "",
+          "confirmedBy": "LalChand",
           "instruction": "",
           "sections": [
             {
@@ -12909,13 +12909,13 @@
               "sectionId": 121
             }
           ],
-          "actionTaken": "OJT Provide according to Standard, and standard display on machine\nTraining Completed \n\n57/57\n32/32Machine Completed",
+          "actionTaken": "OJT Provide according to Standard, and standard display on machine\nTraining Completed \n\n57/57\n30/30Machine Completed",
           "stdDuration": "02:00"
         },
         {
           "date": "2026-10-06",
           "shift": "G",
-          "status": "Delay",
+          "status": "In- Progress",
           "department": "C&C",
           "unit": "Bawal",
           "section": "C&C machine",
@@ -12940,7 +12940,7 @@
           "imageBeforeName": "image.png",
           "fileTypeBefore": "image",
           "rootCause": "\"端子リールを設備に設置した後、端子リールの緩みがないことを作業者が確認するように教育お願いします\nアプリケーター台車を作成する際に端子保護できるように改善してください。\nAfter set up terminal real, operator should check if any loose of real to avoid the terminal touch on cart. Pls educate operators again.\nIn case of applicator push car making, please include protection of terminal",
-          "counterMeasure": "",
+          "counterMeasure": "Training Provided",
           "imagesAfter": [],
           "imageAfter": null,
           "imageAfterName": "",
@@ -12968,8 +12968,8 @@
           "cftSelectedType": "",
           "cftSelectedName": "",
           "cftSelectedCode": "",
-          "confirmation": "",
-          "responsiblePersonConfirmation": "Rajender Rawat",
+          "confirmation": "Not - Confirmed",
+          "responsiblePersonConfirmation": "Terminal Touches the machine on C&C 28",
           "initialResponseDate": "2026-10-30",
           "departments": [
             "C&C"
@@ -12986,8 +12986,8 @@
               "C&C"
             ]
           },
-          "confirmedBy": "",
-          "instruction": "",
+          "confirmedBy": "LalChand",
+          "instruction": "Terminal Touches the machine on C&C 28",
           "sections": [
             {
               "section": "C&C machine",
@@ -47461,7 +47461,7 @@
           "fileTypeBefore": "image",
           "rootCause": "Short length circuits hanger not available at C&C - 24",
           "actionTaken": "new short lenght circuits hanger at c&c 24",
-          "counterMeasure": "",
+          "counterMeasure": "Derlin material -Location provide for short length",
           "imagesAfter": [],
           "imageAfter": null,
           "imageAfterName": "",
@@ -49896,7 +49896,7 @@
         {
           "date": "2026-11-11",
           "shift": "A",
-          "status": "Delay",
+          "status": "Done",
           "department": "C&C",
           "departments": [
             "C&C"
@@ -49985,10 +49985,10 @@
           "cftSelectedType": "",
           "cftSelectedName": "",
           "cftSelectedCode": "",
-          "confirmation": "",
-          "confirmedBy": "",
+          "confirmation": "Confirmed",
+          "confirmedBy": "Rajender Rawat",
           "instruction": "",
-          "responsiblePersonConfirmation": "Rajender Rawat (ST080666)",
+          "responsiblePersonConfirmation": "Confirmed",
           "respDeptsByUnit": {
             "Bawal": [
               "C&C"
@@ -49999,7 +49999,7 @@
         {
           "date": "2026-11-11",
           "shift": "A",
-          "status": "Not-Started",
+          "status": "In- Progress",
           "department": "C&C",
           "departments": [
             "C&C"
@@ -50044,16 +50044,16 @@
           "imageBefore": "/uploads/1794366790499-490627986.jpg",
           "imageBeforeName": "IMG-20261110-WA0022.jpg",
           "fileTypeBefore": "image",
-          "rootCause": "",
-          "actionTaken": "",
+          "rootCause": "30 Parts handover last time, but now more qty required - 30 nos ",
+          "actionTaken": "New parts make shift inhouse & location to be identified",
           "counterMeasure": "",
           "imagesAfter": [],
           "imageAfter": null,
           "imageAfterName": "",
           "fileTypeAfter": "image",
-          "stdDurationMin": "",
-          "initialResponseDate": "",
-          "responseDate": "",
+          "stdDurationMin": "01:00",
+          "initialResponseDate": "2026-12-10",
+          "responseDate": "2026-12-10",
           "revisedDates": [],
           "noOfTimeRevised": 0,
           "respUnit": "Bawal",
@@ -50087,12 +50087,13 @@
             "Bawal": [
               "PE"
             ]
-          }
+          },
+          "stdDuration": "01:00"
         },
         {
           "date": "2026-11-11",
           "shift": "A",
-          "status": "Not-Started",
+          "status": "In- Progress",
           "department": "C&C",
           "departments": [
             "C&C"
@@ -50137,16 +50138,16 @@
           "imageBefore": "/uploads/1794367036572-272339244.jpg",
           "imageBeforeName": "IMG-20261110-WA0021.jpg",
           "fileTypeBefore": "image",
-          "rootCause": "",
-          "actionTaken": "",
+          "rootCause": "Wooden part to be eliminated, ",
+          "actionTaken": "CPU to be mount on Pipe arrangement",
           "counterMeasure": "",
           "imagesAfter": [],
           "imageAfter": null,
           "imageAfterName": "",
           "fileTypeAfter": "image",
-          "stdDurationMin": "",
-          "initialResponseDate": "",
-          "responseDate": "",
+          "stdDurationMin": "01:00",
+          "initialResponseDate": "2026-12-05",
+          "responseDate": "2026-12-05",
           "revisedDates": [],
           "noOfTimeRevised": 0,
           "respUnit": "Bawal",
@@ -50180,7 +50181,8 @@
             "Bawal": [
               "PE"
             ]
-          }
+          },
+          "stdDuration": "01:00"
         },
         {
           "date": "2026-11-11",
@@ -50807,9 +50809,9 @@
           "imageBefore": "/uploads/1794553855211-877352879.png",
           "imageBeforeName": "image.png",
           "fileTypeBefore": "image",
-          "rootCause": "",
-          "actionTaken": "",
-          "counterMeasure": "",
+          "rootCause": "In running condition machine stoper was broken & operator removed this & no inform to line leader on time ",
+          "actionTaken": "New stoper installed by line leader ",
+          "counterMeasure": "awareness given to operator if missing & broken any tool & immediate inform given to Leader ",
           "imagesAfter": [],
           "imageAfter": null,
           "imageAfterName": "",
@@ -50825,13 +50827,12 @@
           ],
           "responsiblePersonUnit": "Bawal",
           "responsiblePersonDept": "C&C",
-          "staffEmployee": "Rajender Rawat (ST080666)",
+          "staffEmployee": "Rajender Rawat",
           "staffEmployees": [
             {
               "name": "Rajender Rawat",
               "code": "ST080666",
-              "department": "C&C",
-              "unit": "Bawal"
+              "department": "C&C"
             }
           ],
           "staffName": "Rajender Rawat",
@@ -50919,13 +50920,12 @@
           ],
           "responsiblePersonUnit": "Bawal",
           "responsiblePersonDept": "C&C",
-          "staffEmployee": "Rajender Rawat (ST080666)",
+          "staffEmployee": "Rajender Rawat",
           "staffEmployees": [
             {
               "name": "Rajender Rawat",
               "code": "ST080666",
-              "department": "C&C",
-              "unit": "Bawal"
+              "department": "C&C"
             }
           ],
           "staffName": "Rajender Rawat",
@@ -50950,7 +50950,7 @@
         {
           "date": "2026-11-13",
           "shift": "A",
-          "status": "Not-Started",
+          "status": "In- Progress",
           "department": "C&C",
           "departments": [
             "C&C"
@@ -50995,16 +50995,25 @@
           "imageBefore": "/uploads/1794554060725-746046004.png",
           "imageBeforeName": "image.png",
           "fileTypeBefore": "image",
-          "rootCause": "",
-          "actionTaken": "",
-          "counterMeasure": "",
-          "imagesAfter": [],
-          "imageAfter": null,
-          "imageAfterName": "",
+          "rootCause": "Operator not cleaning the applicator after completed the setup & applicator putting on trolley without cleaning & then chip falling on trolley ",
+          "actionTaken": "trolley cleaning on time done ",
+          "counterMeasure": "Training given to operator cleaning the applicator before putting the applicator on trolley ",
+          "imagesAfter": [
+            {
+              "id": "img-1794560771733-yfc0i",
+              "url": "/uploads/1794560771421-340813359.jpg",
+              "name": "IMG20260420120004.jpg",
+              "size": 2512506,
+              "type": "image",
+              "createdAt": "2026-11-13T09:06:11.733Z"
+            }
+          ],
+          "imageAfter": "/uploads/1794560771421-340813359.jpg",
+          "imageAfterName": "IMG20260420120004.jpg",
           "fileTypeAfter": "image",
-          "stdDurationMin": "",
-          "initialResponseDate": "",
-          "responseDate": "",
+          "stdDurationMin": "00:30",
+          "initialResponseDate": "2026-11-13",
+          "responseDate": "2026-11-13",
           "revisedDates": [],
           "noOfTimeRevised": 0,
           "respUnit": "Bawal",
@@ -51013,13 +51022,12 @@
           ],
           "responsiblePersonUnit": "Bawal",
           "responsiblePersonDept": "C&C",
-          "staffEmployee": "Rajender Rawat (ST080666)",
+          "staffEmployee": "Rajender Rawat",
           "staffEmployees": [
             {
               "name": "Rajender Rawat",
               "code": "ST080666",
-              "department": "C&C",
-              "unit": "Bawal"
+              "department": "C&C"
             }
           ],
           "staffName": "Rajender Rawat",
@@ -51039,12 +51047,13 @@
             "Bawal": [
               "C&C"
             ]
-          }
+          },
+          "stdDuration": "00:30"
         },
         {
           "date": "2026-11-13",
           "shift": "A",
-          "status": "Not-Started",
+          "status": "In- Progress",
           "department": "C&C",
           "departments": [
             "C&C"
@@ -51089,16 +51098,25 @@
           "imageBefore": "/uploads/1794554155478-332003530.png",
           "imageBeforeName": "image.png",
           "fileTypeBefore": "image",
-          "rootCause": "",
-          "actionTaken": "",
-          "counterMeasure": "",
-          "imagesAfter": [],
-          "imageAfter": null,
-          "imageAfterName": "",
+          "rootCause": "Wire putting on machine without identification and not maintain FIFO condition ",
+          "actionTaken": "now all wire segregated & follow  FIFO according to Kanban date ",
+          "counterMeasure": "Training given to operator & line leader use wire according to date & also putting accordingly ",
+          "imagesAfter": [
+            {
+              "id": "img-1794560827523-mtoho",
+              "url": "/uploads/1794560827494-616448857.jpg",
+              "name": "30.2.jpg",
+              "size": 2780281,
+              "type": "image",
+              "createdAt": "2026-11-13T09:07:07.523Z"
+            }
+          ],
+          "imageAfter": "/uploads/1794560827494-616448857.jpg",
+          "imageAfterName": "30.2.jpg",
           "fileTypeAfter": "image",
-          "stdDurationMin": "",
-          "initialResponseDate": "",
-          "responseDate": "",
+          "stdDurationMin": "02:00",
+          "initialResponseDate": "2026-11-13",
+          "responseDate": "2026-11-13",
           "revisedDates": [],
           "noOfTimeRevised": 0,
           "respUnit": "Bawal",
@@ -51107,13 +51125,12 @@
           ],
           "responsiblePersonUnit": "Bawal",
           "responsiblePersonDept": "C&C",
-          "staffEmployee": "Rajender Rawat (ST080666)",
+          "staffEmployee": "Rajender Rawat",
           "staffEmployees": [
             {
               "name": "Rajender Rawat",
               "code": "ST080666",
-              "department": "C&C",
-              "unit": "Bawal"
+              "department": "C&C"
             }
           ],
           "staffName": "Rajender Rawat",
@@ -51133,12 +51150,13 @@
             "Bawal": [
               "C&C"
             ]
-          }
+          },
+          "stdDuration": "02:00"
         },
         {
           "date": "2026-11-13",
           "shift": "A",
-          "status": "Not-Started",
+          "status": "In- Progress",
           "department": "C&C",
           "departments": [
             "C&C"
@@ -51183,16 +51201,25 @@
           "imageBefore": "/uploads/1794554278785-685025184.png",
           "imageBeforeName": "image.png",
           "fileTypeBefore": "image",
-          "rootCause": "",
-          "actionTaken": "",
-          "counterMeasure": "",
-          "imagesAfter": [],
-          "imageAfter": null,
-          "imageAfterName": "",
+          "rootCause": "All circuit putting on machine without identification by feeder because location sticker not available on hanger ",
+          "actionTaken": "all wire segregation wire putting according location  ",
+          "counterMeasure": "with the help PE all location decided of wire & putting wire accordingly & monitoring daily Basis  ",
+          "imagesAfter": [
+            {
+              "id": "img-1794560808980-s3ugk",
+              "url": "/uploads/1794560808961-12474355.jpg",
+              "name": "FHTFGSFS.jpg",
+              "size": 3055788,
+              "type": "image",
+              "createdAt": "2026-11-13T09:06:48.980Z"
+            }
+          ],
+          "imageAfter": "/uploads/1794560808961-12474355.jpg",
+          "imageAfterName": "FHTFGSFS.jpg",
           "fileTypeAfter": "image",
-          "stdDurationMin": "",
-          "initialResponseDate": "",
-          "responseDate": "",
+          "stdDurationMin": "02:00",
+          "initialResponseDate": "2026-11-13",
+          "responseDate": "2026-11-13",
           "revisedDates": [],
           "noOfTimeRevised": 0,
           "respUnit": "Bawal",
@@ -51201,13 +51228,12 @@
           ],
           "responsiblePersonUnit": "Bawal",
           "responsiblePersonDept": "C&C",
-          "staffEmployee": "Rajender Rawat (ST080666)",
+          "staffEmployee": "Rajender Rawat",
           "staffEmployees": [
             {
               "name": "Rajender Rawat",
               "code": "ST080666",
-              "department": "C&C",
-              "unit": "Bawal"
+              "department": "C&C"
             }
           ],
           "staffName": "Rajender Rawat",
@@ -51227,12 +51253,13 @@
             "Bawal": [
               "C&C"
             ]
-          }
+          },
+          "stdDuration": "02:00"
         },
         {
           "date": "2026-11-13",
           "shift": "A",
-          "status": "Not-Started",
+          "status": "In- Progress",
           "department": "C&C",
           "departments": [
             "C&C"
@@ -51277,31 +51304,45 @@
           "imageBefore": "/uploads/1794554449624-333399416.png",
           "imageBeforeName": "image.png",
           "fileTypeBefore": "image",
-          "rootCause": "",
-          "actionTaken": "",
-          "counterMeasure": "",
-          "imagesAfter": [],
-          "imageAfter": null,
-          "imageAfterName": "",
+          "rootCause": "MH person was not removed old tag on trey ",
+          "actionTaken": "Now removed all old Tage on wire trey  ",
+          "counterMeasure": "Awareness given to all MH person firstly removed old Tage by trey after that pasting new Tage ",
+          "imagesAfter": [
+            {
+              "id": "img-1794561081107-aoohf",
+              "url": "/uploads/1794561081151-620197404.jpg",
+              "name": "IMG20260703080058.jpg",
+              "size": 2856572,
+              "type": "image",
+              "createdAt": "2026-11-13T09:11:21.107Z"
+            }
+          ],
+          "imageAfter": "/uploads/1794561081151-620197404.jpg",
+          "imageAfterName": "IMG20260703080058.jpg",
           "fileTypeAfter": "image",
-          "stdDurationMin": "",
-          "initialResponseDate": "",
-          "responseDate": "",
-          "revisedDates": [],
-          "noOfTimeRevised": 0,
+          "stdDurationMin": "00:30",
+          "initialResponseDate": "2026-11-12",
+          "responseDate": "2026-11-13",
+          "revisedDates": [
+            {
+              "date": "2026-11-13",
+              "reason": "by mistake selected wrong date ",
+              "previousDate": "2026-11-12"
+            }
+          ],
+          "noOfTimeRevised": 1,
           "respUnit": "Bawal",
           "respUnits": [
             "Bawal"
           ],
           "responsiblePersonUnit": "Bawal",
           "responsiblePersonDept": "C&C",
-          "staffEmployee": "Rajender Rawat (ST080666)",
+          "staffEmployee": "Rajender Rawat",
           "staffEmployees": [
             {
               "name": "Rajender Rawat",
               "code": "ST080666",
-              "department": "C&C",
-              "unit": "Bawal"
+              "department": "C&C"
             }
           ],
           "staffName": "Rajender Rawat",
@@ -51321,12 +51362,13 @@
             "Bawal": [
               "C&C"
             ]
-          }
+          },
+          "stdDuration": "00:30"
         },
         {
           "date": "2026-11-13",
           "shift": "A",
-          "status": "Not-Started",
+          "status": "In- Progress",
           "department": "C&C",
           "departments": [
             "C&C"
@@ -51371,16 +51413,16 @@
           "imageBefore": "/uploads/1794554537529-616720026.png",
           "imageBeforeName": "image.png",
           "fileTypeBefore": "image",
-          "rootCause": "",
-          "actionTaken": "",
-          "counterMeasure": "",
+          "rootCause": "ETH broken due to screw loose ",
+          "actionTaken": "New ETH installed on castes  ",
+          "counterMeasure": "Weekly monitoring screw condition by improvement person ",
           "imagesAfter": [],
           "imageAfter": null,
           "imageAfterName": "",
           "fileTypeAfter": "image",
-          "stdDurationMin": "",
-          "initialResponseDate": "",
-          "responseDate": "",
+          "stdDurationMin": "00:00",
+          "initialResponseDate": "2026-11-13",
+          "responseDate": "2026-11-13",
           "revisedDates": [],
           "noOfTimeRevised": 0,
           "respUnit": "Bawal",
@@ -51389,13 +51431,12 @@
           ],
           "responsiblePersonUnit": "Bawal",
           "responsiblePersonDept": "C&C",
-          "staffEmployee": "Rajender Rawat (ST080666)",
+          "staffEmployee": "Rajender Rawat",
           "staffEmployees": [
             {
               "name": "Rajender Rawat",
               "code": "ST080666",
-              "department": "C&C",
-              "unit": "Bawal"
+              "department": "C&C"
             }
           ],
           "staffName": "Rajender Rawat",
@@ -51415,7 +51456,8 @@
             "Bawal": [
               "C&C"
             ]
-          }
+          },
+          "stdDuration": "00:00"
         }
       ]
     },
@@ -52781,9 +52823,365 @@
       "url": "/uploads/1794554537529-616720026.png",
       "uploadedBy": "Ajeet",
       "createdAt": "2026-11-13T07:22:17.713Z"
+    },
+    {
+      "id": 1794560771852,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "rowId": "row-66",
+      "fieldName": "imageAfter",
+      "filename": "1794560771421-340813359.jpg",
+      "originalFilename": "IMG20260420120004.jpg",
+      "mimeType": "image/jpeg",
+      "size": 2512506,
+      "url": "/uploads/1794560771421-340813359.jpg",
+      "uploadedBy": "Rajender Rawat",
+      "createdAt": "2026-11-13T09:06:11.852Z"
+    },
+    {
+      "id": 1794560809464,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "rowId": "row-68",
+      "fieldName": "imageAfter",
+      "filename": "1794560808961-12474355.jpg",
+      "originalFilename": "FHTFGSFS.jpg",
+      "mimeType": "image/jpeg",
+      "size": 3055788,
+      "url": "/uploads/1794560808961-12474355.jpg",
+      "uploadedBy": "Rajender Rawat",
+      "createdAt": "2026-11-13T09:06:49.464Z"
+    },
+    {
+      "id": 1794560827982,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "rowId": "row-67",
+      "fieldName": "imageAfter",
+      "filename": "1794560827494-616448857.jpg",
+      "originalFilename": "30.2.jpg",
+      "mimeType": "image/jpeg",
+      "size": 2780281,
+      "url": "/uploads/1794560827494-616448857.jpg",
+      "uploadedBy": "Rajender Rawat",
+      "createdAt": "2026-11-13T09:07:07.982Z"
+    },
+    {
+      "id": 1794561081594,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "rowId": "row-69",
+      "fieldName": "imageAfter",
+      "filename": "1794561081151-620197404.jpg",
+      "originalFilename": "IMG20260703080058.jpg",
+      "mimeType": "image/jpeg",
+      "size": 2856572,
+      "url": "/uploads/1794561081151-620197404.jpg",
+      "uploadedBy": "Rajender Rawat",
+      "createdAt": "2026-11-13T09:11:21.594Z"
     }
   ],
   "auditLogs": [
+    {
+      "id": 1794565320247,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Manoj",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T10:22:00.247Z"
+    },
+    {
+      "id": 1794565319429,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Manoj",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T10:21:59.429Z"
+    },
+    {
+      "id": 1794565318186,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Manoj",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T10:21:58.186Z"
+    },
+    {
+      "id": 1794565225252,
+      "pdcaRecordId": "PDCA-c4d16fc8-c8cb-4647-87c0-9c354c60948e",
+      "action": "SAVE_SHEET",
+      "actor": "LalChand",
+      "details": "Saved sheet with 26 rows",
+      "createdAt": "2026-11-13T10:20:25.252Z"
+    },
+    {
+      "id": 1794564810856,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Manoj",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T10:13:30.856Z"
+    },
+    {
+      "id": 1794564810330,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Manoj",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T10:13:30.330Z"
+    },
+    {
+      "id": 1794564808927,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Manoj",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T10:13:28.927Z"
+    },
+    {
+      "id": 1794564760843,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Rajender Rawat",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T10:12:40.843Z"
+    },
+    {
+      "id": 1794564760571,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Rajender Rawat",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T10:12:40.571Z"
+    },
+    {
+      "id": 1794564759024,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Rajender Rawat",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T10:12:39.024Z"
+    },
+    {
+      "id": 1794561927090,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Sukhbir Singh",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T09:25:27.090Z"
+    },
+    {
+      "id": 1794561926862,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Sukhbir Singh",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T09:25:26.862Z"
+    },
+    {
+      "id": 1794561924753,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Sukhbir Singh",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T09:25:24.753Z"
+    },
+    {
+      "id": 1794561923900,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Sukhbir Singh",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T09:25:23.900Z"
+    },
+    {
+      "id": 1794561923640,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Sukhbir Singh",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T09:25:23.640Z"
+    },
+    {
+      "id": 1794561922026,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Sukhbir Singh",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T09:25:22.026Z"
+    },
+    {
+      "id": 1794561183366,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Rajender Rawat",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T09:13:03.366Z"
+    },
+    {
+      "id": 1794561182589,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Rajender Rawat",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T09:13:02.589Z"
+    },
+    {
+      "id": 1794561180906,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Rajender Rawat",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T09:13:00.906Z"
+    },
+    {
+      "id": 1794561087749,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Rajender Rawat",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T09:11:27.749Z"
+    },
+    {
+      "id": 1794561086936,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Rajender Rawat",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T09:11:26.936Z"
+    },
+    {
+      "id": 1794561085342,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Rajender Rawat",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T09:11:25.342Z"
+    },
+    {
+      "id": 1794560875244,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Rajender Rawat",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T09:07:55.244Z"
+    },
+    {
+      "id": 1794560448203,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Rajender Rawat",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T09:00:48.203Z"
+    },
+    {
+      "id": 1794560447717,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Rajender Rawat",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T09:00:47.717Z"
+    },
+    {
+      "id": 1794560445641,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Rajender Rawat",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T09:00:45.641Z"
+    },
+    {
+      "id": 1794560374127,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Rajender Rawat",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T08:59:34.127Z"
+    },
+    {
+      "id": 1794560373905,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Rajender Rawat",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T08:59:33.905Z"
+    },
+    {
+      "id": 1794560371677,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Rajender Rawat",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T08:59:31.677Z"
+    },
+    {
+      "id": 1794560343546,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Rajender Rawat",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T08:59:03.546Z"
+    },
+    {
+      "id": 1794560343034,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Rajender Rawat",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T08:59:03.034Z"
+    },
+    {
+      "id": 1794560341169,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Rajender Rawat",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T08:59:01.169Z"
+    },
+    {
+      "id": 1794560309269,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Rajender Rawat",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T08:58:29.269Z"
+    },
+    {
+      "id": 1794560308820,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Rajender Rawat",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T08:58:28.820Z"
+    },
+    {
+      "id": 1794560306560,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Rajender Rawat",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T08:58:26.560Z"
+    },
+    {
+      "id": 1794560206015,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Rajender Rawat",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T08:56:46.015Z"
+    },
+    {
+      "id": 1794560205261,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Rajender Rawat",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T08:56:45.261Z"
+    },
+    {
+      "id": 1794560203773,
+      "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",
+      "action": "SAVE_SHEET",
+      "actor": "Rajender Rawat",
+      "details": "Saved sheet with 70 rows",
+      "createdAt": "2026-11-13T08:56:43.773Z"
+    },
     {
       "id": 1794554582569,
       "pdcaRecordId": "PDCA-LPA-CC-Bawal-1792993278715",

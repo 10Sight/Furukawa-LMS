@@ -114,13 +114,11 @@ test("changing or clearing a saved date needs an audit remark; filling an empty 
     resolveLeftAssociateSave({ sheet: datedSheet(), body: { gridData: { attendance_date_1: "02-Oct-26", attendance_date_2: "" } }, user: editLeftDates });
 });
 
-test("day dates must be valid dd-MMM-yy and run strictly forward", () => {
-    const save = (grid) => resolveLeftAssociateSave({ sheet: datedSheet(), body: { gridData: grid }, user: editLeftDates });
-    assert.throws(() => save({ attendance_date_2: "2026-10-04" }), /Invalid date for Day-2/);
-    assert.throws(() => save({ attendance_date_2: "31-Feb-26" }), /Invalid date for Day-2/);
-    assert.throws(() => save({ attendance_date_2: 5 }), /Invalid date for Day-2/);
-    assert.throws(() => save({ attendance_date_2: "06-Oct-26" }), /Day-3 date must be after the Day-2 date/);
-    assert.throws(() => save({ attendance_date_2: "01-Oct-26" }), /Day-2 date must be after the Day-1 date/);
+test("non-string day dates are rejected (format and order are checked by validateDayDates)", () => {
+    assert.throws(
+        () => resolveLeftAssociateSave({ sheet: datedSheet(), body: { gridData: { attendance_date_2: 5 } }, user: editLeftDates }),
+        /Invalid date for Day-2/
+    );
 });
 
 test("authorized user can change header details with a remark; code and start date stay pinned", () => {

@@ -40,28 +40,14 @@ export function canEditLeftAssociateDates(user) {
 
 const norm = (v) => (v === undefined || v === null ? "" : String(v).trim());
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-// Day dates are stored as "dd-MMM-yy" (e.g. "05-Oct-26"), as the sheet's date picker writes them.
-// Returns a sortable UTC timestamp, or null when the value isn't a valid date in that format.
-function parseDayDate(value) {
-    const m = /^(\d{2})-([A-Z][a-z]{2})-(\d{2})$/.exec(norm(value));
-    if (!m) return null;
-    const month = MONTHS.indexOf(m[2]);
-    if (month < 0) return null;
-    const day = Number(m[1]);
-    const year = 2000 + Number(m[3]);
-    const ts = Date.UTC(year, month, day);
-    return new Date(ts).getUTCDate() === day ? ts : null;
-}
-
 /**
  * Applies the Day-1..Day-16 date edits in `incomingGrid` onto `grid` (mutated).
  * Returns true when a previously saved date was changed or cleared.
+ * Format, order and handover-date rules are checked afterwards by validateDayDates
+ * (server/utils/sixteenDayDayDates.util.js) in the controller, as for every sheet.
  */
 function applyLeftDayDates(grid, savedGrid, incomingGrid) {
     let changedSaved = false;
-    let anyChanged = false;
     for (let d = 1; d <= 16; d++) {
         const key = `attendance_date_${d}`;
         if (!Object.prototype.hasOwnProperty.call(incomingGrid, key)) continue;
@@ -72,26 +58,8 @@ function applyLeftDayDates(grid, savedGrid, incomingGrid) {
         const next = norm(incoming);
         const saved = norm(savedGrid[key]);
         if (next === saved) continue;
-        if (next !== "" && parseDayDate(next) === null) {
-            throw new ApiError(`Invalid date for Day-${d}. Expected a date like 05-Oct-26.`, 400);
-        }
         grid[key] = next;
-        anyChanged = true;
         if (saved !== "") changedSaved = true;
-    }
-
-    // Dates must run strictly forward across the days that have one (as the date picker
-    // enforces). Only checked when something changed, so legacy records keep saving.
-    if (anyChanged) {
-        let prev = null;
-        for (let d = 1; d <= 16; d++) {
-            const ts = parseDayDate(grid[`attendance_date_${d}`]);
-            if (ts === null) continue;
-            if (prev !== null && ts <= prev.ts) {
-                throw new ApiError(`Day-${d} date must be after the Day-${prev.day} date.`, 400);
-            }
-            prev = { day: d, ts };
-        }
     }
     return changedSaved;
 }

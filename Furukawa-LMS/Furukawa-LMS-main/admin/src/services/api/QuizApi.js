@@ -7,7 +7,7 @@ export const quizApi = createApi({
     tagTypes: ['Quiz', 'Course', 'Module', 'Lesson'], // Add Module and Lesson to tagTypes
     endpoints: (builder) => ({
         createQuiz: builder.mutation({
-            query: ({ courseId, moduleId, lessonId, scope, title, questions, passingScore = 70, timeLimit, attemptsAllowed, skillUpgradation, departmentId, sectionId, lineId, subSectionId, level, issueCertificate, isDojo, isHandover, isTheoretical, conductedBy, isMultiSkilling, paperTitle, paperSubTitle, targetDeptId, targetSectionId }) => ({
+            query: ({ courseId, moduleId, lessonId, scope, title, questions, passingScore = 70, timeLimit, attemptsAllowed, skillUpgradation, departmentId, sectionId, lineId, subSectionId, level, issueCertificate, isDojo, isHandover, isTheoretical, conductedBy, isMultiSkilling, paperTitle, paperSubTitle, targetDeptId, targetSectionId, hasOwnDocControl, docNo, revNo, issueDate, revDate }) => ({
                 url: "/api/quizzes",
                 method: "POST",
                 data: {
@@ -34,6 +34,11 @@ export const quizApi = createApi({
                     ...(isMultiSkilling !== undefined ? { isMultiSkilling } : {}),
                     ...(paperTitle !== undefined ? { paperTitle } : {}),
                     ...(paperSubTitle !== undefined ? { paperSubTitle } : {}),
+                    ...(hasOwnDocControl !== undefined ? { hasOwnDocControl } : {}),
+                    ...(docNo !== undefined ? { docNo } : {}),
+                    ...(revNo !== undefined ? { revNo } : {}),
+                    ...(issueDate !== undefined ? { issueDate } : {}),
+                    ...(revDate !== undefined ? { revDate } : {}),
                     ...(targetDeptId !== undefined ? { targetDeptId } : {}),
                     ...(targetSectionId !== undefined ? { targetSectionId } : {})
                 }
@@ -79,7 +84,7 @@ export const quizApi = createApi({
         }),
 
         updateQuiz: builder.mutation({
-            query: ({ id, title, questions, description, passingScore, timeLimit, attemptsAllowed, skillUpgradation, departmentId, sectionId, lineId, subSectionId, level, issueCertificate, isDojo, isHandover, isTheoretical, conductedBy, isMultiSkilling, paperTitle, paperSubTitle, targetDeptId, targetSectionId }) => ({
+            query: ({ id, title, questions, description, passingScore, timeLimit, attemptsAllowed, skillUpgradation, departmentId, sectionId, lineId, subSectionId, level, issueCertificate, isDojo, isHandover, isTheoretical, conductedBy, isMultiSkilling, paperTitle, paperSubTitle, targetDeptId, targetSectionId, hasOwnDocControl, docNo, revNo, issueDate, revDate }) => ({
                 url: `/api/quizzes/${id}`,
                 method: "PUT",
                 data: {
@@ -103,6 +108,11 @@ export const quizApi = createApi({
                     ...(isMultiSkilling !== undefined ? { isMultiSkilling } : {}),
                     ...(paperTitle !== undefined ? { paperTitle } : {}),
                     ...(paperSubTitle !== undefined ? { paperSubTitle } : {}),
+                    ...(hasOwnDocControl !== undefined ? { hasOwnDocControl } : {}),
+                    ...(docNo !== undefined ? { docNo } : {}),
+                    ...(revNo !== undefined ? { revNo } : {}),
+                    ...(issueDate !== undefined ? { issueDate } : {}),
+                    ...(revDate !== undefined ? { revDate } : {}),
                     ...(targetDeptId !== undefined ? { targetDeptId } : {}),
                     ...(targetSectionId !== undefined ? { targetSectionId } : {})
                 }

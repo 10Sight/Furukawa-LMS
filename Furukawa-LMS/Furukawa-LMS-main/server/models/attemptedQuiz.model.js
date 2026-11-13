@@ -1,6 +1,7 @@
 import { executeQuery } from "../db/mssqlHelper.js";
 import logger from "../logger/winston.logger.js";
 import { migrationHelper } from "../db/migrationHelper.js";
+import { LEGACY_DOC_CONTROL } from "../utils/testPaperDocControl.constants.js";
 
 class QuizAttempt {
     constructor(data) {
@@ -31,6 +32,13 @@ class QuizAttempt {
         this.studentSectionId = data.studentSectionId !== undefined ? data.studentSectionId : null;
         this.studentLineId = data.studentLineId !== undefined ? data.studentLineId : null;
         this.studentSubSectionId = data.studentSubSectionId !== undefined ? data.studentSubSectionId : null;
+
+        // Snapshot of the test paper's document control as printed for this attempt
+        // (see utils/testPaperDocControl.util.js). NULL on all four = no snapshot.
+        this.quizDocNo = data.quizDocNo ?? null;
+        this.quizRevNo = data.quizRevNo ?? null;
+        this.quizIssueDate = data.quizIssueDate ?? null;
+        this.quizRevDate = data.quizRevDate ?? null;
 
         // Admin adjustment metadata
         this.manuallyAdjusted = !!data.manuallyAdjusted;
@@ -91,6 +99,24 @@ class QuizAttempt {
             await migrationHelper.ensureColumnExists('attempted_quizzes', 'studentLineId', 'INT NULL');
             await migrationHelper.ensureColumnExists('attempted_quizzes', 'studentSubSectionId', 'INT NULL');
 
+            // Migration: test paper document control snapshot (Doc. No. / Rev. No. / Issue Date /
+            // Rev. Date as printed for this attempt). When the columns are first added, every
+            // existing attempt is stamped with the values all papers printed until then, so old
+            // result sheets keep showing exactly what they showed before. Runs only on the boot
+            // that adds the columns, so it never overwrites snapshots written afterwards.
+            let docSnapshotAdded = false;
+            for (const col of ['quizDocNo', 'quizRevNo', 'quizIssueDate', 'quizRevDate']) {
+                if (await migrationHelper.ensureColumnExists('attempted_quizzes', col, 'NVARCHAR(255) NULL')) docSnapshotAdded = true;
+            }
+            if (docSnapshotAdded) {
+                await executeQuery(
+                    `UPDATE attempted_quizzes SET quizDocNo = ?, quizRevNo = ?, quizIssueDate = ?, quizRevDate = ?
+                     WHERE quizDocNo IS NULL AND quizRevNo IS NULL AND quizIssueDate IS NULL AND quizRevDate IS NULL`,
+                    [LEGACY_DOC_CONTROL.docNo, LEGACY_DOC_CONTROL.revNo, LEGACY_DOC_CONTROL.issueDate, LEGACY_DOC_CONTROL.revDate]
+                );
+                logger.info("Migration: stamped existing attempts with legacy test paper document control");
+            }
+
             // The only index on this table is the (quiz, student, attemptNumber) unique constraint,
             // so any query filtering by student alone (handover-sheet eligibility lookups, dojo
             // pass checks) or by completedAt alone falls back to a full table scan no matter how
@@ -148,6 +174,7 @@ class QuizAttempt {
             "manuallyAdjusted", "adjustedBy", "adjustedAt", "adjustmentNotes", "conductedBy",
             "studentName", "studentEmpId",
             "studentIsTemporary", "studentDeptId", "studentSectionId", "studentLineId", "studentSubSectionId",
+            "quizDocNo", "quizRevNo", "quizIssueDate", "quizRevDate",
             "createdAt"
         ];
 

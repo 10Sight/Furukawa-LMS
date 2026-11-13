@@ -37,6 +37,14 @@ class Quiz {
         this.paperTitle = data.paperTitle || null;
         this.paperSubTitle = data.paperSubTitle || null;
 
+        // Per-paper document control. hasOwnDocControl = false means the paper prints the
+        // department-wise values from the Revision Table ("test-paper") instead of these.
+        this.hasOwnDocControl = !!data.hasOwnDocControl;
+        this.docNo = data.docNo ?? null;
+        this.revNo = data.revNo ?? null;
+        this.issueDate = data.issueDate ?? null;
+        this.revDate = data.revDate ?? null;
+
         // Resource linking & Legacy fields
         this.courseId = data.courseId || data.course;
         this.course = this.courseId;
@@ -175,7 +183,12 @@ class Quiz {
                     { name: 'paperSubTitle', type: 'NVARCHAR(500)' },
                     { name: 'isMultiSkilling', type: 'BIT DEFAULT 0' },
                     { name: 'targetDeptId', type: 'NVARCHAR(MAX)' },
-                    { name: 'targetSectionId', type: 'NVARCHAR(MAX)' }
+                    { name: 'targetSectionId', type: 'NVARCHAR(MAX)' },
+                    { name: 'hasOwnDocControl', type: 'BIT NOT NULL DEFAULT 0' },
+                    { name: 'docNo', type: 'NVARCHAR(255) NULL' },
+                    { name: 'revNo', type: 'NVARCHAR(255) NULL' },
+                    { name: 'issueDate', type: 'NVARCHAR(255) NULL' },
+                    { name: 'revDate', type: 'NVARCHAR(255) NULL' }
                 ];
 
                 for (const col of columns) {
@@ -224,7 +237,8 @@ class Quiz {
             "title", "slug", "description", "questions", "passingScore",
             "timeLimit", "createdBy", "isPublished", "attemptsAllowed",
             "skillUpgradation", "issueCertificate", "courseId", "course", "moduleId", "module",
-            "lessonId", "type", "scope", "departmentId", "sectionId", "lineId", "subSectionId", "level", "isDojo", "isHandover", "isTheoretical", "conductedBy", "paperTitle", "paperSubTitle", "createdAt", "isMultiSkilling", "targetDeptId", "targetSectionId"
+            "lessonId", "type", "scope", "departmentId", "sectionId", "lineId", "subSectionId", "level", "isDojo", "isHandover", "isTheoretical", "conductedBy", "paperTitle", "paperSubTitle", "createdAt", "isMultiSkilling", "targetDeptId", "targetSectionId",
+            "hasOwnDocControl", "docNo", "revNo", "issueDate", "revDate"
         ];
 
         if (!quiz.createdAt) quiz.createdAt = new Date();
@@ -313,7 +327,8 @@ class Quiz {
             "title", "slug", "description", "questions", "passingScore",
             "timeLimit", "createdBy", "isPublished", "attemptsAllowed",
             "skillUpgradation", "issueCertificate", "courseId", "course", "moduleId", "module",
-            "lessonId", "type", "scope", "departmentId", "sectionId", "lineId", "subSectionId", "level", "isDojo", "isHandover", "isTheoretical", "conductedBy", "paperTitle", "paperSubTitle", "isMultiSkilling", "targetDeptId", "targetSectionId"
+            "lessonId", "type", "scope", "departmentId", "sectionId", "lineId", "subSectionId", "level", "isDojo", "isHandover", "isTheoretical", "conductedBy", "paperTitle", "paperSubTitle", "isMultiSkilling", "targetDeptId", "targetSectionId",
+            "hasOwnDocControl", "docNo", "revNo", "issueDate", "revDate"
         ];
 
         const setClause = fields.map(field => `${field} = ?`).join(", ");

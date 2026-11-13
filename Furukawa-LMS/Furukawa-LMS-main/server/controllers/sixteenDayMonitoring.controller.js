@@ -16,7 +16,13 @@ import logAudit from "../utils/auditLogger.js";
 import RevisionRecordService from "../services/revisionRecord.service.js";
 import { getNextCalendarDayMidnightIST } from "../utils/istDate.util.js";
 import { resolveLeftAssociateSave } from "../utils/sixteenDayLeftAssociate.util.js";
-import { findDaysMissingDate, missingDateMessage } from "../utils/sixteenDayDayDates.util.js";
+import {
+    findDaysMissingDate,
+    missingDateMessage,
+    validateDayDates,
+    findFutureDaysWithValues,
+    futureValuesMessage,
+} from "../utils/sixteenDayDayDates.util.js";
 
 // A signature is "validly signed" when it's filled and wasn't a rejection —
 // this is the same notion of validity the client gates its sign-off buttons on.
@@ -463,6 +469,20 @@ export const saveSixteenDayMonitoring = asyncHandler(async (req, res) => {
     const daysMissingDate = findDaysMissingDate(gridData, previousGridData);
     if (daysMissingDate.length > 0) {
         throw new ApiError(missingDateMessage(daysMissingDate), 400);
+    }
+
+    // Day dates may be in the future but not before the day after the handover date, and
+    // run strictly forward. Values can't be entered for a day dated in the future (IST).
+    const dayDateError = validateDayDates(gridData, previousGridData, {
+        handoverDate,
+        previousHandoverDate: (sheet && !isNewAttempt) ? sheet.handoverDate : "",
+    });
+    if (dayDateError) {
+        throw new ApiError(dayDateError, 400);
+    }
+    const futureDays = findFutureDaysWithValues(gridData, previousGridData);
+    if (futureDays.length > 0) {
+        throw new ApiError(futureValuesMessage(futureDays, gridData), 400);
     }
 
     validateSignatureProgression({ checkedBy, verifiedBy, approvedBy, verifiedByEduCell }, req.user?.isAdmin);

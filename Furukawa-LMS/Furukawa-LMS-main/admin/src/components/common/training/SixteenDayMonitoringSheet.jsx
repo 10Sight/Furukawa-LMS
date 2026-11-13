@@ -27,7 +27,20 @@ import {
     Eye,
     EyeOff
 } from "lucide-react";
-import { dayOfInputKey, findDaysMissingDate, missingDateMessage } from "@/utils/sixteenDayDayDates.js";
+import {
+    dayOfInputKey,
+    findDaysMissingDate,
+    missingDateMessage,
+    validateDayDates,
+    findFutureDaysWithValues,
+    futureValuesMessage,
+    isFutureDay,
+    parseDayDate,
+    earliestDayDate,
+    formatDayNumber,
+    dayNumberOfLocalDate,
+    localDateOfDayNumber,
+} from "@/utils/sixteenDayDayDates.js";
 import { Badge } from "@/components/common/ui/badge.jsx";
 import {
     Popover,
@@ -239,6 +252,11 @@ const SixteenDayMonitoringSheet = ({
         if (readOnly && !eduCellOverride) return true;
         if (isLocked) return true;
         if (eligibilityStillLocked) return true;
+        // Values for a day open on that day's date; a day dated in the future stays locked.
+        if (type === 'grid') {
+            const day = dayOfInputKey(key);
+            if (day && isFutureDay(gridData, day)) return true;
+        }
         if (isAdmin || canEditSubmitted) return false;
         if (!isSheetSaved) return false;
 
@@ -621,9 +639,23 @@ const SixteenDayMonitoringSheet = ({
 
         // A day's values need that day's header date. Mirrors the server check: only values
         // changed since the last save (or a cleared date) count.
-        const daysMissingDate = findDaysMissingDate(gridData, isSheetSaved ? originalGridData : {});
+        const previousGridData = isSheetSaved ? originalGridData : {};
+        const daysMissingDate = findDaysMissingDate(gridData, previousGridData);
         if (daysMissingDate.length > 0) {
             toast.error(missingDateMessage(daysMissingDate));
+            return;
+        }
+        const dayDateError = validateDayDates(gridData, previousGridData, {
+            handoverDate: headerInfo.handoverDate,
+            previousHandoverDate: isSheetSaved ? originalHeaderInfo.handoverDate : "",
+        });
+        if (dayDateError) {
+            toast.error(dayDateError);
+            return;
+        }
+        const futureDays = findFutureDaysWithValues(gridData, previousGridData);
+        if (futureDays.length > 0) {
+            toast.error(futureValuesMessage(futureDays, gridData));
             return;
         }
 
@@ -1073,38 +1105,60 @@ const SixteenDayMonitoringSheet = ({
     const daysDetailed = ['d1', 'd2', 'd3'];
     const daysSummary = Array.from({ length: 13 }, (_, i) => `day_${i + 4}`);
 
-    const getDisabledDatesForDay = (dayIdx) => {
-        let prevMaxDate = null;
+    // Day dates may be in the future, but not before the day after the handover date, and
+    // must stay strictly between the neighbouring days' dates. Mirrors validateDayDates.
+    const getDayDateBounds = (dayIdx) => {
+        let prevMax = null, prevDay = null;
         for (let i = 1; i < dayIdx; i++) {
-            const val = gridData[`attendance_date_${i}`];
-            if (val && val.includes('-')) {
-                try {
-                    const d = parse(val, "dd-MMM-yy", new Date());
-                    if (!prevMaxDate || d > prevMaxDate) prevMaxDate = d;
-                } catch (e) { }
-            }
+            const n = parseDayDate(gridData[`attendance_date_${i}`]);
+            if (n !== null && (prevMax === null || n > prevMax)) { prevMax = n; prevDay = i; }
         }
-        let nextMinDate = null;
+        let nextMin = null, nextDay = null;
         for (let i = dayIdx + 1; i <= 16; i++) {
-            const val = gridData[`attendance_date_${i}`];
-            if (val && val.includes('-')) {
-                try {
-                    const d = parse(val, "dd-MMM-yy", new Date());
-                    if (!nextMinDate || d < nextMinDate) nextMinDate = d;
-                } catch (e) { }
-            }
+            const n = parseDayDate(gridData[`attendance_date_${i}`]);
+            if (n !== null && (nextMin === null || n < nextMin)) { nextMin = n; nextDay = i; }
         }
+        return { prevMax, prevDay, nextMin, nextDay, earliest: earliestDayDate(headerInfo.handoverDate) };
+    };
+
+    // One line under the date picker saying which dates can be picked and why.
+    const getDayDateHint = (dayIdx) => {
+        const { prevMax, prevDay, nextMin, nextDay, earliest } = getDayDateBounds(dayIdx);
+        const parts = [];
+        if (prevMax !== null && (earliest === null || prevMax >= earliest)) {
+            parts.push(`after ${formatDayNumber(prevMax)} (Day-${prevDay})`);
+        } else if (earliest !== null) {
+            parts.push(`from ${formatDayNumber(earliest)} (day after handover)`);
+        }
+        if (nextMin !== null) parts.push(`before ${formatDayNumber(nextMin)} (Day-${nextDay})`);
+        return parts.length ? `Allowed: ${parts.join(", ")}` : null;
+    };
+
+    const renderDayDateHint = (dayIdx) => {
+        const hint = getDayDateHint(dayIdx);
+        return hint && <p className="px-3 pb-2 max-w-[17rem] text-[11px] leading-snug text-slate-500">{hint}</p>;
+    };
+
+    const getDisabledDatesForDay = (dayIdx) => {
+        const { prevMax, nextMin, earliest } = getDayDateBounds(dayIdx);
         return (date) => {
-            if (prevMaxDate && date <= prevMaxDate) return true;
-            if (nextMinDate && date >= nextMinDate) return true;
-
-            // Restrict future dates (after today)
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            if (date > today) return true;
-
+            const n = dayNumberOfLocalDate(date);
+            if (earliest !== null && n < earliest) return true;
+            if (prevMax !== null && n <= prevMax) return true;
+            if (nextMin !== null && n >= nextMin) return true;
             return false;
         };
+    };
+
+    // A saved date that isn't "dd-MMM-yy" (older records) parses to an Invalid Date, which
+    // the date picker can't open on.
+    const validPickerDate = (date) => (date instanceof Date && !isNaN(date.getTime()) ? date : undefined);
+
+    // Month an empty Day date picker opens on: the first date it allows.
+    const getDefaultMonthForDay = (dayIdx) => {
+        const { prevMax, earliest } = getDayDateBounds(dayIdx);
+        const first = Math.max(prevMax !== null ? prevMax + 1 : -Infinity, earliest ?? -Infinity);
+        return Number.isFinite(first) ? localDateOfDayNumber(first) : undefined;
     };
 
     const isDay16ColFilled = isDay16Filled();
@@ -1600,8 +1654,10 @@ const SixteenDayMonitoringSheet = ({
                                                                 selected={selectedDate}
                                                                 onSelect={(date) => date && handleGridChange('attendance', `date_${dayIdx}`, format(date, "dd-MMM-yy"))}
                                                                 disabled={getDisabledDatesForDay(dayIdx)}
+                                                                defaultMonth={validPickerDate(selectedDate) || getDefaultMonthForDay(dayIdx)}
                                                                 initialFocus
                                                             />
+                                                            {renderDayDateHint(dayIdx)}
                                                         </PopoverContent>
                                                     </Popover>
                                                 </th>
@@ -1643,8 +1699,10 @@ const SixteenDayMonitoringSheet = ({
                                                                 selected={selectedDate}
                                                                 onSelect={(date) => date && handleGridChange('attendance', `date_${dayIdx}`, format(date, "dd-MMM-yy"))}
                                                                 disabled={getDisabledDatesForDay(dayIdx)}
+                                                                defaultMonth={validPickerDate(selectedDate) || getDefaultMonthForDay(dayIdx)}
                                                                 initialFocus
                                                             />
+                                                            {renderDayDateHint(dayIdx)}
                                                         </PopoverContent>
                                                     </Popover>
                                                 </th>
@@ -1977,8 +2035,10 @@ const SixteenDayMonitoringSheet = ({
                                                                         }
                                                                     }}
                                                                     disabled={getDisabledDatesForDay(i + 1)}
+                                                                    defaultMonth={validPickerDate(selectedDate) || getDefaultMonthForDay(i + 1)}
                                                                     initialFocus
                                                                 />
+                                                                {renderDayDateHint(i + 1)}
                                                             </PopoverContent>
                                                         </Popover>
                                                     </td>

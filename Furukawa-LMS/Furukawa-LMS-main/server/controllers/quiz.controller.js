@@ -5,6 +5,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { slugify } from "../utils/slugify.js";
 import logAudit from "../utils/auditLogger.js";
 import { SYSTEM_PERMISSIONS } from "./rolesPermissions.controller.js";
+import { pickDocControl } from "../utils/testPaperDocControl.util.js";
 
 // Helper to safely parse JSON
 const parseJSON = (data, fallback = []) => {
@@ -43,6 +44,10 @@ export const createQuiz = asyncHandler(async (req, res) => {
     if (!title || !questions || questions.length === 0) {
         throw new ApiError("Title and questions are required", 400);
     }
+
+    // Per-paper document control — only honoured for test_paper:doc_control holders;
+    // everyone else creates a department-wise paper (hasOwnDocControl = 0).
+    const docControl = pickDocControl(req.user, req.body);
     if (scope && !['course', 'module', 'lesson', 'standalone'].includes(scope)) {
         throw new ApiError("Scope must be 'course', 'module', 'lesson', or 'standalone'", 400);
     }
@@ -118,16 +123,17 @@ export const createQuiz = asyncHandler(async (req, res) => {
 
     const [insertRows] = await executeQuery(
         `INSERT INTO quizzes
-        (course, [module], lesson, scope, title, slug, [description], questions, passingScore, timeLimit, attemptsAllowed, skillUpgradation, issueCertificate, departmentId, sectionId, lineId, subSectionId, level, isDojo, isHandover, isTheoretical, conductedBy, isMultiSkilling, paperTitle, paperSubTitle, createdBy, targetDeptId, targetSectionId, createdAt, updatedAt)
+        (course, [module], lesson, scope, title, slug, [description], questions, passingScore, timeLimit, attemptsAllowed, skillUpgradation, issueCertificate, departmentId, sectionId, lineId, subSectionId, level, isDojo, isHandover, isTheoretical, conductedBy, isMultiSkilling, paperTitle, paperSubTitle, createdBy, targetDeptId, targetSectionId, hasOwnDocControl, docNo, revNo, issueDate, revDate, createdAt, updatedAt)
         OUTPUT INSERTED.id
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())`,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())`,
         [
             resolvedCourseId, finalModuleId, finalLessonId, actualScope, title, slug, description,
             JSON.stringify(questions), passingScore, timeLimit, attemptsAllowed,
             JSON.stringify(skillUpgradation ?? false), issueCertificate ?? true,
             JSON.stringify(departmentId || []), JSON.stringify(sectionId || []), JSON.stringify(lineId || []), JSON.stringify(subSectionId || []), level || null, isDojo ? 1 : 0, isHandover ? 1 : 0, isTheoretical ? 1 : 0, conductedBy !== undefined && conductedBy !== null ? conductedBy : "", isMultiSkilling ? 1 : 0, paperTitle || null, paperSubTitle || null, req.user.id,
             JSON.stringify(Array.isArray(finalTargetDeptId) ? finalTargetDeptId : (finalTargetDeptId ? [finalTargetDeptId] : [])),
-            JSON.stringify(Array.isArray(finalTargetSectionId) ? finalTargetSectionId : (finalTargetSectionId ? [finalTargetSectionId] : []))
+            JSON.stringify(Array.isArray(finalTargetSectionId) ? finalTargetSectionId : (finalTargetSectionId ? [finalTargetSectionId] : [])),
+            docControl.hasOwnDocControl ?? 0, docControl.docNo ?? null, docControl.revNo ?? null, docControl.issueDate ?? null, docControl.revDate ?? null
         ]
     );
 
@@ -430,6 +436,11 @@ export const updateQuiz = asyncHandler(async (req, res) => {
     if (isMultiSkilling !== undefined) { updates.push("isMultiSkilling = ?"); values.push(isMultiSkilling ? 1 : 0); }
     if (paperTitle !== undefined) { updates.push("paperTitle = ?"); values.push(paperTitle || null); }
     if (paperSubTitle !== undefined) { updates.push("paperSubTitle = ?"); values.push(paperSubTitle || null); }
+    // Per-paper document control: pickDocControl returns {} for users without
+    // test_paper:doc_control, so their saves never touch these columns.
+    for (const [field, value] of Object.entries(pickDocControl(req.user, req.body))) {
+        updates.push(`${field} = ?`); values.push(value);
+    }
     if (finalTargetDeptId !== undefined) { updates.push("targetDeptId = ?"); values.push(JSON.stringify(Array.isArray(finalTargetDeptId) ? finalTargetDeptId : (finalTargetDeptId ? [finalTargetDeptId] : []))); }
     if (finalTargetSectionId !== undefined) { updates.push("targetSectionId = ?"); values.push(JSON.stringify(Array.isArray(finalTargetSectionId) ? finalTargetSectionId : (finalTargetSectionId ? [finalTargetSectionId] : []))); }
 

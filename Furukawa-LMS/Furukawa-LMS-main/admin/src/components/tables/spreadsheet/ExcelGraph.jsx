@@ -8,7 +8,7 @@ import {
     IconAlertTriangle, IconClick, IconPlus, IconX, IconPalette, IconTrash,
     IconLayoutAlignTop, IconLayoutAlignBottom, IconLayoutAlignLeft, IconLayoutAlignRight, IconEyeOff,
     IconChevronDown, IconChevronUp, IconMaximize, IconMinimize, IconChartBar,
-    IconChartInfographic, IconTableShortcut, IconInfoCircle, IconSwitchHorizontal,
+    IconChartInfographic, IconTableShortcut, IconInfoCircle, IconSwitchHorizontal, IconTarget,
     IconBold, IconItalic, IconUnderline, IconBucketDroplet, IconRestore,
     IconArrowUp, IconArrowDown, IconArrowLeft, IconArrowRight, IconAlignLeft, IconAlignCenter, IconAlignRight
 } from "@tabler/icons-react";
@@ -33,11 +33,12 @@ import {
 } from "@/components/common/ui/alert-dialog.jsx";
 import {
     RibbonGroup, RibbonBtn, RibbonDropdown, RibbonSplit, MenuItem, MenuSeparator, MenuHeader, MenuClose,
-    RibbonStack, RibbonRow, RibbonDivider, RibbonCombo, ColorSplitButton,
+    RibbonStack, RibbonRow, RibbonDivider, RibbonCombo, ColorSplitButton, ColorPalette,
 } from "./ribbonParts.jsx";
 import {
     CHART_VARIANTS, CHART_FAMILIES, RIBBON_CHART_MENUS, variantType, comboSettingsForPreset, familyOfVariant,
     EXTRA_CHART_TYPES, SPARKLINE_TYPES, chartRequirement,
+    keepsBlankCells, targetConfigOf, TARGET_DEFAULTS, TARGET_DOT_SIZE_MIN, TARGET_DOT_SIZE_MAX,
 } from "../../../constants/spreadsheets/chartTypes.js";
 import {
     ChartThumb, RibbonFamilyIcon, RecommendedChartsIcon, MapsIcon, PivotChartIcon, SparkLineIcon, SparkColumnIcon, SparkWinLossIcon,
@@ -123,11 +124,12 @@ const seriesIdLabel = (id) => (/^\d+$/.test(String(id)) ? `Row ${id}` : `Col ${i
 // Reads the configured row/column range out of the live displayGrid. A text
 // cell inside the range is treated as 0 rather than thrown away, with
 // `hadInvalid` surfaced so the toolbar can show a non-blocking warning.
-function buildChartData({ activeSheet, displayGrid, config }) {
+// With `keepBlanks` such a cell (or a blank one) is null instead.
+function buildChartData({ activeSheet, displayGrid, config, keepBlanks = false }) {
     // Charts built from a range list (Ctrl-selected, or switched to plot by
     // rows) read exactly those ranges; the fields below are the older
     // single-block form, still used by every chart saved without one.
-    if (chartRanges(config)) return extractDisjointChartData({ displayGrid, config });
+    if (chartRanges(config)) return extractDisjointChartData({ displayGrid, config, keepBlanks });
     const rowCountMax = activeSheet?.rowCount || 0;
     const valueCols = config.valueCols?.length ? config.valueCols : [];
     const xCol = config.xAxisCol || "A";
@@ -163,7 +165,7 @@ function buildChartData({ activeSheet, displayGrid, config }) {
             const num = parseNumericCell(rawVal);
             if (rawVal !== undefined && rawVal !== "" && num === null) hadInvalid = true;
             if (num !== null) rowHasValue = true;
-            entry[seriesLabels[col]] = num === null ? 0 : num;
+            entry[seriesLabels[col]] = num === null ? (keepBlanks ? null : 0) : num;
         });
         if ((rawX !== undefined && rawX !== "") || rowHasValue) data.push(entry);
     }
@@ -195,7 +197,7 @@ const applyPercentLineCumulative = (data, seriesKeys) => data.map((row) => {
 });
 const prepareChartData = (activeSheet, displayGrid, cfg) => {
     if (!activeSheet || !cfg) return { data: [], seriesKeys: [], hadInvalid: false };
-    const result = buildChartData({ activeSheet, displayGrid, config: cfg });
+    const result = buildChartData({ activeSheet, displayGrid, config: cfg, keepBlanks: keepsBlankCells(cfg.type) });
     if (cfg.type === "lineStacked") return { ...result, data: applyStackedLineCumulative(result.data, result.seriesKeys) };
     if (cfg.type === "linePercent") return { ...result, data: applyPercentLineCumulative(result.data, result.seriesKeys) };
     return result;
@@ -863,6 +865,96 @@ function InsertChartDialog({ state, onClose, recommended, currentType, comboSeri
     );
 }
 
+// Chart Design > Target Rules: how an Actual vs Target chart judges and draws each
+// column. Changes apply straight away; `onChange(patch)` stores only what differs
+// from TARGET_DEFAULTS, and a key set to undefined goes back to its default.
+const TARGET_RULES = [
+    { value: "higherIsBetter", label: "Higher is better", hint: "Actual ≥ Target meets it" },
+    { value: "lowerIsBetter", label: "Lower is better", hint: "Actual ≤ Target meets it" },
+];
+const TARGET_COLOR_FIELDS = [
+    { key: "aboveColor", label: "Meets target" },
+    { key: "belowColor", label: "Misses target" },
+    { key: "neutralColor", label: "No target" },
+    { key: "targetDotColor", label: "Target dot" },
+];
+function ActualVsTargetControls({ tc, actualName, targetName, onChange, onReset }) {
+    const sectionLabel = "text-[10px] font-semibold uppercase tracking-wide text-slate-500";
+    const setSize = (size) => onChange({ targetDotSize: Math.min(TARGET_DOT_SIZE_MAX, Math.max(TARGET_DOT_SIZE_MIN, size)) });
+    return (
+        <div className="space-y-3">
+            <div className="space-y-1.5">
+                <Label className={sectionLabel}>Series</Label>
+                <div className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0 text-[11px] text-slate-700 space-y-0.5">
+                        <div className="truncate"><span className="text-slate-400">Actual:</span> {actualName}</div>
+                        <div className="truncate"><span className="text-slate-400">Target:</span> {targetName}</div>
+                    </div>
+                    <Button size="sm" variant="outline" className="h-7 text-xs cursor-pointer gap-1" title="Swap which series is Actual and which is Target" onClick={() => onChange({ swapped: !tc.swapped })}>
+                        <IconSwitchHorizontal className="w-3.5 h-3.5" /> Swap
+                    </Button>
+                </div>
+            </div>
+
+            <div className="space-y-1.5 border-t border-slate-100 pt-2">
+                <Label className={sectionLabel}>Rule</Label>
+                <div className="grid grid-cols-2 gap-1">
+                    {TARGET_RULES.map((r) => (
+                        <button
+                            key={r.value}
+                            type="button"
+                            title={r.hint}
+                            onClick={() => onChange({ rule: r.value })}
+                            className={cn(
+                                "h-8 px-1.5 text-[11px] rounded border cursor-pointer",
+                                tc.rule === r.value ? "bg-indigo-100 border-indigo-300 text-indigo-700 font-semibold" : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                            )}
+                        >
+                            {r.label}
+                        </button>
+                    ))}
+                </div>
+                <p className="text-[10px] text-slate-400">{TARGET_RULES.find((r) => r.value === tc.rule)?.hint}</p>
+            </div>
+
+            <div className="space-y-1.5 border-t border-slate-100 pt-2">
+                <Label className={sectionLabel}>Colors</Label>
+                {TARGET_COLOR_FIELDS.map(({ key, label }) => (
+                    <div key={key} className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] text-slate-700">{label}</span>
+                        <RibbonDropdown
+                            title={`${label} color`}
+                            contentClassName="w-auto p-1"
+                            align="end"
+                            trigger={<span className="w-5 h-4 rounded-sm border border-slate-300" style={{ backgroundColor: tc[key] }} />}
+                        >
+                            <ColorPalette value={tc[key]} onPick={(c) => onChange({ [key]: c })} autoLabel="Default" onAuto={() => onChange({ [key]: undefined })} autoIcon={IconRestore} />
+                        </RibbonDropdown>
+                    </div>
+                ))}
+            </div>
+
+            <div className="space-y-1.5 border-t border-slate-100 pt-2">
+                <Label className={sectionLabel}>Target Dot</Label>
+                <div className="flex items-center gap-2">
+                    <Checkbox id="targetDotShow" checked={tc.showTargetDot} onCheckedChange={(v) => onChange({ showTargetDot: v === true })} />
+                    <label htmlFor="targetDotShow" className="text-[11px] text-slate-700 cursor-pointer select-none">Show target dot</label>
+                </div>
+                <div className={cn("flex items-center gap-2", !tc.showTargetDot && "opacity-40 pointer-events-none")}>
+                    <span className="text-[11px] text-slate-700 flex-1">Size</span>
+                    <button type="button" className="w-6 h-6 rounded border border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-default" disabled={tc.targetDotSize <= TARGET_DOT_SIZE_MIN} onClick={() => setSize(tc.targetDotSize - 1)} aria-label="Smaller dot">−</button>
+                    <span className="w-9 text-center text-[11px] text-slate-700 tabular-nums">{tc.targetDotSize} px</span>
+                    <button type="button" className="w-6 h-6 rounded border border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-default" disabled={tc.targetDotSize >= TARGET_DOT_SIZE_MAX} onClick={() => setSize(tc.targetDotSize + 1)} aria-label="Larger dot">+</button>
+                </div>
+            </div>
+
+            <div className="flex justify-end border-t border-slate-100 pt-2">
+                <button type="button" className="text-[11px] text-slate-500 hover:text-red-600 hover:underline cursor-pointer" onClick={onReset}>Reset to defaults</button>
+            </div>
+        </div>
+    );
+}
+
 function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
     const [popoverOpen, setPopoverOpen] = useState(false);
     const [draft, setDraft] = useState(null);
@@ -914,6 +1006,17 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
         const nextCharts = charts.map((c) => (c.id === config.id ? { ...c, ...patch } : c));
         onChartsChange?.(nextCharts);
     }, [charts, config, onChartsChange]);
+
+    // Actual vs Target settings: saves only the keys that differ from the defaults,
+    // so a chart left on its defaults stores no `targetConfig` at all.
+    const applyTargetConfig = (patch) => {
+        const next = { ...(config?.targetConfig || {}) };
+        for (const [key, value] of Object.entries(patch)) {
+            if (value === undefined || value === TARGET_DEFAULTS[key]) delete next[key];
+            else next[key] = value;
+        }
+        applyConfig({ targetConfig: Object.keys(next).length ? next : undefined });
+    };
 
     // A series is picked as "series:<id>" (its id is its column letter / row
     // number). Fonts have no per-series setting, so with a series selected the
@@ -2269,6 +2372,32 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
                         <span className="text-xs leading-tight text-center">Delete<br />Chart</span>
                     </RibbonBtn>
                 </RibbonGroup>
+
+                {config.type === "actualVsTarget" && (() => {
+                    const tc = targetConfigOf(config);
+                    const nameOf = (i) => seriesKeys[i] ?? (config.valueCols?.[i] ? seriesIdLabel(config.valueCols[i]) : "(none)");
+                    return (
+                        <RibbonGroup label="Target">
+                            <Popover>
+                                <PopoverTrigger asChild>
+                                    <RibbonBtn className="h-full flex-col justify-start px-2 pt-1 gap-0.5" title="Target Rules: which series is the target, the rule, colors and the target dot">
+                                        <IconTarget className="w-8 h-8 text-emerald-600" strokeWidth={1.3} />
+                                        <span className="text-xs leading-tight text-center">Target<br />Rules</span>
+                                    </RibbonBtn>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-72 p-3 bg-white border border-slate-200 shadow-md rounded-lg max-h-[70vh] overflow-y-auto" align="start">
+                                    <ActualVsTargetControls
+                                        tc={tc}
+                                        actualName={nameOf(tc.swapped ? 1 : 0)}
+                                        targetName={nameOf(tc.swapped ? 0 : 1)}
+                                        onChange={applyTargetConfig}
+                                        onReset={() => applyConfig({ targetConfig: undefined })}
+                                    />
+                                </PopoverContent>
+                            </Popover>
+                        </RibbonGroup>
+                    );
+                })()}
 
                 <RibbonGroup label="Format">
                     <Popover open={designPopoverOpen} onOpenChange={openDesignPopover}>

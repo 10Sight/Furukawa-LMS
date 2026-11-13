@@ -39,6 +39,7 @@ import {
 } from "@/components/forms/primitives/select.jsx";
 import useFileUpload from "@/hooks/useFileUpload.js";
 import TestPaperDocControl from "@/components/common/training/TestPaperDocControl.jsx";
+import { canManageTestPaperDocControl } from "@/utils/testPaperDocControl.js";
 import { getMediaUrl } from "@/utils/mediaUtils.js";
 
 const AddTestPaper = () => {
@@ -50,6 +51,8 @@ const AddTestPaper = () => {
   const { uploadFile, isUploading: isImageUploading } = useFileUpload();
 
   const { user: currentUser } = useSelector((state) => state.auth);
+  // Per-paper Doc. No. / Rev. No. / dates — test_paper:doc_control holders only (server enforces the same rule).
+  const canManageDocControl = canManageTestPaperDocControl(currentUser);
 
   useEffect(() => {
     logAction({ action: "VIEW_ADD_TEST_PAPER", details: { page: "Add Test Paper" } });
@@ -124,6 +127,11 @@ const AddTestPaper = () => {
     conductedBy: "",
     paperTitle: "",
     paperSubTitle: "",
+    hasOwnDocControl: false,
+    docNo: "",
+    revNo: "",
+    issueDate: "",
+    revDate: "",
     questions: [
       {
         questionText: "",
@@ -623,6 +631,16 @@ const AddTestPaper = () => {
         conductedBy: formData.conductedBy || "",
         paperTitle: formData.paperTitle || undefined,
         paperSubTitle: formData.paperSubTitle || undefined,
+        // Only holders send document control; the paper otherwise stays department-wise.
+        ...(canManageDocControl ? {
+          hasOwnDocControl: !!formData.hasOwnDocControl,
+          ...(formData.hasOwnDocControl ? {
+            docNo: formData.docNo.trim() || undefined,
+            revNo: formData.revNo.trim() || undefined,
+            issueDate: formData.issueDate.trim() || undefined,
+            revDate: formData.revDate.trim() || undefined,
+          } : {}),
+        } : {}),
       };
 
       await createQuiz(quizData).unwrap();
@@ -718,7 +736,12 @@ const AddTestPaper = () => {
               </div>
             </div>
 
-            <TestPaperDocControl departmentIds={formData.departmentId} />
+            <TestPaperDocControl
+              departmentIds={formData.departmentId}
+              value={formData}
+              canManage={canManageDocControl}
+              onChange={(patch) => setFormData((prev) => ({ ...prev, ...patch }))}
+            />
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-3">

@@ -1335,14 +1335,27 @@ export default function PDCASheet({
   });
   const lastSavedSnapshotRef = useRef(null);
   const isDirtyRef = useRef(false);
+  const userHasEditedRef = useRef(false);
+  const isInternalUpdateRef = useRef(false);
+  const isInitialMountRef = useRef(true);
 
   useEffect(() => {
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false;
+      return;
+    }
+    if (isInternalUpdateRef.current) {
+      userHasEditedRef.current = false;
+      isDirtyRef.current = false;
+      return;
+    }
     const snap = initialSnapshotRef.current;
     const lastSaved = lastSavedSnapshotRef.current;
     if (snap || lastSaved) {
       const current = serializeSheet(rows, headerInfo);
       if (current === snap || current === lastSaved) {
         isDirtyRef.current = false;
+        userHasEditedRef.current = false;
       } else {
         const sanitizedRows = rows.map((r) => {
           const hasDate = Boolean(r.date?.trim());
@@ -1354,8 +1367,10 @@ export default function PDCASheet({
         const sanitizedCurrent = serializeSheet(sanitizedRows, headerInfo);
         if (sanitizedCurrent === snap || sanitizedCurrent === lastSaved) {
           isDirtyRef.current = false;
+          userHasEditedRef.current = false;
         } else {
           isDirtyRef.current = true;
+          userHasEditedRef.current = true;
         }
       }
     }
@@ -1943,7 +1958,8 @@ export default function PDCASheet({
     pdcaApi.getSheet(topic.id).then(savedSheet => {
       if (!active || !savedSheet) return;
       // If user has already started typing in this session, protect their in-progress work
-      if (isDirtyRef.current) return;
+      if (isDirtyRef.current || userHasEditedRef.current) return;
+      isInternalUpdateRef.current = true;
 
       let finalHeader = headerInfo;
       if (savedSheet.headerInfo && Object.keys(savedSheet.headerInfo).length > 0) {
@@ -2001,8 +2017,14 @@ export default function PDCASheet({
         headerInfo: { ...finalHeader }
       };
       initialSnapshotRef.current = serializeSheet(finalRows, finalHeader);
+      userHasEditedRef.current = false;
+      isDirtyRef.current = false;
+      setTimeout(() => {
+        isInternalUpdateRef.current = false;
+      }, 300);
     }).catch(err => {
       console.warn('Could not fetch sheet from backend:', err);
+      isInternalUpdateRef.current = false;
     });
     return () => { active = false; };
   }, [topic?.id]);
@@ -2310,9 +2332,11 @@ export default function PDCASheet({
           console.warn('Backend saveSheet error:', apiErr?.message || apiErr);
         }
       }
+      isInternalUpdateRef.current = true;
       persistSheet(snapshotToSave);
       setRows(sanitizedRows);
       isDirtyRef.current = false;
+      userHasEditedRef.current = false;
       // Update baseline after successful save so subsequent navigation knows all edits are saved
       initialStateRef.current = {
         rows: sanitizedRows.map((r) => ({ ...r })),
@@ -2329,10 +2353,15 @@ export default function PDCASheet({
       if (typeof refreshData === 'function') {
         refreshData();
       }
+      setTimeout(() => {
+        isInternalUpdateRef.current = false;
+      }, 300);
       return true;
     } catch (error) {
+      isInternalUpdateRef.current = true;
       persistSheet(sheetSnapshot);
       isDirtyRef.current = false;
+      userHasEditedRef.current = false;
       initialStateRef.current = {
         rows: rows.map((r) => ({ ...r })),
         headerInfo: { ...headerInfo }
@@ -2342,6 +2371,9 @@ export default function PDCASheet({
       lastSavedSnapshotRef.current = fallbackSnapshot;
       const errorMsg = error?.response?.data?.message || error?.response?.data?.error || error?.message || 'Could not save PDCA. Keep the form open and try again.';
       showToast(errorMsg);
+      setTimeout(() => {
+        isInternalUpdateRef.current = false;
+      }, 300);
       return false;
     } finally {
       setIsSaving(false);
@@ -2389,11 +2421,13 @@ export default function PDCASheet({
   // Determine if user has made unsaved changes in the current editing session
   const hasUnsavedChanges = () => {
     if (effectiveReadOnly) return false;
+    if (!userHasEditedRef.current && !isDirtyRef.current) return false;
     if (!isDirtyRef.current) return false;
     if (!initialSnapshotRef.current && !lastSavedSnapshotRef.current) return false;
     const current = serializeSheet(rows, headerInfo);
     if (current === initialSnapshotRef.current || current === lastSavedSnapshotRef.current) {
       isDirtyRef.current = false;
+      userHasEditedRef.current = false;
       return false;
     }
     const sanitizedRows = rows.map(r => {
@@ -2410,6 +2444,7 @@ export default function PDCASheet({
     const sanitizedCurrent = serializeSheet(sanitizedRows, headerInfo);
     if (sanitizedCurrent === initialSnapshotRef.current || sanitizedCurrent === lastSavedSnapshotRef.current) {
       isDirtyRef.current = false;
+      userHasEditedRef.current = false;
       return false;
     }
     return true;
@@ -2584,7 +2619,9 @@ export default function PDCASheet({
   const handleDiscardAndGoBack = () => {
     if (requireConfirmationReasonBeforeContinuing()) return;
     setShowDiscardModal(false);
+    isInternalUpdateRef.current = true;
     isDirtyRef.current = false;
+    userHasEditedRef.current = false;
     if (topic?.id && initialStateRef.current) {
       setData((items) => {
         if (!items) return items;
@@ -2598,6 +2635,9 @@ export default function PDCASheet({
       setHeaderInfo(initialStateRef.current.headerInfo);
       initialSnapshotRef.current = serializeSheet(initialStateRef.current.rows, initialStateRef.current.headerInfo);
     }
+    setTimeout(() => {
+      isInternalUpdateRef.current = false;
+    }, 300);
     onBack?.();
   };
 
@@ -4215,6 +4255,7 @@ export default function PDCASheet({
       : row);
 
     // 1. Immediately apply the deletion to state so the date is removed from the UI instantly
+    isInternalUpdateRef.current = true;
     setRows(nextRows);
 
     // 2. Persist to local cache / parent snapshot
@@ -4224,7 +4265,14 @@ export default function PDCASheet({
       rows: nextRows.map((row) => ({ ...row })),
       headerInfo: { ...headerInfo }
     };
-    initialSnapshotRef.current = serializeSheet(nextRows, headerInfo);
+    const nextSerialized = serializeSheet(nextRows, headerInfo);
+    initialSnapshotRef.current = nextSerialized;
+    lastSavedSnapshotRef.current = nextSerialized;
+    isDirtyRef.current = false;
+    userHasEditedRef.current = false;
+    setTimeout(() => {
+      isInternalUpdateRef.current = false;
+    }, 300);
 
     // 3. Persist to backend asynchronously without blocking the local deletion
     const targetId = topic?.id || topic?.recordId || (headerInfo.topicName?.trim() ? encodeURIComponent(headerInfo.topicName.trim()) : 'current_topic');

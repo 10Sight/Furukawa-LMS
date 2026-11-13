@@ -1790,4 +1790,19 @@ test('39. PDCASheet: Clean Back navigation after Save, Status Header multi-selec
   assert.match(pdcaSheetCode, /e\.key === 'Enter' && e\.shiftKey/, 'AutoWidthInput must support Shift + Enter for multiline text insertion');
 });
 
+test('40. PDCASheet: Explicit user edit tracking and zero false-positive Unsaved Changes popup after Save', () => {
+  const pdcaSheetPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/pdca/PDCASheet.jsx');
+  const pdcaSheetCode = fs.readFileSync(pdcaSheetPath, 'utf8');
+
+  // Verify explicit user edit tracking refs
+  assert.match(pdcaSheetCode, /userHasEditedRef\s*=\s*useRef\(false\)/, 'PDCASheet must initialize userHasEditedRef as false');
+  assert.match(pdcaSheetCode, /isInternalUpdateRef\s*=\s*useRef\(false\)/, 'PDCASheet must track isInternalUpdateRef');
+  assert.match(pdcaSheetCode, /isInitialMountRef\s*=\s*useRef\(true\)/, 'PDCASheet must track isInitialMountRef');
+
+  // Verify saveSheet resets userHasEditedRef and marks clean
+  assert.match(pdcaSheetCode, /userHasEditedRef\.current\s*=\s*false/, 'saveSheet and handlers must reset userHasEditedRef when clean');
+  assert.match(pdcaSheetCode, /!userHasEditedRef\.current\s*&&\s*!isDirtyRef\.current/, 'hasUnsavedChanges must return false if user has not edited anything');
+});
+
+
 

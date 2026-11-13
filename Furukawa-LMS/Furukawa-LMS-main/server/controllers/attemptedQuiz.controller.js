@@ -6,6 +6,7 @@ import Course from "../models/course.model.js";
 import User from "../models/auth.model.js";
 import ExtraAttemptAllowance from "../models/extraAttempt.model.js";
 import AttemptExtensionRequest from "../models/attemptExtensionRequest.model.js";
+import { resolveTestPaperDocControl, resolveAttemptDocControl, toAttemptSnapshot } from "../utils/testPaperDocControl.util.js";
 
 import { executeQuery } from "../db/mssqlHelper.js";
 import { ApiError } from "../utils/ApiError.js";
@@ -337,6 +338,9 @@ const populateAttempt = async (attempt) => {
             });
         }
     }
+    // Document control box for the result sheet: the attempt's own snapshot, so later edits to
+    // the paper or the Revision Table never rewrite it.
+    attempt.docControl = await resolveAttemptDocControl(attempt, typeof attempt.quiz === "object" ? attempt.quiz : null);
     return attempt;
 };
 
@@ -417,11 +421,15 @@ export const attemptQuiz = asyncHandler(async (req, res) => {
     const passed = scorePercent >= (quiz.passingScore || 70);
 
     const studentSnapshot = await resolveStudentSnapshot(userId);
+    const docControl = await resolveTestPaperDocControl(quiz, {
+        departmentId: studentSnapshot.studentDeptId, sectionId: studentSnapshot.studentSectionId
+    });
 
     const attempt = await AttemptedQuiz.create({
         quiz: resolvedQuizId,
         student: userId,
         ...studentSnapshot,
+        ...toAttemptSnapshot(docControl),
         answer: answers.map((ans, idx) => ({
             questionId: questions[idx]._id || questions[idx].id,
             selectedOptions: [ans || ""],
@@ -858,6 +866,11 @@ export const startQuiz = asyncHandler(async (req, res) => {
         conductedBy: quiz.conductedBy || "Education Cell",
         paperTitle: quiz.paperTitle || null,
         paperSubTitle: quiz.paperSubTitle || null,
+        hasOwnDocControl: !!quiz.hasOwnDocControl,
+        docNo: quiz.docNo ?? null,
+        revNo: quiz.revNo ?? null,
+        issueDate: quiz.issueDate ?? null,
+        revDate: quiz.revDate ?? null,
         attemptsAllowed: isUnlimited ? 0 : attemptsAllowedWithExtra,
         attemptsUsed: previousAttempts,
         attemptsRemaining: isUnlimited ? null : attemptsRemainingWithExtra,
@@ -1183,10 +1196,17 @@ export const submitQuiz = asyncHandler(async (req, res) => {
     // admin/trainer submitting on the candidate's behalf must not stamp their own data here.
     const studentSnapshot = await resolveStudentSnapshot(userId);
 
+    // Document control exactly as printed for this candidate (paper's own values, or the
+    // department-wise Revision Table values for their department/section).
+    const docControl = await resolveTestPaperDocControl(quiz, {
+        departmentId: studentSnapshot.studentDeptId, sectionId: studentSnapshot.studentSectionId
+    });
+
     const attemptData = {
         quiz: resolvedQuizId,
         student: userId,
         ...studentSnapshot,
+        ...toAttemptSnapshot(docControl),
         answer: answers.map((ans, idx) => {
             const question = questions[idx];
             const detailedAnswer = detailedAnswers[idx];

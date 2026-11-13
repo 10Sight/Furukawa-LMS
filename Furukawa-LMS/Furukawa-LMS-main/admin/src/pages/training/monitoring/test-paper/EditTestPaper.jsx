@@ -39,6 +39,7 @@ import {
 } from "@/components/forms/primitives/select.jsx";
 import useFileUpload from "@/hooks/useFileUpload.js";
 import TestPaperDocControl from "@/components/common/training/TestPaperDocControl.jsx";
+import { canManageTestPaperDocControl } from "@/utils/testPaperDocControl.js";
 import { getMediaUrl } from "@/utils/mediaUtils.js";
 
 const EditTestPaper = () => {
@@ -52,6 +53,8 @@ const EditTestPaper = () => {
   const { uploadFile, isUploading: isImageUploading } = useFileUpload();
 
   const { user: currentUser } = useSelector((state) => state.auth);
+  // Per-paper Doc. No. / Rev. No. / dates — test_paper:doc_control holders only (server enforces the same rule).
+  const canManageDocControl = canManageTestPaperDocControl(currentUser);
 
   useEffect(() => {
     if (quizId) logAction({ action: "VIEW_EDIT_TEST_PAPER", details: { quizId } });
@@ -126,6 +129,11 @@ const EditTestPaper = () => {
     conductedBy: "",
     paperTitle: "",
     paperSubTitle: "",
+    hasOwnDocControl: false,
+    docNo: "",
+    revNo: "",
+    issueDate: "",
+    revDate: "",
     questions: [
       {
         questionText: "",
@@ -173,6 +181,11 @@ const EditTestPaper = () => {
         conductedBy: q.conductedBy || "",
         paperTitle: q.paperTitle || "",
         paperSubTitle: q.paperSubTitle || "",
+        hasOwnDocControl: !!q.hasOwnDocControl,
+        docNo: q.docNo || "",
+        revNo: q.revNo || "",
+        issueDate: q.issueDate || "",
+        revDate: q.revDate || "",
         questions: Array.isArray(q.questions) ? q.questions.map(qItem => ({
           questionText: qItem.questionText || "",
           questionTextSec: qItem.questionTextSec || "",
@@ -652,6 +665,18 @@ const EditTestPaper = () => {
         conductedBy: formData.conductedBy || "",
         paperTitle: formData.paperTitle || undefined,
         paperSubTitle: formData.paperSubTitle || undefined,
+        // Only holders send document control (non-holders leave the paper's values untouched).
+        // Values are sent as-is (no "|| undefined") so a cleared field saves as blank. With
+        // own values off the four are not sent, so the stored ones come back if it's re-enabled.
+        ...(canManageDocControl ? {
+          hasOwnDocControl: !!formData.hasOwnDocControl,
+          ...(formData.hasOwnDocControl ? {
+            docNo: formData.docNo.trim(),
+            revNo: formData.revNo.trim(),
+            issueDate: formData.issueDate.trim(),
+            revDate: formData.revDate.trim(),
+          } : {}),
+        } : {}),
       };
 
       await updateQuiz(quizData).unwrap();
@@ -749,7 +774,12 @@ const EditTestPaper = () => {
               </div>
             </div>
 
-            <TestPaperDocControl departmentIds={formData.departmentId} />
+            <TestPaperDocControl
+              departmentIds={formData.departmentId}
+              value={formData}
+              canManage={canManageDocControl}
+              onChange={(patch) => setFormData((prev) => ({ ...prev, ...patch }))}
+            />
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="grid gap-2">

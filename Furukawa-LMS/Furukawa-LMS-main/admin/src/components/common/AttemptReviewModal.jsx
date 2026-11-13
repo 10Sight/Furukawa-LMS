@@ -1,7 +1,6 @@
 import brandLogoUrl from "@/assets/logos/fme-transparent.png";
 import React, { useMemo, useState, useEffect } from "react";
 import { formatPaperSubTitle } from "@/utils/formatters.js";
-import useRevisionInfo from "@/hooks/useRevisionInfo.js";
 import { useSelector } from "react-redux";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/common/ui/dialog.jsx";
 import { Card } from "@/components/common/ui/card.jsx";
@@ -50,13 +49,9 @@ const AttemptReviewModal = ({ attemptId, isOpen, onClose, canEdit = false }) => 
   const { data, isLoading, isError, refetch } = useGetAttemptByIdQuery(attemptId, { skip: !attemptId || !isOpen });
   const attempt = data?.data;
 
-  // Doc header comes live from the Revision Table (sheet key "test-paper"), scoped to
-  // the candidate's department — the same source TakeQuiz reads.
-  const revisionInfo = useRevisionInfo(
-    "test-paper",
-    { docNo: "TST-HR-02", revNo: "02", revDate: "08.04.2021", issueDate: "08.04.2021" },
-    { departmentId: attempt?.student?.departmentId || undefined }
-  );
+  // Doc header: the values this attempt was printed with, resolved by the server
+  // (populateAttempt -> attempt.docControl), so later revisions never rewrite old sheets.
+  const docControl = attempt?.docControl || {};
 
   const [answersOverride, setAnswersOverride] = useState({});
   const [notes, setNotes] = useState("");
@@ -241,19 +236,19 @@ const AttemptReviewModal = ({ attemptId, isOpen, onClose, canEdit = false }) => 
                 <div className="col-span-3 flex flex-col text-[10px] font-bold bg-white">
                   <div className="grid grid-cols-2 border-b border-black flex-1 items-center">
                     <div className="border-r border-black h-full flex items-center px-2">Doc.No.</div>
-                    <div className="px-2 text-black">{revisionInfo.docNo}</div>
+                    <div className="px-2 text-black">{docControl.docNo || "—"}</div>
                   </div>
                   <div className="grid grid-cols-2 border-b border-black flex-1 items-center">
                     <div className="border-r border-black h-full flex items-center px-2">REV 00</div>
-                    <div className="px-2 text-black">{revisionInfo.revNo}</div>
+                    <div className="px-2 text-black">{docControl.revNo || "—"}</div>
                   </div>
                   <div className="grid grid-cols-2 border-b border-black flex-1 items-center">
                     <div className="border-r border-black h-full flex items-center px-2">REV. DATE</div>
-                    <div className="px-2">{revisionInfo.revDate}</div>
+                    <div className="px-2">{docControl.revDate || "—"}</div>
                   </div>
                   <div className="grid grid-cols-2 flex-1 items-center">
                     <div className="border-r border-black h-full flex items-center px-2">ISSUE DATE</div>
-                    <div className="px-2">{revisionInfo.issueDate}</div>
+                    <div className="px-2">{docControl.issueDate || "—"}</div>
                   </div>
                 </div>
               </div>

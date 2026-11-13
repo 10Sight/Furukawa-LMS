@@ -38,12 +38,12 @@ import {
 import {
     CHART_VARIANTS, CHART_FAMILIES, RIBBON_CHART_MENUS, variantType, comboSettingsForPreset, familyOfVariant,
     EXTRA_CHART_TYPES, SPARKLINE_TYPES, chartRequirement,
-    keepsBlankCells, targetConfigOf, TARGET_DEFAULTS, TARGET_DOT_SIZE_MIN, TARGET_DOT_SIZE_MAX,
+    keepsBlankCells, targetConfigOf, targetSeriesIndexes, targetStatus, TARGET_DEFAULTS, TARGET_STATUS_TEXT, TARGET_DOT_SIZE_MIN, TARGET_DOT_SIZE_MAX,
 } from "../../../constants/spreadsheets/chartTypes.js";
 import {
     ChartThumb, RibbonFamilyIcon, RecommendedChartsIcon, MapsIcon, PivotChartIcon, SparkLineIcon, SparkColumnIcon, SparkWinLossIcon,
 } from "./chartCatalog.jsx";
-import { renderExtraChart, Sparklines } from "./chartExtras.jsx";
+import { renderExtraChart, Sparklines, TargetDot, ActualVsTargetTooltip, TargetLegend } from "./chartExtras.jsx";
 
 // Validated categorical palette (see dataviz skill's references/palette.md) —
 // fixed order, never cycled/re-sorted, so adjacent series stay CVD-safe.
@@ -204,7 +204,7 @@ const prepareChartData = (activeSheet, displayGrid, cfg) => {
 };
 
 // Newer variants reuse their base family's data-label positions.
-const LABEL_FAMILY = { columnPercent: "columnStacked", barPercent: "barStacked", linePercent: "lineStacked", lineMarkers: "line", areaStacked: "area", areaPercent: "area" };
+const LABEL_FAMILY = { actualVsTarget: "columnGrouped", columnPercent: "columnStacked", barPercent: "barStacked", linePercent: "lineStacked", lineMarkers: "line", areaStacked: "area", areaPercent: "area" };
 const labelFamily = (type) => LABEL_FAMILY[type] || type;
 // Only these draw one mark per (series, category), so only they can recolor single points.
 const POINT_COLOR_TYPES = new Set(["columnGrouped", "columnStacked", "columnPercent", "barGrouped", "barStacked", "barPercent", "pie", "doughnut"]);
@@ -300,7 +300,13 @@ const RECHARTS_LABEL_POSITION = {
 
 // Which label-position family one series belongs to: in a combo chart a column
 // series takes the column positions and a line/area series the above/below ones.
-const seriesLabelFamily = (config, seriesIndex) => {
+// In Actual vs Target the Actual columns take the column positions and the Target
+// dots the line ones; which series is which depends on their names (`seriesKeys`).
+const seriesLabelFamily = (config, seriesIndex, seriesKeys) => {
+    if (config.type === "actualVsTarget") {
+        const { targetIndex } = targetSeriesIndexes(seriesKeys, targetConfigOf(config).swapped);
+        return seriesIndex === targetIndex ? "combo" : "columnGrouped";
+    }
     if (config.type !== "combo") return labelFamily(config.type);
     return getComboSeriesSettings(config, config.valueCols?.[seriesIndex], seriesIndex).type === "column" ? "columnGrouped" : "combo";
 };
@@ -1449,7 +1455,7 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
             const seriesShown = options.show ?? cfg.showDataLabels;
             if (mini || (!seriesShown && !showsOwnLabel(points))) return null;
             const seriesId = cfg.valueCols?.[index];
-            const family = seriesLabelFamily(cfg, index);
+            const family = seriesLabelFamily(cfg, index, seriesKeys);
             const positions = RECHARTS_LABEL_POSITION[family] || {};
             const chartWide = cfg.labelPosition && cfg.labelPosition !== "auto" ? cfg.labelPosition : null;
             const seriesPosition = positions[options.position] || positions[chartWide] || positions[AUTO_LABEL_POSITION[family]] || "top";
@@ -1617,6 +1623,52 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
                             </Area>
                         ))}
                     </AreaChart>
+                );
+            }
+            case "actualVsTarget": {
+                // One column per category for Actual, coloured by whether it meets that
+                // category's Target, which is drawn as a dot (a Line with no stroke).
+                // Both keep their own series' data-label settings: seriesLabel(index).
+                const tc = targetConfigOf(cfg);
+                const { actualIndex, targetIndex } = targetSeriesIndexes(seriesKeys, tc.swapped);
+                const actualKey = seriesKeys[actualIndex];
+                const targetKey = seriesKeys[targetIndex];
+                const statusColor = (status) => (status === "above" ? tc.aboveColor : status === "below" ? tc.belowColor : tc.neutralColor);
+                const rows = data.map((row) => ({ ...row, __status: targetStatus(row[actualKey] ?? null, row[targetKey] ?? null, tc.rule) }));
+                const legendItems = [
+                    { label: TARGET_STATUS_TEXT.above, color: tc.aboveColor },
+                    { label: TARGET_STATUS_TEXT.below, color: tc.belowColor },
+                    ...(rows.some((r) => r.__status === "none" && r[actualKey] != null) ? [{ label: "No target", color: tc.neutralColor }] : []),
+                    ...(tc.showTargetDot ? [{ label: targetKey, color: tc.targetDotColor, round: true }] : []),
+                ];
+                return (
+                    <ComposedChart data={rows} margin={margin}>
+                        {showGrid && <CartesianGrid stroke={GRIDLINE_COLOR} vertical={false} />}
+                        <XAxis dataKey="name" {...ax} {...categoryAxis} />
+                        <YAxis {...ax} />
+                        {!mini && (
+                            <Tooltip
+                                cursor={{ fill: "rgba(79,70,229,0.06)" }}
+                                content={<ActualVsTargetTooltip actualKey={actualKey} targetKey={targetKey} statusColor={statusColor} dotColor={tc.targetDotColor} />}
+                            />
+                        )}
+                        {legend && React.cloneElement(legend, { content: <TargetLegend items={legendItems} /> })}
+                        <Bar dataKey={actualKey} maxBarSize={24} radius={[4, 4, 0, 0]} isAnimationActive={!mini}>
+                            {rows.map((r, di) => <Cell key={di} fill={statusColor(r.__status)} />)}
+                            {seriesLabel(actualIndex)}
+                        </Bar>
+                        {/* No connecting line, only the dots. It stays mounted when the dots
+                            are hidden so the target still sets the Y scale and shows in the tooltip. */}
+                        <Line
+                            dataKey={targetKey}
+                            stroke="none"
+                            isAnimationActive={false}
+                            activeDot={false}
+                            dot={<TargetDot r={mini ? 3 : tc.targetDotSize} fill={tc.targetDotColor} show={tc.showTargetDot} />}
+                        >
+                            {seriesLabel(targetIndex)}
+                        </Line>
+                    </ComposedChart>
                 );
             }
             case "combo": {
@@ -2064,13 +2116,13 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
                             contentClassName="w-[170px]"
                             trigger={<span className="flex-1 text-left text-xs text-slate-800 truncate">
                                 {!pointLabelShown ? "No Label"
-                                    : getLabelPositionOptions(seriesLabelFamily(config, targetSeriesIndex)).find((o) => o.value === targetPointLabel.position)?.label || "Same as Series"}
+                                    : getLabelPositionOptions(seriesLabelFamily(config, targetSeriesIndex, seriesKeys)).find((o) => o.value === targetPointLabel.position)?.label || "Same as Series"}
                             </span>}
                         >
                             <MenuItem label="No Label" checked={!pointLabelShown} onClick={() => setPointLabel({ show: false })} />
                             <MenuItem label="Same as Series" checked={pointLabelShown && !targetPointLabel.position} onClick={() => setPointLabel({ show: true, position: undefined })} />
                             <MenuSeparator />
-                            {getLabelPositionOptions(seriesLabelFamily(config, targetSeriesIndex)).map((opt) => (
+                            {getLabelPositionOptions(seriesLabelFamily(config, targetSeriesIndex, seriesKeys)).map((opt) => (
                                 <MenuItem
                                     key={opt.value}
                                     label={opt.label}
@@ -2086,13 +2138,13 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
                             contentClassName="w-[170px]"
                             trigger={<span className="flex-1 text-left text-xs text-slate-800 truncate">
                                 {!seriesLabelsShown ? "No Labels"
-                                    : getLabelPositionOptions(seriesLabelFamily(config, targetSeriesIndex)).find((o) => o.value === targetSeriesLabel.position)?.label || "Same as Chart"}
+                                    : getLabelPositionOptions(seriesLabelFamily(config, targetSeriesIndex, seriesKeys)).find((o) => o.value === targetSeriesLabel.position)?.label || "Same as Chart"}
                             </span>}
                         >
                             <MenuItem label="No Labels" checked={!seriesLabelsShown} onClick={() => setSeriesLabel({ show: false })} />
                             <MenuItem label="Same as Chart" checked={seriesLabelsShown && !targetSeriesLabel.position} onClick={() => setSeriesLabel({ show: true, position: undefined })} />
                             <MenuSeparator />
-                            {getLabelPositionOptions(seriesLabelFamily(config, targetSeriesIndex)).map((opt) => (
+                            {getLabelPositionOptions(seriesLabelFamily(config, targetSeriesIndex, seriesKeys)).map((opt) => (
                                 <MenuItem
                                     key={opt.value}
                                     label={opt.label}
@@ -2376,6 +2428,7 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
                 {config.type === "actualVsTarget" && (() => {
                     const tc = targetConfigOf(config);
                     const nameOf = (i) => seriesKeys[i] ?? (config.valueCols?.[i] ? seriesIdLabel(config.valueCols[i]) : "(none)");
+                    const { actualIndex, targetIndex } = targetSeriesIndexes(seriesKeys, tc.swapped);
                     return (
                         <RibbonGroup label="Target">
                             <Popover>
@@ -2388,8 +2441,8 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
                                 <PopoverContent className="w-72 p-3 bg-white border border-slate-200 shadow-md rounded-lg max-h-[70vh] overflow-y-auto" align="start">
                                     <ActualVsTargetControls
                                         tc={tc}
-                                        actualName={nameOf(tc.swapped ? 1 : 0)}
-                                        targetName={nameOf(tc.swapped ? 0 : 1)}
+                                        actualName={nameOf(actualIndex)}
+                                        targetName={nameOf(targetIndex)}
                                         onChange={applyTargetConfig}
                                         onReset={() => applyConfig({ targetConfig: undefined })}
                                     />

@@ -112,7 +112,7 @@ export const familyOfVariant = (key) => CHART_FAMILIES.find((f) => f.keys.includ
 // Types drawn by chartExtras (anything beyond column/bar/line/area/pie/combo).
 export const EXTRA_CHART_TYPES = new Set([
     "treemap", "sunburst", "histogram", "pareto", "boxWhisker", "scatter", "scatterSmooth", "scatterStraight",
-    "bubble", "waterfall", "funnel", "stock", "radar", "radarFilled", "actualVsTarget",
+    "bubble", "waterfall", "funnel", "stock", "radar", "radarFilled",
 ]);
 export const SPARKLINE_TYPES = new Set(["sparkLine", "sparkColumn", "sparkWinLoss"]);
 
@@ -120,7 +120,7 @@ export const SPARKLINE_TYPES = new Set(["sparkLine", "sparkColumn", "sparkWinLos
 export const chartRequirement = (type, seriesKeys, data) => {
     if (type === "stock" && seriesKeys.length < 3) return "A High-Low-Close stock chart needs three value series, in order: High, Low, Close.";
     if (type === "bubble" && seriesKeys.length < 1) return "A bubble chart needs at least one value series.";
-    if (type === "actualVsTarget" && seriesKeys.length < 2) return "An Actual vs Target chart needs two value series: Actual first, then Target.";
+    if (type === "actualVsTarget" && seriesKeys.length < 2) return "An Actual vs Target chart needs two value series: an Actual and a Target.";
     if ((type === "treemap" || type === "sunburst") && !data.some((row) => seriesKeys.some((k) => row[k] > 0))) {
         return "Treemap and sunburst charts need positive values.";
     }
@@ -144,7 +144,25 @@ export const TARGET_DEFAULTS = Object.freeze({
 });
 export const TARGET_DOT_SIZE_MIN = 4;
 export const TARGET_DOT_SIZE_MAX = 10;
+export const TARGET_STATUS_TEXT = Object.freeze({ above: "Meets target", below: "Misses target" });
 export const targetConfigOf = (cfg) => ({ ...TARGET_DEFAULTS, ...(cfg?.targetConfig || {}) });
+
+// Which series is Actual and which is Target, as indexes into `seriesKeys` (the
+// series names). The names decide first: a series called "Target", "Goal", "Plan" or
+// "Budget" is the target and one called "Actual" is the actual, wherever they sit in
+// the sheet. Without such names, the first series is Actual and the second Target.
+// `swapped` then flips whichever pair that gives.
+const TARGET_NAME = /\b(target|goal|plan|planned|budget|tgt)\b/i;
+const ACTUAL_NAME = /\b(actual|achieved|act)\b/i;
+export const targetSeriesIndexes = (seriesKeys, swapped = false) => {
+    const names = (seriesKeys || []).map((k) => String(k ?? ""));
+    let targetIndex = names.findIndex((n) => TARGET_NAME.test(n) && !ACTUAL_NAME.test(n));
+    let actualIndex = names.findIndex((n, i) => i !== targetIndex && ACTUAL_NAME.test(n) && !TARGET_NAME.test(n));
+    if (targetIndex === -1 && actualIndex === -1) { actualIndex = 0; targetIndex = 1; }
+    else if (targetIndex === -1) targetIndex = actualIndex === 0 ? 1 : 0;
+    else if (actualIndex === -1) actualIndex = targetIndex === 0 ? 1 : 0;
+    return swapped ? { actualIndex: targetIndex, targetIndex: actualIndex } : { actualIndex, targetIndex };
+};
 
 // Chart types that need a blank cell kept as null instead of read as 0.
 export const keepsBlankCells = (type) => type === "actualVsTarget";

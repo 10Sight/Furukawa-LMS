@@ -4,7 +4,7 @@ import {
     RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Treemap, SunburstChart,
     Cell, XAxis, YAxis, CartesianGrid, Tooltip, LabelList, ReferenceLine,
 } from "recharts";
-import { targetConfigOf, targetStatus } from "../../../constants/spreadsheets/chartTypes.js";
+import { TARGET_STATUS_TEXT } from "../../../constants/spreadsheets/chartTypes.js";
 
 // Renderers for the Excel chart types beyond the basic column/bar/line/area/pie
 // family: hierarchy (treemap, sunburst), statistical (histogram, pareto, box &
@@ -94,24 +94,25 @@ function StockShape({ x, y, width, height, payload }) {
 }
 
 // --- Actual vs Target ---------------------------------------------------------------
-
-const STATUS_TEXT = { above: "Meets target", below: "Misses target" };
+// The chart itself is drawn in ExcelGraph's renderChartFor, so its columns and dots get
+// the same data-label settings as the other column charts; these are its pieces.
 
 // The target marker: a dot with a white ring, so it reads on top of its own column.
 // recharts clones this per point with cx/cy/value; a blank target draws nothing.
-function TargetDot({ cx, cy, value, r, fill, show }) {
+export function TargetDot({ cx, cy, value, r, fill, show }) {
     if (!show || value === null || value === undefined || !Number.isFinite(cx) || !Number.isFinite(cy)) return <g />;
     return <circle cx={cx} cy={cy} r={r} fill={fill} stroke="#ffffff" strokeWidth={2} />;
 }
 
-function ActualVsTargetTooltip({ active, payload, actualName, targetName, statusColor, dotColor }) {
+// Each row carries its series values under their names plus `__status` (targetStatus).
+export function ActualVsTargetTooltip({ active, payload, actualKey, targetKey, statusColor, dotColor }) {
     const row = active && payload?.[0]?.payload;
     if (!row) return null;
-    const { actual, target, status } = row;
+    const actual = row[actualKey] ?? null, target = row[targetKey] ?? null, status = row.__status;
     const judged = status !== "none";
     const variance = judged ? actual - target : null;
     const achievement = judged && target !== 0 ? (actual / target) * 100 : null;
-    const statusText = STATUS_TEXT[status] || (target === null ? "No target" : "No actual value");
+    const statusText = TARGET_STATUS_TEXT[status] || (target === null ? "No target" : "No actual value");
     const line = (label, value, swatch) => (
         <div className="flex items-center justify-between gap-3">
             <span className="flex items-center gap-1.5 text-slate-500">{swatch}{label}</span>
@@ -121,8 +122,8 @@ function ActualVsTargetTooltip({ active, payload, actualName, targetName, status
     return (
         <div className="rounded-lg border border-slate-200 bg-white shadow-md px-2.5 py-2 text-xs min-w-[160px] space-y-0.5">
             <div className="text-[10px] font-semibold text-slate-500 mb-1">{row.name}</div>
-            {line(actualName, fmt(actual), <span className="w-2.5 h-2.5 rounded-sm" style={{ background: statusColor(status) }} />)}
-            {line(targetName, fmt(target), <span className="w-2.5 h-2.5 rounded-full" style={{ background: dotColor }} />)}
+            {line(actualKey, fmt(actual), <span className="w-2.5 h-2.5 rounded-sm" style={{ background: statusColor(status) }} />)}
+            {line(targetKey, fmt(target), <span className="w-2.5 h-2.5 rounded-full" style={{ background: dotColor }} />)}
             {line("Variance", variance === null ? null : `${variance > 0 ? "+" : ""}${fmt(variance)}`)}
             {line("Achievement", achievement === null ? null : `${achievement.toFixed(1)}%`)}
             <div className="pt-1 mt-1 border-t border-slate-100 font-semibold" style={{ color: statusColor(status) }}>{statusText}</div>
@@ -133,7 +134,7 @@ function ActualVsTargetTooltip({ active, payload, actualName, targetName, status
 // The column's color means "met or missed", not "this series", so the legend names
 // those states instead of listing the two series. Laid out by the chart's own Legend
 // settings (position/alignment), which recharts passes in as `layout`.
-function TargetLegend({ layout, items }) {
+export function TargetLegend({ layout, items }) {
     return (
         <div className={layout === "vertical" ? "flex flex-col gap-1 px-2" : "flex flex-wrap items-center justify-center gap-x-4 gap-y-1 pt-1"}>
             {items.map(({ label, color, round }) => (
@@ -229,50 +230,6 @@ export function renderExtraChart({ cfg, data, seriesKeys, colorFor, axisProps, c
                         {labels && <LabelList dataKey="value" position="top" fill={labelFill(INK)} {...labelText} />}
                     </Bar>
                     <Line yAxisId="right" type="linear" dataKey="cumulative" stroke={colorFor(1)} strokeWidth={2} dot={mini ? false : { r: 3 }} isAnimationActive={!mini} />
-                </ComposedChart>
-            );
-        }
-        case "actualVsTarget": {
-            const tc = targetConfigOf(cfg);
-            const actualKey = seriesKeys[tc.swapped ? 1 : 0];
-            const targetKey = seriesKeys[tc.swapped ? 0 : 1];
-            const statusColor = (status) => (status === "above" ? tc.aboveColor : status === "below" ? tc.belowColor : tc.neutralColor);
-            const rows = data.map((row) => {
-                const actual = row[actualKey] ?? null, target = row[targetKey] ?? null;
-                return { name: row.name, actual, target, status: targetStatus(actual, target, tc.rule) };
-            });
-            const legendItems = [
-                { label: STATUS_TEXT.above, color: tc.aboveColor },
-                { label: STATUS_TEXT.below, color: tc.belowColor },
-                ...(rows.some((r) => r.status === "none" && r.actual !== null) ? [{ label: "No target", color: tc.neutralColor }] : []),
-                ...(tc.showTargetDot ? [{ label: targetKey, color: tc.targetDotColor, round: true }] : []),
-            ];
-            return (
-                <ComposedChart data={rows} margin={margin}>
-                    {grid && <CartesianGrid stroke={GRID} vertical={false} />}
-                    <XAxis dataKey="name" {...axisProps} {...categoryAxisProps} hide={mini} />
-                    <YAxis {...axisProps} hide={mini} />
-                    {!mini && (
-                        <Tooltip
-                            cursor={{ fill: "rgba(79,70,229,0.06)" }}
-                            content={<ActualVsTargetTooltip actualName={actualKey} targetName={targetKey} statusColor={statusColor} dotColor={tc.targetDotColor} />}
-                        />
-                    )}
-                    {legend && React.cloneElement(legend, { content: <TargetLegend items={legendItems} /> })}
-                    <Bar dataKey="actual" name={actualKey} maxBarSize={24} radius={[4, 4, 0, 0]} isAnimationActive={!mini}>
-                        {rows.map((r, i) => <Cell key={i} fill={statusColor(r.status)} />)}
-                        {labels && <LabelList dataKey="actual" position="top" fill={labelFill(INK)} {...labelText} />}
-                    </Bar>
-                    {/* No connecting line: only the dots. It stays mounted when the dots are
-                        hidden so the target still sets the Y scale and appears in the tooltip. */}
-                    <Line
-                        dataKey="target"
-                        name={targetKey}
-                        stroke="none"
-                        isAnimationActive={false}
-                        activeDot={false}
-                        dot={<TargetDot r={mini ? 3 : tc.targetDotSize} fill={tc.targetDotColor} show={tc.showTargetDot} />}
-                    />
                 </ComposedChart>
             );
         }

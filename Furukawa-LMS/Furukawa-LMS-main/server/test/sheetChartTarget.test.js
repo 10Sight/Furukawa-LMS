@@ -5,7 +5,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-    targetStatus, targetConfigOf, TARGET_DEFAULTS, keepsBlankCells, chartRequirement,
+    targetStatus, targetConfigOf, TARGET_DEFAULTS, keepsBlankCells, chartRequirement, targetSeriesIndexes,
 } from "../../admin/src/constants/spreadsheets/chartTypes.js";
 import { extractDisjointChartData } from "../../admin/src/utils/spreadsheets/chartMatrixEngine.js";
 
@@ -56,6 +56,23 @@ test("the chart needs two series", () => {
     assert.match(chartRequirement("actualVsTarget", ["Actual"], []), /two value series/);
     assert.equal(chartRequirement("actualVsTarget", ["Actual", "Target"], []), null);
     assert.equal(chartRequirement("actualVsTarget", ["Actual", "Target", "Extra"], []), null);
+});
+
+test("series roles follow their names, wherever the columns sit", () => {
+    assert.deepEqual(targetSeriesIndexes(["Target", "Actual"]), { actualIndex: 1, targetIndex: 0 });
+    assert.deepEqual(targetSeriesIndexes(["Actual", "Target"]), { actualIndex: 0, targetIndex: 1 });
+    assert.deepEqual(targetSeriesIndexes(["Target Qty", "Actual Qty"]), { actualIndex: 1, targetIndex: 0 });
+    assert.deepEqual(targetSeriesIndexes(["Month Goal", "Produced"]), { actualIndex: 1, targetIndex: 0 });
+    assert.deepEqual(targetSeriesIndexes(["Produced", "Plan"]), { actualIndex: 0, targetIndex: 1 });
+    assert.deepEqual(targetSeriesIndexes(["Notes", "Target", "Actual"]), { actualIndex: 2, targetIndex: 1 });
+});
+
+test("unnamed series fall back to position, and swapping flips the pair", () => {
+    assert.deepEqual(targetSeriesIndexes(["Col B", "Col C"]), { actualIndex: 0, targetIndex: 1 });
+    assert.deepEqual(targetSeriesIndexes(["Col B", "Col C"], true), { actualIndex: 1, targetIndex: 0 });
+    assert.deepEqual(targetSeriesIndexes(["Target", "Actual"], true), { actualIndex: 0, targetIndex: 1 });
+    // "Targeted" isn't the word "target", so it doesn't count.
+    assert.deepEqual(targetSeriesIndexes(["Targeted", "Shipped"]), { actualIndex: 0, targetIndex: 1 });
 });
 
 test("only Actual vs Target keeps blank cells", () => {

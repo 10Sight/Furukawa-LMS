@@ -1320,12 +1320,24 @@ export default function PDCASheet({
     const handleWheel = (e) => {
       if (e.ctrlKey || e.shiftKey || e.deltaY <= 0 || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
       const body = bodyScrollRef.current;
-      if (!body) return;
-      const bodyRemaining = body.scrollHeight - body.clientHeight - body.scrollTop;
-      if (bodyRemaining <= 1) return; // graph already scrolled out — let the table scroll
-      e.preventDefault();
-      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? body.clientHeight : 1;
-      body.scrollTop += e.deltaY * unit;
+      if (body) {
+        const bodyRemaining = body.scrollHeight - body.clientHeight - body.scrollTop;
+        if (bodyRemaining > 1) {
+          e.preventDefault();
+          const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? body.clientHeight : 1;
+          body.scrollTop += e.deltaY * unit;
+          return;
+        }
+      }
+      const docEl = typeof document !== 'undefined' ? (document.scrollingElement || document.documentElement) : null;
+      if (docEl) {
+        const docRemaining = docEl.scrollHeight - docEl.clientHeight - docEl.scrollTop;
+        if (docRemaining > 1) {
+          e.preventDefault();
+          const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? docEl.clientHeight : 1;
+          docEl.scrollTop += e.deltaY * unit;
+        }
+      }
     };
     sheetScrollEl.addEventListener('wheel', handleWheel, { passive: false });
     return () => sheetScrollEl.removeEventListener('wheel', handleWheel);
@@ -5453,7 +5465,7 @@ export default function PDCASheet({
       </div>
 
       {/* Scrollable body: graph + sheet scroll under the fixed toolbar */}
-      <div ref={bodyScrollRef} className="w-full min-w-0 flex-1 min-h-0 flex flex-col gap-2 overflow-x-hidden overflow-y-auto">
+      <div ref={bodyScrollRef} className="pdca-body-scroll-container w-full min-w-0 flex-1 min-h-0 flex flex-col gap-2 overflow-x-hidden overflow-y-auto">
       {/* Monthly PDCA Status Analytics Graph */}
       <PDCAGraphSection
         rows={rows}
@@ -5470,7 +5482,7 @@ export default function PDCASheet({
       )}
 
       {/* Spreadsheet Matrix Table Grid */}
-      <div ref={setSheetScrollEl} className="w-full min-w-0 flex-auto shrink-0 min-h-[320px] bg-white border border-[#B0BEC5] shadow-xs overflow-auto max-h-[calc(100vh-62px)]">
+      <div ref={setSheetScrollEl} className="pdca-sheet-scroll-container w-full min-w-0 flex-auto shrink-0 min-h-[320px] bg-white border border-[#B0BEC5] shadow-xs overflow-auto max-h-[calc(100vh-62px)]">
         <table className="w-full min-w-max text-left table-fixed border-separate border-spacing-0 border-t border-l border-[#B0BEC5] text-[11px]">
           <colgroup>
             <col style={{ width: `${dateColWidth}px`, minWidth: `${dateColWidth}px` }} />

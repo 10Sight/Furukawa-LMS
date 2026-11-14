@@ -39,6 +39,14 @@ import CertificateTemplates from "@/pages/certificates/admin/CertificateTemplate
 
 const VALID_TEST_PAPER_TABS = ["testPaper", "testMonitoring", "certificateTemplates"];
 
+// Must run inside the Take Test click handler: browsers only allow fullscreen from a
+// user gesture. If it's refused, TakeQuiz still runs full-window with a toggle button.
+const enterTestFullscreen = () => {
+  if (document.fullscreenEnabled && !document.fullscreenElement) {
+    document.documentElement.requestFullscreen?.().catch(() => {});
+  }
+};
+
 const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, skillUpgradation: forceSkillUpgradation }) => {
   const { t } = useTranslate();
   const navigate = useNavigate();
@@ -515,7 +523,12 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                       <TableCell className="pr-8 text-right">
                         <Button
                           className="bg-blue-600 hover:bg-blue-700 text-white font-semibold h-11 px-6 rounded-xl shadow-lg shadow-blue-100 group-hover:scale-105 transition-transform"
-                          onClick={() => navigate(`/student/quiz/${quiz._id}`)}
+                          onClick={() => {
+                            enterTestFullscreen();
+                            navigate(`/student/quiz/${quiz._id}`, {
+                              state: { from: window.location.pathname + window.location.search }
+                            });
+                          }}
                         >
                           <IconPlayerPlay className="h-4 w-4 mr-2" />
                           {t("testPaper.startTest")}
@@ -898,6 +911,7 @@ const TestPaper = ({ isDojo: forceDojo, isMultiSkilling: forceMultiSkilling, ski
                             variant="default"
                             size="sm"
                             onClick={() => {
+                              enterTestFullscreen();
                               const base = "/" + (window.location.pathname.split('/')[1] || "admin");
                               const quizPath = base === "/student" ? "quiz" : "take-test";
                               navigate(`${base}/${quizPath}/${quiz._id}`, {

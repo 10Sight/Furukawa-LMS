@@ -64,7 +64,38 @@ export default function PDCASheetPage() {
   const targetDepartment = location.state?.targetDept || queryParams.get('dept') || '';
 
   return (
-    <div className="w-full min-w-0">
+    <div className="pdca-page-sheet-root fixed inset-0 z-40 h-dvh w-full bg-white text-slate-800 flex flex-col overflow-hidden p-1.5 sm:p-2 pb-0.5 sm:pb-1">
+      <style>{`
+        .pdca-page-sheet-root .pdca-sheet-scroll-container,
+        .pdca-page-sheet-root .pdca-body-scroll-container {
+          scrollbar-width: auto;
+          scrollbar-color: #334155 #cbd5e1;
+        }
+        .pdca-page-sheet-root .pdca-sheet-scroll-container::-webkit-scrollbar,
+        .pdca-page-sheet-root .pdca-body-scroll-container::-webkit-scrollbar {
+          width: 14px !important;
+          height: 14px !important;
+        }
+        .pdca-page-sheet-root .pdca-sheet-scroll-container::-webkit-scrollbar-track,
+        .pdca-page-sheet-root .pdca-body-scroll-container::-webkit-scrollbar-track {
+          background: #cbd5e1 !important;
+          border-radius: 6px;
+        }
+        .pdca-page-sheet-root .pdca-sheet-scroll-container::-webkit-scrollbar-thumb,
+        .pdca-page-sheet-root .pdca-body-scroll-container::-webkit-scrollbar-thumb {
+          background: #334155 !important;
+          border-radius: 6px;
+          border: 2px solid #cbd5e1;
+        }
+        .pdca-page-sheet-root .pdca-sheet-scroll-container::-webkit-scrollbar-thumb:hover,
+        .pdca-page-sheet-root .pdca-body-scroll-container::-webkit-scrollbar-thumb:hover {
+          background: #1e293b !important;
+        }
+        .pdca-page-sheet-root .pdca-sheet-scroll-container::-webkit-scrollbar-corner,
+        .pdca-page-sheet-root .pdca-body-scroll-container::-webkit-scrollbar-corner {
+          background: #cbd5e1 !important;
+        }
+      `}</style>
       <PDCASheet
         key={selectedTopic?.id || id}
         topic={selectedTopic || (id ? { id, topic: 'PDCA Audit Sheet' } : null)}

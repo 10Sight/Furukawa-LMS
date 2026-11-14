@@ -42,7 +42,12 @@ export function normalizePtmStatus(status) {
 
 export function normalizeDateToYMD(val) {
   if (!val) return '';
-  const text = String(val).trim();
+  const lines = String(val)
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const text = lines.length > 0 ? lines[lines.length - 1] : '';
+  if (!text) return '';
   if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
   const match = text.match(/^(\d{1,2})[-./](\d{1,2})[-./](\d{2}|\d{4})$/);
   if (!match) return '';
@@ -378,7 +383,7 @@ export function classifyPTMSheetStatus(sheet, scope = 'Company', options = {}) {
 export function isPtmRecordCreator(item, user) {
   if (!item || !user) return false;
   const creatorCode = String(item.createdBy?.code || item.createdBy?.empId || item.createdById || '').trim().toLowerCase();
-  const userCode = String(user.code || user.empId || user.employeeCode || user.id || '').trim().toLowerCase();
+  const userCode = String(user.code || user.empId || user.employeeCode || user.employeeId || user.username || user.id || '').trim().toLowerCase();
   if (creatorCode && userCode && creatorCode === userCode) return true;
 
   const creatorName = String(item.createdBy?.name || item.createdBy?.fullName || '').trim().toLowerCase();
@@ -386,6 +391,52 @@ export function isPtmRecordCreator(item, user) {
   if (creatorName && userName && creatorName === userName) return true;
 
   return false;
+}
+
+export const PTM_RESPONSIBLE_EDITABLE_COLUMNS = [
+  'deliverableRequired',
+  'deliverable',
+  'deliverableFile',
+  'duration',
+  'startDatePlan',
+  'startDateActual',
+  'endDatePlan',
+  'endDateActual',
+  'hitMiss',
+  'noOfTimesRevised',
+  'reasonOfFailure',
+  'actionTaken',
+];
+
+export function canUserFullEditPtmSheet(sheetItem, currentUser, rows = []) {
+  if (!currentUser) return true;
+  if (sheetItem && isPtmRecordCreator(sheetItem, currentUser)) return true;
+
+  const isAssignedStaff = Array.isArray(rows) && rows.some((r) => doesPtmRowBelongToUser(r, currentUser));
+  if (isAssignedStaff) {
+    return false;
+  }
+
+  const hasSheetCreator = Boolean(
+    sheetItem?.createdBy?.name || sheetItem?.createdBy?.code || sheetItem?.createdById
+  );
+  if (hasSheetCreator) {
+    const isAdmin = Boolean(
+      currentUser.isAdmin === true ||
+      String(currentUser.role || '').toUpperCase() === 'ADMIN' ||
+      String(currentUser.role || '').toUpperCase() === 'SUPERADMIN'
+    );
+    return isAdmin;
+  }
+
+  return true;
+}
+
+export function canUserEditPtmRowColumn(row, colKey, currentUser, hasFullSheetAccess = true) {
+  if (hasFullSheetAccess) return true;
+  if (!row || !currentUser) return false;
+  if (!doesPtmRowBelongToUser(row, currentUser)) return false;
+  return PTM_RESPONSIBLE_EDITABLE_COLUMNS.includes(colKey);
 }
 
 export function matchesDateRange(item, fromDate = '', toDate = '') {

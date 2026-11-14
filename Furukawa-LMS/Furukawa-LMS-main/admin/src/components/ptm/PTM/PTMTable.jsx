@@ -11,13 +11,12 @@ import {
   stripEmployeeId,
   parseStaffEmployee,
   findEmployeeDepartment,
-  VERIFIED_EMPLOYEE_MASTER
 } from '../../../pages/pdca/data/pdcaEmployees.js';
 import {
   PDCA_UNITS,
   getDepartmentsForUnit
 } from '../../../pages/pdca/data/pdcaConstants.js';
-import { apqpApi } from '../../services/api';
+import { apqpApi, employeeApi } from '../../services/api';
 import PTMDeliverableUploadModal from './PTMDeliverableUploadModal';
 import {
   PTM_STATUS_OPTIONS,
@@ -28,6 +27,7 @@ import {
   getTodayYMD,
   getRowRevisions,
   evaluatePtmRowStatus,
+  canUserEditPtmRowColumn,
 } from '../../../pages/ptm/data/ptmRecordFilters.js';
 import {
   Plus,
@@ -40,6 +40,7 @@ import {
   Eye,
   EyeOff,
   Clock,
+  CalendarDays,
   X,
   Search,
   User,
@@ -59,28 +60,6 @@ const DEPARTMENTS = [
   { key: 'PROD', label: 'PROD' },
   { key: 'SCM', label: 'SCM' },
   { key: 'Quality', label: 'Quality' },
-];
-
-const COMMON_APQP_REQUIREMENTS = [
-  'Business Plans and Marketing Strategy',
-  'Product/Process Benchmark Data',
-  'Product Reliability Studies',
-  'Preliminary Process Flow Chart',
-  'Preliminary Special Product and Process Characteristics',
-  'Product Assurance Plan',
-  'Design FMEA',
-  'Design Verification Plan',
-  'Prototype Build Control Plan',
-  'Process Flow Diagram',
-  'Process FMEA',
-  'Pre-Launch Control Plan',
-  'Production Control Plan',
-  'Measurement Systems Analysis Plan',
-  'Preliminary Process Capability Study',
-  'Production Trial Run',
-  'Production Part Approval Process (PPAP)',
-  'Production Validation Testing',
-  'Packaging Evaluation',
 ];
 
 const parseDateForDuration = (value) => {
@@ -230,6 +209,99 @@ function CriticalActivityCell({ value, onChange }) {
 
 const clampDimension = (value, minimum) => Math.max(minimum, Math.round(value));
 
+const getEndDateActualHistory = (row) => {
+  if (!row) return [];
+  if (Array.isArray(row.endDateActualHistory) && row.endDateActualHistory.length > 0) {
+    return row.endDateActualHistory
+      .map((d) => String(d || '').trim())
+      .filter((d) => d && d.toUpperCase() !== 'N/A' && d !== '—' && d !== '-');
+  }
+  const raw = String(row.endDateActual || '').trim();
+  if (!raw || raw.toUpperCase() === 'N/A' || raw === '—' || raw === '-') return [];
+  return raw
+    .split(/\r?\n/)
+    .map((d) => d.trim())
+    .filter((d) => d && d.toUpperCase() !== 'N/A' && d !== '—' && d !== '-');
+};
+
+const formatIsoToShortDMY = (isoDate) => {
+  if (!isoDate) return '';
+  const match = String(isoDate).trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return isoDate;
+  const [, year, month, day] = match;
+  return `${day}-${month}-${year.slice(-2)}`;
+};
+
+function EndDateActualCell({ row, onSelectDate, disabled = false, rowIndex }) {
+  const pickerRef = useRef(null);
+  const history = getEndDateActualHistory(row);
+  const previousDates = history.length > 1 ? history.slice(0, -1) : [];
+  const latestDate = history.length > 0 ? history[history.length - 1] : '';
+  const pickerIsoValue = latestDate ? normalizeDateToYMD(latestDate) : '';
+
+  return (
+    <div
+      className={`relative flex items-center justify-center min-w-[112px] w-full min-h-[34px] py-1 pl-2 pr-6 ${
+        disabled ? 'pointer-events-none opacity-75' : 'cursor-pointer hover:bg-blue-50/40'
+      }`}
+      onClick={() => {
+        if (!disabled) pickerRef.current?.showPicker?.();
+      }}
+      title={
+        history.length > 0
+          ? `End Date (Actual): ${history.join(' → ')} (Click calendar to select new End Date Actual)`
+          : 'Click to select End Date (Actual)'
+      }
+    >
+      {history.length === 0 ? (
+        <span className="text-sm font-mono text-slate-400 select-none">N/A</span>
+      ) : (
+        <div className="flex flex-col items-center justify-center gap-0.5 py-0.5">
+          {previousDates.map((prevDate, idx) => (
+            <span
+              key={`${prevDate}-${idx}`}
+              className="text-[11px] leading-tight text-slate-400 line-through decoration-slate-500 decoration-1 font-mono select-none"
+            >
+              {prevDate}
+            </span>
+          ))}
+          <span className="text-sm font-bold leading-snug text-slate-900 font-mono">
+            {latestDate}
+          </span>
+        </div>
+      )}
+
+      <CalendarDays
+        aria-hidden="true"
+        className="pointer-events-none absolute right-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
+      />
+      <input
+        ref={pickerRef}
+        type="date"
+        disabled={disabled}
+        value={pickerIsoValue}
+        data-row={rowIndex}
+        data-col="endDateActual"
+        onClick={(event) => {
+          event.stopPropagation();
+          if (!disabled) event.currentTarget.showPicker?.();
+        }}
+        onChange={(event) => {
+          if (disabled) return;
+          const formatted = formatIsoToShortDMY(event.target.value);
+          if (formatted) {
+            onSelectDate(formatted);
+          }
+        }}
+        aria-label="Choose End Date (Actual) from calendar"
+        title="Choose End Date (Actual) from calendar"
+        className="absolute right-0 top-1/2 h-6 w-6 -translate-y-1/2 cursor-pointer opacity-0"
+        tabIndex={-1}
+      />
+    </div>
+  );
+}
+
 const getRequirementInputHeight = (value) => {
   const text = String(value || '');
   if (!text) return DEFAULT_ROW_HEIGHT;
@@ -249,6 +321,10 @@ export default function PTMTable({
   selectedUnit,
   isMerged = false,
   isAdmin = false,
+  dbEmployees: externalDbEmployees = [],
+  currentUser = null,
+  hasFullSheetAccess = true,
+  savedColumnSuggestions = null,
 }) {
   const tableRef = useRef(null);
   const activeResizeRef = useRef(null);
@@ -281,7 +357,32 @@ export default function PTMTable({
     initialValue: '',
     initialEmployees: []
   });
-  const [dbEmployees] = useState(VERIFIED_EMPLOYEE_MASTER);
+  const [fetchedEmployees, setFetchedEmployees] = useState([]);
+
+  useEffect(() => {
+    if (Array.isArray(externalDbEmployees) && externalDbEmployees.length > 0) return;
+    let isMounted = true;
+    employeeApi.getAll().then((list) => {
+      if (isMounted && Array.isArray(list)) {
+        setFetchedEmployees(list);
+      }
+    }).catch((err) => {
+      console.warn('Could not fetch employees in PTMTable', err);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [externalDbEmployees]);
+
+  const dbEmployees = useMemo(
+    () => (Array.isArray(externalDbEmployees) && externalDbEmployees.length > 0 ? externalDbEmployees : fetchedEmployees),
+    [externalDbEmployees, fetchedEmployees]
+  );
+
+  const canEditCell = useCallback(
+    (row, colKey) => canUserEditPtmRowColumn(row, colKey, currentUser, hasFullSheetAccess),
+    [currentUser, hasFullSheetAccess]
+  );
 
   useEffect(() => {
     if (!openStaffDropdown) return;
@@ -414,7 +515,7 @@ export default function PTMTable({
       if (empObj && empObj.name) {
         const cleanName = stripEmployeeId(empObj.name);
         const code = (empObj.code || '').toUpperCase();
-        const autoDept = empObj.department || findEmployeeDepartment(`${cleanName} (${code})`, dbEmployees) || findEmployeeDepartment(`${cleanName} (${code})`, VERIFIED_EMPLOYEE_MASTER) || '';
+        const autoDept = empObj.department || findEmployeeDepartment(`${cleanName} (${code})`, dbEmployees) || '';
         targetDept = targetDept || autoDept;
         if (!targetUnit) {
           targetUnit = empObj.unit || (code.startsWith('GJ') ? 'Gujrat' : (code.startsWith('BW') ? 'Bawal' : (currentRow.respUnit || currentRow.unit || 'Bawal')));
@@ -584,41 +685,26 @@ export default function PTMTable({
 
   const employeeOptionList = useMemo(() => {
     const map = new Map();
-    dbEmployees.forEach((emp) => {
-      const cleanName = stripEmployeeId(emp.name);
+    dbEmployees.forEach((emp, idx) => {
+      const cleanName = stripEmployeeId(emp.name || emp.fullName || '');
       if (!cleanName) return;
-      map.set(cleanName, {
+      const code = String(emp.code || emp.empId || '').trim();
+      const key = `${cleanName.toLowerCase()}__${code.toLowerCase() || emp.id || idx}`;
+      map.set(key, {
+        id: emp.id,
         label: cleanName,
         name: cleanName,
-        code: emp.code || '',
+        code,
         department: emp.department || '',
-        unit: emp.unit || (emp.code?.toUpperCase().startsWith('GJ') ? 'Gujrat' : (emp.code?.toUpperCase().startsWith('BW') ? 'Bawal' : ''))
+        unit: emp.unit || (code.toUpperCase().startsWith('GJ') ? 'Gujrat' : (code.toUpperCase().startsWith('BW') ? 'Bawal' : ''))
       });
     });
 
-    rows.forEach((r) => {
-      if (r.staffEmployee?.trim()) {
-        const cleanName = stripEmployeeId(r.staffEmployee);
-        if (cleanName && !map.has(cleanName)) {
-          const dept = findEmployeeDepartment(r.staffEmployee, dbEmployees);
-          map.set(cleanName, {
-            label: cleanName,
-            name: cleanName,
-            code: '',
-            department: dept || r.responsiblePersonDept || '',
-            unit: r.respUnit || (Array.isArray(r.respUnits) ? r.respUnits[0] : '') || ''
-          });
-        }
-      }
-    });
-
     return Array.from(map.values());
-  }, [dbEmployees, rows]);
+  }, [dbEmployees]);
 
-  const getStaffOptionsForRow = (rowIndex, targetUnit = null, targetDept = null) => {
-    const unitToUse = targetUnit || '';
+  const getStaffOptionsForRow = (_rowIndex, _targetUnit = null, targetDept = null) => {
     const deptToUse = targetDept || '';
-    const currentUnit = unitToUse.trim().toLowerCase();
     const currentDept = deptToUse.trim().toLowerCase();
     const query = staffSearchQuery.trim().toLowerCase();
 
@@ -632,38 +718,10 @@ export default function PTMTable({
       );
     }
 
-    if (currentUnit || currentDept) {
-      const deptMatches = list.filter((item) => {
-        const itemDept = (item.department || '').toLowerCase();
-        const itemUnit = (item.unit || '').toLowerCase();
-        const itemCode = (item.code || '').toUpperCase();
-
-        let matchesUnit = true;
-        if (currentUnit && itemUnit) {
-          if (currentUnit === 'bawal') {
-            matchesUnit = itemUnit === 'bawal' || itemCode.startsWith('BW');
-          } else if (currentUnit === 'gujrat' || currentUnit === 'gujarat') {
-            matchesUnit = itemUnit === 'gujrat' || itemUnit === 'gujarat' || itemCode.startsWith('GJ');
-          }
-        }
-
-        let matchesDept = true;
-        if (currentDept) {
-          matchesDept = itemDept === currentDept;
-        }
-
-        return matchesUnit && matchesDept;
-      });
-
-      if (deptMatches.length > 0) {
-        return deptMatches;
-      }
-
-      if (currentDept) {
-        const deptOnlyMatches = list.filter((item) => (item.department || '').toLowerCase() === currentDept);
-        if (deptOnlyMatches.length > 0) {
-          return deptOnlyMatches;
-        }
+    if (currentDept) {
+      const deptOnlyMatches = list.filter((item) => (item.department || '').toLowerCase() === currentDept);
+      if (deptOnlyMatches.length > 0) {
+        return deptOnlyMatches;
       }
     }
 
@@ -734,6 +792,12 @@ export default function PTMTable({
       column,
       [...new Set(rows.map((row) => String(row[column] ?? '').trim()).filter(Boolean))],
     ]));
+    baseOptions.customerEvent = Array.isArray(savedColumnSuggestions?.customerEvent)
+      ? [...new Set(savedColumnSuggestions.customerEvent.map((v) => String(v || '').trim()).filter(Boolean))]
+      : [];
+    baseOptions.activity = Array.isArray(savedColumnSuggestions?.activity)
+      ? [...new Set(savedColumnSuggestions.activity.map((v) => String(v || '').trim()).filter(Boolean))]
+      : [];
     baseOptions.noOfTimesRevised = [
       ...new Set([
         ...DEFAULT_REVISION_OPTIONS,
@@ -747,7 +811,7 @@ export default function PTMTable({
       ]),
     ];
     return baseOptions;
-  }, [rows]);
+  }, [rows, savedColumnSuggestions]);
 
   const startColResize = (event, colKey) => {
     event.preventDefault();
@@ -869,6 +933,7 @@ export default function PTMTable({
 
   /* ── Cycle Rank: ■ (applicable) -> □ (if_required) -> '' (none) ── */
   const cycleRank = (rowIndex, rankKey) => {
+    if (!canEditCell(rows[rowIndex], rankKey)) return;
     setRows((prev) => {
       const updated = [...prev];
       const current = updated[rowIndex][rankKey];
@@ -887,6 +952,7 @@ export default function PTMTable({
 
   /* ── Cycle Dept: ● (owner) -> ○ (support) -> '' (none) ── */
   const cycleDept = (rowIndex, deptKey) => {
+    if (!canEditCell(rows[rowIndex], 'departments')) return;
     setRows((prev) => {
       const updated = [...prev];
       const currentDepts = { ...(updated[rowIndex].departments || {}) };
@@ -908,6 +974,10 @@ export default function PTMTable({
   /* ── Cell text/value update ── */
   const handleCellChange = (rowIndex, field, val) => {
     const prevRow = rows[rowIndex];
+    if (!canEditCell(prevRow, field)) {
+      if (showToast) showToast('⚠️ You only have permission to edit assigned responsible columns on your row');
+      return;
+    }
     if (field === 'reasonOfFailure' && !isRevisedTaken(prevRow?.noOfTimesRevised)) {
       if (showToast) showToast('⚠️ Please select No. of Times Revised first');
       return;
@@ -980,7 +1050,61 @@ export default function PTMTable({
     });
   };
 
+  const handleSelectEndDateActual = (rowIndex, selectedDate) => {
+    const prevRow = rows[rowIndex];
+    if (!canEditCell(prevRow, 'endDateActual')) {
+      if (showToast) showToast('⚠️ You only have permission to edit your assigned row');
+      return;
+    }
+
+    setRows((prev) => {
+      const updated = [...prev];
+      const currentRow = updated[rowIndex];
+      if (!currentRow) return prev;
+
+      const prevHistory = getEndDateActualHistory(currentRow);
+      const cleanDate = String(selectedDate || '').trim();
+      if (!cleanDate) return prev;
+
+      const isNewSelection = prevHistory[prevHistory.length - 1] !== cleanDate;
+      const nextHistory = isNewSelection ? [...prevHistory, cleanDate] : prevHistory;
+
+      const row = {
+        ...currentRow,
+        endDateActualHistory: nextHistory,
+        endDateActual: nextHistory.join('\n'),
+      };
+
+      const evalRes = evaluatePtmRowStatus(row);
+      row.status = evalRes.status;
+      row.hitMiss = evalRes.hitMiss;
+
+      // Auto-fetch No. of Times Revised when End Date (Actual) is re-selected or enters Delay/MISS
+      const existingRevs = getRowRevisions(row);
+      if ((isNewSelection && prevHistory.length >= 1) || ((row.status === 'Delay' || row.hitMiss === 'MISS') && existingRevs.length === 0)) {
+        const nextNum = existingRevs.length + 1;
+        const revDateStr = cleanDate || getFormattedCurrentDate();
+        const newRev = {
+          revisionNo: nextNum,
+          tag: `${nextNum}) ${revDateStr}`,
+          date: revDateStr,
+          reasonOfFailure: existingRevs.length === 0 ? (row.reasonOfFailure || '') : '',
+          actionTaken: existingRevs.length === 0 ? (row.actionTaken || '') : '',
+        };
+        const nextRevs = [...existingRevs, newRev];
+        row.revisions = nextRevs;
+        row.noOfTimesRevised = nextRevs.map((r) => r.tag).join('\n');
+        row.reasonOfFailure = nextRevs.map((r) => r.reasonOfFailure || '').join('\n');
+        row.actionTaken = nextRevs.map((r) => r.actionTaken || '').join('\n');
+      }
+
+      updated[rowIndex] = row;
+      return updated;
+    });
+  };
+
   const handleAddRevision = (rowIndex) => {
+    if (!canEditCell(rows[rowIndex], 'noOfTimesRevised')) return;
     setRows((prev) => {
       const updated = [...prev];
       const row = { ...updated[rowIndex] };
@@ -1006,6 +1130,7 @@ export default function PTMTable({
   };
 
   const handleRemoveRevision = (rowIndex, revIdx) => {
+    if (!canEditCell(rows[rowIndex], 'noOfTimesRevised')) return;
     setRows((prev) => {
       const updated = [...prev];
       const row = { ...updated[rowIndex] };
@@ -1025,6 +1150,7 @@ export default function PTMTable({
   };
 
   const handleRevisionCellChange = (rowIndex, revIdx, subField, val) => {
+    if (!canEditCell(rows[rowIndex], subField)) return;
     setRows((prev) => {
       const updated = [...prev];
       const row = { ...updated[rowIndex] };
@@ -1045,6 +1171,7 @@ export default function PTMTable({
   };
 
   const clearRevision = (rowIndex) => {
+    if (!canEditCell(rows[rowIndex], 'noOfTimesRevised')) return;
     setRows((prev) => {
       const updated = [...prev];
       updated[rowIndex] = {
@@ -1059,6 +1186,7 @@ export default function PTMTable({
   };
 
   const handleDeliverableUploadSuccess = (rowIndex, fileData) => {
+    if (!canEditCell(rows[rowIndex], 'deliverableRequired')) return;
     setRows((prev) => {
       const updated = [...prev];
       updated[rowIndex] = {
@@ -1073,6 +1201,7 @@ export default function PTMTable({
   };
 
   const handleRemoveDeliverableFile = (rowIndex) => {
+    if (!canEditCell(rows[rowIndex], 'deliverableRequired')) return;
     setRows((prev) => {
       const updated = [...prev];
       updated[rowIndex] = {
@@ -1342,10 +1471,9 @@ export default function PTMTable({
     }
     return true;
   });
-  const requirementOptions = [...new Set([
-    ...COMMON_APQP_REQUIREMENTS,
-    ...rows.map((row) => row.reqName).filter(Boolean),
-  ])];
+  const requirementOptions = Array.isArray(savedColumnSuggestions?.reqName)
+    ? [...new Set(savedColumnSuggestions.reqName.map((v) => String(v || '').trim()).filter(Boolean))]
+    : [];
   return (
     <div className={`ptm-data-table bg-white select-none ${isMerged ? '' : 'rounded-xl border border-[#64748B] shadow-sm overflow-hidden'}`}>
       <div className={isMerged ? 'w-full' : 'overflow-x-auto max-h-[calc(100vh-140px)]'} ref={tableRef} onInput={handleTableInput}>
@@ -1700,7 +1828,7 @@ export default function PTMTable({
 
                             {/* Phase No. / Name — DROPDOWN (1-5 & Other Manual Input) */}
                             <td
-                              className="p-0 relative"
+                              className={`p-0 relative ${!canEditCell(row, 'phaseName') ? 'pointer-events-none opacity-75' : ''}`}
                               style={{
                                 width: `${colWidths.phaseName}px`,
                                 minWidth: `${colWidths.phaseName}px`,
@@ -1777,7 +1905,7 @@ export default function PTMTable({
                         )}
 
                         {/* 3. AIAG APQP Requirements — Searchable dropdown with suggestion history */}
-                        <td className="relative h-full min-w-[190px] w-48 p-0 align-top">
+                        <td className={`relative h-full min-w-[190px] w-48 p-0 align-top ${!canEditCell(row, 'reqName') ? 'pointer-events-none opacity-75' : ''}`}>
                           <div
                             aria-hidden="true"
                             className="pointer-events-none absolute inset-y-0 left-10 z-[1] border-l border-[#64748B]"
@@ -1824,9 +1952,9 @@ export default function PTMTable({
                           </div>
                         </td>
 
-                        {/* 4. Custom Event Name — Manual input (no search dropdown, resizable width) */}
+                        {/* 4. Custom Event Name — Per-sheet suggestion dropdown & resizable width */}
                         <td
-                          className="p-0"
+                          className={`p-0 ${!canEditCell(row, 'customerEvent') ? 'pointer-events-none opacity-75' : ''}`}
                           style={{
                             width: `${colWidths.customerEvent}px`,
                             minWidth: `${colWidths.customerEvent}px`,
@@ -1834,7 +1962,7 @@ export default function PTMTable({
                         >
                           <ManualInputBox
                             value={row.customerEvent || ''}
-                            noDropdown={true}
+                            noDropdown={false}
                             onChange={(e) => handleCellChange(originalIndex, 'customerEvent', e.target.value)}
                             onKeyDown={(e) => handleKeyDown(e, originalIndex, 'customerEvent')}
                             data-row={originalIndex}
@@ -1847,7 +1975,7 @@ export default function PTMTable({
                         {/* 5. Rank A — Interactive checkbox */}
                         <td
                           onClick={() => cycleRank(originalIndex, 'rankA')}
-                          className="py-1 px-1 text-center cursor-pointer hover:bg-amber-50/50 transition-colors select-none"
+                          className={`py-1 px-1 text-center cursor-pointer hover:bg-amber-50/50 transition-colors select-none ${!canEditCell(row, 'rankA') ? 'pointer-events-none opacity-75' : ''}`}
                           title="Click: ■ Applicable / □ If Required / Clear"
                         >
                           <div className="flex items-center justify-center">
@@ -1864,7 +1992,7 @@ export default function PTMTable({
                         {/* 6. Rank B — Interactive checkbox */}
                         <td
                           onClick={() => cycleRank(originalIndex, 'rankB')}
-                          className="py-1 px-1 text-center cursor-pointer hover:bg-amber-50/50 transition-colors select-none"
+                          className={`py-1 px-1 text-center cursor-pointer hover:bg-amber-50/50 transition-colors select-none ${!canEditCell(row, 'rankB') ? 'pointer-events-none opacity-75' : ''}`}
                           title="Click: ■ Applicable / □ If Required / Clear"
                         >
                           <div className="flex items-center justify-center">
@@ -1881,7 +2009,7 @@ export default function PTMTable({
                         {/* 7. Rank C1 & C2 — Interactive checkbox */}
                         <td
                           onClick={() => cycleRank(originalIndex, 'rankC')}
-                          className="py-1 px-1 text-center cursor-pointer hover:bg-amber-50/50 transition-colors select-none"
+                          className={`py-1 px-1 text-center cursor-pointer hover:bg-amber-50/50 transition-colors select-none ${!canEditCell(row, 'rankC') ? 'pointer-events-none opacity-75' : ''}`}
                           title="Click: ■ Applicable / □ If Required / Clear"
                         >
                           <div className="flex items-center justify-center">
@@ -1898,7 +2026,7 @@ export default function PTMTable({
                         {/* 7b. Rank S — Interactive checkbox */}
                         <td
                           onClick={() => cycleRank(originalIndex, 'rankS')}
-                          className="py-1 px-1 text-center cursor-pointer hover:bg-amber-50/50 transition-colors select-none"
+                          className={`py-1 px-1 text-center cursor-pointer hover:bg-amber-50/50 transition-colors select-none ${!canEditCell(row, 'rankS') ? 'pointer-events-none opacity-75' : ''}`}
                           title="Click: ■ Applicable / □ If Required / Clear"
                         >
                           <div className="flex items-center justify-center">
@@ -1913,16 +2041,16 @@ export default function PTMTable({
                         </td>
 
                         {/* 8. Critical Activity — Yes/No dropdown with automatic symbol */}
-                        <td className="p-1 text-center">
+                        <td className={`p-1 text-center ${!canEditCell(row, 'critical') ? 'pointer-events-none opacity-75' : ''}`}>
                           <CriticalActivityCell
                             value={row.critical}
                             onChange={(value) => handleCellChange(originalIndex, 'critical', value)}
                           />
                         </td>
 
-                        {/* 9. Activity (New) — Manual input (no search dropdown, resizable width) */}
+                        {/* 9. Activity (New) — Per-sheet suggestion dropdown & resizable width */}
                         <td
-                          className="p-0"
+                          className={`p-0 ${!canEditCell(row, 'activity') ? 'pointer-events-none opacity-75' : ''}`}
                           style={{
                             width: `${colWidths.activity}px`,
                             minWidth: `${colWidths.activity}px`,
@@ -1930,7 +2058,7 @@ export default function PTMTable({
                         >
                           <ManualInputBox
                             value={row.activity || ''}
-                            noDropdown={true}
+                            noDropdown={false}
                             onChange={(e) => handleCellChange(originalIndex, 'activity', e.target.value)}
                             onKeyDown={(e) => handleKeyDown(e, originalIndex, 'activity')}
                             data-row={originalIndex}
@@ -1948,7 +2076,7 @@ export default function PTMTable({
                             <td
                               key={dept.key}
                               onClick={() => cycleDept(originalIndex, dept.key)}
-                              className={`py-1.5 px-1.5 w-auto ${dept.key === 'Quality' ? 'min-w-[54px]' : 'min-w-[42px]'} text-center whitespace-nowrap cursor-pointer select-none transition-colors ${isHighlighted
+                              className={`py-1.5 px-1.5 w-auto ${dept.key === 'Quality' ? 'min-w-[54px]' : 'min-w-[42px]'} text-center whitespace-nowrap cursor-pointer select-none transition-colors ${!canEditCell(row, 'departments') ? 'pointer-events-none opacity-75' : ''} ${isHighlighted
                                 ? 'bg-[#FFFF00] hover:bg-[#FACC15]'
                                 : 'hover:bg-emerald-50/50'
                                 }`}
@@ -1965,7 +2093,7 @@ export default function PTMTable({
 
                         {/* 19. Deliverable Required — Yes/No selector & Upload File Section with 3-Option Popup */}
                         <td
-                          className="p-0"
+                          className={`p-0 ${!canEditCell(row, 'deliverableRequired') ? 'pointer-events-none opacity-75' : ''}`}
                           style={{
                             width: `${colWidths.deliverable}px`,
                             minWidth: `${colWidths.deliverable}px`,
@@ -2037,8 +2165,12 @@ export default function PTMTable({
 
                         {/* 20. Std. Duration in Hours — Watch popup modal trigger matching screenshot */}
                         <td
-                          className="p-0 text-center cursor-pointer hover:bg-blue-50/50 transition-colors group/duration"
-                          onClick={() => setWatchModal({ isOpen: true, rowIndex: originalIndex, value: row.duration || '' })}
+                          className={`p-0 text-center cursor-pointer hover:bg-blue-50/50 transition-colors group/duration ${!canEditCell(row, 'duration') ? 'pointer-events-none opacity-75' : ''}`}
+                          onClick={() => {
+                            if (canEditCell(row, 'duration')) {
+                              setWatchModal({ isOpen: true, rowIndex: originalIndex, value: row.duration || '' });
+                            }
+                          }}
                           title="Click to open Std. Duration Watch"
                         >
                           <div className="flex items-center justify-center gap-1.5 py-1.5 px-2">
@@ -2050,7 +2182,7 @@ export default function PTMTable({
                         </td>
 
                         {/* 21. Start Date (Plan) */}
-                        <td className="p-0 text-center w-auto min-w-[116px] whitespace-nowrap">
+                        <td className={`p-0 text-center w-auto min-w-[116px] whitespace-nowrap ${!canEditCell(row, 'startDatePlan') ? 'pointer-events-none opacity-75' : ''}`}>
                           <CalendarDateInput
                             value={row.startDatePlan || ''}
                             onChange={(e) => handleCellChange(originalIndex, 'startDatePlan', e.target.value)}
@@ -2063,7 +2195,7 @@ export default function PTMTable({
                         </td>
 
                         {/* 22. Start Date (Actual) */}
-                        <td className="p-0 text-center w-auto min-w-[116px] whitespace-nowrap">
+                        <td className={`p-0 text-center w-auto min-w-[116px] whitespace-nowrap ${!canEditCell(row, 'startDateActual') ? 'pointer-events-none opacity-75' : ''}`}>
                           <CalendarDateInput
                             value={row.startDateActual || ''}
                             onChange={(e) => handleCellChange(originalIndex, 'startDateActual', e.target.value)}
@@ -2076,7 +2208,7 @@ export default function PTMTable({
                         </td>
 
                         {/* 23. End Date (Plan) */}
-                        <td className="p-0 text-center w-auto min-w-[116px] whitespace-nowrap">
+                        <td className={`p-0 text-center w-auto min-w-[116px] whitespace-nowrap ${!canEditCell(row, 'endDatePlan') ? 'pointer-events-none opacity-75' : ''}`}>
                           <CalendarDateInput
                             value={row.endDatePlan || ''}
                             onChange={(e) => handleCellChange(originalIndex, 'endDatePlan', e.target.value)}
@@ -2088,26 +2220,24 @@ export default function PTMTable({
                           />
                         </td>
 
-                        {/* 24. End Date (Actual) */}
-                        <td className="p-0 text-center w-auto min-w-[116px] whitespace-nowrap">
-                          <CalendarDateInput
-                            value={row.endDateActual || ''}
-                            onChange={(e) => handleCellChange(originalIndex, 'endDateActual', e.target.value)}
-                            onKeyDown={(e) => handleKeyDown(e, originalIndex, 'endDateActual')}
-                            data-row={originalIndex}
-                            data-col="endDateActual"
-                            placeholder="N/A"
-                            className="w-full text-center py-2 px-1.5 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm font-mono"
+                        {/* 24. End Date (Actual) — Vertical stacked date history with strikethrough on previous dates */}
+                        <td className="p-0 text-center w-auto min-w-[116px] whitespace-nowrap align-middle">
+                          <EndDateActualCell
+                            row={row}
+                            rowIndex={originalIndex}
+                            disabled={!canEditCell(row, 'endDateActual')}
+                            onSelectDate={(newDate) => handleSelectEndDateActual(originalIndex, newDate)}
                           />
                         </td>
 
-                        {/* 25. HIT/MISS — Auto-adjusting width dropdown */}
-                        <td className="p-0.5 text-center relative w-auto min-w-[78px] whitespace-nowrap">
+                        {/* 25. HIT/MISS — Auto-adjusting width (automatically fetched) */}
+                        <td className={`p-0.5 text-center relative w-auto min-w-[78px] whitespace-nowrap ${!canEditCell(row, 'hitMiss') ? 'pointer-events-none opacity-75' : ''}`}>
                           <div className="relative flex items-center justify-center">
                             <select
+                              disabled={!hasFullSheetAccess}
                               value={row.hitMiss || ''}
                               onChange={(e) => handleCellChange(originalIndex, 'hitMiss', e.target.value)}
-                              className={`appearance-none w-full py-1 pr-3.5 pl-1 rounded text-center text-xs sm:text-sm font-bold transition-all cursor-pointer outline-none ${row.hitMiss === 'HIT'
+                              className={`appearance-none w-full py-1 pr-3.5 pl-1 rounded text-center text-xs sm:text-sm font-bold transition-all outline-none ${!hasFullSheetAccess ? 'pointer-events-none cursor-default' : 'cursor-pointer'} ${row.hitMiss === 'HIT'
                                 ? 'bg-[#86EFAC] text-[#14532D] shadow-xs'
                                 : row.hitMiss === 'MISS'
                                   ? 'bg-[#FCA5A5] text-[#7F1D1D] shadow-xs'
@@ -2132,7 +2262,7 @@ export default function PTMTable({
                             return (
                               <td
                                 colSpan={3}
-                                className="p-0 align-middle text-center bg-white group-hover/row:bg-[#F8FAFC]"
+                                className={`p-0 align-middle text-center bg-white group-hover/row:bg-[#F8FAFC] ${!canEditCell(row, 'reasonOfFailure') ? 'pointer-events-none opacity-75' : ''}`}
                               >
                                 <div className="flex flex-col w-full h-full divide-y divide-[#CBD5E1]">
                                   {revisions.map((rev, revIdx) => (
@@ -2213,7 +2343,7 @@ export default function PTMTable({
                           return (
                             <>
                               {/* 27. No. of Times Revised */}
-                              <td className="p-0 text-center relative w-auto min-w-[148px] whitespace-nowrap">
+                              <td className={`p-0 text-center relative w-auto min-w-[148px] whitespace-nowrap ${!canEditCell(row, 'noOfTimesRevised') ? 'pointer-events-none opacity-75' : ''}`}>
                                 <div className="relative flex items-center justify-between gap-1 px-1.5">
                                   <div className="min-w-[102px] flex-1">
                                     <ManualInputBox
@@ -2264,7 +2394,7 @@ export default function PTMTable({
                               </td>
 
                               {/* 28. Reason of Failure */}
-                              <td className="p-0 w-auto min-w-[180px]">
+                              <td className={`p-0 w-auto min-w-[180px] ${!canEditCell(row, 'reasonOfFailure') ? 'pointer-events-none opacity-75' : ''}`}>
                                 <ManualInputBox
                                   value={row.reasonOfFailure || ''}
                                   onChange={(e) => handleCellChange(originalIndex, 'reasonOfFailure', e.target.value)}
@@ -2283,7 +2413,7 @@ export default function PTMTable({
 
                               {/* 29. Action Taken Against Failure */}
                               <td
-                                className="p-0"
+                                className={`p-0 ${!canEditCell(row, 'actionTaken') ? 'pointer-events-none opacity-75' : ''}`}
                                 style={{
                                   width: `${colWidths.actionTaken}px`,
                                   minWidth: `${colWidths.actionTaken}px`,
@@ -2306,11 +2436,12 @@ export default function PTMTable({
                         {/* Responsible Person: When both units chosen, parent cell divided horizontally into Bawal and Gujrat parts */}
                         {(() => {
                           const { units, deptsByUnit } = getResponsiblePersonStructure(row);
+                          const respDisabledClass = !canEditCell(row, 'staffName') ? 'pointer-events-none opacity-75' : '';
                           if (units.length > 1) {
                             return (
                               <td
                                 colSpan={3}
-                                className="p-0 align-middle text-center bg-white group-hover/row:bg-[#F8FAFC]"
+                                className={`p-0 align-middle text-center bg-white group-hover/row:bg-[#F8FAFC] ${respDisabledClass}`}
                               >
                                 <div className="flex flex-col w-full h-full divide-y divide-[#CBD5E1]">
                                   {units.map((unitName) => {
@@ -2506,7 +2637,7 @@ export default function PTMTable({
                           return (
                             <>
                               {/* Unit */}
-                              <td className="p-0 align-middle text-center bg-white group-hover/row:bg-[#F8FAFC] w-[110px] min-w-[100px]">
+                              <td className={`p-0 align-middle text-center bg-white group-hover/row:bg-[#F8FAFC] w-[110px] min-w-[100px] ${respDisabledClass}`}>
                                 <div className="p-1 w-full">
                                   <CheckboxMultiSelect
                                     value={units}
@@ -2518,7 +2649,7 @@ export default function PTMTable({
                               </td>
 
                               {/* Department Dropdown in Responsible Person */}
-                              <td className="p-0 align-middle text-center bg-white group-hover/row:bg-[#F8FAFC] w-[145px] min-w-[135px]">
+                              <td className={`p-0 align-middle text-center bg-white group-hover/row:bg-[#F8FAFC] w-[145px] min-w-[135px] ${respDisabledClass}`}>
                                 {units.length === 0 ? (
                                   <div className="w-full py-1 text-center text-slate-300 text-sm select-none" title="Select Staff Name to auto-fetch Department">
                                     -
@@ -2601,7 +2732,7 @@ export default function PTMTable({
                               </td>
 
                               {/* Staff Name in Responsible Person */}
-                              <td className="p-0 align-middle text-center bg-white group-hover/row:bg-[#F8FAFC] w-[160px] min-w-[150px]">
+                              <td className={`p-0 align-middle text-center bg-white group-hover/row:bg-[#F8FAFC] w-[160px] min-w-[150px] ${respDisabledClass}`}>
                                 {units.length === 0 ? (
                                   (() => {
                                     const assignedEmps = row.staffEmployees || [];
@@ -2767,7 +2898,7 @@ export default function PTMTable({
 
                         {/* 31. Remarks — Manual input (no search dropdown, resizable width) */}
                         <td
-                          className="p-0"
+                          className={`p-0 ${!canEditCell(row, 'remarks') ? 'pointer-events-none opacity-75' : ''}`}
                           style={{
                             width: `${colWidths.remarks}px`,
                             minWidth: `${colWidths.remarks}px`,
@@ -2787,7 +2918,7 @@ export default function PTMTable({
 
                         {/* Actions: Visually separated section at the end of the sheet */}
                         <td
-                          className="relative overflow-visible py-1.5 px-2 text-center bg-[#F1F5F9] border-l-4 border-slate-300 z-10"
+                          className={`relative overflow-visible py-1.5 px-2 text-center bg-[#F1F5F9] border-l-4 border-slate-300 z-10 ${!canEditCell(row, 'actions') ? 'pointer-events-none opacity-50' : ''}`}
                           style={{
                             width: `${colWidths.actions}px`,
                             minWidth: `${MIN_ACTION_COLUMN_WIDTH}px`,
@@ -3051,13 +3182,15 @@ export default function PTMTable({
           </span>
         </div>
 
-        <button
-          onClick={() => addNewRow()}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#2563EB] hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
-        >
-          <Plus className="w-4 h-4 stroke-[2.5]" />
-          <span>+ Add New Row</span>
-        </button>
+        {hasFullSheetAccess && (
+          <button
+            onClick={() => addNewRow()}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#2563EB] hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
+          >
+            <Plus className="w-4 h-4 stroke-[2.5]" />
+            <span>+ Add New Row</span>
+          </button>
+        )}
       </div>
     </div>
   );

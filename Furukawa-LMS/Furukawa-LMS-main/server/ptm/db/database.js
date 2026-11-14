@@ -14,8 +14,12 @@ if (!fs.existsSync(DATA_DIR)) {
 const DB_FILE = path.join(DATA_DIR, 'ptm_dashboard.db');
 const db = new DatabaseSync(DB_FILE);
 
+let isInitialized = false;
+
 // Initialize Tables
 export function initDatabase() {
+  if (isInitialized) return;
+  isInitialized = true;
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -295,5 +299,7 @@ function seedInitialData() {
     }
   }
 }
+
+initDatabase();
 
 export default db;

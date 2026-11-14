@@ -8,6 +8,7 @@ import {
     parseEmployeeStatus,
     getEmployeeUpdateError,
     assertEmployeeFields,
+    normalizeEmpId,
 } from "../utils/employeeFields.js";
 
 const NOW = new Date(2026, 10, 4); // 2026-11-04
@@ -94,4 +95,20 @@ test("update guard: cannot clear a filled mandatory field, but legacy blanks may
     assert.match(getEmployeeUpdateError(oldUser, { phoneNumber: "12345" }), /10-digit/);
     // Unchanged date in a different representation is not treated as a change
     assert.equal(getEmployeeUpdateError({ ...oldUser, dob: new Date(2000, 4, 10) }, { dob: "2000-05-10" }), null);
+});
+
+test("normalizeEmpId trims, upper-cases and repairs the TRO -> TR0 typo", () => {
+    assert.equal(normalizeEmpId("TRO81053"), "TR081053");
+    assert.equal(normalizeEmpId("  tro81053 "), "TR081053");
+    assert.equal(normalizeEmpId("tr081053"), "TR081053");
+    assert.equal(normalizeEmpId("ST080014"), "ST080014");
+    // Only the exact TR + O + 5 digits shape is repaired
+    assert.equal(normalizeEmpId("TROX1234"), "TROX1234");
+    assert.equal(normalizeEmpId("TRO810531"), "TRO810531");
+    assert.equal(normalizeEmpId("XTRO81053"), "XTRO81053");
+    assert.equal(normalizeEmpId(12345), "12345");
+    assert.equal(normalizeEmpId("  "), null);
+    assert.equal(normalizeEmpId(null), null);
+    // Inner spaces are kept so validation still rejects them
+    assert.equal(normalizeEmpId("FME 1"), "FME 1");
 });

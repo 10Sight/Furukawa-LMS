@@ -15,8 +15,9 @@ import {
   getPTMVisibleSheets,
   filterPTMRecordsBySection,
   getPTMSectionCounts,
+  canUserFullEditPtmSheet,
 } from './data/ptmRecordFilters';
-import { authApi, ptmApi, sheetApi } from './services/api';
+import { authApi, ptmApi, sheetApi, employeeApi } from './services/api';
 import { initialPTMData } from './data/mockData';
 import { initialHeaderInfo, initialPTMRows } from './data/ptmData';
 import { ChevronDown, Check, Plus, Download, ArrowLeft, Undo2, Redo2, Save, Clock, CheckCircle2 } from 'lucide-react';
@@ -98,19 +99,34 @@ function createBlankHeaderInfo(item) {
     rank: '',
     apqpLeader: '',
     phase: '',
-    projectLeader: item?.createdBy?.name || '',
+    projectLeader: '',
     reviewDate: '',
     formTitle: 'FRM-WH-DD-006 Project Tracking Matrix Rev. 17',
     tabName: 'PTM - Final Latest Rev. 17',
-    deliverableNos: '',
-    iterationsInPlan: '',
-    finalDate: '',
-    finalDateDiff: '',
-    scheduleRemarks: '',
+    milestoneCustomerDPT: '',
+    milestoneCustomerPPT: '',
+    milestoneCustomerMPT: '',
+    milestoneCustomerPILOT: '',
+    milestoneCustomerSOP: '',
+    milestoneInternalDPT: '',
+    milestoneInternalPPT: '',
+    milestoneInternalMPT: '',
+    milestoneInternalPILOT: '',
+    milestoneInternalSOP: '',
+    milestoneExtraDPT: '',
+    milestoneExtraPPT: '',
+    milestoneExtraMPT: '',
+    milestoneExtraPILOT: '',
+    milestoneExtraSOP: '',
     docNo: 'FRM-WH-DD-006',
     revNo: '17',
     issueDate: '07.11.2013',
     revDate: '17.10.23',
+    savedColumnSuggestions: {
+      reqName: [],
+      customerEvent: [],
+      activity: [],
+    },
   };
 }
 
@@ -328,20 +344,46 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
     return initialHeaderInfo;
   });
 
-  const projectLeaderOptions = useMemo(
-    () => [...new Set([
+  const [dbEmployees, setDbEmployees] = useState([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    employeeApi.getAll().then((employees) => {
+      if (isMounted && Array.isArray(employees)) {
+        setDbEmployees(employees);
+      }
+    }).catch((err) => {
+      console.warn('Could not load employees from database API', err);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUser]);
+
+  const projectLeaderOptions = useMemo(() => {
+    const namesFromDb = dbEmployees
+      .map((emp) => {
+        const name = String(emp?.name || emp?.fullName || '').trim();
+        const code = String(emp?.code || emp?.empId || '').trim();
+        if (!name) return '';
+        return code ? `${name} (${code})` : name;
+      })
+      .filter(Boolean);
+    return [...new Set([
+      ...namesFromDb,
       headerInfo.projectLeader?.trim(),
       headerInfo.apqpLeader?.trim(),
-      ...listItems
-        .filter((item) => selectedUnit === 'All Units' || item.plant === selectedUnit)
-        .map((item) => item.createdBy?.name?.trim()),
-    ].filter(Boolean))],
-    [headerInfo.projectLeader, headerInfo.apqpLeader, listItems, selectedUnit]
-  );
+    ].filter(Boolean))];
+  }, [dbEmployees, headerInfo.projectLeader, headerInfo.apqpLeader]);
 
   const [ptmRows, setPtmRows] = useState(() => {
     return initialPTMRows;
   });
+
+  const hasFullSheetAccess = useMemo(
+    () => canUserFullEditPtmSheet(selectedTopicItem, currentUser, ptmRows),
+    [selectedTopicItem, currentUser, ptmRows]
+  );
 
   const formStateRef = useRef({ headerInfo, ptmRows });
   const historyRef = useRef({ undo: [], redo: [] });
@@ -399,9 +441,10 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
           showToast(`⚠️ Row ${i + 1}: End Date (Plan) is mandatory.`);
           return;
         }
+        const revVal = String(r.noOfTimesRevised ?? '').trim();
+        const hasRevisions = Boolean(revVal && revVal !== '0') || (Array.isArray(r.revisions) && r.revisions.length > 0);
         if (r.status === 'Delay' || r.hitMiss === 'MISS') {
-          const revVal = String(r.noOfTimesRevised ?? '').trim();
-          if (!revVal || revVal === '0') {
+          if (!hasRevisions) {
             showToast(`⚠️ Row ${i + 1}: No. of Times Revised is mandatory when status is Delay / MISS.`);
             return;
           }
@@ -410,9 +453,37 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
             showToast(`⚠️ Row ${i + 1}: Reason of Failure is mandatory when status is Delay / MISS.`);
             return;
           }
+        } else if (hasRevisions) {
+          const failVal = String(r.reasonOfFailure ?? '').trim();
+          if (!failVal) {
+            showToast(`⚠️ Row ${i + 1}: Reason of Failure is mandatory when No. of Times Revised is taken.`);
+            return;
+          }
         }
       }
     }
+
+    // Persist per-sheet suggestion dropdown entries when saving this sheet
+    const prevSuggestions = formStateRef.current.headerInfo?.savedColumnSuggestions || {};
+    const collectSavedCol = (colKey) => [
+      ...new Set([
+        ...(Array.isArray(prevSuggestions[colKey]) ? prevSuggestions[colKey] : []),
+        ...currentRows.map((row) => String(row[colKey] ?? '').trim()).filter(Boolean),
+      ]),
+    ];
+    const updatedHeaderInfo = {
+      ...formStateRef.current.headerInfo,
+      savedColumnSuggestions: {
+        reqName: collectSavedCol('reqName'),
+        customerEvent: collectSavedCol('customerEvent'),
+        activity: collectSavedCol('activity'),
+      },
+    };
+    formStateRef.current = {
+      ...formStateRef.current,
+      headerInfo: updatedHeaderInfo,
+    };
+    setHeaderInfo(updatedHeaderInfo);
 
     try {
       const isCustomItem = selectedTopicItem?.isBlankPTM || (selectedTopicItem?.id && localStorage.getItem(`ptm_rows_item_${selectedTopicItem.id}`));
@@ -1068,15 +1139,17 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
                 <Save className="h-4 w-4" />
                 <span>Save</span>
               </button>
-              <button
-                type="button"
-                onClick={handleAddRowFromTop}
-                className="flex items-center gap-1.5 rounded-lg bg-[#2563EB] px-3 py-1.5 text-sm font-bold text-white hover:bg-blue-700 cursor-pointer"
-                title="Add a new parent row at the bottom"
-              >
-                <Plus className="h-4 w-4" />
-                <span>Add Row</span>
-              </button>
+              {hasFullSheetAccess && (
+                <button
+                  type="button"
+                  onClick={handleAddRowFromTop}
+                  className="flex items-center gap-1.5 rounded-lg bg-[#2563EB] px-3 py-1.5 text-sm font-bold text-white hover:bg-blue-700 cursor-pointer"
+                  title="Add a new parent row at the bottom"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Add Row</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleExportMatrixCSV}
@@ -1098,6 +1171,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
                     setHeaderInfo={updateHeaderInfo}
                     projectLeaderOptions={projectLeaderOptions}
                     isMerged={true}
+                    readOnly={!hasFullSheetAccess}
                   />
                   <PTMTable
                     rows={ptmRows}
@@ -1114,6 +1188,10 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
                     onAddNewRow={handleAddRowFromTop}
                     isMerged={true}
                     isAdmin={isAdmin}
+                    dbEmployees={dbEmployees}
+                    currentUser={currentUser}
+                    hasFullSheetAccess={hasFullSheetAccess}
+                    savedColumnSuggestions={headerInfo.savedColumnSuggestions}
                   />
                 </div>
               </div>

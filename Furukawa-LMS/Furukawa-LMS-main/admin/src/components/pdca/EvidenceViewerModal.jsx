@@ -185,11 +185,10 @@ export default function EvidenceViewerModal({
         {/* Modal Header */}
         <div className="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between bg-gradient-to-r from-slate-50 via-white to-slate-50">
           <div className="flex items-center gap-3">
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shadow-xs border ${
-              isBefore
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shadow-xs border ${isBefore
                 ? 'bg-blue-50 text-blue-600 border-blue-200'
                 : 'bg-emerald-50 text-emerald-600 border-emerald-200'
-            }`}>
+              }`}>
               <Images className="w-5 h-5" />
             </div>
             <div>
@@ -197,11 +196,10 @@ export default function EvidenceViewerModal({
                 <h3 className="text-base font-bold text-slate-800">
                   {columnLabel} Evidence
                 </h3>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                  isBefore
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${isBefore
                     ? 'bg-blue-50 text-blue-700 border-blue-200'
                     : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                }`}>
+                  }`}>
                   Row #{rowIndex + 1}
                 </span>
                 {readOnly && (

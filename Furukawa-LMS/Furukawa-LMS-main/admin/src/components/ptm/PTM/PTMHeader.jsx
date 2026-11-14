@@ -171,8 +171,9 @@ function MilestoneDateTextCell({ value = '', onChange, ariaLabel, rowIdx, colKey
   );
 }
 
-export default function PTMHeader({ headerInfo, setHeaderInfo, projectLeaderOptions = [], isMerged = false, formActions }) {
+export default function PTMHeader({ headerInfo, setHeaderInfo, projectLeaderOptions = [], isMerged = false, formActions, readOnly = false }) {
   const handleChange = (field, val) => {
+    if (readOnly) return;
     setHeaderInfo((prev) => ({
       ...prev,
       [field]: val,
@@ -184,7 +185,7 @@ export default function PTMHeader({ headerInfo, setHeaderInfo, projectLeaderOpti
       {formActions}
 
       {/* Grid containing the exact header sections from the spreadsheet image */}
-      <div className="w-full grid grid-cols-[4fr_3fr_2fr_minmax(620px,auto)_minmax(210px,1fr)] divide-x divide-[#64748B]">
+      <div className={`w-full grid grid-cols-[4fr_3fr_2fr_minmax(620px,auto)_minmax(210px,1fr)] divide-x divide-[#64748B] ${readOnly ? 'pointer-events-none opacity-95' : ''}`}>
         
         {/* Section 1: Left Form Info — inline label+input with soft blue & rank amber accents */}
         <div className="[&_*]:!text-black bg-white text-sm border-r border-[#64748B]">
@@ -280,7 +281,7 @@ export default function PTMHeader({ headerInfo, setHeaderInfo, projectLeaderOpti
                       options={projectLeaderOptions}
                       id="project-leader"
                       className="w-full select-text cursor-text font-bold text-slate-900 outline-none bg-transparent text-sm min-w-0 px-1 py-0.5 rounded focus:bg-white focus:ring-1 focus:ring-blue-400"
-                      placeholder="Shiva Chaudhary"
+                      placeholder=""
                     />
                   </div>
                 </td>

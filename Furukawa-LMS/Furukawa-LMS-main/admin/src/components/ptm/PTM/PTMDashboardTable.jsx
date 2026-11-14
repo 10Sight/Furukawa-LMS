@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Download, Copy, Trash2, Building2 } from 'lucide-react';
+import { Download, Copy, Trash2, Building2, AlertTriangle } from 'lucide-react';
 
 export default function PTMDashboardTable({
   items,
@@ -11,16 +11,17 @@ export default function PTMDashboardTable({
   unitSelected = true,
   canDelete = false,
 }) {
-  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [deleteConfirmItem, setDeleteConfirmItem] = useState(null);
 
-  const handleDeleteClick = (id) => {
-    if (confirmDeleteId === id) {
-      onDelete(id);
-      setConfirmDeleteId(null);
-    } else {
-      setConfirmDeleteId(id);
-      setTimeout(() => setConfirmDeleteId(null), 3000);
+  const handleDeleteClick = (row) => {
+    setDeleteConfirmItem(row);
+  };
+
+  const handleConfirmDelete = () => {
+    if (deleteConfirmItem && onDelete) {
+      onDelete(deleteConfirmItem.id);
     }
+    setDeleteConfirmItem(null);
   };
 
   if (items.length === 0) {
@@ -164,13 +165,10 @@ export default function PTMDashboardTable({
                     {/* Delete (Admin only) */}
                     {canDelete && (
                       <button
-                        onClick={() => handleDeleteClick(row.id)}
-                        title={confirmDeleteId === row.id ? 'Click again to confirm delete' : 'Delete PTM Item'}
-                        className={`p-1 rounded transition-colors ${
-                          confirmDeleteId === row.id
-                            ? 'text-rose-600 scale-110 font-bold'
-                            : 'text-slate-400 hover:text-rose-600'
-                        }`}
+                        type="button"
+                        onClick={() => handleDeleteClick(row)}
+                        title="Delete PTM Sheet"
+                        className="p-1 rounded transition-colors text-slate-400 hover:text-rose-600 cursor-pointer"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -182,6 +180,49 @@ export default function PTMDashboardTable({
           </tbody>
         </table>
       </div>
+
+      {/* Centered Delete Confirmation Modal */}
+      {deleteConfirmItem && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="ptm-delete-modal-title"
+        >
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start gap-4">
+              <div className="w-11 h-11 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 id="ptm-delete-modal-title" className="text-lg font-bold text-slate-900">
+                  Delete PTM Sheet
+                </h3>
+                <p className="mt-1.5 text-sm text-slate-600 leading-relaxed">
+                  Are you sure you want to delete the PTM Sheet{' '}
+                  <span className="font-semibold text-slate-900">"{deleteConfirmItem.topic}"</span>?
+                </p>
+              </div>
+            </div>
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmItem(null)}
+                className="px-4 py-2 rounded-xl border border-slate-300 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                className="px-4 py-2 rounded-xl bg-rose-600 text-white text-sm font-bold hover:bg-rose-700 shadow-md shadow-rose-500/20 transition-colors cursor-pointer"
+              >
+                Delete Sheet
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

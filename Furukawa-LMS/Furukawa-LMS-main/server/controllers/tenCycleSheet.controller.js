@@ -10,7 +10,13 @@ import emailTemplates from "../utils/emailTemplates.js";
 import ENV from "../configs/env.config.js";
 import logAudit from "../utils/auditLogger.js";
 import { hasAnyPermission } from "../middlewares/roleAuth.middleware.js";
+import { userMatchesAnyRole } from "../middlewares/authrization.middleware.js";
 import RevisionRecordService from "../services/revisionRecord.service.js";
+
+// Who may make a first-time sign-off. The HOD review keeps the approve route's original list;
+// the Co-ordinator verification also accepts ten_cycle:verify (the permission its UI button checks).
+const TEN_CYCLE_REVIEW_ROLES = ["isAdmin", "isTrainer", "SUPERADMIN", "ten_cycle:approve", "ten_cycle:manage"];
+const TEN_CYCLE_VERIFY_ROLES = [...TEN_CYCLE_REVIEW_ROLES, "ten_cycle:verify"];
 
 const TEN_CYCLE_KEY_FIELDS = ['lineMachine', 'modelName', 'partName', 'operationName', 'sopNo', 'inspectorName'];
 
@@ -302,6 +308,28 @@ export const approveTenCycleSheet = asyncHandler(async (req, res) => {
     const existing = await TenCycleSheet.findById(id);
     if (!existing) throw new ApiError("10 cycle sheet not found", 404);
 
+    if (role !== 'VERIFY' && role !== 'APPROVE') throw new ApiError("Invalid role for approval", 400);
+    if (action !== 'APPROVE' && action !== 'REJECT') throw new ApiError("Invalid approval action", 400);
+
+    // A sign-off that is already approved/rejected can only be redone by admins or
+    // ten_cycle:change_approval / ten_cycle:manage holders. Changing the Co-ordinator verification
+    // leaves the HOD review as it is.
+    const previousStatus = role === 'VERIFY' ? existing.verifiedStatus : existing.reviewedStatus;
+    const previousBy = role === 'VERIFY' ? existing.verifiedBy : existing.reviewedBy;
+    const isOverride = !!previousStatus;
+    if (isOverride) {
+        const isAdmin = req.user?.isAdmin || req.user?.role === 'ADMIN' || req.user?.role === 'SUPERADMIN';
+        const canChange = isAdmin || hasAnyPermission(req.user, ['ten_cycle:change_approval', 'ten_cycle:manage']);
+        if (!canChange) {
+            const label = role === 'VERIFY' ? 'verification' : 'review';
+            throw new ApiError(`This sheet's ${label} is already ${previousStatus === 'APPROVE' ? 'approved' : 'rejected'}; you do not have permission to change it`, 403);
+        }
+    } else if (!userMatchesAnyRole(req.user, role === 'VERIFY' ? TEN_CYCLE_VERIFY_ROLES : TEN_CYCLE_REVIEW_ROLES)) {
+        // The route also admits ten_cycle:change_approval, which only covers changing an existing
+        // sign-off, and ten_cycle:verify, which only covers the Co-ordinator verification.
+        throw new ApiError("You do not have permission to sign off this sheet", 403);
+    }
+
     const userName = req.user?.fullName || req.user?.name || "";
     const updateData = { ...existing };
 
@@ -309,12 +337,10 @@ export const approveTenCycleSheet = asyncHandler(async (req, res) => {
         updateData.verifiedBy = userName;
         updateData.verifiedStatus = action;
         updateData.verifiedAt = new Date();
-    } else if (role === 'APPROVE') {
+    } else {
         updateData.reviewedBy = userName;
         updateData.reviewedStatus = action;
         updateData.reviewedAt = new Date();
-    } else {
-        throw new ApiError("Invalid role for approval", 400);
     }
 
     const updated = await TenCycleSheet.updateById(id, {
@@ -331,6 +357,15 @@ export const approveTenCycleSheet = asyncHandler(async (req, res) => {
         logAudit(req.user?.id, "APPROVE_TEN_CYCLE_SHEET", { sheetId: id, outcome, reviewedBy: userName },
             { resourceType: "TenCycleSheet", resourceId: id, req }
         ).catch(err => console.error("logAudit(APPROVE_TEN_CYCLE_SHEET) failed:", err.message));
+    }
+    if (isOverride) {
+        const previousAt = role === 'VERIFY' ? existing.verifiedAt : existing.reviewedAt;
+        logAudit(req.user?.id, "OVERRIDE_TEN_CYCLE_APPROVAL", {
+            sheetId: id, signOff: role === 'VERIFY' ? 'VERIFY' : 'REVIEW',
+            fromStatus: previousStatus, toStatus: action,
+            previousBy: previousBy || null, previousAt: previousAt || null, changedBy: userName
+        }, { resourceType: "TenCycleSheet", resourceId: id, req }
+        ).catch(err => console.error("logAudit(OVERRIDE_TEN_CYCLE_APPROVAL) failed:", err.message));
     }
 
     return res.status(200).json(new ApiResponse(200, updated, `10-Cycle sheet ${action.toLowerCase()}ed successfully`));

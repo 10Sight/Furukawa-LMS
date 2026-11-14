@@ -75,10 +75,11 @@ export const scope5MRequest = (user, departmentParam, sectionParam) => {
     };
 };
 
-// True when the user may read 5M data of every department (global admins and daily5m:read holders).
-// Read access only: it never grants edit, delete or approval rights.
+// True when the user may read 5M data of every department (global admins, daily5m:read and
+// daily5m:dashboard_manage holders). Read access only: it never grants edit, delete or approval
+// rights - writes stay limited to the user's assigned departments (resolveUser5MScope).
 export const canViewAll5MRecords = (user) =>
-    resolveUser5MScope(user).isGlobalAdmin || hasAnyPermission(user, ["daily5m:read"]);
+    resolveUser5MScope(user).isGlobalAdmin || hasAnyPermission(user, ["daily5m:read", "daily5m:dashboard_manage"]);
 
 // Read-only "every department" scope used by the 5M dashboard (Records List and charts).
 //   { forbidden: string } -> caller should respond 403

@@ -6,10 +6,38 @@ import NotificationService from "../services/notification.service.js";
 import { executeQuery } from "../db/mssqlHelper.js";
 import logAudit from "../utils/auditLogger.js";
 import { canActOnRow, matchesDaily5MRouting } from "../../shared/daily5mRouting.js";
-import { enforceRejectReasons, rowKey, ROW_STATUS_FILTERS } from "../../shared/daily5mRowStatus.js";
+import { enforceRejectReasons, rowKey, rowStateOf, ROW_STATE, ROW_STATUS_FILTERS } from "../../shared/daily5mRowStatus.js";
 import { scope5MRequestFor, canView5MRecord, canViewAll5MRecords } from "../utils/daily5mScope.util.js";
 import { hasAnyPermission } from "../middlewares/roleAuth.middleware.js";
 import { formatLocalDate } from "../utils/istDate.util.js";
+
+// Rows whose saved decision (approved, or rejected/declined) this save changes - including clearing it
+// back to pending. Changing a decision needs admin or daily5m:change_row_status; approval routing and
+// the self-approval block still apply on top (see canActOnRow).
+const findChangedRowDecisions = (previousRecordData, recordData) => {
+    const changes = [];
+    if (!previousRecordData || !recordData) return changes;
+    for (let i = 0; i < 20; i++) {
+        const prevStatus = previousRecordData[rowKey(i, 'RowStatus')];
+        const prevState = rowStateOf(prevStatus);
+        if (prevState === ROW_STATE.PENDING) continue;
+        const newStatus = recordData[rowKey(i, 'RowStatus')];
+        if (rowStateOf(newStatus) === prevState) continue;
+        changes.push({
+            rowIndex: i,
+            fromStatus: prevStatus,
+            toStatus: newStatus || null,
+            previousActionBy: previousRecordData[rowKey(i, 'ActionBy')] || null,
+            previousActionAt: previousRecordData[rowKey(i, 'ActionAt')] || null,
+            previousReason: previousRecordData[rowKey(i, 'RejectReason')] || null
+        });
+    }
+    return changes;
+};
+
+export const canChange5MRowDecision = (user) =>
+    !!(user?.isAdmin || user?.role === 'ADMIN' || user?.role === 'SUPERADMIN') ||
+    hasAnyPermission(user, ['daily5m:change_row_status']);
 
 const toDateStr = (value) => value instanceof Date ? (formatLocalDate(value) || "") : String(value || "").split('T')[0];
 
@@ -182,6 +210,13 @@ export const create5MRecord = async (req, res, next) => {
 
         // Every rejected row must say why; a saved reason is frozen and approved rows carry none.
         // Runs on first saves too, so a sheet can't be created with an unexplained rejection.
+        const decisionChanges = findChangedRowDecisions(previousRecordData, recordData);
+        if (decisionChanges.length > 0 && !canChange5MRowDecision(req.user)) {
+            const first = decisionChanges[0];
+            const was = rowStateOf(first.fromStatus) === ROW_STATE.APPROVED ? 'approved' : 'rejected';
+            return next(new ApiError(`Row ${first.rowIndex + 1}: You do not have permission to change an already ${was} row.`, 403));
+        }
+
         const reasonCheck = enforceRejectReasons(recordData, previousRecordData);
         if (reasonCheck.error) {
             return next(new ApiError(`Row ${reasonCheck.error.rowNo}: ${reasonCheck.error.message}`, 400));
@@ -255,6 +290,15 @@ export const create5MRecord = async (req, res, next) => {
                         .catch(err => console.error("logAudit(ROW_CHECK_DAILY_5M) failed:", err.message));
                 }
             }
+        }
+        for (const change of decisionChanges) {
+            logAudit(userId, "CHANGE_DAILY_5M_ROW_STATUS", {
+                sessionId: newRecord.sessionId,
+                ...change,
+                actionBy: recordData[rowKey(change.rowIndex, 'ActionBy')] || null,
+                reason: recordData[rowKey(change.rowIndex, 'RejectReason')] || null
+            }, { resourceType: "DAILY_5M_RECORD", resourceId: newRecord.id, req })
+                .catch(err => console.error("logAudit(CHANGE_DAILY_5M_ROW_STATUS) failed:", err.message));
         }
 
         const auditAction = sessionId ? "UPDATE_DAILY_5M_RECORD" : "CREATE_DAILY_5M_RECORD";
@@ -465,6 +509,19 @@ export const get5MRecordByDate = async (req, res, next) => {
 export const delete5MRecord = async (req, res, next) => {
     try {
         const { id } = req.params;
+
+        // daily5m:dashboard_manage only covers the departments/sections the user is assigned to;
+        // admins and daily5m:delete holders may delete any record.
+        const isAdmin = req.user?.isAdmin || req.user?.role === 'ADMIN' || req.user?.role === 'SUPERADMIN';
+        if (!isAdmin && !hasAnyPermission(req.user, ['daily5m:delete'])) {
+            const record = await Daily5MRecord.findById(id);
+            if (!record) {
+                return next(new ApiError("Record not found or could not be deleted", 404));
+            }
+            if (!canView5MRecord(req.user, record)) {
+                return next(new ApiError("You can only delete 5M records of the departments you are assigned to", 403));
+            }
+        }
 
         const success = await Daily5MRecord.delete(id);
 

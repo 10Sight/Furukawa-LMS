@@ -28,7 +28,7 @@ router.post("/config/save-with-revision", authorizeRoles("isAdmin", "isTrainer",
 router.get("/history/:departmentId", authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN", "ten_cycle:edit_layout", "ten_cycle:manage"), getTenCycleSheetHistory);
 router.get("/:id", authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN", "ten_cycle:read", "ten_cycle:manage"), getTenCycleSheetById);
 router.put("/:id", authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN", "ten_cycle:update", "ten_cycle:manage"), updateTenCycleSheetById);
-router.patch("/:id/approve", authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN", "ten_cycle:approve", "ten_cycle:manage"), approveTenCycleSheet);
+router.patch("/:id/approve", authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN", "ten_cycle:verify", "ten_cycle:approve", "ten_cycle:manage", "ten_cycle:change_approval"), approveTenCycleSheet);
 router.delete("/:id", authorizeRoles("isAdmin", "isTrainer", "SUPERADMIN", "ten_cycle:delete", "ten_cycle:manage"), deleteTenCycleSheet);
 
 export default router;

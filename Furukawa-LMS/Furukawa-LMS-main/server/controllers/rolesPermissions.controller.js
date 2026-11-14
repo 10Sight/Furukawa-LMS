@@ -115,6 +115,8 @@ const SYSTEM_PERMISSIONS = {
   DAILY_5M_SELECT_PAST_DATE: "daily5m:select_past_date",
   DAILY_5M_EDIT_APPROVED_DATE: "daily5m:edit_approved_date",
   DAILY_5M_EDIT_LAYOUT: "daily5m:edit_layout",
+  DAILY_5M_CHANGE_ROW_STATUS: "daily5m:change_row_status",
+  DAILY_5M_DASHBOARD_MANAGE: "daily5m:dashboard_manage",
   DPR_EDIT_LAYOUT: "dpr:edit_layout",
 
   // Daily HR Meeting (Daily Manpower Report)
@@ -197,6 +199,7 @@ const SYSTEM_PERMISSIONS = {
   TEN_CYCLE_DELETE: "ten_cycle:delete",
   TEN_CYCLE_EDIT_LAYOUT: "ten_cycle:edit_layout",
   TEN_CYCLE_EDIT_APPROVED: "ten_cycle:edit_approved",
+  TEN_CYCLE_CHANGE_APPROVAL: "ten_cycle:change_approval",
   TEN_CYCLE_SELECT_PAST_DATE: "ten_cycle:select_past_date",
   TEN_CYCLE_SELECT_FUTURE_DATE: "ten_cycle:select_future_date",
 
@@ -666,7 +669,9 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.DAILY_5M_DELETE, name: "Delete Daily 5M", description: "Permanently delete daily 5M recording records" },
         { id: SYSTEM_PERMISSIONS.DAILY_5M_SELECT_PAST_DATE, name: "Select Past Date", description: "Allows selecting dates before today in daily 5M row entries and session creation (backdating). Requires Update Daily 5M" },
         { id: SYSTEM_PERMISSIONS.DAILY_5M_EDIT_APPROVED_DATE, name: "Edit Approved Date", description: "Edit the Date column of a daily 5M row after it has been approved (a remark is required). Requires Update Daily 5M" },
-        { id: SYSTEM_PERMISSIONS.DAILY_5M_EDIT_LAYOUT, name: "Edit Daily 5M Layout", description: "Edit the Daily 5M sheet layout (header text, 5M change-type table, default rows) and its Revision Table entry" }
+        { id: SYSTEM_PERMISSIONS.DAILY_5M_EDIT_LAYOUT, name: "Edit Daily 5M Layout", description: "Edit the Daily 5M sheet layout (header text, 5M change-type table, default rows) and its Revision Table entry" },
+        { id: SYSTEM_PERMISSIONS.DAILY_5M_CHANGE_ROW_STATUS, name: "Change Approved/Rejected Row", description: "Change a daily 5M row that is already approved or rejected (Approved to Rejected needs a reason). Still subject to approval routing and self-approval rules. Requires Approve Daily 5M" },
+        { id: SYSTEM_PERMISSIONS.DAILY_5M_DASHBOARD_MANAGE, name: "Manage Daily 5M Dashboard", description: "On the Daily 5M Dashboard: view every department's records and charts, see layout change history, and edit or delete records of the departments you are assigned to" }
       ],
       "Daily Production Report": [
         { id: SYSTEM_PERMISSIONS.DPR_EDIT_LAYOUT, name: "Edit DPR Layout", description: "Edit the Daily Production Report layout (section titles, header text, row labels, row counts) and its Revision Table entry" }
@@ -752,6 +757,7 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_APPROVE, name: "Approve 10-Cycle Sheet", description: "Approve 10-cycle sheets (HOD sign-off)" },
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_EDIT_LAYOUT, name: "Edit 10-Cycle Sheet Layout", description: "Customize 10-cycle sheet headers, questions, and checking items, and view layout change history" },
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_EDIT_APPROVED, name: "Edit Approved 10-Cycle Sheet", description: "Edit a 10-cycle sheet after it has been verified or approved" },
+        { id: SYSTEM_PERMISSIONS.TEN_CYCLE_CHANGE_APPROVAL, name: "Change 10-Cycle Sign-off", description: "Change a Co-ordinator verification or HOD review that is already approved or rejected (Approve to Reject or back)" },
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_SELECT_PAST_DATE, name: "Select Past Date", description: "Allows selecting dates before today in 10-cycle sheet row entries (backdating)" },
         { id: SYSTEM_PERMISSIONS.TEN_CYCLE_SELECT_FUTURE_DATE, name: "Select Future Date", description: "Allows selecting dates after today in 10-cycle sheet row entries (future planning)" }
       ],

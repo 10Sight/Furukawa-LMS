@@ -18,7 +18,7 @@ router.get("/stats/rows/:departmentId", verifyJWT, getDaily5MRowStats);
 router.get("/config/:departmentId", verifyJWT, get5MConfig); // Changed path to disambiguate
 router.post("/config/save", verifyJWT, authorizeRoles("ADMIN", "SUPERADMIN"), save5MConfig);
 router.post("/config/save-with-revision", verifyJWT, authorizeRoles("ADMIN", "SUPERADMIN", "daily5m:edit_layout", "revision:update"), save5MConfigWithRevision);
-router.get("/history/all", verifyJWT, authorizeRoles("ADMIN", "SUPERADMIN"), getAllConfigHistory);
+router.get("/history/all", verifyJWT, authorizeRoles("ADMIN", "SUPERADMIN", "daily5m:dashboard_manage"), getAllConfigHistory);
 router.get("/history/:departmentId", verifyJWT, authorizeRoles("ADMIN", "SUPERADMIN", "daily5m:edit_layout", "revision:update"), getConfigHistory);
 
 // Assignment Routes
@@ -37,7 +37,7 @@ router.get("/record/:id", verifyJWT, get5MRecordById);
 router.post("/record/:id/approve", verifyJWT, approve5MRecord);
 router.post("/record/:id/decline", verifyJWT, decline5MRecord);
 router.get("/approvals/status", verifyJWT, getApprovalStatus);
-router.delete("/record/:id", verifyJWT, authorizeRoles("ADMIN", "SUPERADMIN", "daily5m:delete"), delete5MRecord);
+router.delete("/record/:id", verifyJWT, authorizeRoles("ADMIN", "SUPERADMIN", "daily5m:delete", "daily5m:dashboard_manage"), delete5MRecord);
 
 // Legacy/Compatibility: The previous fetchConfig was "GET /:departmentId". 
 // To avoid breaking the existing frontend immediately, I'll keep the root GET for config, 

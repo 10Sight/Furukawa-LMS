@@ -231,6 +231,8 @@ const Cycle10 = () => {
     const dateMinConstraint = canSelectPastDate ? undefined : todayStr;
     const dateMaxConstraint = canSelectFutureDate ? undefined : todayStr;
     const isSheetLocked = (sheet) => sheet?.verifiedStatus === 'APPROVE' || sheet?.reviewedStatus === 'APPROVE';
+    // Changing a Co-ordinator/HOD sign-off that is already approved or rejected (the server re-checks).
+    const canChangeApproval = isAdmin || user?.customRole?.permissions?.includes('ten_cycle:change_approval') || user?.customRole?.permissions?.includes('ten_cycle:manage');
 
     const [logAction] = useLogActionMutation();
 
@@ -651,6 +653,31 @@ const Cycle10 = () => {
         }
         setRemarkDialogOpen(false);
         executeSave(pendingIsSubmit, editRemarkText.trim());
+    };
+
+    // Flips an existing sign-off after confirmation. role: 'VERIFY' (Co-ordinator) or 'APPROVE' (HOD).
+    const handleChangeApproval = (role, currentStatus) => {
+        const newAction = currentStatus === 'APPROVE' ? 'REJECT' : 'APPROVE';
+        const label = role === 'VERIFY' ? 'Verification' : 'Review';
+        if (!window.confirm(`Are you sure you want to change the ${label} status from ${currentStatus} to ${newAction}?`)) return;
+        handleApproval(role, newAction);
+    };
+
+    const renderChangeApprovalButton = (role, currentStatus) => {
+        if (!canChangeApproval || !currentStatus) return null;
+        const toReject = currentStatus === 'APPROVE';
+        return (
+            <Button
+                size="sm"
+                variant="outline"
+                className={`h-5 mt-0.5 px-1.5 text-[8px] gap-1 print:hidden ${toReject ? 'border-red-600 text-red-600 hover:bg-red-50' : 'border-green-600 text-green-600 hover:bg-green-50'}`}
+                onClick={() => handleChangeApproval(role, currentStatus)}
+                disabled={loading}
+            >
+                {toReject ? <XCircle size={10} /> : <CheckCircle size={10} />}
+                {toReject ? 'Change to Reject' : 'Change to Approve'}
+            </Button>
+        );
     };
 
     const handleApproval = async (role, action) => {
@@ -1160,7 +1187,7 @@ const Cycle10 = () => {
                 </div>
                 <div className="space-y-2">
                     <div className="uppercase">Verified By (Co-ordinator)</div>
-                    <div className="h-8 flex flex-col items-center justify-center border-b border-dashed border-gray-400">
+                    <div className="min-h-8 flex flex-col items-center justify-center border-b border-dashed border-gray-400">
                         {currentSheet?.verifiedBy ? (
                             <>
                                 <span className={currentSheet.verifiedStatus === 'REJECT' ? 'text-red-600' : 'text-green-600'}>
@@ -1169,6 +1196,7 @@ const Cycle10 = () => {
                                 <span className="text-[8px] text-gray-500 font-normal">
                                     {currentSheet.verifiedAt ? new Date(currentSheet.verifiedAt).toLocaleString() : ""}
                                 </span>
+                                {renderChangeApprovalButton('VERIFY', currentSheet.verifiedStatus)}
                             </>
                         ) : (
                             <div className="flex gap-2 print:hidden">
@@ -1198,7 +1226,7 @@ const Cycle10 = () => {
                 </div>
                 <div className="space-y-2">
                     <div className="uppercase">Reviewed By (HOD)</div>
-                    <div className="h-8 flex flex-col items-center justify-center border-b border-dashed border-gray-400">
+                    <div className="min-h-8 flex flex-col items-center justify-center border-b border-dashed border-gray-400">
                         {currentSheet?.reviewedBy ? (
                             <>
                                 <span className={currentSheet.reviewedStatus === 'REJECT' ? 'text-red-600' : 'text-green-600'}>
@@ -1207,6 +1235,7 @@ const Cycle10 = () => {
                                 <span className="text-[8px] text-gray-500 font-normal">
                                     {currentSheet.reviewedAt ? new Date(currentSheet.reviewedAt).toLocaleString() : ""}
                                 </span>
+                                {renderChangeApprovalButton('APPROVE', currentSheet.reviewedStatus)}
                             </>
                         ) : (
                             <div className="flex gap-2 print:hidden">

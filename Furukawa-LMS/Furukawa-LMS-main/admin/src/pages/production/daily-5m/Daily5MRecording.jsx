@@ -1056,7 +1056,39 @@ const DaysInput = ({ value, onChange, baseDate, disabled }) => {
     );
 };
 
-const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange, departmentId, sectionId, canApprove, authUser, isLocked, isSubmitter, handleActionRow, skillLevels, canEditSubmitted5M, hasEditPermission, isReview, selectedDate, recordStatus, canEditApprovedDate, dateMin, dateMax }) => {
+// Flips an already approved/rejected row (daily5m:change_row_status). Changing to Reject goes
+// through RejectReasonDialog via handleActionRow; changing to Approve asks for confirmation first.
+const ChangeRowDecisionButton = ({ recIndex, rowStatus, handleActionRow }) => {
+    if (rowStatus === 'APPROVED') {
+        return (
+            <Button
+                size="sm"
+                variant="outline"
+                className="h-6 w-full mt-1 px-1 text-red-600 border-red-200 hover:bg-red-50 bg-white text-[9px] font-bold uppercase print:hidden"
+                onClick={() => handleActionRow(recIndex, 'reject')}
+                title="Change this approved row to rejected"
+            >
+                Change to Reject
+            </Button>
+        );
+    }
+    return (
+        <Button
+            size="sm"
+            className="h-6 w-full mt-1 px-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-bold uppercase print:hidden"
+            onClick={() => {
+                if (window.confirm(`Change row ${recIndex + 1} from Rejected to Approved? Its rejection reason will be removed.`)) {
+                    handleActionRow(recIndex, 'approve');
+                }
+            }}
+            title="Change this rejected row to approved"
+        >
+            Change to Approve
+        </Button>
+    );
+};
+
+const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange, departmentId, sectionId, canApprove, canChangeRowDecision, authUser, isLocked, isSubmitter, handleActionRow, skillLevels, canEditSubmitted5M, hasEditPermission, isReview, selectedDate, recordStatus, canEditApprovedDate, dateMin, dateMax }) => {
     const params = ['C/H', 'I/H', 'Strength', 'Length', 'Visual'];
     const rowStatus = formData[`rec_${recIndex}_RowStatus`];
     // The Date of an approved row is governed by its own permission, independent of the row lock
@@ -1365,18 +1397,23 @@ const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange
                 <td rowSpan="5" className="border border-black p-0.5 align-middle text-center bg-slate-50/20 w-28">
                     <div className="flex flex-col items-center justify-center min-h-[100px]">
                         {rowStatus ? (
-                            <div className={`p-2 rounded flex flex-col items-center gap-1 border shadow-sm ${rowStatus === 'APPROVED'
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                : 'bg-red-50 text-red-700 border-red-200'
-                                }`}>
-                                <div className="flex items-center gap-1 font-black text-[10px] uppercase tracking-wider">
-                                    {rowStatus === 'APPROVED' ? <IconCheck size={16} className="stroke-[3]" /> : <IconX size={16} className="stroke-[3]" />}
-                                    {rowStatus}
+                            <div className="flex flex-col items-center w-full max-w-[90px]">
+                                <div className={`p-2 rounded flex flex-col items-center gap-1 border shadow-sm ${rowStatus === 'APPROVED'
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                    : 'bg-red-50 text-red-700 border-red-200'
+                                    }`}>
+                                    <div className="flex items-center gap-1 font-black text-[10px] uppercase tracking-wider">
+                                        {rowStatus === 'APPROVED' ? <IconCheck size={16} className="stroke-[3]" /> : <IconX size={16} className="stroke-[3]" />}
+                                        {rowStatus}
+                                    </div>
+                                    <div className="text-[12px] font-bold leading-none">{formData[`rec_${recIndex}_ActionBy`]}</div>
+                                    <div className="text-[10px] opacity-70 whitespace-nowrap">
+                                        {formData[`rec_${recIndex}_ActionAt`] && new Date(formData[`rec_${recIndex}_ActionAt`]).toLocaleDateString()}
+                                    </div>
                                 </div>
-                                <div className="text-[12px] font-bold leading-none">{formData[`rec_${recIndex}_ActionBy`]}</div>
-                                <div className="text-[10px] opacity-70 whitespace-nowrap">
-                                    {formData[`rec_${recIndex}_ActionAt`] && new Date(formData[`rec_${recIndex}_ActionAt`]).toLocaleDateString()}
-                                </div>
+                                {canApprove && canChangeRowDecision && (
+                                    <ChangeRowDecisionButton recIndex={recIndex} rowStatus={rowStatus} handleActionRow={handleActionRow} />
+                                )}
                             </div>
                         ) : (
                             (canApprove || authUser?.role === 'ADMIN') && formData[`rec_${recIndex}_Date`] ? (
@@ -1620,6 +1657,10 @@ const Daily5MRecording = () => {
         : false;
 
     const canApprove = hasApprovalPermission && !isSubmitter && matchesApprovalRouting;
+    // Changing an already approved/rejected row also needs daily5m:change_row_status (the server
+    // re-checks it, plus routing and self-approval, at save time).
+    const canChangeRowDecision = isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN'
+        || authUser?.customRole?.permissions?.includes('daily5m:change_row_status');
 
     const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
     const [isManagePeopleOpen, setIsManagePeopleOpen] = useState(false);
@@ -2668,6 +2709,7 @@ const Daily5MRecording = () => {
                                         departmentId={selectedDepartment}
                                         sectionId={selectedSection}
                                         canApprove={canApprove && !isReview}
+                                        canChangeRowDecision={canChangeRowDecision}
                                         authUser={authUser}
                                         isLocked={isReview || !hasEditPermission || (formData[`rec_${recIndex}_RowStatus`] === 'APPROVED' && !isAdmin) || ((!!formData[`rec_${recIndex}_RowStatus`] || checkIsRowFilled(initialFormData, recIndex)) && !canEditSubmitted5M)}
                                         isSubmitter={isSubmitter}
@@ -2983,18 +3025,23 @@ const Daily5MRecording = () => {
                                                         <td rowSpan="3" className="border border-black py-0.5 px-0 align-middle text-center bg-slate-50/20">
                                                             <div className="flex flex-col items-center justify-center min-h-[100px]">
                                                                 {rowStatus ? (
-                                                                    <div className={`p-1.5 rounded flex flex-col items-center gap-0.5 border shadow-sm ${rowStatus === 'APPROVED'
-                                                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                                                        : 'bg-red-50 text-red-700 border-red-200'
-                                                                        }`}>
-                                                                        <div className="flex items-center gap-1 font-black text-[9px] uppercase tracking-wider">
-                                                                            {rowStatus === 'APPROVED' ? <IconCheck size={14} className="stroke-[3]" /> : <IconX size={14} className="stroke-[3]" />}
-                                                                            {rowStatus}
+                                                                    <div className="flex flex-col items-center w-full max-w-[85px]">
+                                                                        <div className={`p-1.5 rounded flex flex-col items-center gap-0.5 border shadow-sm ${rowStatus === 'APPROVED'
+                                                                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                                            : 'bg-red-50 text-red-700 border-red-200'
+                                                                            }`}>
+                                                                            <div className="flex items-center gap-1 font-black text-[9px] uppercase tracking-wider">
+                                                                                {rowStatus === 'APPROVED' ? <IconCheck size={14} className="stroke-[3]" /> : <IconX size={14} className="stroke-[3]" />}
+                                                                                {rowStatus}
+                                                                            </div>
+                                                                            <div className="text-[11px] font-bold leading-none">{formData[`rec_${recIndex}_ActionBy`]}</div>
+                                                                            <div className="text-[9px] opacity-70 whitespace-nowrap">
+                                                                                {formData[`rec_${recIndex}_ActionAt`] && new Date(formData[`rec_${recIndex}_ActionAt`]).toLocaleDateString()}
+                                                                            </div>
                                                                         </div>
-                                                                        <div className="text-[11px] font-bold leading-none">{formData[`rec_${recIndex}_ActionBy`]}</div>
-                                                                        <div className="text-[9px] opacity-70 whitespace-nowrap">
-                                                                            {formData[`rec_${recIndex}_ActionAt`] && new Date(formData[`rec_${recIndex}_ActionAt`]).toLocaleDateString()}
-                                                                        </div>
+                                                                        {canApprove && canChangeRowDecision && !isReview && (
+                                                                            <ChangeRowDecisionButton recIndex={recIndex} rowStatus={rowStatus} handleActionRow={handleActionRow} />
+                                                                        )}
                                                                     </div>
                                                                 ) : (
                                                                     canApprove && !isReview && formData[`rec_${recIndex}_Date`] ? (

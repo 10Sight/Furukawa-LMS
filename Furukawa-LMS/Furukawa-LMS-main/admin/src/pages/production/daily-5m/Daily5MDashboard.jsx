@@ -176,11 +176,27 @@ const Daily5MDashboard = () => {
 
     const authUser = useSelector(state => state.auth.user);
     const isAdmin = authUser?.isAdmin || authUser?.role === 'ADMIN' || authUser?.role === 'SUPERADMIN';
-    // Edit/Delete in the Records List are admin-only, since everyone sees every department's sheets
-    const canManageRecords = isAdmin;
+    // Edit/Delete in the Records List: admins on every record; daily5m:dashboard_manage holders only on
+    // records of the departments/sections they are assigned to (the server enforces the same scope).
+    const hasDashboardManage = authUser?.customRole?.permissions?.includes('daily5m:dashboard_manage');
+    const canManageRecords = isAdmin || hasDashboardManage;
+    const canViewLayoutHistory = isAdmin || hasDashboardManage;
+    const toIds = (single, many) => [single, ...(Array.isArray(many) ? many : [])]
+        .map((v) => (v && typeof v === 'object' ? (v.id ?? v._id) : v))
+        .filter((v) => v !== null && v !== undefined && v !== '')
+        .map(String);
+    const myDepartmentIds = toIds(authUser?.departmentId, authUser?.departments);
+    const mySectionIds = toIds(authUser?.sectionId, authUser?.sections);
+    const canManageRecord = (record) => {
+        if (isAdmin) return true;
+        if (!hasDashboardManage) return false;
+        if (!myDepartmentIds.includes(String(record?.departmentId))) return false;
+        return mySectionIds.length === 0 || mySectionIds.includes(String(record?.sectionId));
+    };
 
     // The dashboard (charts and Records List) reads every department, not just the user's
-    // assigned ones; the server allows this read-only scope for daily5m:read holders.
+    // assigned ones; the server allows this read-only scope for daily5m:read and
+    // daily5m:dashboard_manage holders.
     const DASHBOARD_SCOPE = 'scope=all';
 
     // Reset page when filters change
@@ -486,10 +502,12 @@ const Daily5MDashboard = () => {
             <div className="flex justify-between items-center">
                 <h1 className="text-2xl font-bold tracking-tight">5M Daily Records Dashboard</h1>
                 <div className="flex gap-2">
-                    <Button variant="outline" onClick={fetchGlobalHistory}>
-                        <History className="w-4 h-4 mr-2" />
-                        Layout Change History
-                    </Button>
+                    {canViewLayoutHistory && (
+                        <Button variant="outline" onClick={fetchGlobalHistory}>
+                            <History className="w-4 h-4 mr-2" />
+                            Layout Change History
+                        </Button>
+                    )}
                     <Button onClick={() => navigate("/cms/daily-5m-recording")}>
                         <Plus className="w-4 h-4 mr-2" />
                         Create New Record
@@ -1073,12 +1091,16 @@ const Daily5MDashboard = () => {
                                         </TableCell>
                                         {canManageRecords && (
                                             <TableCell className="text-right space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <Button variant="ghost" size="sm" onClick={(e) => handleEdit(e, record)}>
-                                                    <Edit className="w-4 h-4 text-blue-600" />
-                                                </Button>
-                                                <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleDelete(record.id); }}>
-                                                    <Trash2 className="w-4 h-4 text-red-600" />
-                                                </Button>
+                                                {canManageRecord(record) && (
+                                                    <>
+                                                        <Button variant="ghost" size="sm" onClick={(e) => handleEdit(e, record)}>
+                                                            <Edit className="w-4 h-4 text-blue-600" />
+                                                        </Button>
+                                                        <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleDelete(record.id); }}>
+                                                            <Trash2 className="w-4 h-4 text-red-600" />
+                                                        </Button>
+                                                    </>
+                                                )}
                                             </TableCell>
                                         )}
                                     </TableRow>

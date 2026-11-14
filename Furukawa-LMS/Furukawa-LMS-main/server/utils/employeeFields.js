@@ -47,6 +47,18 @@ export const normalizePhoneNumber = (val) => {
 
 export const isValidPhoneNumber = (val) => /^\d{10}$/.test(normalizePhoneNumber(val));
 
+/**
+ * Canonical Employee Code: trimmed and upper-cased. Also repairs the common typo of a letter O
+ * for the zero in trainee codes ("TRO81053" -> "TR081053"). Returns null when blank.
+ * Inner spaces are left alone so validateEmployeeFields can still reject them.
+ */
+export const normalizeEmpId = (val) => {
+    if (isBlankValue(val)) return null;
+    const code = String(val).trim().toUpperCase();
+    const trTypo = code.match(/^TRO(\d{5})$/);
+    return trTypo ? `TR0${trTypo[1]}` : code;
+};
+
 /** M/Male/MALE -> MALE etc. Unknown values are returned upper-cased so validation can reject them. */
 export const normalizeGender = (val) => {
     if (isBlankValue(val)) return null;

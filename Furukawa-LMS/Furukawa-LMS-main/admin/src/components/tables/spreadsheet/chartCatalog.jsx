@@ -21,7 +21,7 @@ export function ChartThumb({ type, className }) {
         case "barStacked": return <Svg className={className}><Axes /><Bars bars={[[4, 6, 11, 5, B], [15, 6, 7, 5, O], [4, 14, 15, 5, B], [19, 14, 8, 5, O], [4, 22, 8, 5, B], [12, 22, 6, 5, O]]} /></Svg>;
         case "barPercent": return <Svg className={className}><Axes /><Bars bars={[[4, 6, 14, 5, B], [18, 6, 10, 5, O], [4, 14, 18, 5, B], [22, 14, 6, 5, O], [4, 22, 9, 5, B], [13, 22, 15, 5, O]]} /></Svg>;
         // Columns that meet their target (green) or miss it (red), each with its target dot.
-        case "actualVsTarget": return <Svg className={className}><Axes /><Bars bars={[[6, 11, 5, 17, "#16a34a"], [14, 18, 5, 10, "#dc2626"], [22, 8, 5, 20, "#16a34a"]]} /><Dots pts={[[8.5, 15], [16.5, 11], [24.5, 12]]} c="#0f172a" r={2} /></Svg>;
+        case "actualVsTarget": return <Svg className={className}><Axes /><Bars bars={[[6, 11, 5, 17, "#16a34a"], [14, 18, 5, 10, "#dc2626"], [22, 8, 5, 20, "#16a34a"]]} /><Bars bars={[[5.5, 14.4, 6, 1.4, "#0f172a"], [13.5, 10.4, 6, 1.4, "#0f172a"], [21.5, 11.4, 6, 1.4, "#0f172a"]]} /></Svg>;
         case "line": return <Svg className={className}><Axes /><polyline points="5,22 11,15 17,18 23,9 29,12" stroke={B} strokeWidth="1.6" /><polyline points="5,26 11,22 17,24 23,19 29,21" stroke={O} strokeWidth="1.6" /></Svg>;
         case "lineStacked": return <Svg className={className}><Axes /><polyline points="5,24 11,20 17,22 23,17 29,19" stroke={B} strokeWidth="1.6" /><polyline points="5,15 11,9 17,13 23,6 29,8" stroke={O} strokeWidth="1.6" /></Svg>;
         case "linePercent": return <Svg className={className}><Axes /><polyline points="5,18 11,14 17,20 23,12 29,15" stroke={B} strokeWidth="1.6" /><polyline points="5,5 29,5" stroke={O} strokeWidth="1.6" /></Svg>;

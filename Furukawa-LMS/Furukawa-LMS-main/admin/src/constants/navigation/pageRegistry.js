@@ -50,6 +50,11 @@ const normalizeAllowedPages = (user) => {
 };
 
 // Whether a user may open the page with this registry key.
+// Quiz-taking routes (/admin/take-test/:id, /portal/take-test/:id, /student/quiz/:id).
+// Used for access checks and by the layouts to render the distraction-free test view.
+export const isQuizRoute = (pathname = "") =>
+    pathname.includes("/quiz/") || pathname.includes("/take-test/");
+
 export const canOpenPage = (key, user) => !hasRestrictions(user) || normalizeAllowedPages(user).includes(key);
 
 export const hasRestrictions = (user) => {
@@ -168,7 +173,7 @@ export const isPathAllowedForUser = (pathname, layout, user) => {
 
     // Custom check: if they are accessing quiz page or take-test page, they can access if they have test-paper OR student-courses OR courses
     const allowed = normalizeAllowedPages(user);
-    if (pathname.includes("/quiz/") || pathname.includes("/take-test/")) {
+    if (isQuizRoute(pathname)) {
         if (allowed.includes("test-paper") || allowed.includes("student-courses") || allowed.includes("courses")) return true;
     }
 

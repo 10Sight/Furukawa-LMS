@@ -30,9 +30,12 @@ import {
   IconTrophy,
   IconRotateClockwise,
   IconLockOpen,
-  IconPrinter
+  IconPrinter,
+  IconMaximize,
+  IconMinimize
 } from "@tabler/icons-react";
 import { getMediaUrl } from "@/utils/mediaUtils.js";
+import { normalizeEmpId } from "@/utils/employeeFields.js";
 import { useSelector } from "react-redux";
 
 // Local YYYY-MM-DD (not UTC) so IST/other +offset zones don't roll the date back at midnight.
@@ -106,6 +109,9 @@ const TakeQuiz = () => {
   const [testDate, setTestDate] = useState(getTodayDateString());
   const nameSearchTimeoutRef = useRef(null);
   const eCodeSearchTimeoutRef = useRef(null);
+  // Result of the typed-E.Code lookup: "idle" | "found" | "notFound". Only a hint — the server
+  // makes the final call at submit and rejects candidates that are not registered.
+  const [eCodeLookup, setECodeLookup] = useState("idle");
 
   // Doc header: a paper with its own document control prints its own values; otherwise the
   // department-wise Revision Table values ("test-paper") for the candidate's department/section —
@@ -207,6 +213,7 @@ const TakeQuiz = () => {
     setSelectedStudent(null); // Reset as typing indicates custom/new E.code
 
     if (eCodeSearchTimeoutRef.current) clearTimeout(eCodeSearchTimeoutRef.current);
+    setECodeLookup("idle");
 
     if (!canAdminister) {
       return;
@@ -218,15 +225,20 @@ const TakeQuiz = () => {
 
     eCodeSearchTimeoutRef.current = setTimeout(async () => {
       try {
-        const studentsList = await searchStudents(value, 5);
-        const exactMatch = studentsList.find(s => {
-          const studentCode = s.userName || "";
-          return studentCode.toLowerCase().trim() === value.toLowerCase().trim();
-        });
+        // Normalise so a typo like TRO81053 still finds the registered TR081053.
+        const code = normalizeEmpId(value);
+        const studentsList = await searchStudents(code, 5);
+        const exactMatch = studentsList.find(s =>
+          normalizeEmpId(s.userName) === code || normalizeEmpId(s.empId) === code
+        );
         if (exactMatch) {
           setCandidateName(exactMatch.fullName);
+          setECode((exactMatch.userName || code).toUpperCase());
           setSelectedStudent(exactMatch);
           setDepartment(getStudentDepartment(exactMatch));
+          setECodeLookup("found");
+        } else {
+          setECodeLookup("notFound");
         }
       } catch (err) {
         console.error("Failed to search student by E.code:", err);
@@ -241,6 +253,7 @@ const TakeQuiz = () => {
     setSelectedStudent(student);
     setDepartment(getStudentDepartment(student));
     setShowSuggestions(false);
+    setECodeLookup("found");
   };
 
   const totalMarks = quiz?.questions?.reduce((sum, q) => sum + (q.marks || 1), 0) || 0;
@@ -547,7 +560,15 @@ const TakeQuiz = () => {
       setStep("result");
     } catch (err) {
       console.error("Failed to submit quiz:", err);
-      setError(err.response?.data?.message || "Failed to submit quiz");
+      const status = err.response?.status;
+      const message = err.response?.data?.message || "Failed to submit quiz";
+      if (status === 400 || status === 409) {
+        // Correctable input (e.g. candidate not registered): keep the paper and answers so the
+        // E.Code can be fixed and the quiz resubmitted.
+        alert(message);
+      } else {
+        setError(message);
+      }
       setTimerActive(true); // Restart timer on error
     } finally {
       setSubmitting(false);
@@ -564,6 +585,28 @@ const TakeQuiz = () => {
 
   const getAnsweredCount = () => {
     return Object.values(answers).filter(answer => answer !== null).length;
+  };
+
+  // Fullscreen: entered from the "Take Test" click in TestPaper (needs a user gesture),
+  // toggled from the frozen top bar, and always exited when this page unmounts
+  // (Back button, browser back, error screen, any other navigation).
+  const [isFullscreen, setIsFullscreen] = useState(() => Boolean(document.fullscreenElement));
+
+  useEffect(() => {
+    const onFullscreenChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+      if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+    };
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen?.().catch(() => {});
+    } else {
+      document.exitFullscreen?.().catch(() => {});
+    }
   };
 
   const handleBackToCourse = () => {
@@ -658,7 +701,7 @@ const TakeQuiz = () => {
 
   if (step === "quiz") {
     return (
-      <div className="max-w-6xl mx-auto p-2 sm:p-6 animate-in fade-in duration-700">
+      <div className="w-full min-h-screen animate-in fade-in duration-700">
         <style dangerouslySetInnerHTML={{
           __html: `
           @media print {
@@ -691,47 +734,75 @@ const TakeQuiz = () => {
             }
           }
         `}} />
-        {/* Floating Timer & Progress */}
-        <div className="sticky top-4 z-50 flex justify-between items-center mb-6 pointer-events-none">
-          <div className="pointer-events-auto flex items-center gap-2">
-            {timeRemaining !== null && (
-              <Badge
-                variant="outline"
-                className={`px-4 py-2 text-lg shadow-xl border-2 flex items-center gap-2 bg-white/90 backdrop-blur-sm ${timeRemaining <= 300 ? 'text-red-600 border-red-200 animate-pulse' : 'text-blue-700 border-blue-200'
-                  }`}
-              >
-                <IconClock size={20} />
-                <span className="font-bold tabular-nums">{formatTime(timeRemaining)}</span>
-              </Badge>
-            )}
-
+        {/* Frozen Top Control Bar (stays at top: 0 while the paper scrolls) */}
+        <header className="sticky top-0 z-50 w-full bg-white border-b border-slate-200 shadow-sm py-2.5 px-3 sm:px-8 flex items-center justify-between gap-3 no-print">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
             <Button
               onClick={handleBackToCourse}
-              className="px-4 py-2 h-10 shadow-xl border-2 border-red-200 bg-white text-red-600 hover:bg-red-50 hover:text-red-700 flex items-center gap-2 font-bold text-sm rounded-xl no-print"
+              className="px-3.5 py-2 h-10 shadow-sm border border-red-200 bg-white text-red-600 hover:bg-red-50 hover:text-red-700 flex items-center gap-2 font-bold text-sm rounded-lg"
               title={t("takeQuiz.tooltip.cancelAndExit")}
             >
               <IconArrowLeft size={18} />
               <span className="hidden sm:inline">{t("takeQuiz.btnCancelExit")}</span>
             </Button>
 
+            {timeRemaining !== null && (
+              <Badge
+                variant="outline"
+                className={`px-3.5 py-2 h-10 text-base shadow-sm border flex items-center gap-2 bg-white ${timeRemaining <= 300
+                  ? 'text-red-600 border-red-300 bg-red-50 animate-pulse font-black'
+                  : 'text-blue-700 border-blue-200 font-bold'
+                  }`}
+              >
+                <IconClock size={18} />
+                <span className="tabular-nums">{formatTime(timeRemaining)}</span>
+              </Badge>
+            )}
+
             <Button
               onClick={() => window.print()}
-              className="px-4 py-2 h-10 shadow-xl border-2 border-black bg-white text-black hover:bg-gray-100 flex items-center gap-2 font-bold text-sm rounded-xl no-print"
+              className="px-3.5 py-2 h-10 shadow-sm border border-slate-300 bg-white text-slate-800 hover:bg-slate-100 flex items-center gap-2 font-bold text-sm rounded-lg"
               title={t("takeQuiz.tooltip.print")}
             >
               <IconPrinter size={18} />
               <span className="hidden sm:inline">{t("takeQuiz.btnPrintPaper")}</span>
             </Button>
-          </div>
-          <div className="pointer-events-auto bg-white/90 backdrop-blur-sm p-3 rounded-xl border border-gray-200 shadow-xl w-48 sm:w-64">
-            <div className="flex justify-between text-xs font-bold mb-1">
-              <span>{t("takeQuiz.progress")}</span>
-              <span>{Math.round((getAnsweredCount() / (quiz?.questions?.length || 1)) * 100)}%</span>
-            </div>
-            <Progress value={(getAnsweredCount() / (quiz?.questions?.length || 1)) * 100} className="h-2" />
-          </div>
-        </div>
 
+            {document.fullscreenEnabled && (
+              <Button
+                onClick={toggleFullscreen}
+                variant="outline"
+                className="px-3 py-2 h-10 shadow-sm border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 flex items-center gap-1.5 font-semibold text-xs rounded-lg"
+                title={isFullscreen ? t("takeQuiz.btnExitFullscreen") : t("takeQuiz.btnFullscreen")}
+              >
+                {isFullscreen ? <IconMinimize size={17} /> : <IconMaximize size={17} />}
+                <span className="hidden md:inline">
+                  {isFullscreen ? t("takeQuiz.btnExitFullscreen") : t("takeQuiz.btnFullscreen")}
+                </span>
+              </Button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-4">
+            <div className="hidden lg:flex flex-col text-right min-w-0">
+              <span className="text-xs font-bold text-slate-800 truncate max-w-xs">{quiz?.title}</span>
+              {candidateName && (
+                <span className="text-[11px] text-slate-500 font-medium truncate max-w-xs">
+                  {candidateName} {eCode ? `(${eCode})` : ""}
+                </span>
+              )}
+            </div>
+            <div className="bg-slate-50 p-2 rounded-lg border border-slate-200 w-32 sm:w-48">
+              <div className="flex justify-between text-[11px] font-bold text-slate-700 mb-1">
+                <span>{t("takeQuiz.progress")}</span>
+                <span>{Math.round((getAnsweredCount() / (quiz?.questions?.length || 1)) * 100)}%</span>
+              </div>
+              <Progress value={(getAnsweredCount() / (quiz?.questions?.length || 1)) * 100} className="h-1.5" />
+            </div>
+          </div>
+        </header>
+
+        <main className="max-w-6xl mx-auto p-2 sm:p-6">
         {/* Standardized Test Paper Document */}
         <div className="bg-white border-[3px] border-black text-black font-serif shadow-2xl overflow-hidden mb-12">
           {/* HEADER TABLE */}
@@ -867,6 +938,11 @@ const TakeQuiz = () => {
                   )}
                 </span>
               </div>
+              {canAdminister && eCodeLookup === "notFound" && !selectedStudent && (
+                <div className="text-xs text-amber-700 pl-[128px] -mt-1 print:hidden" role="status">
+                  {t("takeQuiz.eCodeNotFound")}
+                </div>
+              )}
               {/* Department */}
               <div className="flex gap-2 items-center">
                 <span className="min-w-[120px] text-black">{t("takeQuiz.meta.department")}</span>
@@ -1153,6 +1229,7 @@ const TakeQuiz = () => {
             )}
           </Button>
         </div>
+        </main>
       </div>
     );
   }

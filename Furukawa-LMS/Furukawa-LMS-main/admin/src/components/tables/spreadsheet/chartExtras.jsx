@@ -97,15 +97,24 @@ function StockShape({ x, y, width, height, payload }) {
 // The chart itself is drawn in ExcelGraph's renderChartFor, so its columns and dots get
 // the same data-label settings as the other column charts; these are its pieces.
 
-// The target marker: a dot with a white ring, so it reads on top of its own column.
+// The target marker, centred on the target value: a dot (radius `r`) or a
+// horizontal line `width` × `height` px with rounded ends. Either has a white ring
+// so it reads whether its column stops short of it, reaches it or passes it.
 // recharts clones this per point with cx/cy/value; a blank target draws nothing.
-export function TargetDot({ cx, cy, value, r, fill, show }) {
+export function TargetMarker({ cx, cy, value, type, r, width, height, fill, show }) {
     if (!show || value === null || value === undefined || !Number.isFinite(cx) || !Number.isFinite(cy)) return <g />;
-    return <circle cx={cx} cy={cy} r={r} fill={fill} stroke="#ffffff" strokeWidth={2} />;
+    if (type !== "line") return <circle cx={cx} cy={cy} r={r} fill={fill} stroke="#ffffff" strokeWidth={2} />;
+    const rx = Math.min(2, height / 2);
+    return (
+        <rect
+            x={cx - width / 2} y={cy - height / 2} width={width} height={height} rx={rx} ry={rx}
+            fill={fill} stroke="#ffffff" strokeWidth={1} paintOrder="stroke"
+        />
+    );
 }
 
 // Each row carries its series values under their names plus `__status` (targetStatus).
-export function ActualVsTargetTooltip({ active, payload, actualKey, targetKey, statusColor, dotColor }) {
+export function ActualVsTargetTooltip({ active, payload, actualKey, targetKey, statusColor, dotColor, markerType }) {
     const row = active && payload?.[0]?.payload;
     if (!row) return null;
     const actual = row[actualKey] ?? null, target = row[targetKey] ?? null, status = row.__status;
@@ -123,7 +132,7 @@ export function ActualVsTargetTooltip({ active, payload, actualKey, targetKey, s
         <div className="rounded-lg border border-slate-200 bg-white shadow-md px-2.5 py-2 text-xs min-w-[160px] space-y-0.5">
             <div className="text-[10px] font-semibold text-slate-500 mb-1">{row.name}</div>
             {line(actualKey, fmt(actual), <span className="w-2.5 h-2.5 rounded-sm" style={{ background: statusColor(status) }} />)}
-            {line(targetKey, fmt(target), <span className="w-2.5 h-2.5 rounded-full" style={{ background: dotColor }} />)}
+            {line(targetKey, fmt(target), <span className={markerType === "line" ? "w-3 h-[3px] rounded-full" : "w-2.5 h-2.5 rounded-full"} style={{ background: dotColor }} />)}
             {line("Variance", variance === null ? null : `${variance > 0 ? "+" : ""}${fmt(variance)}`)}
             {line("Achievement", achievement === null ? null : `${achievement.toFixed(1)}%`)}
             <div className="pt-1 mt-1 border-t border-slate-100 font-semibold" style={{ color: statusColor(status) }}>{statusText}</div>
@@ -137,9 +146,9 @@ export function ActualVsTargetTooltip({ active, payload, actualKey, targetKey, s
 export function TargetLegend({ layout, items }) {
     return (
         <div className={layout === "vertical" ? "flex flex-col gap-1 px-2" : "flex flex-wrap items-center justify-center gap-x-4 gap-y-1 pt-1"}>
-            {items.map(({ label, color, round }) => (
+            {items.map(({ label, color, round, line }) => (
                 <span key={label} className="inline-flex items-center gap-1.5">
-                    <span className={round ? "w-2.5 h-2.5 rounded-full" : "w-2.5 h-2.5 rounded-sm"} style={{ background: color }} />
+                    <span className={line ? "w-3.5 h-[3px] rounded-full" : round ? "w-2.5 h-2.5 rounded-full" : "w-2.5 h-2.5 rounded-sm"} style={{ background: color }} />
                     {label}
                 </span>
             ))}

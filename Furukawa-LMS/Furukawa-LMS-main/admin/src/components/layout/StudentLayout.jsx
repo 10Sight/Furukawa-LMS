@@ -47,7 +47,7 @@ import clsx from "clsx";
 import axiosInstance from "@/services/requests/axiosInstance.js";
 import useTranslate from "@/hooks/useTranslate.js";
 import LanguageSelector from "../navbar/LanguageSelector.jsx";
-import { getSidebarTabs, isPathAllowedForUser } from "@/constants/navigation/pageRegistry.js";
+import { getSidebarTabs, isPathAllowedForUser, isQuizRoute } from "@/constants/navigation/pageRegistry.js";
 
 
 export function StudentLayout() {
@@ -76,6 +76,8 @@ export function StudentLayout() {
   const { pathname } = useLocation();
   const { user, isLoading } = useSelector((state) => state.auth);
   const { theme, darkMode } = useSelector((state) => state.theme);
+  // Taking a test: hide sidebar + header and give the paper the full viewport.
+  const isTakeQuiz = isQuizRoute(pathname);
 
   const tabs = useMemo(() => getSidebarTabs("student", user, t), [user, t]);
 
@@ -246,7 +248,7 @@ export function StudentLayout() {
   return (
     <div className={`flex min-h-screen ${theme.mainBg}`}>
       {/* Mobile Overlay */}
-      {(isMobileMenuOpen || (!collapsed && !isMobile)) && (
+      {(isMobileMenuOpen || (!collapsed && !isMobile)) && !isTakeQuiz && (
         <div
           className={`fixed inset-0 bg-black/60 backdrop-blur-sm z-40 transition-opacity duration-300 animate-in fade-in ${isMobile ? '' : 'md:hidden'
             }`}
@@ -265,7 +267,7 @@ export function StudentLayout() {
         className={`fixed top-0 left-0 h-screen ${theme.card} backdrop-blur-xl ${theme.textMain} shadow-2xl transition-all duration-300 z-50 border-r ${theme.border} ${isMobile
           ? `${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} w-64`
           : `${collapsed ? 'w-16' : 'w-64'}`
-          }`}
+          } ${isTakeQuiz ? 'hidden' : ''}`}
       >
         <div className={`relative h-16 items-center flex transition-all px-4 duration-300 border-b ${theme.border} ${theme.iconBg} backdrop-blur-sm`}>
           <ToggleButton
@@ -370,7 +372,7 @@ export function StudentLayout() {
 
       {/* Main Content Area */}
       <div
-        className={`flex-1 min-w-0 transition-all duration-300 ${isMobile
+        className={`flex-1 min-w-0 transition-all duration-300 ${isMobile || isTakeQuiz
           ? "ml-0"
           : collapsed
             ? "ml-16"
@@ -378,7 +380,7 @@ export function StudentLayout() {
           }`}
       >
         {/* Header */}
-        <header className={`sticky top-0 z-30 ${theme.card} border-b ${theme.border} shadow-sm`}>
+        <header className={`sticky top-0 z-30 ${theme.card} border-b ${theme.border} shadow-sm ${isTakeQuiz ? 'hidden' : ''}`}>
           <div className="flex items-center justify-between px-4 py-3 sm:px-6">
             {/* Left side - Mobile menu button and Breadcrumb */}
             <div className="flex items-center gap-4">
@@ -516,7 +518,7 @@ export function StudentLayout() {
 
         {/* Page Content */}
         <main className="flex-1">
-          <div className="max-w-7xl mx-auto px-2.5 py-6 sm:px-6 lg:px-8">
+          <div className={isTakeQuiz ? "" : "max-w-7xl mx-auto px-2.5 py-6 sm:px-6 lg:px-8"}>
             <Suspense fallback={
               <div className="flex items-center justify-center py-20 min-h-[400px]">
                 <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>

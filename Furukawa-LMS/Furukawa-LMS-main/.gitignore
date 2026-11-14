@@ -1,4 +1,4 @@
-﻿# Dependencies
+# Dependencies
 node_modules/
 
 # Environment files
@@ -25,6 +25,12 @@ server/uploads/
 server/backups/
 server/db/**/*.json
 server/db/*.json
+server/ptm/data/*.db
+server/ptm/data/*.db-shm
+server/ptm/data/*.db-wal
+server/ptm/data/*.sqlite*
+**/pdca_persistence_store.json
+**/ptm_dashboard.db*
 nginx/certs/
 
 # Scratch / debug

@@ -27,21 +27,30 @@ export async function isDbConnected() {
  * Reads PDCA fallback persistent data
  */
 export function readPdcaStore() {
-    try {
-        if (fs.existsSync(PDCA_STORE_PATH)) {
-            const raw = fs.readFileSync(PDCA_STORE_PATH, "utf-8");
-            return JSON.parse(raw);
-        }
-    } catch (e) {
-        logger.warn("Failed reading PDCA persistence store:", e.message);
-    }
-    return {
+    const defaultStore = {
         records: [],
         sheets: {},
         cftTopics: [],
         attachments: [],
         auditLogs: []
     };
+    try {
+        if (fs.existsSync(PDCA_STORE_PATH)) {
+            const raw = fs.readFileSync(PDCA_STORE_PATH, "utf-8").trim();
+            if (!raw) return defaultStore;
+            const parsed = JSON.parse(raw);
+            return {
+                records: Array.isArray(parsed?.records) ? parsed.records : [],
+                sheets: parsed?.sheets && typeof parsed.sheets === "object" ? parsed.sheets : {},
+                cftTopics: Array.isArray(parsed?.cftTopics) ? parsed.cftTopics : [],
+                attachments: Array.isArray(parsed?.attachments) ? parsed.attachments : [],
+                auditLogs: Array.isArray(parsed?.auditLogs) ? parsed.auditLogs : []
+            };
+        }
+    } catch (e) {
+        logger.warn("Failed reading PDCA persistence store:", e.message);
+    }
+    return defaultStore;
 }
 
 /**

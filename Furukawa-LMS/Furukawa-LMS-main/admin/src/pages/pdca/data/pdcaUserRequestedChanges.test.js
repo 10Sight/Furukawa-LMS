@@ -1872,5 +1872,27 @@ test('40. PDCASheet: Explicit user edit tracking and zero false-positive Unsaved
   assert.match(pdcaSheetCode, /!userHasEditedRef\.current\s*&&\s*!isDirtyRef\.current/, 'hasUnsavedChanges must return false if user has not edited anything');
 });
 
+test('41. PDCA Page Sheet: Graph-first scroll chaining (matching LPA Observation PDCA) and wider dark scrollbars scoped to PDCA Page only', () => {
+  const pdcaSheetPagePath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/pages/pdca/pages/PDCASheetPage.jsx');
+  const pdcaSheetPageCode = fs.readFileSync(pdcaSheetPagePath, 'utf8');
+  const pdcaSheetPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/pdca/PDCASheet.jsx');
+  const pdcaSheetCode = fs.readFileSync(pdcaSheetPath, 'utf8');
+  const indexCssPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/pages/ptm/index.css');
+  const indexCssCode = fs.readFileSync(indexCssPath, 'utf8');
+
+  // 1. PDCASheetPage uses viewport-locked flex container so bodyScrollRef scrolls the graph out first before sheetScrollEl scrolls
+  assert.match(pdcaSheetPageCode, /pdca-page-sheet-root fixed inset-0 z-40 h-dvh w-full bg-white text-slate-800 flex flex-col overflow-hidden/);
+  assert.match(pdcaSheetCode, /pdca-body-scroll-container/);
+  assert.match(pdcaSheetCode, /pdca-sheet-scroll-container/);
+  assert.match(pdcaSheetCode, /const bodyRemaining = body\.scrollHeight - body\.clientHeight - body\.scrollTop;/);
+
+  // 2. Wider (14px) dark (#334155 / #1e293b) scrollbars scoped strictly to .pdca-page-sheet-root (PDCA Page only, not LPA Page)
+  assert.match(indexCssCode, /\.pdca-page-sheet-root \.pdca-sheet-scroll-container::-webkit-scrollbar/);
+  assert.match(indexCssCode, /width:\s*14px\s*!important/);
+  assert.match(indexCssCode, /height:\s*14px\s*!important/);
+  assert.match(indexCssCode, /background:\s*#334155\s*!important/);
+});
+
+
 
 

@@ -49,3 +49,39 @@
   width: 0 !important;
   height: 0 !important;
 }
+
+/* PDCA Page Sheet Scrollbars: wider and dark-colored as requested */
+.pdca-page-sheet-root .pdca-sheet-scroll-container,
+.pdca-page-sheet-root .pdca-body-scroll-container {
+  scrollbar-width: auto;
+  scrollbar-color: #334155 #cbd5e1;
+}
+
+.pdca-page-sheet-root .pdca-sheet-scroll-container::-webkit-scrollbar,
+.pdca-page-sheet-root .pdca-body-scroll-container::-webkit-scrollbar {
+  width: 14px !important;
+  height: 14px !important;
+}
+
+.pdca-page-sheet-root .pdca-sheet-scroll-container::-webkit-scrollbar-track,
+.pdca-page-sheet-root .pdca-body-scroll-container::-webkit-scrollbar-track {
+  background: #cbd5e1 !important;
+  border-radius: 6px;
+}
+
+.pdca-page-sheet-root .pdca-sheet-scroll-container::-webkit-scrollbar-thumb,
+.pdca-page-sheet-root .pdca-body-scroll-container::-webkit-scrollbar-thumb {
+  background: #334155 !important;
+  border-radius: 6px;
+  border: 2px solid #cbd5e1;
+}
+
+.pdca-page-sheet-root .pdca-sheet-scroll-container::-webkit-scrollbar-thumb:hover,
+.pdca-page-sheet-root .pdca-body-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: #1e293b !important;
+}
+
+.pdca-page-sheet-root .pdca-sheet-scroll-container::-webkit-scrollbar-corner,
+.pdca-page-sheet-root .pdca-body-scroll-container::-webkit-scrollbar-corner {
+  background: #cbd5e1 !important;
+}

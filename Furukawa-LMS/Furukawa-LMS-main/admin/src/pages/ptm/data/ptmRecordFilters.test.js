@@ -18,7 +18,10 @@ import {
   classifyPTMSheetStatus,
   getPTMVisibleSheets,
   filterPTMRecordsBySection,
-  getPTMSectionCounts
+  getPTMSectionCounts,
+  PTM_RESPONSIBLE_EDITABLE_COLUMNS,
+  canUserFullEditPtmSheet,
+  canUserEditPtmRowColumn
 } from './ptmRecordFilters.js';
 
 test('1. PTM Plant Dropdown options: Bawal, Gujrat, All, default is Bawal inside Plant tab', () => {
@@ -655,6 +658,142 @@ test('28. PTM Header: Milestone cells (DPT, PPT, MPT, PILOT, SOP) auto-adjust wi
   assert.match(headerContent, /style=\{\{ width: `\$\{autoWidthPx\}px`, minWidth: `\$\{autoWidthPx\}px` \}\}/);
   assert.match(headerContent, /tableLayout:\s*'auto'/);
 });
+
+test('29. PTM Sheet: End Date (Actual) stacks previously selected dates vertically with strikethrough and small text, and shows the latest date in large bold text', () => {
+  const tablePath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/ptm/PTM/PTMTable.jsx');
+  const tableContent = fs.readFileSync(tablePath, 'utf8');
+
+  assert.match(tableContent, /function EndDateActualCell/);
+  assert.match(tableContent, /getEndDateActualHistory/);
+  assert.match(tableContent, /handleSelectEndDateActual/);
+  assert.match(tableContent, /line-through/);
+  assert.match(tableContent, /text-\[11px\]/);
+  assert.match(tableContent, /text-sm font-bold leading-snug text-slate-900 font-mono/);
+
+  // normalizeDateToYMD extracts the latest date from vertically stacked newline-separated dates
+  assert.equal(normalizeDateToYMD('14-11-26\n15-11-26\n16-11-26'), '2026-11-16');
+
+  const fixedToday = new Date('2026-11-14T12:00:00Z');
+  const rowWithStackedEndActual = {
+    endDatePlan: '15-11-26',
+    endDateActual: '14-11-26\n15-11-26\n16-11-26',
+    status: 'In-Progress',
+  };
+  const evalStacked = evaluatePtmRowStatus(rowWithStackedEndActual, fixedToday);
+  assert.equal(evalStacked.hitMiss, 'MISS');
+  assert.equal(evalStacked.status, 'Delay');
+});
+
+test('30. PTM Sheet & Header: Dummy employee data removed and all database employees fetched for Staff Name, APQP Leader, and Project Leader', () => {
+  const tablePath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/ptm/PTM/PTMTable.jsx');
+  const tableContent = fs.readFileSync(tablePath, 'utf8');
+  const headerPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/ptm/PTM/PTMHeader.jsx');
+  const headerContent = fs.readFileSync(headerPath, 'utf8');
+  const appPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/pages/ptm/App.jsx');
+  const appContent = fs.readFileSync(appPath, 'utf8');
+
+  // VERIFIED_EMPLOYEE_MASTER dummy data removed from PTMTable.jsx
+  assert.doesNotMatch(tableContent, /VERIFIED_EMPLOYEE_MASTER/);
+  assert.match(tableContent, /employeeApi\.getAll\(\)/);
+
+  // Dummy placeholder "Shiva Chaudhary" removed from PTMHeader.jsx
+  assert.doesNotMatch(headerContent, /placeholder="Shiva Chaudhary"/);
+
+  // App.jsx fetches dbEmployees from employeeApi.getAll() and builds projectLeaderOptions from dbEmployees
+  assert.match(appContent, /employeeApi\.getAll\(\)/);
+  assert.match(appContent, /const namesFromDb = dbEmployees/);
+});
+
+test('31. PTM Sheet: Per-sheet suggestion dropdowns enabled on AIAG APQP Requirements, Custom Event Name, and Activity (New), starting empty for new sheets', () => {
+  const tablePath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/ptm/PTM/PTMTable.jsx');
+  const tableContent = fs.readFileSync(tablePath, 'utf8');
+  const appPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/pages/ptm/App.jsx');
+  const appContent = fs.readFileSync(appPath, 'utf8');
+
+  // Global COMMON_APQP_REQUIREMENTS removed so new sheets start with empty suggestions
+  assert.doesNotMatch(tableContent, /COMMON_APQP_REQUIREMENTS/);
+  assert.match(tableContent, /savedColumnSuggestions\?\.reqName/);
+  assert.match(tableContent, /savedColumnSuggestions\?\.customerEvent/);
+  assert.match(tableContent, /savedColumnSuggestions\?\.activity/);
+
+  // createBlankHeaderInfo initializes empty per-sheet savedColumnSuggestions
+  assert.match(appContent, /savedColumnSuggestions:\s*\{\s*reqName:\s*\[\],\s*customerEvent:\s*\[\],\s*activity:\s*\[\]/);
+  // saveFormChanges persists savedColumnSuggestions per sheet
+  assert.match(appContent, /collectSavedCol\('reqName'\)/);
+  assert.match(appContent, /collectSavedCol\('customerEvent'\)/);
+  assert.match(appContent, /collectSavedCol\('activity'\)/);
+});
+
+test('32. PTM Sheet: Responsible Person row and 10-column access isolation rule', () => {
+  const creator = { name: 'Creator User', code: 'EMP001', isAdmin: true };
+  const staff1 = { name: 'Assigned Staff', code: 'EMP002', isAdmin: false };
+  const staff2 = { name: 'Other Staff', code: 'EMP003', isAdmin: false };
+
+  const sheetItem = {
+    id: 'PTM-BW-101',
+    createdBy: { name: 'Creator User', code: 'EMP001' },
+  };
+  const rows = [
+    {
+      id: 'row-1',
+      staffName: 'Assigned Staff',
+      staffId: 'EMP002',
+      staffEmployees: [{ name: 'Assigned Staff', code: 'EMP002', department: 'Quality', unit: 'Bawal' }],
+    },
+    {
+      id: 'row-2',
+      staffName: 'Other Staff',
+      staffId: 'EMP003',
+      staffEmployees: [{ name: 'Other Staff', code: 'EMP003', department: 'PE', unit: 'Bawal' }],
+    },
+  ];
+
+  // Creator has full sheet access
+  assert.equal(canUserFullEditPtmSheet(sheetItem, creator, rows), true);
+
+  // Assigned staff member does NOT have full sheet access
+  const staff1FullAccess = canUserFullEditPtmSheet(sheetItem, staff1, rows);
+  assert.equal(staff1FullAccess, false);
+
+  // Assigned staff member can edit the 10 allowed columns on their assigned row (row-1)
+  for (const col of PTM_RESPONSIBLE_EDITABLE_COLUMNS) {
+    assert.equal(
+      canUserEditPtmRowColumn(rows[0], col, staff1, staff1FullAccess),
+      true,
+      `Assigned staff should have access to ${col} on their own row`
+    );
+  }
+
+  // Assigned staff member CANNOT edit non-allowed columns on their own row
+  for (const restrictedCol of ['phaseName', 'reqNo', 'reqName', 'customerEvent', 'rankA', 'activity', 'departments', 'staffName', 'remarks', 'actions']) {
+    assert.equal(
+      canUserEditPtmRowColumn(rows[0], restrictedCol, staff1, staff1FullAccess),
+      false,
+      `Assigned staff must NOT have access to ${restrictedCol}`
+    );
+  }
+
+  // Assigned staff member CANNOT edit any column on another person's row (row-2)
+  for (const col of PTM_RESPONSIBLE_EDITABLE_COLUMNS) {
+    assert.equal(
+      canUserEditPtmRowColumn(rows[1], col, staff1, staff1FullAccess),
+      false,
+      `Assigned staff must NOT have access to ${col} on unassigned row`
+    );
+  }
+});
+
+test('33. PTM Home Page: Delete button opens a centered confirmation popup modal instead of double-click deleting', () => {
+  const dashTablePath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/ptm/PTM/PTMDashboardTable.jsx');
+  const dashTableContent = fs.readFileSync(dashTablePath, 'utf8');
+
+  assert.doesNotMatch(dashTableContent, /Click again to confirm delete/);
+  assert.match(dashTableContent, /deleteConfirmItem/);
+  assert.match(dashTableContent, /fixed inset-0 z-\[100\] flex items-center justify-center/);
+  assert.match(dashTableContent, /Are you sure you want to delete the PTM Sheet/);
+  assert.match(dashTableContent, /handleConfirmDelete/);
+});
+
 
 
 

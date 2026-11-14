@@ -121,9 +121,27 @@ export const apqpApi = {
   },
 };
 
+export const employeeApi = {
+  getAll: async (search = '') => {
+    const query = search ? `?search=${encodeURIComponent(search)}` : '';
+    try {
+      const res = await request(`/v1/pdca/employees${query}`);
+      const list = res?.data || res;
+      if (Array.isArray(list)) return list;
+    } catch {}
+    try {
+      const metaRes = await request('/v1/pdca/metadata');
+      const meta = metaRes?.data || metaRes;
+      if (Array.isArray(meta?.employees)) return meta.employees;
+    } catch {}
+    return [];
+  },
+};
+
 export default {
   authApi,
   ptmApi,
   sheetApi,
   apqpApi,
+  employeeApi,
 };

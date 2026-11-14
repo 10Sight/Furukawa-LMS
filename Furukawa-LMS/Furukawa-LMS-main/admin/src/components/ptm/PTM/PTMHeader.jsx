@@ -1,6 +1,175 @@
-import React from 'react';
+import React, { useLayoutEffect, useRef } from 'react';
+import { CalendarDays } from 'lucide-react';
 import CalendarDateInput from './CalendarDateInput';
 import SearchableLeaderInput from './SearchableLeaderInput';
+
+const MILESTONE_COLUMNS = [
+  { key: 'DPT', label: 'DPT' },
+  { key: 'PPT', label: 'PPT' },
+  { key: 'MPT', label: 'MPT' },
+  { key: 'PILOT', label: 'PILOT' },
+  { key: 'SOP', label: 'SOP' },
+];
+
+const extractDateForPicker = (value) => {
+  const text = String(value || '').trim();
+  const isoMatch = text.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+  if (isoMatch) return isoMatch[0];
+
+  const dmyMatch = text.match(/\b(\d{1,2})[-./](\d{1,2})[-./](\d{2}|\d{4})\b/);
+  if (!dmyMatch) return '';
+  const [, day, month, rawYear] = dmyMatch;
+  const year = rawYear.length === 2 ? `20${rawYear}` : rawYear;
+  return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+};
+
+const mergePickerDateWithText = (isoDate, currentValue) => {
+  if (!isoDate) return currentValue || '';
+  const [year, month, day] = isoDate.split('-');
+  const formattedDate = `${day}-${month}-${year}`;
+  const current = String(currentValue || '').trim();
+  if (!current) return formattedDate;
+
+  // If current value is purely a date, replace it with the newly selected date
+  if (
+    /^\d{4}-\d{2}-\d{2}$/.test(current) ||
+    /^\d{1,2}[-./]\d{1,2}[-./](\d{2}|\d{4})$/.test(current) ||
+    /^\d{1,2}-[A-Za-z]{3}-\d{2,4}$/.test(current)
+  ) {
+    return formattedDate;
+  }
+
+  // If current value contains an embedded date + manual text, update the date and keep the text
+  const dateTokenRegex = /\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}[-./]\d{1,2}[-./](?:\d{2}|\d{4})|\d{1,2}-[A-Za-z]{3}-\d{2,4})\b/;
+  if (dateTokenRegex.test(current)) {
+    return current.replace(dateTokenRegex, formattedDate);
+  }
+
+  // Otherwise, current value is manual text only — combine the selected date and existing text
+  return `${formattedDate}\n${current}`;
+};
+
+const formatThreeWordsPerLine = (text) => {
+  if (!text) return '';
+  return String(text)
+    .split('\n')
+    .map((line) => {
+      const tokens = line.trim().split(/\s+/).filter(Boolean);
+      if (tokens.length <= 3) return line;
+      const chunks = [];
+      for (let i = 0; i < tokens.length; i += 3) {
+        chunks.push(tokens.slice(i, i + 3).join(' '));
+      }
+      return chunks.join('\n');
+    })
+    .join('\n');
+};
+
+const getMilestoneCellAutoWidthPx = (value) => {
+  const lines = String(value || '').split('\n');
+  const longestLineChars = lines.reduce((maxLen, line) => Math.max(maxLen, line.length), 0);
+  return Math.max(96, Math.ceil(longestLineChars * 7.6) + 32);
+};
+
+function MilestoneDateTextCell({ value = '', onChange, ariaLabel, rowIdx, colKey }) {
+  const pickerRef = useRef(null);
+  const textareaRef = useRef(null);
+  const autoWidthPx = getMilestoneCellAutoWidthPx(value);
+
+  const adjustHeight = () => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.max(24, el.scrollHeight)}px`;
+  };
+
+  useLayoutEffect(() => {
+    adjustHeight();
+  }, [value]);
+
+  const handleKeyDown = (e) => {
+    if (e.key === ' ') {
+      const el = e.currentTarget;
+      const selectionStart = el.selectionStart ?? String(value).length;
+      const selectionEnd = el.selectionEnd ?? selectionStart;
+      const lastNewlineIdx = String(value).lastIndexOf('\n', Math.max(0, selectionStart - 1));
+      const lineBeforeCursor = String(value).slice(lastNewlineIdx + 1, selectionStart);
+      const wordsOnCurrentLine = lineBeforeCursor.trim().split(/\s+/).filter(Boolean);
+
+      // After 3 words on the current line, pressing Space navigates directly to the next line
+      if (wordsOnCurrentLine.length >= 3) {
+        e.preventDefault();
+        const nextValue = `${String(value).slice(0, selectionStart)}\n${String(value).slice(selectionEnd)}`;
+        onChange(nextValue);
+        requestAnimationFrame(() => {
+          if (textareaRef.current) {
+            const nextCursorPos = selectionStart + 1;
+            textareaRef.current.selectionStart = nextCursorPos;
+            textareaRef.current.selectionEnd = nextCursorPos;
+            adjustHeight();
+          }
+        });
+        return;
+      }
+    }
+    if (e.key === 'Enter' && e.shiftKey) {
+      // Allow Shift + Enter to insert a newline (\n) and move cursor to the next line
+      return;
+    }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (typeof rowIdx === 'number' && colKey) {
+        const nextCell = document.querySelector(
+          `textarea[data-milestone-row="${rowIdx + 1}"][data-milestone-col="${colKey}"]`
+        );
+        if (nextCell) {
+          nextCell.focus();
+        }
+      }
+    }
+  };
+
+  return (
+    <div
+      className="relative flex items-center w-full h-full min-h-[28px]"
+      style={{ width: `${autoWidthPx}px`, minWidth: `${autoWidthPx}px` }}
+    >
+      <textarea
+        ref={textareaRef}
+        rows={1}
+        value={value}
+        onChange={(e) => {
+          const formatted = formatThreeWordsPerLine(e.target.value);
+          onChange(formatted);
+          adjustHeight();
+        }}
+        onKeyDown={handleKeyDown}
+        data-milestone-row={rowIdx}
+        data-milestone-col={colKey}
+        aria-label={ariaLabel}
+        className="w-full bg-transparent outline-none text-slate-900 text-center focus:bg-blue-50/50 rounded pl-1 pr-5 py-1 text-[11.5px] font-medium resize-none overflow-hidden whitespace-pre-wrap break-words leading-snug"
+      />
+      <CalendarDays
+        aria-hidden="true"
+        className="pointer-events-none absolute right-1 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
+      />
+      <input
+        ref={pickerRef}
+        type="date"
+        value={extractDateForPicker(value)}
+        onClick={(event) => event.currentTarget.showPicker?.()}
+        onChange={(event) => {
+          const nextVal = mergePickerDateWithText(event.target.value, value);
+          onChange(nextVal);
+        }}
+        aria-label={`${ariaLabel} calendar picker`}
+        title="Select date from calendar (can be combined with manual text)"
+        className="absolute right-0 top-1/2 h-6 w-5 -translate-y-1/2 cursor-pointer opacity-0"
+        tabIndex={-1}
+      />
+    </div>
+  );
+}
 
 export default function PTMHeader({ headerInfo, setHeaderInfo, projectLeaderOptions = [], isMerged = false, formActions }) {
   const handleChange = (field, val) => {
@@ -15,10 +184,10 @@ export default function PTMHeader({ headerInfo, setHeaderInfo, projectLeaderOpti
       {formActions}
 
       {/* Grid containing the exact header sections from the spreadsheet image */}
-      <div className="w-full grid grid-cols-12 divide-x divide-[#64748B]">
+      <div className="w-full grid grid-cols-[4fr_3fr_2fr_minmax(620px,auto)_minmax(210px,1fr)] divide-x divide-[#64748B]">
         
         {/* Section 1: Left Form Info — inline label+input with soft blue & rank amber accents */}
-        <div className="[&_*]:!text-black col-span-4 bg-white text-sm border-r border-[#64748B]">
+        <div className="[&_*]:!text-black bg-white text-sm border-r border-[#64748B]">
           <table className="w-full h-full border-collapse text-[13px]" style={{tableLayout:'fixed'}}>
             <colgroup>
               {/* Left half: Model + APQP (65%) | Right half: Rank label (20%) + Rank value (15%) */}
@@ -137,7 +306,7 @@ export default function PTMHeader({ headerInfo, setHeaderInfo, projectLeaderOpti
         </div>
 
         {/* Section 2: Legend / Symbol Guidance — matching section colors and enlarged bold symbols */}
-        <div className="[&_*]:!text-black col-span-3 bg-white">
+        <div className="[&_*]:!text-black bg-white">
           <table className="w-full h-full border-collapse text-[13px]" style={{tableLayout:'fixed'}}>
             <colgroup>
               <col style={{width:'22%'}} />  {/* "Legend" label cell */}
@@ -195,7 +364,7 @@ export default function PTMHeader({ headerInfo, setHeaderInfo, projectLeaderOpti
         </div>
 
         {/* Section 3: Notes — bordered table rows with professional header & styling */}
-        <div className="col-span-2 bg-white text-xs">
+        <div className="bg-white text-xs">
           <table className="w-full h-full border-collapse text-xs">
             <tbody>
               <tr className="border-b border-[#64748B]" style={{height:'26px'}}>
@@ -227,64 +396,102 @@ export default function PTMHeader({ headerInfo, setHeaderInfo, projectLeaderOpti
           </table>
         </div>
 
-        {/* Section 4: DELIVERABLE & DURATION / SCHEDULE TIMING — themed to match columns below */}
-        <div className="col-span-2 bg-white text-xs">
-          <table className="w-full h-full border-collapse text-xs" style={{tableLayout:'fixed'}}>
-            <colgroup>
-              <col style={{width:'28%'}} />
-              <col style={{width:'20%'}} />
-              <col style={{width:'17%'}} />
-              <col style={{width:'17%'}} />
-              <col style={{width:'18%'}} />
-            </colgroup>
+        {/* Section 4: Milestones (DPT, PPT, MPT, PILOT, SOP) — Excel reference section */}
+        <div className="[&_*]:!text-black bg-white text-xs">
+          <table className="w-full h-full border-collapse text-xs" style={{tableLayout:'auto'}}>
             <tbody>
               {/* Top row — aligns height with other sections */}
               <tr className="border-b border-[#64748B]" style={{height:'26px'}}>
-                <td colSpan={5} className="bg-[#EEF4FA]"></td>
+                <td colSpan={6} className="bg-white"></td>
               </tr>
-              {/* Group header */}
+              {/* Column Headers: blank | DPT | PPT | MPT | PILOT | SOP */}
               <tr className="border-b border-[#64748B]">
-                <td colSpan={2} className="border-r border-[#64748B] text-center font-extrabold text-[#2D3748] py-1 px-1 bg-[#EDF2F7] tracking-tight uppercase text-xs">
-                  DELIVERABLE &amp; DURATION
-                </td>
-                <td colSpan={3} className="text-center font-extrabold text-[#2B6CB0] py-1 px-1 bg-[#EFF3FA] tracking-tight uppercase text-xs">
-                  SCHEDULE TIMING
-                </td>
+                <td className="border-r border-[#64748B] px-1.5 py-1.5 min-w-[125px] bg-white"></td>
+                {MILESTONE_COLUMNS.map((col, idx) => (
+                  <td
+                    key={col.key}
+                    className={`${idx < MILESTONE_COLUMNS.length - 1 ? 'border-r border-[#64748B]' : ''} w-auto min-w-[96px] px-1 py-1.5 text-center font-bold text-slate-900 bg-white align-middle text-xs`}
+                  >
+                    {col.label}
+                  </td>
+                ))}
               </tr>
-              {/* Sub-column headers */}
+              {/* Row 1: Customer Milestones (MRD Date) */}
               <tr className="border-b border-[#64748B]">
-                <td className="border-r border-[#64748B] px-1 py-1 text-[#2D3748] bg-[#F1F5F9] align-top leading-tight font-bold text-[11.5px]">Deliverable Required Nos.<br/>(as per doc. list)</td>
-                <td className="border-r border-[#64748B] px-1 py-1 text-[#2D3748] bg-[#F1F5F9] align-top leading-tight font-bold text-[11.5px]">No. of Iterations in Plan<br/>(if diff.)</td>
-                <td className="border-r border-[#64748B] px-1 py-1 text-[#2B6CB0] bg-[#EFF3FA] align-top leading-tight font-bold text-[11.5px]">Final Date</td>
-                <td className="border-r border-[#64748B] px-1 py-1 text-[#2B6CB0] bg-[#EFF3FA] align-top leading-tight font-bold text-[11.5px]">Final Date<br/>(Diff.)</td>
-                <td className="px-1 py-1 text-[#2B6CB0] bg-[#EFF3FA] align-top leading-tight font-bold text-[11.5px]">Remarks</td>
+                <td className="border-r border-[#64748B] px-1.5 py-1 min-w-[125px] whitespace-nowrap text-left align-middle bg-white text-slate-900 font-medium leading-tight text-[11px]">
+                  <div>Customer Milestones</div>
+                  <div>(MRD Date)</div>
+                </td>
+                {MILESTONE_COLUMNS.map((col, idx) => {
+                  const fieldKey = `milestoneCustomer${col.key}`;
+                  return (
+                    <td
+                      key={col.key}
+                      className={`${idx < MILESTONE_COLUMNS.length - 1 ? 'border-r border-[#64748B]' : ''} w-auto min-w-[96px] p-0.5 align-middle bg-white`}
+                    >
+                      <MilestoneDateTextCell
+                        value={headerInfo[fieldKey] || ''}
+                        onChange={(val) => handleChange(fieldKey, val)}
+                        rowIdx={0}
+                        colKey={col.key}
+                        ariaLabel={`Customer Milestones (MRD Date) - ${col.label}`}
+                      />
+                    </td>
+                  );
+                })}
               </tr>
-              {/* Editable data row */}
+              {/* Row 2: Internal Milestones (QA Inspection) */}
               <tr className="border-b border-[#64748B]">
-                <td className="border-r border-[#64748B] px-1 py-1 align-top bg-white">
-                  <input type="text" value={headerInfo.deliverableNos || ''} onChange={(e) => handleChange('deliverableNos', e.target.value)} className="w-full bg-transparent outline-none text-slate-800 focus:bg-blue-50/50 rounded px-0.5 text-xs sm:text-[12.5px]" />
+                <td className="border-r border-[#64748B] px-1.5 py-1 min-w-[125px] whitespace-nowrap text-left align-middle bg-white text-slate-900 font-medium leading-tight text-[11px]">
+                  <div>Internal Milestones</div>
+                  <div>(QA Inspection)</div>
                 </td>
-                <td className="border-r border-[#64748B] px-1 py-1 align-top bg-white">
-                  <input type="text" value={headerInfo.iterationsInPlan || ''} onChange={(e) => handleChange('iterationsInPlan', e.target.value)} className="w-full bg-transparent outline-none text-slate-800 focus:bg-blue-50/50 rounded px-0.5 text-xs sm:text-[12.5px]" />
-                </td>
-                <td className="border-r border-[#64748B] px-1 py-1 align-top bg-white">
-                  <CalendarDateInput value={headerInfo.finalDate || ''} onChange={(e) => handleChange('finalDate', e.target.value)} className="w-full bg-transparent outline-none text-slate-800 focus:bg-blue-50/50 rounded px-0.5 text-xs sm:text-[12.5px]" />
-                </td>
-                <td className="border-r border-[#64748B] px-1 py-1 align-top bg-white">
-                  <CalendarDateInput value={headerInfo.finalDateDiff || ''} onChange={(e) => handleChange('finalDateDiff', e.target.value)} className="w-full bg-transparent outline-none text-slate-800 focus:bg-blue-50/50 rounded px-0.5 text-xs sm:text-[12.5px]" />
-                </td>
-                <td className="px-1 py-1 align-top bg-white">
-                  <input type="text" value={headerInfo.scheduleRemarks || ''} onChange={(e) => handleChange('scheduleRemarks', e.target.value)} className="w-full bg-transparent outline-none text-slate-800 focus:bg-blue-50/50 rounded px-0.5 text-xs sm:text-[12.5px]" />
-                </td>
+                {MILESTONE_COLUMNS.map((col, idx) => {
+                  const fieldKey = `milestoneInternal${col.key}`;
+                  return (
+                    <td
+                      key={col.key}
+                      className={`${idx < MILESTONE_COLUMNS.length - 1 ? 'border-r border-[#64748B]' : ''} w-auto min-w-[96px] p-0.5 align-middle bg-white`}
+                    >
+                      <MilestoneDateTextCell
+                        value={headerInfo[fieldKey] || ''}
+                        onChange={(val) => handleChange(fieldKey, val)}
+                        rowIdx={1}
+                        colKey={col.key}
+                        ariaLabel={`Internal Milestones (QA Inspection) - ${col.label}`}
+                      />
+                    </td>
+                  );
+                })}
               </tr>
-              {/* Filler row */}
-              <tr><td colSpan={5} className="px-1 py-1 bg-white"></td></tr>
+              {/* Row 3: Additional Milestone Row matching Excel reference */}
+              <tr>
+                <td className="border-r border-[#64748B] px-1.5 py-1 min-w-[125px] whitespace-nowrap text-left align-middle bg-white text-slate-900 font-medium leading-tight text-[11px]">
+                </td>
+                {MILESTONE_COLUMNS.map((col, idx) => {
+                  const fieldKey = `milestoneExtra${col.key}`;
+                  return (
+                    <td
+                      key={col.key}
+                      className={`${idx < MILESTONE_COLUMNS.length - 1 ? 'border-r border-[#64748B]' : ''} w-auto min-w-[96px] p-0.5 align-middle bg-white`}
+                    >
+                      <MilestoneDateTextCell
+                        value={headerInfo[fieldKey] || ''}
+                        onChange={(val) => handleChange(fieldKey, val)}
+                        rowIdx={2}
+                        colKey={col.key}
+                        ariaLabel={`Additional Milestone - ${col.label}`}
+                      />
+                    </td>
+                  );
+                })}
+              </tr>
             </tbody>
           </table>
         </div>
 
-        {/* Section 5: Document Metadata — compact col-span-1 with polished header styling */}
-        <div className="col-span-1 bg-[#F4F7FA] flex flex-col justify-center px-1.5 py-1">
+        {/* Section 5: Document Metadata — compact with polished header styling */}
+        <div className="bg-[#F4F7FA] flex flex-col justify-center px-1.5 py-1">
           <table className="w-full border border-[#64748B] text-xs bg-white rounded-xs overflow-hidden shadow-2xs">
             <tbody>
               <tr className="border-b border-[#64748B]">

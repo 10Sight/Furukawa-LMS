@@ -605,6 +605,58 @@ test('25. PTM Sheet: Red-marked columns have auto-adjusting widths so dates and 
   assert.match(tableContent, /w-auto min-w-\[180px\]/);
 });
 
+test('26. PTM Header: Deliverable & Duration / Schedule Timing section replaced with Excel Milestones section (DPT, PPT, MPT, PILOT, SOP) supporting calendar, manual text, and date + text', () => {
+  const headerPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/ptm/PTM/PTMHeader.jsx');
+  const headerContent = fs.readFileSync(headerPath, 'utf8');
+
+  // Verify old red-marked section is removed
+  assert.doesNotMatch(headerContent, /DELIVERABLE &amp; DURATION/);
+  assert.doesNotMatch(headerContent, /SCHEDULE TIMING/);
+  assert.doesNotMatch(headerContent, /Deliverable Required Nos\./);
+  assert.doesNotMatch(headerContent, /No\. of Iterations in Plan/);
+
+  // Verify new Excel Milestones section labels & 5 columns
+  assert.match(headerContent, /Customer Milestones/);
+  assert.match(headerContent, /\(MRD Date\)/);
+  assert.match(headerContent, /Internal Milestones/);
+  assert.match(headerContent, /\(QA Inspection\)/);
+  assert.match(headerContent, /\{ key: 'DPT', label: 'DPT' \}/);
+  assert.match(headerContent, /\{ key: 'PPT', label: 'PPT' \}/);
+  assert.match(headerContent, /\{ key: 'MPT', label: 'MPT' \}/);
+  assert.match(headerContent, /\{ key: 'PILOT', label: 'PILOT' \}/);
+  assert.match(headerContent, /\{ key: 'SOP', label: 'SOP' \}/);
+
+  // Verify MilestoneDateTextCell supports calendar picker, manual text, and date + text
+  assert.match(headerContent, /function MilestoneDateTextCell/);
+  assert.match(headerContent, /mergePickerDateWithText/);
+  assert.match(headerContent, /type="date"/);
+  assert.match(headerContent, /<textarea/);
+});
+
+test('27. PTM Header: Milestone columns (DPT, PPT, MPT, PILOT, SOP) support Shift + Enter multiline navigation and auto-expanding height', () => {
+  const headerPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/ptm/PTM/PTMHeader.jsx');
+  const headerContent = fs.readFileSync(headerPath, 'utf8');
+
+  // Verify MilestoneDateTextCell uses an auto-expanding textarea with Shift + Enter handling
+  assert.match(headerContent, /<textarea/);
+  assert.match(headerContent, /e\.key === 'Enter' && e\.shiftKey/);
+  assert.match(headerContent, /e\.key === 'Enter' && !e\.shiftKey/);
+  assert.match(headerContent, /whitespace-pre-wrap break-words/);
+});
+
+test('28. PTM Header: Milestone cells (DPT, PPT, MPT, PILOT, SOP) auto-adjust width up to three words and navigate to next line after three words', () => {
+  const headerPath = path.resolve(process.cwd(), 'Furukawa-LMS/Furukawa-LMS-main/admin/src/components/ptm/PTM/PTMHeader.jsx');
+  const headerContent = fs.readFileSync(headerPath, 'utf8');
+
+  // Verify 3-word line wrapping and auto width adjustment helpers exist and are wired in MilestoneDateTextCell
+  assert.match(headerContent, /formatThreeWordsPerLine/);
+  assert.match(headerContent, /getMilestoneCellAutoWidthPx/);
+  assert.match(headerContent, /wordsOnCurrentLine\.length >= 3/);
+  assert.match(headerContent, /style=\{\{ width: `\$\{autoWidthPx\}px`, minWidth: `\$\{autoWidthPx\}px` \}\}/);
+  assert.match(headerContent, /tableLayout:\s*'auto'/);
+});
+
+
 
 
 

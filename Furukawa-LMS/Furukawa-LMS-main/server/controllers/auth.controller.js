@@ -22,7 +22,9 @@ import {
   normalizePhoneNumber,
   normalizeGender,
   parseEmployeeStatus,
+  normalizeEmpId,
 } from "../utils/employeeFields.js";
+import { assertEmpIdAvailable } from "../utils/employeeLookup.js";
 import { resolveActiveContractor } from "../utils/contractorLookup.js";
 
 /**
@@ -166,6 +168,8 @@ export const register = asyncHandler(async (req, res) => {
 
   email = email.toLowerCase();
   userName = userName.toLowerCase();
+  empId = normalizeEmpId(empId);
+  await assertEmpIdAvailable(empId);
 
   if (idCard) {
     const idCardExists = await User.findOne({ idCard });
@@ -586,8 +590,9 @@ export const dojoRegister = asyncHandler(async (req, res) => {
     throw new ApiError("Unit is required", 400);
   }
 
-  empId = String(empId).trim();
+  empId = normalizeEmpId(empId);
   userName = empId;
+  await assertEmpIdAvailable(empId);
 
   const usernameExists = await User.findOne({ userName });
   if (usernameExists) throw new ApiError("Username already in use", 400);

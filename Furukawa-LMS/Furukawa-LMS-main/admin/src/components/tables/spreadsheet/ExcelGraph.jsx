@@ -39,11 +39,12 @@ import {
     CHART_VARIANTS, CHART_FAMILIES, RIBBON_CHART_MENUS, variantType, comboSettingsForPreset, familyOfVariant,
     EXTRA_CHART_TYPES, SPARKLINE_TYPES, chartRequirement,
     keepsBlankCells, targetConfigOf, targetSeriesIndexes, targetStatus, TARGET_DEFAULTS, TARGET_STATUS_TEXT, TARGET_DOT_SIZE_MIN, TARGET_DOT_SIZE_MAX,
+    NEW_TARGET_CONFIG, TARGET_LINE_WIDTH_MIN, TARGET_LINE_WIDTH_MAX, TARGET_LINE_WIDTH_STEP, TARGET_LINE_HEIGHT_MIN, TARGET_LINE_HEIGHT_MAX,
 } from "../../../constants/spreadsheets/chartTypes.js";
 import {
     ChartThumb, RibbonFamilyIcon, RecommendedChartsIcon, MapsIcon, PivotChartIcon, SparkLineIcon, SparkColumnIcon, SparkWinLossIcon,
 } from "./chartCatalog.jsx";
-import { renderExtraChart, Sparklines, TargetDot, ActualVsTargetTooltip, TargetLegend } from "./chartExtras.jsx";
+import { renderExtraChart, Sparklines, TargetMarker, ActualVsTargetTooltip, TargetLegend } from "./chartExtras.jsx";
 
 // Validated categorical palette (see dataviz skill's references/palette.md) —
 // fixed order, never cycled/re-sorted, so adjacent series stay CVD-safe.
@@ -882,11 +883,31 @@ const TARGET_COLOR_FIELDS = [
     { key: "aboveColor", label: "Meets target" },
     { key: "belowColor", label: "Misses target" },
     { key: "neutralColor", label: "No target" },
-    { key: "targetDotColor", label: "Target dot" },
+    { key: "targetDotColor", label: "Target marker" },
 ];
+const TARGET_MARKER_TYPES = [
+    { value: "line", label: "Line" },
+    { value: "dot", label: "Dot" },
+];
+const clampTo = (min, max) => (n) => Math.min(max, Math.max(min, n));
+// One "−  N px  +" row of the Target Marker section.
+function PxStepper({ label, value, min, max, step = 1, onChange }) {
+    const btn = "w-6 h-6 rounded border border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-default";
+    return (
+        <div className="flex items-center gap-2">
+            <span className="text-[11px] text-slate-700 flex-1">{label}</span>
+            <button type="button" className={btn} disabled={value <= min} onClick={() => onChange(value - step)} aria-label={`Decrease ${label.toLowerCase()}`}>−</button>
+            <span className="w-9 text-center text-[11px] text-slate-700 tabular-nums">{value} px</span>
+            <button type="button" className={btn} disabled={value >= max} onClick={() => onChange(value + step)} aria-label={`Increase ${label.toLowerCase()}`}>+</button>
+        </div>
+    );
+}
 function ActualVsTargetControls({ tc, actualName, targetName, onChange, onReset }) {
     const sectionLabel = "text-[10px] font-semibold uppercase tracking-wide text-slate-500";
-    const setSize = (size) => onChange({ targetDotSize: Math.min(TARGET_DOT_SIZE_MAX, Math.max(TARGET_DOT_SIZE_MIN, size)) });
+    const isLine = tc.targetMarkerType === "line";
+    const dotSize = clampTo(TARGET_DOT_SIZE_MIN, TARGET_DOT_SIZE_MAX);
+    const lineWidth = clampTo(TARGET_LINE_WIDTH_MIN, TARGET_LINE_WIDTH_MAX);
+    const lineHeight = clampTo(TARGET_LINE_HEIGHT_MIN, TARGET_LINE_HEIGHT_MAX);
     return (
         <div className="space-y-3">
             <div className="space-y-1.5">
@@ -941,16 +962,38 @@ function ActualVsTargetControls({ tc, actualName, targetName, onChange, onReset 
             </div>
 
             <div className="space-y-1.5 border-t border-slate-100 pt-2">
-                <Label className={sectionLabel}>Target Dot</Label>
+                <Label className={sectionLabel}>Target Marker</Label>
                 <div className="flex items-center gap-2">
                     <Checkbox id="targetDotShow" checked={tc.showTargetDot} onCheckedChange={(v) => onChange({ showTargetDot: v === true })} />
-                    <label htmlFor="targetDotShow" className="text-[11px] text-slate-700 cursor-pointer select-none">Show target dot</label>
+                    <label htmlFor="targetDotShow" className="text-[11px] text-slate-700 cursor-pointer select-none">Show target marker</label>
                 </div>
-                <div className={cn("flex items-center gap-2", !tc.showTargetDot && "opacity-40 pointer-events-none")}>
-                    <span className="text-[11px] text-slate-700 flex-1">Size</span>
-                    <button type="button" className="w-6 h-6 rounded border border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-default" disabled={tc.targetDotSize <= TARGET_DOT_SIZE_MIN} onClick={() => setSize(tc.targetDotSize - 1)} aria-label="Smaller dot">−</button>
-                    <span className="w-9 text-center text-[11px] text-slate-700 tabular-nums">{tc.targetDotSize} px</span>
-                    <button type="button" className="w-6 h-6 rounded border border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-default" disabled={tc.targetDotSize >= TARGET_DOT_SIZE_MAX} onClick={() => setSize(tc.targetDotSize + 1)} aria-label="Larger dot">+</button>
+                <div className={cn("space-y-1.5", !tc.showTargetDot && "opacity-40 pointer-events-none")}>
+                    <div className="grid grid-cols-2 gap-1" role="radiogroup" aria-label="Marker shape">
+                        {TARGET_MARKER_TYPES.map((m) => (
+                            <button
+                                key={m.value}
+                                type="button"
+                                role="radio"
+                                aria-checked={tc.targetMarkerType === m.value}
+                                onClick={() => onChange({ targetMarkerType: m.value })}
+                                className={cn(
+                                    "h-7 px-1.5 text-[11px] rounded border cursor-pointer inline-flex items-center justify-center gap-1.5",
+                                    tc.targetMarkerType === m.value ? "bg-indigo-100 border-indigo-300 text-indigo-700 font-semibold" : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                                )}
+                            >
+                                <span className={m.value === "line" ? "w-3.5 h-[3px] rounded-full bg-current" : "w-2 h-2 rounded-full bg-current"} />
+                                {m.label}
+                            </button>
+                        ))}
+                    </div>
+                    {isLine ? (
+                        <>
+                            <PxStepper label="Width" value={tc.targetLineWidth} min={TARGET_LINE_WIDTH_MIN} max={TARGET_LINE_WIDTH_MAX} step={TARGET_LINE_WIDTH_STEP} onChange={(n) => onChange({ targetLineWidth: lineWidth(n) })} />
+                            <PxStepper label="Thickness" value={tc.targetLineHeight} min={TARGET_LINE_HEIGHT_MIN} max={TARGET_LINE_HEIGHT_MAX} onChange={(n) => onChange({ targetLineHeight: lineHeight(n) })} />
+                        </>
+                    ) : (
+                        <PxStepper label="Size" value={tc.targetDotSize} min={TARGET_DOT_SIZE_MIN} max={TARGET_DOT_SIZE_MAX} onChange={(n) => onChange({ targetDotSize: dotSize(n) })} />
+                    )}
                 </div>
             </div>
 
@@ -1121,6 +1164,11 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
         const patch = { type: variantType(key) };
         if (v?.preset) patch.comboSettings = comboSettingsForPreset(v.preset, cfg?.valueCols || []);
         if (comboSettings && patch.type === "combo") patch.comboSettings = comboSettings;
+        // A chart turned into an Actual vs Target one starts on the line marker. Only
+        // here: one saved before the line existed keeps its dot (TARGET_DEFAULTS).
+        if (patch.type === "actualVsTarget" && cfg?.type !== "actualVsTarget" && cfg?.targetConfig?.targetMarkerType === undefined) {
+            patch.targetConfig = { ...(cfg?.targetConfig || {}), ...NEW_TARGET_CONFIG };
+        }
         return patch;
     };
     // Picking a chart type changes the active chart (or inserts one when there is none).
@@ -1627,7 +1675,7 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
             }
             case "actualVsTarget": {
                 // One column per category for Actual, coloured by whether it meets that
-                // category's Target, which is drawn as a dot (a Line with no stroke).
+                // category's Target, drawn as a line or dot marker (a Line with no stroke).
                 // Both keep their own series' data-label settings: seriesLabel(index).
                 const tc = targetConfigOf(cfg);
                 const { actualIndex, targetIndex } = targetSeriesIndexes(seriesKeys, tc.swapped);
@@ -1639,7 +1687,7 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
                     { label: TARGET_STATUS_TEXT.above, color: tc.aboveColor },
                     { label: TARGET_STATUS_TEXT.below, color: tc.belowColor },
                     ...(rows.some((r) => r.__status === "none" && r[actualKey] != null) ? [{ label: "No target", color: tc.neutralColor }] : []),
-                    ...(tc.showTargetDot ? [{ label: targetKey, color: tc.targetDotColor, round: true }] : []),
+                    ...(tc.showTargetDot ? [{ label: targetKey, color: tc.targetDotColor, round: true, line: tc.targetMarkerType === "line" }] : []),
                 ];
                 return (
                     <ComposedChart data={rows} margin={margin}>
@@ -1649,7 +1697,7 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
                         {!mini && (
                             <Tooltip
                                 cursor={{ fill: "rgba(79,70,229,0.06)" }}
-                                content={<ActualVsTargetTooltip actualKey={actualKey} targetKey={targetKey} statusColor={statusColor} dotColor={tc.targetDotColor} />}
+                                content={<ActualVsTargetTooltip actualKey={actualKey} targetKey={targetKey} statusColor={statusColor} dotColor={tc.targetDotColor} markerType={tc.targetMarkerType} />}
                             />
                         )}
                         {legend && React.cloneElement(legend, { content: <TargetLegend items={legendItems} /> })}
@@ -1664,7 +1712,16 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
                             stroke="none"
                             isAnimationActive={false}
                             activeDot={false}
-                            dot={<TargetDot r={mini ? 3 : tc.targetDotSize} fill={tc.targetDotColor} show={tc.showTargetDot} />}
+                            dot={
+                                <TargetMarker
+                                    type={tc.targetMarkerType}
+                                    r={mini ? 3 : tc.targetDotSize}
+                                    width={mini ? 8 : tc.targetLineWidth}
+                                    height={mini ? 2 : tc.targetLineHeight}
+                                    fill={tc.targetDotColor}
+                                    show={tc.showTargetDot}
+                                />
+                            }
                         >
                             {seriesLabel(targetIndex)}
                         </Line>
@@ -2433,7 +2490,7 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
                         <RibbonGroup label="Target">
                             <Popover>
                                 <PopoverTrigger asChild>
-                                    <RibbonBtn className="h-full flex-col justify-start px-2 pt-1 gap-0.5" title="Target Rules: which series is the target, the rule, colors and the target dot">
+                                    <RibbonBtn className="h-full flex-col justify-start px-2 pt-1 gap-0.5" title="Target Rules: which series is the target, the rule, colors and the target marker">
                                         <IconTarget className="w-8 h-8 text-emerald-600" strokeWidth={1.3} />
                                         <span className="text-xs leading-tight text-center">Target<br />Rules</span>
                                     </RibbonBtn>
@@ -2444,7 +2501,7 @@ function ExcelGraph({ excelData, onChartsChange, readOnly = false }) {
                                         actualName={nameOf(actualIndex)}
                                         targetName={nameOf(targetIndex)}
                                         onChange={applyTargetConfig}
-                                        onReset={() => applyConfig({ targetConfig: undefined })}
+                                        onReset={() => applyConfig({ targetConfig: { ...NEW_TARGET_CONFIG } })}
                                     />
                                 </PopoverContent>
                             </Popover>

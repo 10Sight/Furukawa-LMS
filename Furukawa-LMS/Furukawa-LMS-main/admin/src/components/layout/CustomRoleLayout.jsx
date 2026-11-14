@@ -24,7 +24,7 @@ import {
 import { HomeIcon } from "lucide-react";
 import useTranslate from "@/hooks/useTranslate.js";
 import LanguageSelector from "../navbar/LanguageSelector.jsx";
-import { getSidebarTabs, isPathAllowedForUser } from "@/constants/navigation/pageRegistry.js";
+import { getSidebarTabs, isPathAllowedForUser, isQuizRoute } from "@/constants/navigation/pageRegistry.js";
 
 export function CustomRoleLayout() {
   const [collapsed, setCollapsed] = useState(window.innerWidth < 1024);
@@ -38,6 +38,8 @@ export function CustomRoleLayout() {
   const { pathname } = useLocation();
   const { user, isLoading } = useSelector((state) => state.auth);
   const { theme, darkMode } = useSelector((state) => state.theme);
+  // Taking a test: hide sidebar + header and give the paper the full viewport.
+  const isTakeQuiz = isQuizRoute(pathname);
 
   const tabs = useMemo(() => getSidebarTabs("custom", user, t), [user, t]);
   const roleColor = user?.customRole?.color || "#7c3aed";
@@ -135,7 +137,7 @@ export function CustomRoleLayout() {
   return (
     <div className={`flex min-h-screen ${theme.mainBg}`}>
       {/* Sidebar Overlay */}
-      {isMobileMenuOpen && (
+      {isMobileMenuOpen && !isTakeQuiz && (
         <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setIsMobileMenuOpen(false)} />
       )}
 
@@ -143,7 +145,8 @@ export function CustomRoleLayout() {
       <nav
         className={clsx(
           `fixed top-0 left-0 h-screen ${theme.card} border-r ${theme.border} transition-all duration-300 z-50 flex flex-col`,
-          isMobile ? (isMobileMenuOpen ? "w-64 translate-x-0" : "w-64 -translate-x-full") : (collapsed ? "w-20" : "w-64")
+          isMobile ? (isMobileMenuOpen ? "w-64 translate-x-0" : "w-64 -translate-x-full") : (collapsed ? "w-20" : "w-64"),
+          isTakeQuiz && "hidden"
         )}
       >
         {/* Logo/Header */}
@@ -223,9 +226,9 @@ export function CustomRoleLayout() {
       </nav>
 
       {/* Main Content */}
-      <div className={clsx("flex-1 flex flex-col min-w-0 transition-all duration-300", !isMobile && (collapsed ? "ml-20" : "ml-64"))}>
+      <div className={clsx("flex-1 flex flex-col min-w-0 transition-all duration-300", !isMobile && !isTakeQuiz && (collapsed ? "ml-20" : "ml-64"))}>
         {/* Header */}
-        <header className={`h-16 flex items-center justify-between px-6 sticky top-0 z-30 ${theme.card} border-b ${theme.border} backdrop-blur-md bg-white/80`}>
+        <header className={clsx(`h-16 flex items-center justify-between px-6 sticky top-0 z-30 ${theme.card} border-b ${theme.border} backdrop-blur-md bg-white/80`, isTakeQuiz && "hidden")}>
           <div className="flex items-center gap-4">
             {isMobile && <ToggleButton onClick={toggleSidebar} />}
             <Breadcrumb className="hidden sm:block">
@@ -259,7 +262,7 @@ export function CustomRoleLayout() {
         </header>
 
         {/* Content Outlet */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 animate-in fade-in duration-500">
+        <main className={clsx("flex-1 animate-in fade-in duration-500", !isTakeQuiz && "p-4 sm:p-6 lg:p-8")}>
           <div className="w-full">
             {/* Prevent flash of dashboard if root access is not permitted */}
             {pathname === "/portal" && !tabs.some(t => t.link === "/portal") && tabs.length > 0 ? (

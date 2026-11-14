@@ -400,6 +400,18 @@ const measureTextWidth = (text, cell) => {
     measureContext.font = `${cell?.italic ? "italic " : ""}${cell?.bold ? "bold " : ""}${cell?.fontSize || 12}px ${cell?.fontFamily ? `"${cell.fontFamily}", ` : ""}ui-sans-serif, system-ui, sans-serif`;
     return Math.max(0, ...String(text).split("\n").map((line) => measureContext.measureText(line).width));
 };
+// The width in px of `text` as the grid draws it on one line (a cell without Wrap
+// Text shows a line break as a space). Unlike measureTextWidth it uses the page's
+// own font stack (Tailwind's `sans`, Inter first) — system-ui is narrower, and a
+// width measured in it would still cut the end of the text off. The same family
+// list as the CSS, so a font that hasn't loaded falls back the same way in both.
+let gridFontStack = null;
+const measureShownText = (text, cell) => {
+    if (gridFontStack === null) gridFontStack = getComputedStyle(document.body).fontFamily || "ui-sans-serif, system-ui, sans-serif";
+    if (!measureContext) measureContext = document.createElement("canvas").getContext("2d");
+    measureContext.font = `${cell?.italic ? "italic " : ""}${cell?.bold ? "bold " : ""}${cell?.fontSize || DEFAULT_FONT_SIZE}px ${cell?.fontFamily ? `"${cell.fontFamily}", ` : ""}${gridFontStack}`;
+    return measureContext.measureText(String(text).replace(/\n/g, " ")).width;
+};
 // Whether typed text should turn Wrap Text on: it is too wide for its column, so
 // wrapping lets the row grow to show all of it (see rowAutoHeight.js) where it
 // would otherwise be cut off. Numbers and formulas are left alone, and so is a
@@ -2919,11 +2931,15 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
         scrollCellIntoView(activeCell);
     }, [activeCell, scrollCellIntoView]);
 
+    // Dragging a column narrower stops where its text would start to be cut off
+    // (see columnTextMinRef). A column that is already too narrow for its text
+    // can only be widened.
     const startColumnResize = useCallback((e, colIdx) => {
         e.preventDefault();
         e.stopPropagation();
         const startSize = columnWidths[colIdx] || DEFAULT_COLUMN_WIDTH;
-        resizeRef.current = { type: "col", index: colIdx, startPos: e.clientX, startSize, currentSize: startSize };
+        const minSize = Math.max(MIN_COLUMN_WIDTH, Math.min(startSize, columnTextMinRef.current?.(colIdx) || 0));
+        resizeRef.current = { type: "col", index: colIdx, startPos: e.clientX, startSize, currentSize: startSize, minSize };
         setResizePreview({ type: "col", index: colIdx, size: startSize });
     }, [columnWidths]);
 
@@ -2942,7 +2958,7 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             // e.clientX/Y are real screen pixels (the zoomed render); startSize
             // and the resulting preview size are authored, unzoomed pixels.
             const delta = (r.type === "col" ? e.clientX - r.startPos : e.clientY - r.startPos) / zoom;
-            const min = r.type === "col" ? MIN_COLUMN_WIDTH : MIN_ROW_HEIGHT;
+            const min = r.type === "col" ? (r.minSize ?? MIN_COLUMN_WIDTH) : MIN_ROW_HEIGHT;
             const newSize = Math.max(min, r.startSize + delta);
             resizeRef.current = { ...r, currentSize: newSize };
             setResizePreview({ type: r.type, index: r.index, size: newSize });
@@ -5842,6 +5858,42 @@ const ExcelClone = forwardRef(function ExcelClone({ sectionId, meetingId, readOn
             {glyph}
         </button>
     );
+
+    // The narrowest column `colIdx` can be with none of its text cut off: the
+    // widest text shown in it, plus the padding it's drawn with. A cell merged
+    // across columns counts what its text needs beyond the merge's other columns.
+    // Wrapped text grows its row instead, so it sets no minimum. Kept in a ref so
+    // startColumnResize (above) can call it; it's read once per drag.
+    const columnTextMinRef = useRef(null);
+    columnTextMinRef.current = (colIdx) => {
+        const needFor = (id) => {
+            const cell = cells[id];
+            if (cell?.wrap || cell?.rotation) return 0;
+            const text = showFormulas && isFormula(cell?.value) ? cell.value : displayGrid[id];
+            if (text === undefined || text === null || text === "") return 0;
+            const runs = cell?.rich && text === cell.value ? cellRuns(cell) : undefined;
+            const width = runs
+                ? runSegments(cell.value, runs).reduce((sum, seg) => sum + measureShownText(seg.text, { ...cell, ...Object.fromEntries(Object.entries(seg.style || {}).filter(([, v]) => v !== undefined)) }), 0)
+                : measureShownText(text, cell);
+            // px-1.5 each side, ~9px per indent level, a conditional-format icon's
+            // strip, an AutoFilter button, and 2px for the border and rounding.
+            const padding = 12 + (cell?.indent || 0) * 9 + (conditionalMap[id]?.icon ? 16 : 0) + (filterHeaderTables[id] ? 16 : 0) + 2;
+            return width + padding;
+        };
+        let need = 0;
+        forEachFilledCell((id, row, col) => {
+            if (col !== colIdx || hiddenRowSet.has(row) || mergeMap[id]) return;
+            need = Math.max(need, needFor(id));
+        });
+        for (const m of merges) {
+            const s = parseCellRef(m.start), e = parseCellRef(m.end);
+            if (!s || !e || colIdx < s.col || colIdx > e.col) continue;
+            let others = 0;
+            for (let c = s.col; c <= e.col; c++) if (c !== colIdx) others += widthForCol(c);
+            need = Math.max(need, needFor(m.start) - others);
+        }
+        return Math.ceil(need);
+    };
 
     // --- AutoFit ---
 

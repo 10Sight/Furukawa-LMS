@@ -29,6 +29,14 @@ export const normalizePhoneNumber = (val) => {
     return digits;
 };
 
+/** Same as the server's normalizeEmpId: trim, upper-case, "TRO81053" -> "TR081053"; "" when blank. */
+export const normalizeEmpId = (val) => {
+    if (isBlank(val)) return "";
+    const code = String(val).trim().toUpperCase();
+    const trTypo = code.match(/^TRO(\d{5})$/);
+    return trTypo ? `TR0${trTypo[1]}` : code;
+};
+
 const pad2 = (n) => String(n).padStart(2, "0");
 const todayStr = () => {
     const d = new Date();

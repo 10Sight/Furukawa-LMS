@@ -608,6 +608,10 @@ const DepartmentCourse = () => {
   // Remove unused handleNextStage function as it's not being used in the current UI
 
   const handleStartQuiz = (quiz) => {
+    // Called from a click, so the browser allows fullscreen; TakeQuiz exits it on unmount.
+    if (document.fullscreenEnabled && !document.fullscreenElement) {
+      document.documentElement.requestFullscreen?.().catch(() => {});
+    }
     navigate(`/student/quiz/${quiz._id || quiz.id}`);
   };
 

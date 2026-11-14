@@ -12,7 +12,7 @@ export const CHART_VARIANTS = {
     barGrouped: { label: "Clustered Bar", desc: "Compare values across categories — best when category labels are long." },
     barStacked: { label: "Stacked Bar", desc: "Compare parts of a whole across categories, horizontally." },
     barPercent: { label: "100% Stacked Bar", desc: "Compare the percentage each value contributes to a total, horizontally." },
-    actualVsTarget: { label: "Actual vs Target Column", desc: "First series as columns, coloured by whether each meets the second series' target, shown as a dot. Extra series are ignored." },
+    actualVsTarget: { label: "Actual vs Target Column", desc: "First series as columns, coloured by whether each meets the second series' target, shown as a line or dot. Extra series are ignored." },
     line: { label: "Line", desc: "Show trends over time (years, months, days) or ordered categories." },
     lineStacked: { label: "Stacked Line", desc: "Show how the contribution of each value changes over time." },
     linePercent: { label: "100% Stacked Line", desc: "Show the trend of the percentage each value contributes over time." },
@@ -137,13 +137,28 @@ export const TARGET_DEFAULTS = Object.freeze({
     aboveColor: "#16a34a",
     belowColor: "#dc2626",
     neutralColor: "#94a3b8", // the target cell is blank, so there's nothing to judge
+    // The target marker. Its color and Show switch apply to both shapes; the
+    // `targetDot*` key names are kept from when a dot was the only one.
+    // "dot" stays the default so charts saved before the line marker existed
+    // (which store no `targetMarkerType`) look as they did; a chart newly
+    // turned into an Actual vs Target one is given NEW_TARGET_CONFIG instead.
+    targetMarkerType: "dot", // "dot" | "line"
     targetDotColor: "#0f172a",
     targetDotSize: 6,
+    targetLineWidth: 24, // the bars' maxBarSize, so the line spans a full-width column
+    targetLineHeight: 4,
     showTargetDot: true,
     swapped: false,
 });
+// What a chart gets when it becomes an Actual vs Target chart, and on Reset.
+export const NEW_TARGET_CONFIG = Object.freeze({ targetMarkerType: "line" });
 export const TARGET_DOT_SIZE_MIN = 4;
 export const TARGET_DOT_SIZE_MAX = 10;
+export const TARGET_LINE_WIDTH_MIN = 8;
+export const TARGET_LINE_WIDTH_MAX = 48;
+export const TARGET_LINE_WIDTH_STEP = 2;
+export const TARGET_LINE_HEIGHT_MIN = 1;
+export const TARGET_LINE_HEIGHT_MAX = 12;
 export const TARGET_STATUS_TEXT = Object.freeze({ above: "Meets target", below: "Misses target" });
 export const targetConfigOf = (cfg) => ({ ...TARGET_DEFAULTS, ...(cfg?.targetConfig || {}) });
 

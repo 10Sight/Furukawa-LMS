@@ -29,8 +29,10 @@ import {
   normalizePhoneNumber,
   normalizeGender,
   parseEmployeeStatus,
+  normalizeEmpId,
   isValidPhoneNumber,
 } from "../utils/employeeFields.js";
+import { assertEmpIdAvailable } from "../utils/employeeLookup.js";
 import { resolveActiveContractor } from "../utils/contractorLookup.js";
 
 // Kept in sync with LEAVING_REASONS in admin/src/pages/Admin/DojoHiring.jsx.
@@ -1138,6 +1140,9 @@ export const createUser = asyncHandler(async (req, res) => {
   }
 
   assertJoiningNotAfterLeaving(data.joiningDate, data.leavingDate);
+
+  data.empId = normalizeEmpId(data.empId);
+  await assertEmpIdAvailable(data.empId);
 
   // Duplicate Check
   let dupQuery = "SELECT id FROM users WHERE userName = ?";

@@ -22,9 +22,11 @@ import { getUpdatedStatusHistory, resolveRejoiningDate } from "../utils/statusHi
 import { getJoiningLeavingDateError } from "../utils/dateValidation.js";
 import DojoStageHistory from "../models/dojoStagHistory.model.js";
 import logger from "../logger/winston.logger.js";
+import { assertEmpIdAvailable } from "../utils/employeeLookup.js";
 import {
     validateEmployeeFields,
     formatEmployeeValidation,
+    normalizeEmpId,
     normalizePhoneNumber,
     normalizeGender,
     isBlankValue,
@@ -399,7 +401,7 @@ const processSingleEmployeeRow = async ({
 }) => {
     const leavingDateVal = normalizeDate(getRowVal(row, ["Date of Leaving", "DateofLeaving"]));
     const normalizedRow = {
-        empId: getRowVal(row, ["EmployeeCode", "EmployeeID", "Employee Code", "Employee ID"])?.toString().trim(),
+        empId: normalizeEmpId(getRowVal(row, ["EmployeeCode", "EmployeeID", "Employee Code", "Employee ID"])),
         idCard: getRowVal(row, ["CardNo", "Card No.", "Card No"])?.toString().trim(),
         fullName: getRowVal(row, ["Name", "Full Name"])?.toString().trim(),
         fatherHusbandName: getRowVal(row, ["Father/HusbandName", "Father / Husband Name", "Father Name", "Husband Name"])?.toString().trim(),
@@ -863,7 +865,8 @@ const processSingleEmployeeRow = async ({
             }
         }
 
-        // Insert user
+        // Insert user (the userName lookup above can miss a user who holds this code as empId)
+        await assertEmpIdAvailable(normalizedRow.empId);
         const newUser = await User.create(userData);
 
         // Sync department students list for new user
@@ -1393,7 +1396,7 @@ export const importInstructors = async (req, res) => {
                     password: row.password || "trainer123", // User.create will hash this
                     role: "INSTRUCTOR",
                     unit: row.unit || "UNIT_1",
-                    empId: row.empId?.toString().trim() || null,
+                    empId: normalizeEmpId(row.empId),
                     isEmployee: false,
                     isAdmin: false,
                     isTrainer: true,
@@ -1630,7 +1633,7 @@ export const importDojoUsers = async (req, res) => {
             try {
                 const normalizedRow = {
                     contractor: getRowVal(row, ["Contractor", "Contractor Name"])?.toString().trim(),
-                    empId: getRowVal(row, ["Employee Code", "EmployeeID", "Employee ID"])?.toString().trim(),
+                    empId: normalizeEmpId(getRowVal(row, ["Employee Code", "EmployeeID", "Employee ID"])),
                     idCard: getRowVal(row, ["Card No.", "Card No", "CardNo"])?.toString().trim(),
                     fullName: getRowVal(row, ["Name", "Full Name"])?.toString().trim(),
                     gender: normalizeGender(getRowVal(row, ["Gender"])?.toString().trim()),
@@ -1679,11 +1682,12 @@ export const importDojoUsers = async (req, res) => {
                     throw new Error(dojoDateError);
                 }
 
-                // Check for duplicate username (Employee Code)
+                // Check for duplicate username (Employee Code), then for an active user holding it as empId
                 const [existing] = await executeQuery("SELECT id FROM users WHERE LOWER(userName) = LOWER(?)", [normalizedRow.empId]);
                 if (existing.length > 0) {
                     throw new Error(`Candidate with Employee Code ${normalizedRow.empId} already exists.`);
                 }
+                await assertEmpIdAvailable(normalizedRow.empId);
 
                 // A Card No. already assigned to someone else fails the row instead of being dropped.
                 const [dupIdCard] = await executeQuery(

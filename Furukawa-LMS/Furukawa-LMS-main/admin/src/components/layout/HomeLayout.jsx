@@ -55,7 +55,7 @@ import { profile as fetchProfile } from "@/context/state/slices/AuthSlice.js";
 import axiosInstance from "@/services/requests/axiosInstance.js";
 import useTranslate from "@/hooks/useTranslate.js";
 import { usePrivileges } from "@/hooks/usePrivileges.jsx";
-import { getSidebarTabs, isPathAllowedForUser } from "@/constants/navigation/pageRegistry.js";
+import { getSidebarTabs, isPathAllowedForUser, isQuizRoute } from "@/constants/navigation/pageRegistry.js";
 
 
 export function HomeLayout() {
@@ -69,6 +69,8 @@ export function HomeLayout() {
   const navigate = useNavigate();
   const { pathname, search } = useLocation();
   const { user, isLoading } = useSelector((state) => state.auth);
+  // Taking a test: hide sidebar + header and give the paper the full viewport.
+  const isTakeQuiz = isQuizRoute(pathname);
 
   const { t, language } = useTranslate();
   const { hasPrivilege } = usePrivileges();
@@ -292,7 +294,7 @@ export function HomeLayout() {
   return (
     <div className={`flex min-h-screen ${theme.mainBg}`}>
       {/* Mobile overlay */}
-      {!collapsed && isMobile && (
+      {!collapsed && isMobile && !isTakeQuiz && (
         <div
           className="fixed inset-0 bg-black/60 backdrop-blur-sm z-10 md:hidden animate-in fade-in duration-300"
           onClick={toggleSidebar}
@@ -303,7 +305,8 @@ export function HomeLayout() {
       <nav
         className={`fixed top-0 left-0 h-screen ${theme.card} backdrop-blur-xl ${theme.border} border-r ${theme.textMain} shadow-2xl transition-all duration-300 z-20 flex flex-col
                 ${collapsed ? "w-16" : "w-64"} 
-                ${isMobile && !collapsed ? "shadow-3xl border-r-2" : ""}`}
+                ${isMobile && !collapsed ? "shadow-3xl border-r-2" : ""}
+                ${isTakeQuiz ? "hidden" : ""}`}
       >
         <div
           className={`relative h-16 items-center flex transition-all p-4 duration-300 z-50 border-b ${theme.border} ${theme.iconBg}`}
@@ -509,13 +512,13 @@ export function HomeLayout() {
 
       {/* Main Content Area */}
       <div
-        className={`flex-1 transition-[margin] duration-300 ${collapsed ? "ml-16" : "ml-64"
+        className={`flex-1 transition-[margin] duration-300 ${isTakeQuiz ? "ml-0 w-full min-w-0" : collapsed ? "ml-16" : "ml-64"
           } ${needsMinW0 ? "min-w-0" : ""}`}
       >
         {/* Header */}
         <header
           className={`px-4 sm:px-6 ${theme.card} backdrop-blur-lg shadow-sm border-b ${theme.border} flex h-16 items-center justify-between gap-2 sm:gap-4 fixed right-0 top-0 z-30 transition-[width,margin] duration-300 ${collapsed ? "w-[calc(100%-4rem)]" : "w-[calc(100%-16rem)]"
-            }`}
+            } ${isTakeQuiz ? "hidden" : ""}`}
         >
           {/* Mobile menu button */}
           <div className="flex items-center gap-3">
@@ -691,9 +694,9 @@ export function HomeLayout() {
         </header>
 
         {/* Page Content */}
-        <div className="pt-20 pb-6 px-4 sm:px-6 min-h-screen">
+        <div className={isTakeQuiz ? "min-h-screen" : "pt-20 pb-6 px-4 sm:px-6 min-h-screen"}>
           <div
-            className={`${theme.card} backdrop-blur-sm rounded-xl shadow-sm border ${theme.border} p-4 sm:p-6 transition-shadow duration-300 hover:shadow-md`}
+            className={isTakeQuiz ? "" : `${theme.card} backdrop-blur-sm rounded-xl shadow-sm border ${theme.border} p-4 sm:p-6 transition-shadow duration-300 hover:shadow-md`}
           >
             {/* Prevent flash of dashboard if root access is not permitted */}
             {pathname === "/admin" && !tabs.some(t => t.link === "/admin") && tabs.length > 0 ? (

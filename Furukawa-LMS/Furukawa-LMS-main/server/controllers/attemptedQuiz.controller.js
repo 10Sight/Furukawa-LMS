@@ -14,6 +14,7 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { checkModuleAccessForAssessments } from "../utils/moduleCompletion.js";
 import logAudit from "../utils/auditLogger.js";
+import { resolveQuizCandidate } from "../utils/employeeLookup.js";
 
 // Helper to check if a student has an OJT approved for today, based on the per-student
 // approvedAt stored on users.ojt (set from that student's own attendance row date, not
@@ -929,117 +930,10 @@ export const submitQuiz = asyncHandler(async (req, res) => {
         isCustomAdminOrTrainer
     );
 
-    // Handle student mapping/creation when custom candidateName & eCode are passed
+    // Map a typed candidate (name + Employee Code) to an already-registered user. Submissions
+    // never create users: unregistered candidates are rejected so no incomplete profiles appear.
     if (candidateName && candidateName.trim()) {
-        const trimmedName = candidateName.trim();
-        const trimmedECode = (eCode || "").trim();
-
-        // 1. Try to find if user with this empId / eCode already exists in the database
-        let existingUser = null;
-        if (trimmedECode) {
-            const [rows] = await executeQuery("SELECT id FROM users WHERE empId = ? OR userName = ?", [trimmedECode, trimmedECode.toLowerCase()]);
-            if (rows.length > 0) {
-                existingUser = rows[0];
-            }
-        } else {
-            // Fallback: look up by name
-            const [rows] = await executeQuery("SELECT id FROM users WHERE fullName = ? AND role = 'STUDENT'", [trimmedName]);
-            if (rows.length > 0) {
-                existingUser = rows[0];
-            }
-        }
-
-        if (existingUser) {
-            userId = existingUser.id;
-        } else {
-            // 2. Automatically create a student user dynamically on the backend (system level, no front-end check needed)
-            const generatedUsername = trimmedECode 
-                ? trimmedECode.toLowerCase() 
-                : trimmedName.toLowerCase().replace(/\s+/g, "_") + "_" + Math.floor(Math.random() * 1000);
-            
-            const empIdValue = trimmedECode || generatedUsername.toUpperCase();
-            const bcrypt = (await import("bcryptjs")).default;
-            const hashedPassword = await bcrypt.hash("fme@" + (trimmedECode || "123"), 10);
-            const slug = generatedUsername.replace(/ /g, '-');
-
-            const [currentUserRows] = await executeQuery(
-                "SELECT unit, departmentId, department, sectionId, lineId, subSectionId, stationId FROM users WHERE id = ?",
-                [req.user.id]
-            );
-            const parentUnit = currentUserRows[0]?.unit || "FME";
-            const parentSectionId = currentUserRows[0]?.sectionId || null;
-            const parentLineId = currentUserRows[0]?.lineId || null;
-            const parentSubSectionId = currentUserRows[0]?.subSectionId || null;
-            const parentStationId = currentUserRows[0]?.stationId || null;
-
-            // Prefer the department typed/selected on the quiz paper; fall back to the
-            // submitting admin/trainer's own department when none was provided.
-            const trimmedDepartment = (department || "").trim();
-            let resolvedDeptId = currentUserRows[0]?.departmentId || null;
-            let resolvedDeptName = currentUserRows[0]?.department || null;
-            if (trimmedDepartment) {
-                resolvedDeptName = trimmedDepartment;
-                const [deptRows] = await executeQuery("SELECT id FROM departments WHERE name = ?", [trimmedDepartment]);
-                resolvedDeptId = deptRows.length > 0 ? deptRows[0].id : null;
-            }
-
-            const fields = [
-                "fullName", "userName", "slug", "email", "role", "password", "unit", "status",
-                "empId", "isEmployee", "isAdmin", "isTrainer", "currentLevel", "isTemporary",
-                "departmentId", "department", "sectionId", "lineId", "subSectionId", "stationId",
-                "createdAt", "updatedAt"
-            ];
-
-            const values = [
-                trimmedName,
-                generatedUsername,
-                slug,
-                generatedUsername + "@fme-minda.co.in",
-                "STUDENT",
-                hashedPassword,
-                parentUnit,
-                "ACTIVE",
-                empIdValue,
-                1, // isEmployee
-                0, // isAdmin
-                0, // isTrainer
-                "L1",
-                0, // isTemporary
-                resolvedDeptId,
-                resolvedDeptName,
-                parentSectionId,
-                parentLineId,
-                parentSubSectionId,
-                parentStationId,
-                new Date(),
-                new Date()
-            ];
-
-            const placeholders = fields.map(() => "?").join(",");
-            const [result] = await executeQuery(`INSERT INTO users (${fields.join(",")}) OUTPUT INSERTED.id VALUES (${placeholders})`, values);
-            
-            if (result && result.length > 0) {
-                userId = result[0].id;
-                console.log(`[DEBUG] Automatically created student ${trimmedName} with E.code ${empIdValue} and ID ${userId} on submit.`);
-                
-                // Trigger Hierarchy Sync for the new user's location
-                if (parentSubSectionId || parentLineId) {
-                    try {
-                        const SubSection = (await import("../models/subSection.model.js")).default;
-                        const Line = (await import("../models/line.model.js")).default;
-                        if (parentSubSectionId) {
-                            await SubSection.syncUserList(parentSubSectionId);
-                        } else if (parentLineId) {
-                            await Line.syncUserList(parentLineId);
-                        }
-                    } catch (syncErr) {
-                        console.error("Failed to sync hierarchy on auto-create:", syncErr.message);
-                    }
-                }
-            } else {
-                throw new ApiError("Failed to auto-create student user during submission", 500);
-            }
-        }
+        userId = await resolveQuizCandidate({ candidateName, eCode });
     } else if (isAdminOrTrainer && studentId) {
         userId = studentId;
     }

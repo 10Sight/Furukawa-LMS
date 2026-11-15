@@ -44,7 +44,38 @@ await build({
       path.join(adminRoot, 'src/pages/integrationMain.jsx'),
     ],
   }), autoprefixer()] } },
-  build: { outDir, emptyOutDir: false, rollupOptions: { input: path.join(buildRoot, 'index.html') } },
+  build: {
+    outDir,
+    emptyOutDir: true,
+    rollupOptions: {
+      input: path.join(buildRoot, 'index.html'),
+      output: {
+        entryFileNames: 'assets/cms-dashboard-entry.js',
+        chunkFileNames: (chunkInfo) => {
+          if (chunkInfo.facadeModuleId) {
+            const norm = chunkInfo.facadeModuleId.replace(/\\/g, '/');
+            if (norm.includes('/pages/ptm/App')) return 'assets/ptm-module.js';
+            if (norm.includes('/pages/pdca/App')) return 'assets/pdca-module.js';
+            if (norm.includes('/pages/process-audit/ProcessAudit')) return 'assets/process-audit-module.js';
+            if (norm.includes('/pdcaExcelExport')) return 'assets/pdca-excel-export.js';
+            if (norm.includes('exceljs')) return 'assets/exceljs-vendor.js';
+          }
+          if (chunkInfo.name === 'rolldown-runtime') return 'assets/runtime-shared.js';
+          if (chunkInfo.name === 'AddStaffEmployeeModal') return 'assets/shared-components.js';
+          return 'assets/cms-shared-[name].js';
+        },
+        assetFileNames: (assetInfo) => {
+          const name = assetInfo.name || (assetInfo.names && assetInfo.names[0]) || 'asset';
+          const ext = path.extname(name);
+          const base = path.basename(name, ext);
+          if (base === 'index' && ext === '.css') return 'assets/cms-dashboard.css';
+          if (base === 'ProcessAudit' && ext === '.css') return 'assets/process-audit-module.css';
+          if (base === 'AddStaffEmployeeModal' && ext === '.css') return 'assets/shared-components.css';
+          return `assets/${base}${ext}`;
+        }
+      }
+    }
+  },
 });
 // Both CMS hosts serve the same canonical integration bundle if portal exists.
 if (existsSync(path.dirname(portalPublicRoot))) {

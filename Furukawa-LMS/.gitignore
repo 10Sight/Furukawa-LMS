@@ -69,11 +69,17 @@ desktop.ini
 *.sw?
 
 # ========================
-# Uploads / Backups / Certs (server)
+# Uploads / Backups / Certs / Runtime Stores (server)
 # ========================
 uploads/
 backups/
 nginx/certs/
+**/pdca_persistence_store.json
+**/ptm_dashboard.db*
+Furukawa-LMS-main/server/db/**/*.json
+Furukawa-LMS-main/server/db/*.json
+Furukawa-LMS-main/server/ptm/data/*.db*
+Furukawa-LMS-main/server/ptm/data/*.sqlite*
 
 # ========================
 # Scratch / debug files

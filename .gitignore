@@ -1,0 +1,41 @@
+# Dependencies
+**/node_modules/
+
+# Environment / Secrets
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.sample
+
+# Logs
+logs/
+**/logs/
+*.log
+**/*.log
+
+# Runtime databases & persistence stores (NEVER track in git)
+uploads/
+**/uploads/
+backups/
+**/backups/
+**/pdca_persistence_store.json
+**/lpa_persistence_store.json
+**/ptm_dashboard.db*
+**/server/db/**/*.json
+**/server/db/*.json
+**/server/ptm/data/*.db*
+**/server/ptm/data/*.sqlite*
+
+# Cache & Scratch
+.cache/
+**/.cache/
+scratch/
+**/scratch/
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/*
+!.vscode/extensions.json
+.idea/

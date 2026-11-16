@@ -11,7 +11,15 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-const DB_FILE = path.join(DATA_DIR, 'ptm_dashboard.db');
+const LEGACY_DB_FILE = path.join(DATA_DIR, 'ptm_dashboard.db');
+const DB_FILE = path.join(DATA_DIR, 'ptm_runtime.db');
+if (!fs.existsSync(DB_FILE) && fs.existsSync(LEGACY_DB_FILE)) {
+  try {
+    fs.copyFileSync(LEGACY_DB_FILE, DB_FILE);
+  } catch {
+    // Fallback to fresh DB initialization if copy fails
+  }
+}
 const db = new DatabaseSync(DB_FILE);
 
 let isInitialized = false;

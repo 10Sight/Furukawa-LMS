@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, UserPlus, Check, User, IdCard, Trash2, Plus } from 'lucide-react';
 import SearchableStaffSelect from './SearchableStaffSelect.jsx';
+import { findEmployeeDepartment, VERIFIED_EMPLOYEE_MASTER } from '../../pages/pdca/data/pdcaEmployees.js';
 
 export default function AddStaffEmployeeModal({
   isOpen,
@@ -67,12 +68,18 @@ export default function AddStaffEmployeeModal({
   const handleSelectEmployee = (index, selectedEmp) => {
     setEmployees((prev) => {
       const updated = [...prev];
+      const name = selectedEmp?.name || '';
+      const code = (selectedEmp?.code || selectedEmp?.empId || '').toUpperCase();
+      const resolvedDept =
+        selectedEmp?.department ||
+        findEmployeeDepartment(code ? `${name} (${code})` : name, VERIFIED_EMPLOYEE_MASTER) ||
+        '';
       updated[index] = {
         ...updated[index],
         id: selectedEmp?.id || updated[index]?.id,
-        name: selectedEmp?.name || '',
-        code: (selectedEmp?.code || selectedEmp?.empId || '').toUpperCase(),
-        department: selectedEmp?.department || updated[index]?.department
+        name,
+        code,
+        department: resolvedDept
       };
       return updated;
     });

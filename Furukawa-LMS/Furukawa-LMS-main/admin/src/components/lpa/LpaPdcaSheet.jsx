@@ -1241,7 +1241,7 @@ export default function LpaPdcaSheet({
               return {
                 name: parsed.name,
                 code: parsed.code,
-                department: findEmployeeDepartment(p, dbEmployees) || ''
+                department: findEmployeeDepartment(p, dbEmployees) || findEmployeeDepartment(p, VERIFIED_EMPLOYEE_MASTER) || ''
               };
             })
           : []);
@@ -1249,7 +1249,7 @@ export default function LpaPdcaSheet({
     // When clicking (+) on an existing group, append an empty row for immediate entry
     const scopedExisting = department ? existing.filter((employee) => employee.department === department) : existing;
     const initialEmployees = scopedExisting.length > 0
-      ? [...scopedExisting, { name: '', code: '', department: department || '' }]
+      ? [...scopedExisting, { name: '', code: '', department: '' }]
       : [{ name: '', code: '', department: '' }];
 
     setStaffEmployeeModal({
@@ -1294,6 +1294,7 @@ export default function LpaPdcaSheet({
           staffId: primary.code || '',
           employeeId: primary.code || '',
           department: primary.department || currentRow.department,
+          responsiblePersonDept: primary.department || currentRow.responsiblePersonDept,
           responsiblePersonConfirmation: formatted
         };
       }
@@ -1325,30 +1326,54 @@ export default function LpaPdcaSheet({
     const { name: staffName, code: staffCode } = parseStaffEmployee(trimmedStaff);
 
     let employeesArray = Array.isArray(employeeList) && employeeList.length > 0
-      ? employeeList.map((e) => ({
-          ...e,
-          department: e.department || findEmployeeDepartment(e.code ? `${e.name} (${e.code})` : e.name, dbEmployees) || ''
-        }))
+      ? employeeList.map((e) => {
+          const cleanName = stripEmployeeId(e.name || '');
+          const code = (e.code || '').toUpperCase();
+          const query = code ? `${cleanName} (${code})` : cleanName;
+          return {
+            ...e,
+            name: cleanName,
+            code,
+            department:
+              findEmployeeDepartment(query, dbEmployees) ||
+              findEmployeeDepartment(query, VERIFIED_EMPLOYEE_MASTER) ||
+              e.department ||
+              ''
+          };
+        })
       : trimmedStaff.split(/[,;]/).map((s) => s.trim()).filter(Boolean).map((part) => {
           const p = parseStaffEmployee(part);
           return {
-            name: p.name,
+            name: stripEmployeeId(p.name),
             code: p.code,
-            department: findEmployeeDepartment(part, dbEmployees) || ''
+            department:
+              findEmployeeDepartment(part, dbEmployees) ||
+              findEmployeeDepartment(part, VERIFIED_EMPLOYEE_MASTER) ||
+              ''
           };
         });
 
-    const matchedDept = findEmployeeDepartment(trimmedStaff, dbEmployees) || findEmployeeDepartment(trimmedStaff, VERIFIED_EMPLOYEE_MASTER);
+    const matchedDept =
+      employeesArray[0]?.department ||
+      findEmployeeDepartment(trimmedStaff, dbEmployees) ||
+      findEmployeeDepartment(trimmedStaff, VERIFIED_EMPLOYEE_MASTER) ||
+      '';
 
     setRows((prev) => {
       const updated = [...prev];
       const currentRow = updated[rowIndex] || {};
 
-      const cleanStaff = stripEmployeeId(trimmedStaff);
+      const cleanStaff = employeesArray.length > 0
+        ? employeesArray.map((e) => stripEmployeeId(e.name || '')).join(', ')
+        : stripEmployeeId(trimmedStaff);
       const newRow = {
         ...currentRow,
         staffEmployee: cleanStaff,
-        staffEmployees: employeesArray.map((e) => ({ ...e, name: stripEmployeeId(e.name || ''), department: e.department || matchedDept || '' })),
+        staffEmployees: employeesArray.map((e, idx) => ({
+          ...e,
+          name: stripEmployeeId(e.name || ''),
+          department: e.department || (idx === 0 ? matchedDept : '') || ''
+        })),
         staffName: stripEmployeeId(staffName || currentRow.staffName || ''),
         staffId: staffCode || currentRow.staffId || '',
         employeeId: staffCode || currentRow.employeeId || '',
@@ -1364,7 +1389,7 @@ export default function LpaPdcaSheet({
       return updated;
     });
 
-    if (!matchedDept) {
+    if (!matchedDept && employeesArray.every((e) => !e.department)) {
       notify?.(`Staff member "${trimmedStaff}" could not be matched to a verified database department. Please select department manually.`, 'info');
     }
   };
@@ -1375,13 +1400,42 @@ export default function LpaPdcaSheet({
       setRows((prev) => prev.map((row, index) => {
         if (index !== rowIndex) return row;
         const current = Array.isArray(row.staffEmployees) ? row.staffEmployees : [];
+        const additions = employeeList
+          .filter((employee) => employee.name)
+          .map((employee) => {
+            const cleanName = stripEmployeeId(employee.name);
+            const code = (employee.code || '').toUpperCase();
+            const query = code ? `${cleanName} (${code})` : cleanName;
+            const resolvedDept =
+              findEmployeeDepartment(query, dbEmployees) ||
+              findEmployeeDepartment(query, VERIFIED_EMPLOYEE_MASTER) ||
+              employee.department ||
+              department ||
+              '';
+            return {
+              ...employee,
+              name: cleanName,
+              code,
+              department: resolvedDept
+            };
+          });
         const staffEmployees = [
           ...current.filter((employee) => employee.department !== department),
-          ...employeeList.filter((employee) => employee.name).map((employee) => ({ ...employee, department }))
+          ...additions
         ];
         const primary = staffEmployees[0] || {};
         const staffEmployee = staffEmployees.map((employee) => stripEmployeeId(employee.name || '')).join(', ');
-        return { ...row, staffEmployees, staffEmployee, staffName: primary.name || '', staffId: primary.code || '', employeeId: primary.code || '', responsiblePersonConfirmation: staffEmployee };
+        return {
+          ...row,
+          staffEmployees,
+          staffEmployee,
+          staffName: primary.name || '',
+          staffId: primary.code || '',
+          employeeId: primary.code || '',
+          department: primary.department || row.department,
+          responsiblePersonDept: primary.department || row.responsiblePersonDept,
+          responsiblePersonConfirmation: staffEmployee
+        };
       }));
       return;
     }

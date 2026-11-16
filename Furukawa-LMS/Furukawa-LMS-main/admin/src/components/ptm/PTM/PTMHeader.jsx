@@ -1,7 +1,10 @@
 import React, { useLayoutEffect, useRef } from 'react';
-import { CalendarDays } from 'lucide-react';
+import { CalendarDays, ChevronDown } from 'lucide-react';
 import CalendarDateInput from './CalendarDateInput';
 import SearchableLeaderInput from './SearchableLeaderInput';
+import CheckboxMultiSelect from './CheckboxMultiSelect';
+
+const RANK_OPTIONS = ['A', 'B', 'C1', 'C2', 'S'].map((r) => ({ value: r, label: r }));
 
 const MILESTONE_COLUMNS = [
   { key: 'DPT', label: 'DPT' },
@@ -131,7 +134,7 @@ function MilestoneDateTextCell({ value = '', onChange, ariaLabel, rowIdx, colKey
 
   return (
     <div
-      className="relative flex items-center w-full h-full min-h-[28px]"
+      className="relative flex items-center w-full h-full min-h-[48px]"
       style={{ width: `${autoWidthPx}px`, minWidth: `${autoWidthPx}px` }}
     >
       <textarea
@@ -225,19 +228,36 @@ export default function PTMHeader({ headerInfo, setHeaderInfo, projectLeaderOpti
                   <span className="font-bold text-[#975A16] text-xs sm:text-[13px] whitespace-nowrap">Rank:</span>
                 </td>
                 <td className="px-2 py-1.5 align-middle bg-white">
-                  <select
-                    value={headerInfo.rank ?? ''}
-                    onChange={(e) => handleChange('rank', e.target.value)}
-                    aria-label="Rank"
-                    className="w-full cursor-pointer font-bold text-[#975A16] outline-none bg-transparent text-sm px-1 py-0.5 rounded focus:bg-white focus:ring-1 focus:ring-amber-400"
-                  >
-                    <option value="">—</option>
-                    <option value="A">A</option>
-                    <option value="B">B</option>
-                    <option value="C1">C1</option>
-                    <option value="C2">C2</option>
-                    <option value="S">S</option>
-                  </select>
+                  <CheckboxMultiSelect
+                    disabled={readOnly}
+                    value={
+                      Array.isArray(headerInfo.rank)
+                        ? headerInfo.rank
+                        : String(headerInfo.rank || '')
+                            .split(',')
+                            .map((s) => s.trim())
+                            .filter(Boolean)
+                    }
+                    options={RANK_OPTIONS}
+                    placeholder="—"
+                    onChange={(newRanks) => handleChange('rank', newRanks.join(', '))}
+                    renderTrigger={({ open, setOpen, selected, buttonRef }) => (
+                      <button
+                        ref={buttonRef}
+                        type="button"
+                        disabled={readOnly}
+                        aria-label="Rank"
+                        aria-haspopup="listbox"
+                        aria-expanded={open}
+                        onClick={() => setOpen((current) => !current)}
+                        title={selected.length ? selected.join(', ') : 'Select Rank'}
+                        className="w-full flex items-center justify-between gap-1 cursor-pointer font-bold text-[#975A16] outline-none bg-transparent text-sm px-1 py-0.5 rounded focus:bg-white focus:ring-1 focus:ring-amber-400"
+                      >
+                        <span className="truncate">{selected.length ? selected.join(', ') : '—'}</span>
+                        <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-slate-500 transition-transform ${open ? 'rotate-180' : ''}`} />
+                      </button>
+                    )}
+                  />
                 </td>
               </tr>
 
@@ -401,12 +421,8 @@ export default function PTMHeader({ headerInfo, setHeaderInfo, projectLeaderOpti
         <div className="[&_*]:!text-black bg-white text-xs">
           <table className="w-full h-full border-collapse text-xs" style={{tableLayout:'auto'}}>
             <tbody>
-              {/* Top row — aligns height with other sections */}
-              <tr className="border-b border-[#64748B]" style={{height:'26px'}}>
-                <td colSpan={6} className="bg-white"></td>
-              </tr>
               {/* Column Headers: blank | DPT | PPT | MPT | PILOT | SOP */}
-              <tr className="border-b border-[#64748B]">
+              <tr className="border-b border-[#64748B]" style={{ height: '28px' }}>
                 <td className="border-r border-[#64748B] px-1.5 py-1.5 min-w-[125px] bg-white"></td>
                 {MILESTONE_COLUMNS.map((col, idx) => (
                   <td
@@ -418,8 +434,8 @@ export default function PTMHeader({ headerInfo, setHeaderInfo, projectLeaderOpti
                 ))}
               </tr>
               {/* Row 1: Customer Milestones (MRD Date) */}
-              <tr className="border-b border-[#64748B]">
-                <td className="border-r border-[#64748B] px-1.5 py-1 min-w-[125px] whitespace-nowrap text-left align-middle bg-white text-slate-900 font-medium leading-tight text-[11px]">
+              <tr className="border-b border-[#64748B]" style={{ height: '56px' }}>
+                <td className="border-r border-[#64748B] px-1.5 py-2.5 min-w-[125px] whitespace-nowrap text-left align-middle bg-white text-slate-900 font-medium leading-tight text-[11px]">
                   <div>Customer Milestones</div>
                   <div>(MRD Date)</div>
                 </td>
@@ -442,8 +458,8 @@ export default function PTMHeader({ headerInfo, setHeaderInfo, projectLeaderOpti
                 })}
               </tr>
               {/* Row 2: Internal Milestones (QA Inspection) */}
-              <tr className="border-b border-[#64748B]">
-                <td className="border-r border-[#64748B] px-1.5 py-1 min-w-[125px] whitespace-nowrap text-left align-middle bg-white text-slate-900 font-medium leading-tight text-[11px]">
+              <tr style={{ height: '56px' }}>
+                <td className="border-r border-[#64748B] px-1.5 py-2.5 min-w-[125px] whitespace-nowrap text-left align-middle bg-white text-slate-900 font-medium leading-tight text-[11px]">
                   <div>Internal Milestones</div>
                   <div>(QA Inspection)</div>
                 </td>
@@ -460,28 +476,6 @@ export default function PTMHeader({ headerInfo, setHeaderInfo, projectLeaderOpti
                         rowIdx={1}
                         colKey={col.key}
                         ariaLabel={`Internal Milestones (QA Inspection) - ${col.label}`}
-                      />
-                    </td>
-                  );
-                })}
-              </tr>
-              {/* Row 3: Additional Milestone Row matching Excel reference */}
-              <tr>
-                <td className="border-r border-[#64748B] px-1.5 py-1 min-w-[125px] whitespace-nowrap text-left align-middle bg-white text-slate-900 font-medium leading-tight text-[11px]">
-                </td>
-                {MILESTONE_COLUMNS.map((col, idx) => {
-                  const fieldKey = `milestoneExtra${col.key}`;
-                  return (
-                    <td
-                      key={col.key}
-                      className={`${idx < MILESTONE_COLUMNS.length - 1 ? 'border-r border-[#64748B]' : ''} w-auto min-w-[96px] p-0.5 align-middle bg-white`}
-                    >
-                      <MilestoneDateTextCell
-                        value={headerInfo[fieldKey] || ''}
-                        onChange={(val) => handleChange(fieldKey, val)}
-                        rowIdx={2}
-                        colKey={col.key}
-                        ariaLabel={`Additional Milestone - ${col.label}`}
                       />
                     </td>
                   );

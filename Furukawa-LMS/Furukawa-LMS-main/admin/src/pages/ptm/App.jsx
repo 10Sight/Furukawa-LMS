@@ -7,6 +7,7 @@ import Pagination from '../../components/ptm/PTM/Pagination';
 import AddPTMModal from '../../components/ptm/PTM/AddPTMModal';
 import PTMTable from '../../components/ptm/PTM/PTMTable';
 import PTMHeader from '../../components/ptm/PTM/PTMHeader';
+import PTMGraphSection from '../../components/ptm/PTM/PTMGraphSection';
 import LoginPage from '../../components/ptm/Auth/LoginPage';
 import FormZoomControls from '../../components/shared/FormZoomControls';
 import PTMTabNavigation from '../../components/ptm/PTM/PTMTabNavigation';
@@ -1162,37 +1163,47 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
               <FormZoomControls selector=".ptm-zoom-surface" rootSelector="main" />
             </div>
 
-            {/* MERGED PTM FORM + MATRIX TABLE AS A SINGLE UNIFIED DOCUMENT */}
-            <div className="relative z-0 flex-1 min-h-0 min-w-0 bg-white rounded-xl border border-slate-300 shadow-sm overflow-hidden">
-              <div className="h-full min-h-0 min-w-0 overflow-auto overscroll-contain [scrollbar-gutter:stable]">
-                <div className="min-w-[3200px] w-full ptm-zoom-surface">
-                  <PTMHeader
-                    headerInfo={headerInfo}
-                    setHeaderInfo={updateHeaderInfo}
-                    projectLeaderOptions={projectLeaderOptions}
-                    isMerged={true}
-                    readOnly={!hasFullSheetAccess}
-                  />
-                  <PTMTable
-                    rows={ptmRows}
-                    setRows={updatePtmRows}
-                    onResetDefault={handleResetPTM}
-                    searchQuery={ptmSearch}
-                    setSearchQuery={setPtmSearch}
-                    phaseFilter={ptmPhaseFilter}
-                    setPhaseFilter={setPtmPhaseFilter}
-                    deptFilter={deptFilter}
-                    setDeptFilter={setDeptFilter}
-                    showToast={showToast}
-                    selectedUnit={selectedUnit}
-                    onAddNewRow={handleAddRowFromTop}
-                    isMerged={true}
-                    isAdmin={isAdmin}
-                    dbEmployees={dbEmployees}
-                    currentUser={currentUser}
-                    hasFullSheetAccess={hasFullSheetAccess}
-                    savedColumnSuggestions={headerInfo.savedColumnSuggestions}
-                  />
+            {/* Scrollable body: graph + sheet scroll under the fixed toolbar */}
+            <div className="ptm-body-scroll-container w-full min-w-0 flex-1 min-h-0 flex flex-col gap-2.5 overflow-x-hidden overflow-y-auto">
+              {/* PTM Status Analytics Graph (Data-wise) */}
+              <PTMGraphSection
+                rows={ptmRows}
+                currentDate={headerInfo?.reviewDate}
+                topic={selectedTopicItem}
+              />
+
+              {/* MERGED PTM FORM + MATRIX TABLE AS A SINGLE UNIFIED DOCUMENT */}
+              <div className="relative z-0 w-full min-w-0 flex-auto shrink-0 min-h-[320px] max-h-[calc(100vh-62px)] bg-white rounded-xl border border-slate-300 shadow-sm overflow-hidden">
+                <div className="h-full min-h-0 min-w-0 overflow-auto overscroll-contain [scrollbar-gutter:stable]">
+                  <div className="min-w-[3200px] w-full ptm-zoom-surface">
+                    <PTMHeader
+                      headerInfo={headerInfo}
+                      setHeaderInfo={updateHeaderInfo}
+                      projectLeaderOptions={projectLeaderOptions}
+                      isMerged={true}
+                      readOnly={!hasFullSheetAccess}
+                    />
+                    <PTMTable
+                      rows={ptmRows}
+                      setRows={updatePtmRows}
+                      onResetDefault={handleResetPTM}
+                      searchQuery={ptmSearch}
+                      setSearchQuery={setPtmSearch}
+                      phaseFilter={ptmPhaseFilter}
+                      setPhaseFilter={setPtmPhaseFilter}
+                      deptFilter={deptFilter}
+                      setDeptFilter={setDeptFilter}
+                      showToast={showToast}
+                      selectedUnit={selectedUnit}
+                      onAddNewRow={handleAddRowFromTop}
+                      isMerged={true}
+                      isAdmin={isAdmin}
+                      dbEmployees={dbEmployees}
+                      currentUser={currentUser}
+                      hasFullSheetAccess={hasFullSheetAccess}
+                      savedColumnSuggestions={headerInfo.savedColumnSuggestions}
+                    />
+                  </div>
                 </div>
               </div>
             </div>

@@ -11,6 +11,7 @@ import {
   stripEmployeeId,
   parseStaffEmployee,
   findEmployeeDepartment,
+  VERIFIED_EMPLOYEE_MASTER,
 } from '../../../pages/pdca/data/pdcaEmployees.js';
 import {
   PDCA_UNITS,
@@ -209,14 +210,14 @@ function CriticalActivityCell({ value, onChange }) {
 
 const clampDimension = (value, minimum) => Math.max(minimum, Math.round(value));
 
-const getEndDateActualHistory = (row) => {
+const getEndDatePlanHistory = (row) => {
   if (!row) return [];
-  if (Array.isArray(row.endDateActualHistory) && row.endDateActualHistory.length > 0) {
-    return row.endDateActualHistory
+  if (Array.isArray(row.endDatePlanHistory) && row.endDatePlanHistory.length > 0) {
+    return row.endDatePlanHistory
       .map((d) => String(d || '').trim())
       .filter((d) => d && d.toUpperCase() !== 'N/A' && d !== '—' && d !== '-');
   }
-  const raw = String(row.endDateActual || '').trim();
+  const raw = String(row.endDatePlan || '').trim();
   if (!raw || raw.toUpperCase() === 'N/A' || raw === '—' || raw === '-') return [];
   return raw
     .split(/\r?\n/)
@@ -232,9 +233,9 @@ const formatIsoToShortDMY = (isoDate) => {
   return `${day}-${month}-${year.slice(-2)}`;
 };
 
-function EndDateActualCell({ row, onSelectDate, disabled = false, rowIndex }) {
+function EndDatePlanCell({ row, onSelectDate, disabled = false, rowIndex }) {
   const pickerRef = useRef(null);
-  const history = getEndDateActualHistory(row);
+  const history = getEndDatePlanHistory(row);
   const previousDates = history.length > 1 ? history.slice(0, -1) : [];
   const latestDate = history.length > 0 ? history[history.length - 1] : '';
   const pickerIsoValue = latestDate ? normalizeDateToYMD(latestDate) : '';
@@ -249,8 +250,8 @@ function EndDateActualCell({ row, onSelectDate, disabled = false, rowIndex }) {
       }}
       title={
         history.length > 0
-          ? `End Date (Actual): ${history.join(' → ')} (Click calendar to select new End Date Actual)`
-          : 'Click to select End Date (Actual)'
+          ? `End Date (Plan): ${history.join(' → ')} (Click calendar to select new End Date Plan)`
+          : 'Click to select End Date (Plan)'
       }
     >
       {history.length === 0 ? (
@@ -281,7 +282,7 @@ function EndDateActualCell({ row, onSelectDate, disabled = false, rowIndex }) {
         disabled={disabled}
         value={pickerIsoValue}
         data-row={rowIndex}
-        data-col="endDateActual"
+        data-col="endDatePlan"
         onClick={(event) => {
           event.stopPropagation();
           if (!disabled) event.currentTarget.showPicker?.();
@@ -293,8 +294,8 @@ function EndDateActualCell({ row, onSelectDate, disabled = false, rowIndex }) {
             onSelectDate(formatted);
           }
         }}
-        aria-label="Choose End Date (Actual) from calendar"
-        title="Choose End Date (Actual) from calendar"
+        aria-label="Choose End Date (Plan) from calendar"
+        title="Choose End Date (Plan) from calendar"
         className="absolute right-0 top-1/2 h-6 w-6 -translate-y-1/2 cursor-pointer opacity-0"
         tabIndex={-1}
       />
@@ -503,6 +504,26 @@ export default function PTMTable({
     });
   };
 
+  const resolveEmployeeDept = (empOrStr) => {
+    if (!empOrStr) return '';
+    if (typeof empOrStr === 'object') {
+      const cleanName = stripEmployeeId(empOrStr.name || empOrStr.fullName || '');
+      const code = (empOrStr.code || empOrStr.empId || '').toUpperCase();
+      const query = code ? `${cleanName} (${code})` : cleanName;
+      return (
+        findEmployeeDepartment(query, dbEmployees) ||
+        findEmployeeDepartment(query, VERIFIED_EMPLOYEE_MASTER) ||
+        (empOrStr.department && empOrStr.department !== 'CFT' ? empOrStr.department : '') ||
+        ''
+      );
+    }
+    return (
+      findEmployeeDepartment(empOrStr, dbEmployees) ||
+      findEmployeeDepartment(empOrStr, VERIFIED_EMPLOYEE_MASTER) ||
+      ''
+    );
+  };
+
   const handleSelectStaffForUnitDept = (rowIndex, unit, department, empObj) => {
     setRows((prev) => {
       const updated = [...prev];
@@ -515,7 +536,7 @@ export default function PTMTable({
       if (empObj && empObj.name) {
         const cleanName = stripEmployeeId(empObj.name);
         const code = (empObj.code || '').toUpperCase();
-        const autoDept = empObj.department || findEmployeeDepartment(`${cleanName} (${code})`, dbEmployees) || '';
+        const autoDept = resolveEmployeeDept({ ...empObj, name: cleanName, code });
         targetDept = targetDept || autoDept;
         if (!targetUnit) {
           targetUnit = empObj.unit || (code.startsWith('GJ') ? 'Gujrat' : (code.startsWith('BW') ? 'Bawal' : (currentRow.respUnit || currentRow.unit || 'Bawal')));
@@ -579,7 +600,29 @@ export default function PTMTable({
       });
       const primary = staffEmployees[0] || {};
       const staffEmployee = staffEmployees.map((entry) => entry.code ? `${entry.name} (${entry.code})` : entry.name).join(', ');
-      return { ...row, staffEmployees, staffEmployee, staffName: primary.name || '', staffId: primary.code || '', employeeId: primary.code || '', responsiblePersonDept: staffEmployees.map(e => e.department).filter(Boolean).join(', ') };
+      const targetUnit = unit || row.respUnit || 'Bawal';
+      const remainingUnitDepts = [...new Set(
+        staffEmployees
+          .filter((e) => !e.unit || e.unit === targetUnit)
+          .map((e) => e.department)
+          .filter(Boolean)
+      )];
+      const prevDeptsByUnit = row.respDeptsByUnit || {};
+      const updatedDeptsByUnit = {
+        ...prevDeptsByUnit,
+        [targetUnit]: remainingUnitDepts
+      };
+      const allDepts = [...new Set(Object.values(updatedDeptsByUnit).flat().concat(staffEmployees.map((e) => e.department)).filter(Boolean))];
+      return {
+        ...row,
+        staffEmployees,
+        staffEmployee,
+        staffName: primary.name || '',
+        staffId: primary.code || '',
+        employeeId: primary.code || '',
+        respDeptsByUnit: updatedDeptsByUnit,
+        responsiblePersonDept: allDepts.join(', ')
+      };
     }));
   };
 
@@ -593,7 +636,7 @@ export default function PTMTable({
           return {
             name: parsed.name,
             code: parsed.code,
-            department: findEmployeeDepartment(p, dbEmployees) || ''
+            department: resolveEmployeeDept(p)
           };
         })
         : []);
@@ -624,13 +667,47 @@ export default function PTMTable({
       const retained = department
         ? current.filter((employee) => !(employee.department === department && (employee.unit === unit || !employee.unit)))
         : current.filter((employee) => (unit ? employee.unit !== unit : false));
+      const targetUnit = unit || row.respUnit || (Array.isArray(row.respUnits) && row.respUnits[0]) || 'Bawal';
       const additions = employees
         .filter((employee) => employee.name)
-        .map((employee) => ({ ...employee, ...(department ? { department } : {}), ...(unit ? { unit } : {}) }));
+        .map((employee) => {
+          const cleanName = stripEmployeeId(employee.name);
+          const code = (employee.code || '').toUpperCase();
+          const resolvedDept = resolveEmployeeDept({ ...employee, name: cleanName, code }) || department || '';
+          return {
+            ...employee,
+            name: cleanName,
+            code,
+            department: resolvedDept,
+            unit: targetUnit
+          };
+        });
       const staffEmployees = [...retained, ...additions];
       const primary = staffEmployees[0] || {};
       const staffEmployee = staffEmployees.map((employee) => employee.code ? `${employee.name} (${employee.code})` : employee.name).join(', ');
-      return { ...row, staffEmployees, staffEmployee, staffName: primary.name || '', staffId: primary.code || '', employeeId: primary.code || '', responsiblePersonDept: staffEmployees.map(e => e.department).filter(Boolean).join(', ') };
+      const unitStaffDepts = staffEmployees
+        .filter((e) => !e.unit || e.unit === targetUnit)
+        .map((e) => e.department)
+        .filter(Boolean);
+      const prevUnitDepts = Array.isArray(row.respDeptsByUnit?.[targetUnit]) ? row.respDeptsByUnit[targetUnit] : [];
+      const mergedUnitDepts = [...new Set([...prevUnitDepts.filter((d) => d !== department || unitStaffDepts.includes(d)), ...unitStaffDepts])];
+      const updatedDeptsByUnit = {
+        ...(row.respDeptsByUnit || {}),
+        [targetUnit]: mergedUnitDepts
+      };
+      const allDepts = [...new Set(Object.values(updatedDeptsByUnit).flat().concat(staffEmployees.map((e) => e.department)).filter(Boolean))];
+      return {
+        ...row,
+        staffEmployees,
+        staffEmployee,
+        staffName: primary.name || '',
+        staffId: primary.code || '',
+        employeeId: primary.code || '',
+        respUnit: row.respUnit || targetUnit,
+        respUnits: (Array.isArray(row.respUnits) && row.respUnits.length > 0) ? row.respUnits : [targetUnit],
+        respDeptsByUnit: updatedDeptsByUnit,
+        responsiblePersonDept: allDepts.join(', ')
+      };
     }));
   };
 
@@ -638,11 +715,46 @@ export default function PTMTable({
     if (rowIndex == null) return;
     setRows((prev) => prev.map((row, index) => {
       if (index !== rowIndex) return row;
+      const targetUnit = staffEmployeeModal.unit || row.respUnit || (Array.isArray(row.respUnits) && row.respUnits[0]) || 'Bawal';
       const additions = employeeList
         .filter((employee) => employee.name)
-        .map((employee) => ({ ...employee }));
+        .map((employee) => {
+          const cleanName = stripEmployeeId(employee.name);
+          const code = (employee.code || '').toUpperCase();
+          const resolvedDept = resolveEmployeeDept({ ...employee, name: cleanName, code }) || '';
+          return {
+            ...employee,
+            name: cleanName,
+            code,
+            department: resolvedDept,
+            unit: employee.unit || targetUnit
+          };
+        });
       const primary = additions[0] || {};
-      return { ...row, staffEmployees: additions, staffEmployee: formattedValue, staffName: primary.name || '', staffId: primary.code || '', employeeId: primary.code || '' };
+      const staffEmployee = additions.map((employee) => employee.code ? `${employee.name} (${employee.code})` : employee.name).join(', ') || formattedValue;
+      const unitStaffDepts = additions
+        .filter((e) => !e.unit || e.unit === targetUnit)
+        .map((e) => e.department)
+        .filter(Boolean);
+      const prevUnitDepts = Array.isArray(row.respDeptsByUnit?.[targetUnit]) ? row.respDeptsByUnit[targetUnit] : [];
+      const mergedUnitDepts = [...new Set([...prevUnitDepts, ...unitStaffDepts])];
+      const updatedDeptsByUnit = {
+        ...(row.respDeptsByUnit || {}),
+        [targetUnit]: mergedUnitDepts
+      };
+      const allDepts = [...new Set(Object.values(updatedDeptsByUnit).flat().concat(additions.map((e) => e.department)).filter(Boolean))];
+      return {
+        ...row,
+        staffEmployees: additions,
+        staffEmployee,
+        staffName: primary.name || '',
+        staffId: primary.code || '',
+        employeeId: primary.code || '',
+        respUnit: row.respUnit || targetUnit,
+        respUnits: (Array.isArray(row.respUnits) && row.respUnits.length > 0) ? row.respUnits : [targetUnit],
+        respDeptsByUnit: updatedDeptsByUnit,
+        responsiblePersonDept: allDepts.join(', ') || row.responsiblePersonDept || ''
+      };
     }));
   };
 
@@ -1050,9 +1162,9 @@ export default function PTMTable({
     });
   };
 
-  const handleSelectEndDateActual = (rowIndex, selectedDate) => {
+  const handleSelectEndDatePlan = (rowIndex, selectedDate) => {
     const prevRow = rows[rowIndex];
-    if (!canEditCell(prevRow, 'endDateActual')) {
+    if (!canEditCell(prevRow, 'endDatePlan')) {
       if (showToast) showToast('⚠️ You only have permission to edit your assigned row');
       return;
     }
@@ -1062,7 +1174,7 @@ export default function PTMTable({
       const currentRow = updated[rowIndex];
       if (!currentRow) return prev;
 
-      const prevHistory = getEndDateActualHistory(currentRow);
+      const prevHistory = getEndDatePlanHistory(currentRow);
       const cleanDate = String(selectedDate || '').trim();
       if (!cleanDate) return prev;
 
@@ -1071,15 +1183,15 @@ export default function PTMTable({
 
       const row = {
         ...currentRow,
-        endDateActualHistory: nextHistory,
-        endDateActual: nextHistory.join('\n'),
+        endDatePlanHistory: nextHistory,
+        endDatePlan: nextHistory.join('\n'),
       };
 
       const evalRes = evaluatePtmRowStatus(row);
       row.status = evalRes.status;
       row.hitMiss = evalRes.hitMiss;
 
-      // Auto-fetch No. of Times Revised when End Date (Actual) is re-selected or enters Delay/MISS
+      // Auto-fetch No. of Times Revised when End Date (Plan) is re-selected or enters Delay/MISS
       const existingRevs = getRowRevisions(row);
       if ((isNewSelection && prevHistory.length >= 1) || ((row.status === 'Delay' || row.hitMiss === 'MISS') && existingRevs.length === 0)) {
         const nextNum = existingRevs.length + 1;
@@ -1736,16 +1848,20 @@ export default function PTMTable({
                   </span>
                 </th>
 
-                {/* Actions Column: Visually separated section at the end of the sheet */}
+                {/* Actions Column: Visually separated section outside the sheet grid */}
                 <th
                   rowSpan={2}
-                  className="relative overflow-visible py-2 px-2 bg-slate-200 text-slate-800 font-extrabold uppercase text-xs sm:text-[12px] tracking-wider text-center border-l-4 border-slate-300"
+                  className="relative overflow-visible py-2 pl-4 pr-2 bg-[#F4F6F9] text-slate-600 font-extrabold uppercase text-xs sm:text-[11px] tracking-wider text-center align-middle"
                   style={{
                     width: `${colWidths.actions}px`,
                     minWidth: `${MIN_ACTION_COLUMN_WIDTH}px`,
+                    borderTopStyle: 'hidden',
+                    borderBottomStyle: 'hidden',
+                    borderRightStyle: 'hidden',
+                    borderLeft: '2px solid #64748B',
                   }}
                 >
-                  <div className="flex items-center justify-center">
+                  <div className="inline-flex items-center justify-center px-3 py-1 rounded-lg bg-white border border-slate-200/90 shadow-xs text-slate-600">
                     <span>Actions</span>
                   </div>
                   <span
@@ -2207,26 +2323,26 @@ export default function PTMTable({
                           />
                         </td>
 
-                        {/* 23. End Date (Plan) */}
-                        <td className={`p-0 text-center w-auto min-w-[116px] whitespace-nowrap ${!canEditCell(row, 'endDatePlan') ? 'pointer-events-none opacity-75' : ''}`}>
-                          <CalendarDateInput
-                            value={row.endDatePlan || ''}
-                            onChange={(e) => handleCellChange(originalIndex, 'endDatePlan', e.target.value)}
-                            onKeyDown={(e) => handleKeyDown(e, originalIndex, 'endDatePlan')}
-                            data-row={originalIndex}
-                            data-col="endDatePlan"
-                            placeholder="N/A"
-                            className="w-full text-center py-2 px-1.5 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm font-mono"
+                        {/* 23. End Date (Plan) — Vertical stacked date history with strikethrough on previous dates */}
+                        <td className="p-0 text-center w-auto min-w-[116px] whitespace-nowrap align-middle">
+                          <EndDatePlanCell
+                            row={row}
+                            rowIndex={originalIndex}
+                            disabled={!canEditCell(row, 'endDatePlan')}
+                            onSelectDate={(newDate) => handleSelectEndDatePlan(originalIndex, newDate)}
                           />
                         </td>
 
-                        {/* 24. End Date (Actual) — Vertical stacked date history with strikethrough on previous dates */}
-                        <td className="p-0 text-center w-auto min-w-[116px] whitespace-nowrap align-middle">
-                          <EndDateActualCell
-                            row={row}
-                            rowIndex={originalIndex}
-                            disabled={!canEditCell(row, 'endDateActual')}
-                            onSelectDate={(newDate) => handleSelectEndDateActual(originalIndex, newDate)}
+                        {/* 24. End Date (Actual) */}
+                        <td className={`p-0 text-center w-auto min-w-[116px] whitespace-nowrap ${!canEditCell(row, 'endDateActual') ? 'pointer-events-none opacity-75' : ''}`}>
+                          <CalendarDateInput
+                            value={row.endDateActual || ''}
+                            onChange={(e) => handleCellChange(originalIndex, 'endDateActual', e.target.value)}
+                            onKeyDown={(e) => handleKeyDown(e, originalIndex, 'endDateActual')}
+                            data-row={originalIndex}
+                            data-col="endDateActual"
+                            placeholder="N/A"
+                            className="w-full text-center py-2 px-1.5 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm font-mono"
                           />
                         </td>
 
@@ -2916,12 +3032,16 @@ export default function PTMTable({
                           />
                         </td>
 
-                        {/* Actions: Visually separated section at the end of the sheet */}
+                        {/* Actions: Visually separated section outside the sheet grid */}
                         <td
-                          className={`relative overflow-visible py-1.5 px-2 text-center bg-[#F1F5F9] border-l-4 border-slate-300 z-10 ${!canEditCell(row, 'actions') ? 'pointer-events-none opacity-50' : ''}`}
+                          className={`relative overflow-visible py-1.5 pl-4 pr-2 text-center bg-[#F4F6F9] z-10 ${!canEditCell(row, 'actions') ? 'pointer-events-none opacity-50' : ''}`}
                           style={{
                             width: `${colWidths.actions}px`,
                             minWidth: `${MIN_ACTION_COLUMN_WIDTH}px`,
+                            borderTopStyle: 'hidden',
+                            borderBottomStyle: 'hidden',
+                            borderRightStyle: 'hidden',
+                            borderLeft: '2px solid #64748B',
                           }}
                         >
                           <div className="inline-flex items-center justify-center gap-1 p-1 bg-white rounded-xl border border-slate-200/90 shadow-xs">

@@ -3465,7 +3465,7 @@ export default function PDCASheet({
           return {
             name: parsed.name,
             code: parsed.code,
-            department: findEmployeeDepartment(p, dbEmployees) || ''
+            department: findEmployeeDepartment(p, dbEmployees) || findEmployeeDepartment(p, VERIFIED_EMPLOYEE_MASTER) || ''
           };
         })
         : []);
@@ -3538,24 +3538,90 @@ export default function PDCASheet({
       });
       const primary = staffEmployees[0] || {};
       const staffEmployee = staffEmployees.map((entry) => entry.code ? `${entry.name} (${entry.code})` : entry.name).join(', ');
-      return { ...row, staffEmployees, staffEmployee, staffName: primary.name || '', staffId: primary.code || '', employeeId: primary.code || '', responsiblePersonConfirmation: staffEmployee };
+      const targetUnit = unit || row.respUnit || 'Bawal';
+      const remainingUnitDepts = [...new Set(
+        staffEmployees
+          .filter((e) => !e.unit || e.unit === targetUnit)
+          .map((e) => e.department)
+          .filter(Boolean)
+      )];
+      const prevDeptsByUnit = row.respDeptsByUnit || {};
+      const updatedDeptsByUnit = {
+        ...prevDeptsByUnit,
+        [targetUnit]: remainingUnitDepts
+      };
+      const allDepts = [...new Set(Object.values(updatedDeptsByUnit).flat().concat(staffEmployees.map((e) => e.department)).filter(Boolean))];
+      return {
+        ...row,
+        staffEmployees,
+        staffEmployee,
+        staffName: primary.name || '',
+        staffId: primary.code || '',
+        employeeId: primary.code || '',
+        respDeptsByUnit: updatedDeptsByUnit,
+        responsiblePersonDept: allDepts.join(', '),
+        responsiblePersonConfirmation: staffEmployee
+      };
     }));
   };
 
   const handleSaveDepartmentStaff = (_rowIndex, _formattedValue, employees) => {
     const { rowIndex, unit, department } = staffEmployeeModal;
-    if (rowIndex == null || !unit || !department) return;
+    if (rowIndex == null) return;
     setRows((prev) => prev.map((row, index) => {
       if (index !== rowIndex) return row;
       const current = Array.isArray(row.staffEmployees) ? row.staffEmployees : [];
-      const retained = current.filter((employee) => !(employee.department === department && (employee.unit === unit || !employee.unit)));
+      const retained = department
+        ? current.filter((employee) => !(employee.department === department && (employee.unit === unit || !employee.unit)))
+        : current.filter((employee) => (unit ? employee.unit !== unit : false));
+      const targetUnit = unit || row.respUnit || (Array.isArray(row.respUnits) && row.respUnits[0]) || 'Bawal';
       const additions = employees
         .filter((employee) => employee.name)
-        .map((employee) => ({ ...employee, department, unit }));
+        .map((employee) => {
+          const cleanName = stripEmployeeId(employee.name);
+          const code = (employee.code || '').toUpperCase();
+          const query = code ? `${cleanName} (${code})` : cleanName;
+          const dbDept =
+            findEmployeeDepartment(query, dbEmployees) ||
+            findEmployeeDepartment(query, VERIFIED_EMPLOYEE_MASTER) ||
+            (employee.department && employee.department !== 'CFT' ? employee.department : '') ||
+            department ||
+            '';
+          return {
+            ...employee,
+            name: cleanName,
+            code,
+            department: dbDept,
+            unit: targetUnit
+          };
+        });
       const staffEmployees = [...retained, ...additions];
       const primary = staffEmployees[0] || {};
       const staffEmployee = staffEmployees.map((employee) => employee.code ? `${employee.name} (${employee.code})` : employee.name).join(', ');
-      return { ...row, staffEmployees, staffEmployee, staffName: primary.name || '', staffId: primary.code || '', employeeId: primary.code || '', responsiblePersonConfirmation: staffEmployee };
+      const unitStaffDepts = staffEmployees
+        .filter((e) => !e.unit || e.unit === targetUnit)
+        .map((e) => e.department)
+        .filter(Boolean);
+      const prevUnitDepts = Array.isArray(row.respDeptsByUnit?.[targetUnit]) ? row.respDeptsByUnit[targetUnit] : [];
+      const mergedUnitDepts = [...new Set([...prevUnitDepts.filter((d) => d !== department || unitStaffDepts.includes(d)), ...unitStaffDepts])];
+      const updatedDeptsByUnit = {
+        ...(row.respDeptsByUnit || {}),
+        [targetUnit]: mergedUnitDepts
+      };
+      const allDepts = [...new Set(Object.values(updatedDeptsByUnit).flat().concat(staffEmployees.map((e) => e.department)).filter(Boolean))];
+      return {
+        ...row,
+        staffEmployees,
+        staffEmployee,
+        staffName: primary.name || '',
+        staffId: primary.code || '',
+        employeeId: primary.code || '',
+        respUnit: row.respUnit || targetUnit,
+        respUnits: (Array.isArray(row.respUnits) && row.respUnits.length > 0) ? row.respUnits : [targetUnit],
+        respDeptsByUnit: updatedDeptsByUnit,
+        responsiblePersonDept: allDepts.join(', '),
+        responsiblePersonConfirmation: staffEmployee
+      };
     }));
   };
 
@@ -4583,30 +4649,36 @@ export default function PDCASheet({
       const currentRow = updated[rowIndex] || {};
       const targetUnit = empUnit || currentRow.respUnit || (currentRow.respUnits && currentRow.respUnits[0]) || currentRow.unit || 'Bawal';
 
-      if (employeesArray.length > 0) {
-        employeesArray[0].department = primaryDept || employeesArray[0].department || '';
-        employeesArray[0].unit = targetUnit;
-      }
+      const normalizedEmployees = employeesArray.map((emp, idx) => ({
+        ...emp,
+        department: idx === 0 ? (primaryDept || emp.department || '') : (emp.department || ''),
+        unit: emp.unit || targetUnit
+      }));
 
+      const allEmpDepts = [...new Set(normalizedEmployees.map((e) => e.department).filter(Boolean))];
       const prevDeptsByUnit = currentRow.respDeptsByUnit || {};
       const updatedDeptsByUnit = {
         ...prevDeptsByUnit,
-        [targetUnit]: primaryDept ? [primaryDept] : (prevDeptsByUnit[targetUnit] || [])
+        [targetUnit]: allEmpDepts.length > 0 ? allEmpDepts : (prevDeptsByUnit[targetUnit] || [])
       };
+
+      const formattedStaffStr = normalizedEmployees.length > 1
+        ? normalizedEmployees.map((e) => e.name).join(', ')
+        : cleanStaffName;
 
       const newRow = {
         ...currentRow,
-        staffEmployee: cleanStaffName,
-        staffEmployees: employeesArray,
-        staffName: cleanStaffName || currentRow.staffName || employeesArray[0]?.name || '',
-        staffId: staffCode || currentRow.staffId || employeesArray[0]?.code || '',
-        employeeId: staffCode || currentRow.employeeId || employeesArray[0]?.code || '',
-        responsiblePersonConfirmation: cleanStaffName,
+        staffEmployee: formattedStaffStr,
+        staffEmployees: normalizedEmployees,
+        staffName: cleanStaffName || currentRow.staffName || normalizedEmployees[0]?.name || '',
+        staffId: staffCode || currentRow.staffId || normalizedEmployees[0]?.code || '',
+        employeeId: staffCode || currentRow.employeeId || normalizedEmployees[0]?.code || '',
+        responsiblePersonConfirmation: formattedStaffStr,
         respUnit: targetUnit,
         respUnits: (currentRow.respUnits && currentRow.respUnits.length > 0) ? currentRow.respUnits : [targetUnit],
         responsiblePersonUnit: targetUnit,
         respDeptsByUnit: updatedDeptsByUnit,
-        responsiblePersonDept: primaryDept || currentRow.responsiblePersonDept || ''
+        responsiblePersonDept: allEmpDepts.join(', ') || primaryDept || currentRow.responsiblePersonDept || ''
       };
 
       if (primaryDept && primaryDept !== 'CFT') {

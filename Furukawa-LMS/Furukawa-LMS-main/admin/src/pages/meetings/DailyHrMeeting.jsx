@@ -333,7 +333,6 @@ export default function DailyHrMeeting({ lockedTab = null, embedded = false, ful
                         visibleDates={visibleDates}
                         darkMode={darkMode}
                         canEdit={canEdit}
-                        onEditTraining={() => setTrainingOpen(true)}
                         large={fullScreen}
                     />
                 )}

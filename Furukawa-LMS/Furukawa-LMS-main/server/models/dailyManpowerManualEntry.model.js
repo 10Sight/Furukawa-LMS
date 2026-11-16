@@ -95,38 +95,54 @@ class DailyManpowerManualEntry {
 
     /**
      * Saves the month's required headcount and the given daily entries in one transaction.
-     * entries: [{ date, presentCount, otHrs, remarks }]
+     * entries: [{ date, presentCount?, otHrs?, remarks? }]
+     * Partial update: any field passed as undefined keeps its stored value (or 0 / NULL on insert),
+     * so a single-cell edit never overwrites the other cells of the row.
      */
     static async saveTrainingInputs({ year, monthNumber, requiredFN01, requiredFN02, entries, rowKey = TRAINING_ROW_KEY }, updatedBy) {
         await DailyManpowerManualEntry.init();
+        const flag = (v) => (v === undefined ? 0 : 1);
         await withTransaction(async (conn) => {
             if (requiredFN01 !== undefined || requiredFN02 !== undefined) {
                 await conn.query(`
                     MERGE daily_manpower_training_monthly AS target
                     USING (SELECT ? AS [year], ? AS monthNumber, ? AS rowKey) AS source
                     ON target.[year] = source.[year] AND target.monthNumber = source.monthNumber AND target.rowKey = source.rowKey
-                    WHEN MATCHED THEN UPDATE SET requiredFN01 = ?, requiredFN02 = ?, updatedBy = ?, updatedAt = GETDATE()
+                    WHEN MATCHED THEN UPDATE SET
+                        requiredFN01 = CASE WHEN ? = 1 THEN ? ELSE target.requiredFN01 END,
+                        requiredFN02 = CASE WHEN ? = 1 THEN ? ELSE target.requiredFN02 END,
+                        updatedBy = ?, updatedAt = GETDATE()
                     WHEN NOT MATCHED THEN INSERT ([year], monthNumber, rowKey, requiredFN01, requiredFN02, updatedBy, updatedAt)
                         VALUES (?, ?, ?, ?, ?, ?, GETDATE());
                 `, [
                     year, monthNumber, rowKey,
-                    requiredFN01, requiredFN02, updatedBy ?? null,
-                    year, monthNumber, rowKey, requiredFN01, requiredFN02, updatedBy ?? null,
+                    flag(requiredFN01), requiredFN01 ?? 0,
+                    flag(requiredFN02), requiredFN02 ?? 0,
+                    updatedBy ?? null,
+                    year, monthNumber, rowKey, requiredFN01 ?? 0, requiredFN02 ?? 0, updatedBy ?? null,
                 ]);
             }
 
             for (const entry of entries || []) {
+                if (entry.presentCount === undefined && entry.otHrs === undefined && entry.remarks === undefined) continue;
                 await conn.query(`
                     MERGE daily_manpower_manual_entries AS target
                     USING (SELECT ? AS rowKey, CONVERT(DATE, ?, 23) AS entryDate) AS source
                     ON target.rowKey = source.rowKey AND target.entryDate = source.entryDate
-                    WHEN MATCHED THEN UPDATE SET presentCount = ?, otHrs = ?, remarks = ?, updatedBy = ?, updatedAt = GETDATE()
+                    WHEN MATCHED THEN UPDATE SET
+                        presentCount = CASE WHEN ? = 1 THEN ? ELSE target.presentCount END,
+                        otHrs = CASE WHEN ? = 1 THEN ? ELSE target.otHrs END,
+                        remarks = CASE WHEN ? = 1 THEN ? ELSE target.remarks END,
+                        updatedBy = ?, updatedAt = GETDATE()
                     WHEN NOT MATCHED THEN INSERT (rowKey, entryDate, presentCount, otHrs, remarks, updatedBy, createdAt, updatedAt)
                         VALUES (?, CONVERT(DATE, ?, 23), ?, ?, ?, ?, GETDATE(), GETDATE());
                 `, [
                     rowKey, entry.date,
-                    entry.presentCount, entry.otHrs, entry.remarks ?? null, updatedBy ?? null,
-                    rowKey, entry.date, entry.presentCount, entry.otHrs, entry.remarks ?? null, updatedBy ?? null,
+                    flag(entry.presentCount), entry.presentCount ?? 0,
+                    flag(entry.otHrs), entry.otHrs ?? 0,
+                    flag(entry.remarks), entry.remarks ?? null,
+                    updatedBy ?? null,
+                    rowKey, entry.date, entry.presentCount ?? 0, entry.otHrs ?? 0, entry.remarks ?? null, updatedBy ?? null,
                 ]);
             }
         });

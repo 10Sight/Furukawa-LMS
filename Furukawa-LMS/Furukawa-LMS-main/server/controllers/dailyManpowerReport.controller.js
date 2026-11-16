@@ -185,27 +185,37 @@ const toNonNegative = (value, name, { integer }) => {
     return integer ? n : Math.round(n * 100) / 100;
 };
 
+// Partial update: a field left out of the payload (undefined) keeps its stored value, so an inline
+// edit of one cell can't overwrite other cells with stale client data.
+const optionalNonNegative = (source, key, name, opts) => (
+    source && Object.prototype.hasOwnProperty.call(source, key) && source[key] !== undefined
+        ? toNonNegative(source[key], name, opts)
+        : undefined
+);
+
 export const saveTrainingInputs = asyncHandler(async (req, res) => {
-    const { year, monthNumber } = parseMonth({ year: req.body?.year, month: req.body?.month });
+    const body = req.body || {};
+    const { year, monthNumber } = parseMonth({ year: body.year, month: body.month });
     const { all } = monthRange(year, monthNumber);
     const monthDates = new Set(all);
 
-    const entries = (Array.isArray(req.body?.entries) ? req.body.entries : []).map((e) => {
+    const entries = (Array.isArray(body.entries) ? body.entries : []).map((e) => {
         const date = String(e?.date || "");
         if (!monthDates.has(date)) throw new ApiError(`Date ${date || "(empty)"} is not in ${year}-${String(monthNumber).padStart(2, "0")}`, 400);
+        const hasRemarks = e && Object.prototype.hasOwnProperty.call(e, "remarks") && e.remarks !== undefined;
         return {
             date,
-            presentCount: toNonNegative(e?.presentCount, `Present on ${date}`, { integer: true }),
-            otHrs: toNonNegative(e?.otHrs, `OT hours on ${date}`, { integer: false }),
-            remarks: e?.remarks ? String(e.remarks).slice(0, 500) : null,
+            presentCount: optionalNonNegative(e, "presentCount", `Present on ${date}`, { integer: true }),
+            otHrs: optionalNonNegative(e, "otHrs", `OT hours on ${date}`, { integer: false }),
+            remarks: hasRemarks ? (e.remarks ? String(e.remarks).slice(0, 500) : null) : undefined,
         };
     });
 
     await DailyManpowerManualEntry.saveTrainingInputs({
         year,
         monthNumber,
-        requiredFN01: toNonNegative(req.body?.requiredFN01, "Indent 01 required", { integer: true }),
-        requiredFN02: toNonNegative(req.body?.requiredFN02, "Indent 16 required", { integer: true }),
+        requiredFN01: optionalNonNegative(body, "requiredFN01", "Indent 01 required", { integer: true }),
+        requiredFN02: optionalNonNegative(body, "requiredFN02", "Indent 16 required", { integer: true }),
         entries,
     }, req.user?.id);
 

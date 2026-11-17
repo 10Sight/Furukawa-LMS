@@ -186,16 +186,17 @@ function getPortalUser() {
       const u = typeof raw === 'object' ? raw : JSON.parse(raw);
       const role = u.role || (u.isAdmin ? 'ADMIN' : 'EMPLOYEE');
       const isAdmin = Boolean(
-        u.isAdmin ||
+        u.isAdmin === true ||
+        u.isAdmin === 1 ||
         String(role).toUpperCase() === 'ADMIN' ||
         String(role).toUpperCase() === 'SUPERADMIN'
       );
       return {
         id: u.id || u._id || 1,
-        username: u.userName || u.username || 'ST080014',
-        name: u.fullName || u.name || u.userName || 'ST080014',
-        employeeId: u.employeeId || u.empId || u.idCard || 'EMP0080',
-        department: u.department?.name || (typeof u.department === 'string' ? u.department : '') || 'Assembly',
+        username: u.userName || u.username || u.name || '',
+        name: u.fullName || u.name || u.userName || '',
+        employeeId: u.employeeId || u.empId || u.empCode || u.code || u.idCard || '',
+        department: u.department?.name || (typeof u.department === 'string' ? u.department : '') || u.deptName || 'Assembly',
         role: role,
         isAdmin: isAdmin,
       };
@@ -214,15 +215,15 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
     if (embedded || cmsIntegration) {
       const portalUser = getPortalUser();
       if (portalUser) return portalUser;
-      // Default fallback user for embedded CMS mode
+      // Default fallback user for embedded CMS mode (non-admin by default until context received)
       return {
-        id: 1,
-        username: 'ST080014',
-        name: 'ST080014',
-        employeeId: 'EMP0080',
+        id: 0,
+        username: '',
+        name: '',
+        employeeId: '',
         department: 'Assembly',
-        role: 'admin',
-        isAdmin: true,
+        role: 'EMPLOYEE',
+        isAdmin: false,
       };
     }
     return null;
@@ -241,15 +242,23 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
         const role = u.role || (u.isAdmin ? 'ADMIN' : 'EMPLOYEE');
         const adminStatus = Boolean(
           u.isAdmin === true ||
+          u.isAdmin === 1 ||
           String(role).toUpperCase() === 'ADMIN' ||
           String(role).toUpperCase() === 'SUPERADMIN'
         );
-        setCurrentUser((prev) => ({
-          ...(prev || {}),
-          ...u,
-          role,
+        const mappedUser = {
+          id: u.id || 1,
+          username: u.username || u.name || u.code || '',
+          name: u.name || u.fullName || u.username || '',
+          employeeId: u.code || u.employeeId || u.empId || '',
+          department: u.department || u.deptName || 'Assembly',
+          role: role,
           isAdmin: adminStatus,
-        }));
+        };
+        try {
+          localStorage.setItem('ptm_auth_user', JSON.stringify(mappedUser));
+        } catch {}
+        setCurrentUser(mappedUser);
       }
     };
     window.addEventListener('message', handleContextMessage);

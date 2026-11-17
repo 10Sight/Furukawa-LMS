@@ -55,7 +55,7 @@ const normalizeAllowedPages = (user) => {
 export const isQuizRoute = (pathname = "") =>
     pathname.includes("/quiz/") || pathname.includes("/take-test/");
 
-export const canOpenPage = (key, user) => !hasRestrictions(user) || normalizeAllowedPages(user).includes(key);
+export const canOpenPage = (key, user) => key === 'cms-ptm' || !hasRestrictions(user) || normalizeAllowedPages(user).includes(key);
 
 export const hasRestrictions = (user) => {
     if (!user) return false;
@@ -123,7 +123,7 @@ export const getAllowedPagesForLayout = (layout, user) => {
     if (layout === 'trainer' && user?.isTrainer) return layoutPages;
 
     const allowed = new Set(normalizeAllowedPages(user));
-    return layoutPages.filter((p) => allowed.has(p.key));
+    return layoutPages.filter((p) => p.key === 'cms-ptm' || allowed.has(p.key));
 };
 
 export const filterTabsByAllowedPages = (tabs, layout, user) => {
@@ -131,6 +131,8 @@ export const filterTabsByAllowedPages = (tabs, layout, user) => {
     const allowed = new Set(normalizeAllowedPages(user));
 
     return tabs.filter((tab) => {
+        if (tab.key === 'cms-ptm' || tab.link === '/cms/ptm') return true;
+
         // ALWAYS allow the layout root (Dashboard) by default ONLY if not restricted
         // If restricted, they must have explicit access to the dashboard key
         const rootPath = `/${layout}`;
@@ -142,11 +144,12 @@ export const filterTabsByAllowedPages = (tabs, layout, user) => {
             if (tab.isDynamic) return true;
             return false; // Hide pages not in registry
         }
-        return allowed.has(page.key);
+        return page.key === 'cms-ptm' || allowed.has(page.key);
     });
 };
 
 export const isPathAllowedForUser = (pathname, layout, user) => {
+    if (pathname === '/cms/ptm' || pathname.startsWith('/cms/ptm/') || pathname === '/portal/ptm' || pathname.startsWith('/portal/ptm/')) return true;
     if (!hasRestrictions(user)) return true;
     if (layout === 'student' && user?.isEmployee) return true;
     if (layout === 'trainer' && user?.isTrainer) return true;
@@ -178,13 +181,14 @@ export const isPathAllowedForUser = (pathname, layout, user) => {
     }
 
     const pageKey = getKeyByPath(pathname, layout);
+    if (pageKey === 'cms-ptm') return true;
     if (!pageKey) {
         // Fallback: Check if the path is within any layout the user has access to
         // This handles cases where a user in Layout A is accessing a page from Layout B
         const otherLayouts = ['admin', 'dashboard', 'trainer', 'student', 'cms', 'daily-meeting'].filter(l => l !== layout);
         for (const l of otherLayouts) {
             const k = getKeyByPath(pathname, l);
-            if (k && normalizeAllowedPages(user).includes(k)) return true;
+            if (k && (k === 'cms-ptm' || normalizeAllowedPages(user).includes(k))) return true;
         }
 
         // Allow common dynamic paths if we can't map them but they are within the layout
@@ -210,13 +214,14 @@ export const getSidebarTabs = (currentLayout, user, t, hasPrivilege = () => true
 
     // A page is shown if:
     // 1. It belongs to the current layout OR the user has explicit cross-layout access to it
-    // 2. The user is not restricted OR the page key is in allowedPages
+    // 2. The user is not restricted OR the page key is in allowedPages OR the page is globally visible (PTM)
     // 3. It's not the root dashboard of a DIFFERENT layout
     // 4. The user has the required privilege (if any)
 
     const tabs = sidebarPages.filter(p => {
         const isCurrentLayout = p.layout === currentLayout;
-        const isAllowed = !isRestricted || allowedKeys.has(p.key) || (p.layout === 'student' && user?.isEmployee) || (p.layout === 'trainer' && user?.isTrainer);
+        const isPtm = p.key === "cms-ptm";
+        const isAllowed = !isRestricted || isPtm || allowedKeys.has(p.key) || (p.layout === 'student' && user?.isEmployee) || (p.layout === 'trainer' && user?.isTrainer);
         const isPrivileged = !p.privilege || hasPrivilege(p.privilege);
 
         // Root dashboard rule: Only show the dashboard of the CURRENT layout
@@ -229,8 +234,8 @@ export const getSidebarTabs = (currentLayout, user, t, hasPrivilege = () => true
         }
 
         // Condition 2: If we are in the unified 'custom' layout, show pages across
-        // all layouts that are explicitly granted via the custom role.
-        const isExplicitlyAllowed = user?.customRole && allowedKeys.has(p.key);
+        // all layouts that are explicitly granted via the custom role, or globally visible pages.
+        const isExplicitlyAllowed = isPtm || (user?.customRole && allowedKeys.has(p.key));
         return isExplicitlyAllowed && isPrivileged && !isOtherLayoutDashboard;
     });
 
@@ -358,6 +363,8 @@ export const PAGE_REGISTRY = [
     { layout: "admin", prefix: "/admin/attempt-evaluation-test/", key: "dojo-hiring" },
     { layout: "admin", prefix: "/admin/view-evaluation-attempt/", key: "dojo-hiring" },
     { layout: "cms", prefix: "/cms/abnormal-condition", key: "abnormal-condition" },
+    { layout: "cms", prefix: "/cms/ptm", key: "cms-ptm" },
+    { layout: "custom", prefix: "/portal/ptm", key: "cms-ptm" },
 
     // Trainer layout
     { key: "trainer-dashboard", label: "Dashboard", labelKey: "nav.dashboard", layout: "trainer", link: "/trainer", icon: "IconLayoutDashboardFilled" },

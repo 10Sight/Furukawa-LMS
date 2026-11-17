@@ -9,7 +9,15 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-export const PDCA_STORE_PATH = path.join(__dirname, "pdca_persistence_store.json");
+const LEGACY_PDCA_STORE_PATH = path.join(__dirname, "pdca_persistence_store.json");
+export const PDCA_STORE_PATH = path.join(__dirname, "pdca_runtime_store.json");
+if (!fs.existsSync(PDCA_STORE_PATH) && fs.existsSync(LEGACY_PDCA_STORE_PATH)) {
+    try {
+        fs.copyFileSync(LEGACY_PDCA_STORE_PATH, PDCA_STORE_PATH);
+    } catch {
+        // Fallback to reading/creating PDCA_STORE_PATH
+    }
+}
 
 /**
  * Checks if the central MSSQL pool is connected and active

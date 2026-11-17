@@ -451,7 +451,7 @@ export default function PDCAMonthlyGraph({
   // Yearly usually has only a few slots: size it to its content (drawn at natural size,
   // centered) instead of stretching one or two columns across the whole card.
   const isCompactChart = viewTimeframe === 'yearly';
-  const graphWidth = isCompactChart
+  const graphWidth = isCompactChart // 
     ? Math.max(300, slotCount * minSlotWidth)
     : Math.max(880, slotCount * minSlotWidth);
   const svgWidth = graphWidth + padding.left + padding.right;

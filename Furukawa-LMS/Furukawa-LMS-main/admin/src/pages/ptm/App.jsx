@@ -313,11 +313,52 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
   const [listItems, setListItems] = useState(() => {
     try {
       const saved = localStorage.getItem('ptm_dashboard_items');
-      return saved ? JSON.parse(saved) : initialPTMData;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          const cleaned = parsed.filter(item => {
+            if (!item || !item.id) return false;
+            if (/^PTM-(?:GJ|BW)-(?:101|102|103|104|105|106|107|108|109|110|111|112|246|962)$/i.test(item.id)) return false;
+            const topic = (item.topic || '').trim().toLowerCase();
+            if (topic === 'testing' || topic === 'jhbi;.kjblhjb' || topic.includes('die-casting cycle time') || topic.includes('stamping tool changeover') || topic.includes('reduction of solder bridge')) return false;
+            return true;
+          });
+          return cleaned;
+        }
+      }
+      return initialPTMData;
     } catch {
       return initialPTMData;
     }
   });
+
+  useEffect(() => {
+    try {
+      const dummyIds = [
+        'PTM-GJ-101', 'PTM-BW-102', 'PTM-GJ-103', 'PTM-BW-104', 'PTM-GJ-105', 'PTM-BW-106',
+        'PTM-GJ-107', 'PTM-BW-108', 'PTM-GJ-109', 'PTM-BW-110', 'PTM-GJ-111', 'PTM-BW-112',
+        'PTM-BW-246', 'PTM-BW-962'
+      ];
+      dummyIds.forEach(id => {
+        localStorage.removeItem(`ptm_rows_item_${id}`);
+        localStorage.removeItem(`ptm_header_info_item_${id}`);
+      });
+      const raw = localStorage.getItem('ptm_dashboard_items');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          const cleaned = parsed.filter(item => {
+            if (!item || !item.id) return false;
+            if (/^PTM-(?:GJ|BW)-(?:101|102|103|104|105|106|107|108|109|110|111|112|246|962)$/i.test(item.id)) return false;
+            const topic = (item.topic || '').trim().toLowerCase();
+            if (topic === 'testing' || topic === 'jhbi;.kjblhjb' || topic.includes('die-casting cycle time') || topic.includes('stamping tool changeover') || topic.includes('reduction of solder bridge')) return false;
+            return true;
+          });
+          localStorage.setItem('ptm_dashboard_items', JSON.stringify(cleaned));
+        }
+      }
+    } catch {}
+  }, []);
 
   useEffect(() => {
     try {
@@ -331,7 +372,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
   useEffect(() => {
     if (!currentUser) return;
     ptmApi.getAll().then((res) => {
-      if (res && res.success && Array.isArray(res.data) && res.data.length > 0) {
+      if (res && res.success && Array.isArray(res.data)) {
         setListItems(res.data);
       }
     }).catch((err) => {

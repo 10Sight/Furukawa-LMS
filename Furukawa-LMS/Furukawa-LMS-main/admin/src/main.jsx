@@ -34,27 +34,27 @@ window.addEventListener('pageshow', (event) => {
 });
 
 authSession.initialize().then(() => {
-store.dispatch(restoreSession());
-root.render(
-  <Provider store={store}>
-    <AuthProvider>
-      <SocketProvider>
-        <App />
-        <Toaster
-          position="bottom-right"
-          richColors
-          closeButton
-          expand={true}
-          duration={4000}
-          toastOptions={{
-            style: {
-              borderRadius: '12px',
-              fontSize: '14px',
-            },
-          }}
-        />
-      </SocketProvider>
-    </AuthProvider>
-  </Provider>,
-)
+  store.dispatch(restoreSession());
+  root.render(
+    <Provider store={store}>
+      <AuthProvider>
+        <SocketProvider>
+          <App />
+          <Toaster
+            position="bottom-right"
+            richColors
+            closeButton
+            expand={true}
+            duration={4000}
+            toastOptions={{
+              style: {
+                borderRadius: '12px',
+                fontSize: '14px',
+              },
+            }}
+          />
+        </SocketProvider>
+      </AuthProvider>
+    </Provider>,
+  )
 });

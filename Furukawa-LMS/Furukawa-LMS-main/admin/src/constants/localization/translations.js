@@ -70,6 +70,7 @@ export const translations = {
     "nav.dailyProductionReport": "DPR Report",
     "nav.abnormalCondition": "Abnormal Condition",
     "nav.suggestionChecksheet": "Suggestion Checksheet",
+    "nav.calibration": "Calibration",
     "nav.dailyMeeting": "Management Information System",
     "nav.dprManage": "DPR Setup",
     "nav.mentors": "Mentors",

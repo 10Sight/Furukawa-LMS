@@ -358,6 +358,7 @@ export const PAGE_REGISTRY = [
     { layout: "admin", prefix: "/admin/attempt-evaluation-test/", key: "dojo-hiring" },
     { layout: "admin", prefix: "/admin/view-evaluation-attempt/", key: "dojo-hiring" },
     { layout: "cms", prefix: "/cms/abnormal-condition", key: "abnormal-condition" },
+    { layout: "cms", prefix: "/cms/calibration", key: "cms-calibration" },
 
     // Trainer layout
     { key: "trainer-dashboard", label: "Dashboard", labelKey: "nav.dashboard", layout: "trainer", link: "/trainer", icon: "IconLayoutDashboardFilled" },
@@ -405,6 +406,7 @@ export const PAGE_REGISTRY = [
     { key: "cms-process-audit", label: "Process Audit", layout: "cms", link: "/cms/process-audit", icon: "IconCircleCheck" },
     { key: "cms-lpa", label: "LPA", layout: "cms", link: "/cms/lpa", icon: "IconTable" },
     { key: "cms-suggestion-checksheet", label: "Suggestion Checksheet", labelKey: "nav.suggestionChecksheet", layout: "cms", link: "/cms/suggestion-checksheet", icon: "IconClipboardCheck" },
+    { key: "cms-calibration", label: "Calibration", labelKey: "nav.calibration", layout: "cms", link: "/cms/calibration", icon: "IconGauge" },
     { key: "cms-man-machine-interlink", label: "Man-Machine Interlink", layout: "cms", link: MAN_MACHINE_INTERLINK_URL, icon: "IconSettings", newTab: true },
 
     // MIS Portal layout

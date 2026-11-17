@@ -41,6 +41,7 @@ import {
     IconTrash,
     IconCalendar,
     IconBuildingFactory2,
+    IconGauge,
 } from "@tabler/icons-react";
 
 export const ICON_REGISTRY = {
@@ -86,6 +87,7 @@ export const ICON_REGISTRY = {
     IconTrash,
     IconCalendar,
     IconBuildingFactory2,
+    IconGauge,
 };
 
 export const getIcon = (name) => {

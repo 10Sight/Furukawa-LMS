@@ -18,6 +18,7 @@ const DashboardLayout = lazy(() => import("../components/layout/DashboardLayout.
 const FmeDashboardPage = lazy(() => import("../pages/cms/FmeDashboardPage.jsx"));
 const LpaPage = lazy(() => import("../pages/lpa/LpaPage.jsx"));
 const SuggestionChecksheetPage = lazy(() => import("../pages/suggestion-checksheet/SuggestionChecksheetPage.jsx"));
+const CalibrationPage = lazy(() => import("../pages/calibration/CalibrationPage.jsx"));
 const CmsLayout = lazy(() => import("../components/layout/CmsLayout.jsx").then(m => ({ default: m.CmsLayout })));
 const CustomRoleLayout = lazy(() => import("../components/layout/CustomRoleLayout.jsx").then(m => ({ default: m.CustomRoleLayout })));
 const DailyMeetingLayout = lazy(() => import("../components/layout/DailyMeetingLayout.jsx").then(m => ({ default: m.DailyMeetingLayout })));
@@ -427,6 +428,8 @@ const AppRoutes = () => {
             <Route path="contractors/:contractorId" element={<ContractorDetail />} />
             <Route path="designations" element={<DesignationsPage />} />
             <Route path="designations/:designationName" element={<DesignationUsersPage />} />
+            <Route path="calibration" element={<CalibrationPage />} />
+            <Route path="calibration/:tab" element={<CalibrationPage />} />
 
             <Route path="settings" element={<AdminSettings />} />
             <Route path="data-management" element={<DataManagement />} />
@@ -478,6 +481,8 @@ const AppRoutes = () => {
               </RequireAccess>
             } />
             <Route path="suggestion-checksheet" element={<SuggestionChecksheetPage />} />
+            <Route path="calibration" element={<CalibrationPage />} />
+            <Route path="calibration/:tab" element={<CalibrationPage />} />
           </Route>
 
           {/* Daily Meeting Layout Routes */}
@@ -708,6 +713,8 @@ const AppRoutes = () => {
             <Route path="learning/:id" element={<LearningComparisonDetail />} />
             <Route path="designations" element={<DesignationsPage />} />
             <Route path="designations/:designationName" element={<DesignationUsersPage />} />
+            <Route path="calibration" element={<CalibrationPage />} />
+            <Route path="calibration/:tab" element={<CalibrationPage />} />
 
           </Route>
 

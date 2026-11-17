@@ -51,7 +51,7 @@ export default function FmeDashboardPage({ page }) {
         error: false,
     };
     const publishUserContext = useCallback(() => {
-        if (page === 'pdca' && frameRef.current?.contentWindow) {
+        if ((page === 'pdca' || page === 'ptm') && frameRef.current?.contentWindow) {
             frameRef.current.contentWindow.postMessage({ type: 'fme-cms-user-context', ...contextRef.current }, window.location.origin);
         }
     }, [page]);

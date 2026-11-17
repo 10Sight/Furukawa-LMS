@@ -3715,6 +3715,84 @@ export default function PDCASheet({
     return { units, deptsByUnit };
   };
 
+  // Helper to extract all responsible person departments for a row
+  const getRowResponsibleDepartments = useCallback((row) => {
+    if (!row) return [];
+    const depts = new Set();
+    const { deptsByUnit } = getResponsiblePersonStructure(row);
+    if (deptsByUnit) {
+      Object.values(deptsByUnit).forEach((dList) => {
+        if (Array.isArray(dList)) {
+          dList.forEach((d) => {
+            if (d && typeof d === 'string' && d.trim() && d.trim() !== 'CFT') {
+              depts.add(d.trim());
+            }
+          });
+        }
+      });
+    }
+    if (row.respDeptsByUnit && typeof row.respDeptsByUnit === 'object') {
+      Object.values(row.respDeptsByUnit).forEach((dList) => {
+        if (Array.isArray(dList)) {
+          dList.forEach((d) => {
+            if (d && typeof d === 'string' && d.trim() && d.trim() !== 'CFT') {
+              depts.add(d.trim());
+            }
+          });
+        }
+      });
+    }
+    if (row.responsiblePersonDept && typeof row.responsiblePersonDept === 'string') {
+      row.responsiblePersonDept.split(/[,;/]/).forEach((d) => {
+        const trimmed = d.trim();
+        if (trimmed && trimmed !== 'CFT') depts.add(trimmed);
+      });
+    }
+    if (Array.isArray(row.staffEmployees)) {
+      row.staffEmployees.forEach((emp) => {
+        if (emp?.department && typeof emp.department === 'string' && emp.department.trim() && emp.department.trim() !== 'CFT') {
+          depts.add(emp.department.trim());
+        }
+      });
+    }
+    if (depts.size === 0 && row.staffEmployee) {
+      const d = findEmployeeDepartment(row.staffEmployee, dbEmployees) || findEmployeeDepartment(row.staffEmployee, VERIFIED_EMPLOYEE_MASTER);
+      if (d && d !== 'CFT') depts.add(d);
+    }
+    return Array.from(depts);
+  }, [dbEmployees]);
+
+  // Responsible Person Department Column Header multi-select filter state
+  const [respDeptFilters, setRespDeptFilters] = useState([]);
+  const [isRespDeptFilterOpen, setIsRespDeptFilterOpen] = useState(false);
+  const [deptFilterSearch, setDeptFilterSearch] = useState('');
+  const respDeptFilterRef = useRef(null);
+
+  useEffect(() => {
+    if (!isRespDeptFilterOpen) return undefined;
+    const handleOutside = (e) => {
+      if (respDeptFilterRef.current && !respDeptFilterRef.current.contains(e.target)) {
+        setIsRespDeptFilterOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [isRespDeptFilterOpen]);
+
+  const allDepartmentOptions = useMemo(() => {
+    const set = new Set(PDCA_DEPARTMENTS);
+    rows.forEach((r) => {
+      getRowResponsibleDepartments(r).forEach((d) => set.add(d));
+    });
+    return Array.from(set);
+  }, [rows, getRowResponsibleDepartments]);
+
+  const filteredDeptOptions = useMemo(() => {
+    if (!deptFilterSearch.trim()) return allDepartmentOptions;
+    const q = deptFilterSearch.trim().toLowerCase();
+    return allDepartmentOptions.filter((d) => d.toLowerCase().includes(q));
+  }, [allDepartmentOptions, deptFilterSearch]);
+
   const handleResponsibleUnitsChange = (rowIndex, newUnits) => {
     setRows((prev) => {
       const updated = [...prev];
@@ -6153,8 +6231,114 @@ export default function PDCASheet({
               <th className="py-1 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 w-[110px] min-w-[100px]">
                 Unit
               </th>
-              <th className="py-1 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 w-[145px] min-w-[135px]">
-                Dept
+              <th
+                ref={respDeptFilterRef}
+                className="relative py-1 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 w-[145px] min-w-[135px] select-none"
+              >
+                <div className="flex items-center justify-center gap-1 font-bold text-slate-800">
+                  <span>Dept</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsRespDeptFilterOpen((prev) => !prev);
+                    }}
+                    title={respDeptFilters.length > 0 ? `Filtered by: ${respDeptFilters.join(', ')}` : 'Filter by Department'}
+                    className={`ml-0.5 p-0.5 rounded transition-colors cursor-pointer flex items-center justify-center ${
+                      respDeptFilters.length > 0
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'text-slate-500 hover:text-blue-600 hover:bg-slate-200/70'
+                    }`}
+                  >
+                    <Filter className="w-3.5 h-3.5 stroke-[2.5]" />
+                  </button>
+                  {respDeptFilters.length > 0 && (
+                    <span className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold text-white bg-blue-600 rounded-full">
+                      {respDeptFilters.length}
+                    </span>
+                  )}
+                </div>
+
+                {/* Responsible Person Department Multi-select Filter Popover */}
+                {isRespDeptFilterOpen && (
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-50 w-56 bg-white rounded-xl shadow-xl border border-slate-200 p-2.5 text-left text-xs font-normal"
+                    style={{ minWidth: '220px' }}
+                  >
+                    <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-slate-100">
+                      <span className="font-bold text-slate-800 text-[12px] flex items-center gap-1">
+                        <Filter className="w-3 h-3 text-blue-600" /> Filter Department
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setIsRespDeptFilterOpen(false)}
+                        className="text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    {/* Department search */}
+                    <div className="relative mb-2">
+                      <Search className="w-3 h-3 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={deptFilterSearch}
+                        onChange={(e) => setDeptFilterSearch(e.target.value)}
+                        placeholder="Search department..."
+                        className="w-full bg-slate-50 border border-slate-200 rounded-md pl-6 pr-2 py-1 text-[11px] text-slate-700 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500"
+                      />
+                    </div>
+
+                    {/* Department Checkboxes List */}
+                    <div className="space-y-1 py-1 max-h-48 overflow-y-auto pr-0.5">
+                      {filteredDeptOptions.map((dept) => {
+                        const isChecked = respDeptFilters.includes(dept);
+                        return (
+                          <label
+                            key={dept}
+                            className={`flex items-center gap-2 px-1.5 py-1 rounded-md cursor-pointer select-none transition-colors ${
+                              isChecked ? 'bg-blue-50 text-blue-800 font-semibold' : 'text-slate-700 hover:bg-slate-50'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {
+                                setRespDeptFilters((prev) =>
+                                  prev.includes(dept) ? prev.filter((d) => d !== dept) : [...prev, dept]
+                                );
+                              }}
+                              className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                            />
+                            <span className="text-[12px] truncate">{dept}</span>
+                          </label>
+                        );
+                      })}
+                      {filteredDeptOptions.length === 0 && (
+                        <div className="py-2 text-center text-slate-400 text-[11px]">No departments found</div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2 mt-1 border-t border-slate-100 text-[11px]">
+                      <button
+                        type="button"
+                        onClick={() => setRespDeptFilters([...allDepartmentOptions])}
+                        className="text-blue-600 hover:text-blue-800 font-semibold cursor-pointer"
+                      >
+                        Select All
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRespDeptFilters([])}
+                        className="text-slate-500 hover:text-slate-800 font-semibold cursor-pointer"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                )}
               </th>
               <th className="py-1 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 w-[160px] min-w-[150px]">
                 <span>Staff Name</span> <span className="text-red-500 font-bold">*</span>
@@ -6189,6 +6373,13 @@ export default function PDCASheet({
                 if (statusFilters.length > 0) {
                   const rowStatus = getRowStatusForFilter(row);
                   if (!statusFilters.includes(rowStatus)) return null;
+                }
+
+                // Department Filter rule (Responsible Person Dept): display ONLY points matching selected departments
+                if (respDeptFilters.length > 0) {
+                  const rowDepts = getRowResponsibleDepartments(row);
+                  const matches = rowDepts.some((d) => respDeptFilters.includes(d));
+                  if (!matches) return null;
                 }
 
                 const sNo = idx + 1;
@@ -7615,6 +7806,26 @@ export default function PDCASheet({
                             className="mt-1 px-3 py-1 text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 cursor-pointer"
                           >
                             Clear Status Filter
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+
+                if (respDeptFilters.length > 0 && candidateRows.length > 0) {
+                  return (
+                    <tr>
+                      <td colSpan={totalCols} className="py-8 text-center text-slate-500 bg-slate-50/50">
+                        <div className="flex flex-col items-center justify-center gap-2">
+                          <Filter className="w-8 h-8 text-blue-500" />
+                          <span className="font-semibold text-slate-700">No PDCA points match the selected department filter ({respDeptFilters.join(', ')}).</span>
+                          <button
+                            type="button"
+                            onClick={() => setRespDeptFilters([])}
+                            className="mt-1 px-3 py-1 text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 cursor-pointer"
+                          >
+                            Clear Department Filter
                           </button>
                         </div>
                       </td>

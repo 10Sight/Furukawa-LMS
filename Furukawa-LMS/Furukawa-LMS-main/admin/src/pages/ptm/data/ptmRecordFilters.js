@@ -117,41 +117,56 @@ export function evaluatePtmRowStatus(row, currentDate = new Date()) {
   // Active target deadline to meet
   const targetDeadline = revised || endPlan;
 
-  let hitMiss = row.hitMiss || '';
+  // Once HIT/MISS is filled for the first time, it cannot be changed
+  const existingHitMiss = (row.hitMiss === 'HIT' || row.hitMiss === 'MISS') ? row.hitMiss : '';
+  let hitMiss = existingHitMiss || '';
   let status = normalizePtmStatus(row.status || 'Not-Started');
+
+  // Done status cannot be filled automatically; it can only be set manually by sheet creator/admin.
+  // If the sheet creator/admin already manually set status to 'Done', preserve it.
+  const isManuallyDone = status === 'Done';
 
   // Rule 1: When End Date (Actual) is filled
   if (endActual) {
     if (targetDeadline) {
       if (endActual <= targetDeadline) {
         hitMiss = 'HIT';
-        status = 'Done';
+        status = isManuallyDone ? 'Done' : (status === 'Delay' ? 'In-Progress' : status);
       } else {
         hitMiss = 'MISS';
-        status = 'Delay';
+        status = isManuallyDone ? 'Done' : 'Delay';
       }
     } else {
       hitMiss = 'HIT';
-      status = 'Done';
+      status = isManuallyDone ? 'Done' : status;
     }
   } else {
     // End Date (Actual) is NOT filled yet
     if (targetDeadline && today > targetDeadline) {
       // Deadline has passed without completion
       hitMiss = 'MISS';
-      status = 'Delay';
+      status = isManuallyDone ? 'Done' : 'Delay';
     } else if (revised) {
       // Revised date filled, work is ongoing towards new target
       hitMiss = '';
-      status = 'In-Progress';
+      status = isManuallyDone ? 'Done' : 'In-Progress';
     } else if (startActual) {
       // Start date actual selected and not missed
       hitMiss = '';
-      status = 'Not-Started';
+      status = isManuallyDone ? 'Done' : 'Not-Started';
     } else {
       hitMiss = '';
-      status = 'Not-Started';
+      status = isManuallyDone ? 'Done' : 'Not-Started';
     }
+  }
+
+  if (existingHitMiss) {
+    hitMiss = existingHitMiss;
+  }
+
+  // Ensure status never automatically becomes 'Done'
+  if (!isManuallyDone && status === 'Done') {
+    status = 'In-Progress';
   }
 
   return { hitMiss, status };

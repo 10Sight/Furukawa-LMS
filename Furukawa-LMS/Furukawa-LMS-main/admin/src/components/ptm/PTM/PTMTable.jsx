@@ -333,7 +333,7 @@ export default function PTMTable({
     phaseName: 240,
     customerEvent: 120,
     activity: 260,
-    deliverable: 180,
+    deliverable: 220,
     actionTaken: 140,
     remarks: 140,
     actions: DEFAULT_ACTION_COLUMN_WIDTH,
@@ -1090,6 +1090,11 @@ export default function PTMTable({
       if (showToast) showToast('⚠️ You only have permission to edit assigned responsible columns on your row');
       return;
     }
+    // Status column: Only sheet creator / admin can select 'Done' or edit status
+    if (field === 'status' && !hasFullSheetAccess) {
+      if (showToast) showToast('⚠️ Only the sheet creator or admin can update Status');
+      return;
+    }
     if (field === 'reasonOfFailure' && !isRevisedTaken(prevRow?.noOfTimesRevised)) {
       if (showToast) showToast('⚠️ Please select No. of Times Revised first');
       return;
@@ -1131,13 +1136,25 @@ export default function PTMTable({
         field === 'hitMiss'
       ) {
         if (field === 'hitMiss') {
-          if (val === 'HIT') row.status = 'Done';
-          else if (val === 'MISS') row.status = 'Delay';
-          else if (!val) row.status = row.revisedDate ? 'In-Progress' : 'Not-Started';
+          // Once filled for the first time, HIT/MISS cannot be changed
+          if (prevRow?.hitMiss === 'HIT' || prevRow?.hitMiss === 'MISS') {
+            return prev;
+          }
+          // Note: Status is NOT automatically set to 'Done' when HIT is selected; Done can only be selected manually by creator/admin
+          if (val === 'MISS' && row.status !== 'Done') row.status = 'Delay';
+          else if (!val && row.status !== 'Done') row.status = row.revisedDate ? 'In-Progress' : 'Not-Started';
         } else {
           const evalRes = evaluatePtmRowStatus(row);
-          row.status = evalRes.status;
-          row.hitMiss = evalRes.hitMiss;
+          // Preserve Done status if manually set by creator/admin, otherwise use evaluated status (which never auto-sets to Done)
+          if (row.status !== 'Done') {
+            row.status = evalRes.status;
+          }
+          // Preserve HIT/MISS if already filled
+          if (prevRow?.hitMiss === 'HIT' || prevRow?.hitMiss === 'MISS') {
+            row.hitMiss = prevRow.hitMiss;
+          } else {
+            row.hitMiss = evalRes.hitMiss;
+          }
         }
 
         // When row enters Delay or MISS, initialize 1) current date revision if none exists
@@ -1189,13 +1206,19 @@ export default function PTMTable({
 
       const evalRes = evaluatePtmRowStatus(row);
       row.status = evalRes.status;
-      row.hitMiss = evalRes.hitMiss;
+      // Preserve HIT/MISS if already filled
+      if (currentRow.hitMiss === 'HIT' || currentRow.hitMiss === 'MISS') {
+        row.hitMiss = currentRow.hitMiss;
+      } else {
+        row.hitMiss = evalRes.hitMiss;
+      }
 
       // Auto-fetch No. of Times Revised when End Date (Plan) is re-selected or enters Delay/MISS
       const existingRevs = getRowRevisions(row);
       if ((isNewSelection && prevHistory.length >= 1) || ((row.status === 'Delay' || row.hitMiss === 'MISS') && existingRevs.length === 0)) {
         const nextNum = existingRevs.length + 1;
-        const revDateStr = cleanDate || getFormattedCurrentDate();
+        // Show current date when the revision is taken, not the target deadline
+        const revDateStr = getFormattedCurrentDate();
         const newRev = {
           revisionNo: nextNum,
           tag: `${nextNum}) ${revDateStr}`,
@@ -1439,8 +1462,8 @@ export default function PTMTable({
       noOfTimesRevised: '0',
       reasonOfFailure: '',
       actionTaken: '',
-      respUnits: [selectedUnit && ['Bawal', 'Gujrat'].includes(selectedUnit) ? selectedUnit : 'Bawal'],
-      respUnit: selectedUnit && ['Bawal', 'Gujrat'].includes(selectedUnit) ? selectedUnit : 'Bawal',
+      respUnits: [],
+      respUnit: '',
       respDeptsByUnit: {},
       staffEmployees: [],
       staffEmployee: '',
@@ -2207,7 +2230,7 @@ export default function PTMTable({
                           );
                         })}
 
-                        {/* 19. Deliverable Required — Yes/No selector & Upload File Section with 3-Option Popup */}
+                        {/* 19. Deliverable Required — Yes/No selector & Manual Format No. Input & Upload File Section with 3-Option Popup */}
                         <td
                           className={`p-0 ${!canEditCell(row, 'deliverableRequired') ? 'pointer-events-none opacity-75' : ''}`}
                           style={{
@@ -2227,54 +2250,57 @@ export default function PTMTable({
                             </select>
 
                             {(row.deliverableRequired || 'Yes') === 'Yes' ? (
-                              row.deliverableFile ? (
-                                <div className="flex min-w-0 flex-1 items-center justify-between gap-1 rounded bg-blue-50/90 border border-blue-200 px-1.5 py-0.5" title={row.deliverableFile.name}>
-                                  <div className="flex items-center gap-1 min-w-0 truncate">
-                                    {row.deliverableFile.type === 'pdf' ? (
-                                      <FileText className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                                    ) : row.deliverableFile.type === 'excel' ? (
-                                      <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                    ) : (
-                                      <ImageIcon className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                                    )}
-                                    {row.deliverableFile.url ? (
-                                      <a
-                                        href={row.deliverableFile.url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        download={row.deliverableFile.name}
-                                        className="text-xs font-semibold text-blue-700 hover:underline truncate"
-                                      >
-                                        {row.deliverableFile.name}
-                                      </a>
-                                    ) : (
-                                      <span className="text-xs font-semibold text-blue-700 truncate">
+                              <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                                <input
+                                  type="text"
+                                  autoComplete="off"
+                                  autoCorrect="off"
+                                  autoCapitalize="off"
+                                  spellCheck="false"
+                                  value={row.deliverable || ''}
+                                  onChange={(e) => handleCellChange(originalIndex, 'deliverable', e.target.value)}
+                                  placeholder="Put Format no."
+                                  title="Deliverable format number (manual entry)"
+                                  className="min-w-0 flex-1 rounded border border-[#64748B] bg-white px-2 py-1 text-xs font-semibold text-slate-800 placeholder-slate-400 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                />
+
+                                {row.deliverableFile ? (
+                                  <div className="flex min-w-0 items-center gap-1 rounded bg-blue-50/90 border border-blue-200 px-1.5 py-0.5" title={row.deliverableFile.name}>
+                                    <div className="flex items-center gap-1 min-w-0 max-w-[80px] truncate">
+                                      {row.deliverableFile.type === 'pdf' ? (
+                                        <FileText className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                                      ) : row.deliverableFile.type === 'excel' ? (
+                                        <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                      ) : (
+                                        <ImageIcon className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                                      )}
+                                      <span className="text-[11px] font-semibold text-blue-700 truncate">
                                         {row.deliverableFile.name}
                                       </span>
-                                    )}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveDeliverableFile(originalIndex)}
+                                      title="Remove attachment"
+                                      className="p-0.5 rounded text-slate-400 hover:text-rose-600 cursor-pointer shrink-0"
+                                    >
+                                      <X className="w-3 h-3 stroke-[2.5]" />
+                                    </button>
                                   </div>
+                                ) : (
                                   <button
                                     type="button"
-                                    onClick={() => handleRemoveDeliverableFile(originalIndex)}
-                                    title="Remove attachment"
-                                    className="p-0.5 rounded text-slate-400 hover:text-rose-600 cursor-pointer shrink-0"
+                                    onClick={() => setDeliverableModal({ isOpen: true, rowIndex: originalIndex })}
+                                    className="flex items-center gap-1 px-1.5 py-1 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-[11px] font-semibold cursor-pointer transition-colors shadow-2xs shrink-0"
+                                    title="Upload Deliverable (Image, PDF, Excel)"
                                   >
-                                    <X className="w-3 h-3 stroke-[2.5]" />
+                                    <Upload className="w-3 h-3" />
+                                    <span>Upload</span>
                                   </button>
-                                </div>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => setDeliverableModal({ isOpen: true, rowIndex: originalIndex })}
-                                  className="flex items-center gap-1 px-2.5 py-1 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold cursor-pointer transition-colors shadow-2xs"
-                                  title="Upload Deliverable (Image, PDF, Excel)"
-                                >
-                                  <Upload className="w-3.5 h-3.5" />
-                                  <span>Upload</span>
-                                </button>
-                              )
+                                )}
+                              </div>
                             ) : (
-                              <span className="text-xs text-slate-400 italic px-1">Not required</span>
+                              <span className="text-xs text-slate-400 italic px-1 flex-1 text-center">Not required</span>
                             )}
                           </div>
                         </td>
@@ -2342,18 +2368,20 @@ export default function PTMTable({
                             data-row={originalIndex}
                             data-col="endDateActual"
                             placeholder="N/A"
+                            disabled={!canEditCell(row, 'endDateActual')}
                             className="w-full text-center py-2 px-1.5 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm font-mono"
                           />
                         </td>
 
-                        {/* 25. HIT/MISS — Auto-adjusting width (automatically fetched) */}
-                        <td className={`p-0.5 text-center relative w-auto min-w-[78px] whitespace-nowrap ${!canEditCell(row, 'hitMiss') ? 'pointer-events-none opacity-75' : ''}`}>
+                        {/* 25. HIT/MISS — Auto-adjusting width (automatically fetched, immutable once filled) */}
+                        <td className={`p-0.5 text-center relative w-auto min-w-[78px] whitespace-nowrap ${(!canEditCell(row, 'hitMiss') || Boolean(row.hitMiss)) ? 'pointer-events-none opacity-90' : ''}`}>
                           <div className="relative flex items-center justify-center">
                             <select
-                              disabled={!hasFullSheetAccess}
+                              disabled={!hasFullSheetAccess || Boolean(row.hitMiss)}
                               value={row.hitMiss || ''}
                               onChange={(e) => handleCellChange(originalIndex, 'hitMiss', e.target.value)}
-                              className={`appearance-none w-full py-1 pr-3.5 pl-1 rounded text-center text-xs sm:text-sm font-bold transition-all outline-none ${!hasFullSheetAccess ? 'pointer-events-none cursor-default' : 'cursor-pointer'} ${row.hitMiss === 'HIT'
+                              title={row.hitMiss ? `HIT/MISS is set to ${row.hitMiss} and cannot be changed` : 'Select HIT/MISS'}
+                              className={`appearance-none w-full py-1 pr-3.5 pl-1 rounded text-center text-xs sm:text-sm font-bold transition-all outline-none ${(!hasFullSheetAccess || Boolean(row.hitMiss)) ? 'pointer-events-none cursor-default' : 'cursor-pointer'} ${row.hitMiss === 'HIT'
                                 ? 'bg-[#86EFAC] text-[#14532D] shadow-xs'
                                 : row.hitMiss === 'MISS'
                                   ? 'bg-[#FCA5A5] text-[#7F1D1D] shadow-xs'
@@ -2364,7 +2392,7 @@ export default function PTMTable({
                               <option value="HIT" className="bg-[#86EFAC] text-[#14532D] font-bold">HIT</option>
                               <option value="MISS" className="bg-[#FCA5A5] text-[#7F1D1D] font-bold">MISS</option>
                             </select>
-                            <ChevronDown className="w-2.5 h-2.5 absolute right-0.5 pointer-events-none text-slate-500" />
+                            {!row.hitMiss && <ChevronDown className="w-2.5 h-2.5 absolute right-0.5 pointer-events-none text-slate-500" />}
                           </div>
                         </td>
 
@@ -2974,7 +3002,7 @@ export default function PTMTable({
                           );
                         })()}
 
-                        {/* 30. Status (Not-Started / In-Progress / Done / Delay) — View-only freeze */}
+                        {/* 30. Status (Not-Started / In-Progress / Done / Delay) — Done is selectable only manually by sheet creator / admin */}
                         <td
                           className="p-0.5 text-center relative"
                           style={{
@@ -2987,9 +3015,12 @@ export default function PTMTable({
                               const currentStatus = normalizePtmStatus(row.status || 'Not-Started');
                               return (
                                 <select
-                                  disabled
+                                  disabled={!hasFullSheetAccess}
                                   value={currentStatus}
-                                  className={`appearance-none w-full py-1 pr-3.5 pl-1 rounded text-center text-xs sm:text-sm font-semibold outline-none pointer-events-none cursor-default select-none border transition-colors ${
+                                  onChange={(e) => handleCellChange(originalIndex, 'status', e.target.value)}
+                                  className={`appearance-none w-full py-1 pr-3.5 pl-1 rounded text-center text-xs sm:text-sm font-semibold outline-none border transition-colors ${
+                                    !hasFullSheetAccess ? 'pointer-events-none cursor-default select-none' : 'cursor-pointer hover:opacity-90'
+                                  } ${
                                     currentStatus === 'Done'
                                       ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
                                       : currentStatus === 'In-Progress'
@@ -2998,7 +3029,11 @@ export default function PTMTable({
                                           ? 'bg-rose-50 text-rose-700 border-rose-300'
                                           : 'bg-blue-50 text-blue-800 border-blue-300'
                                   }`}
-                                  title="Status is automatically determined and view-only"
+                                  title={
+                                    hasFullSheetAccess
+                                      ? 'Change Status (Done can be marked manually by sheet creator/admin)'
+                                      : 'Status can only be marked as Done by the sheet creator or admin'
+                                  }
                                 >
                                   {PTM_STATUS_OPTIONS.map((opt) => (
                                     <option key={opt.value} value={opt.value} className={opt.color}>
@@ -3008,7 +3043,9 @@ export default function PTMTable({
                                 </select>
                               );
                             })()}
-                            <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 pointer-events-none" />
+                            {hasFullSheetAccess && (
+                              <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 pointer-events-none" />
+                            )}
                           </div>
                         </td>
 

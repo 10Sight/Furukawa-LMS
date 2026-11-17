@@ -76,8 +76,8 @@ function createBlankRow(index, unit = 'Both') {
     noOfTimesRevised: '',
     reasonOfFailure: '',
     actionTaken: '',
-    respUnits: [unit && ['Bawal', 'Gujrat'].includes(unit) ? unit : 'Bawal'],
-    respUnit: unit && ['Bawal', 'Gujrat'].includes(unit) ? unit : 'Bawal',
+    respUnits: [],
+    respUnit: '',
     respDeptsByUnit: {},
     staffEmployees: [],
     staffEmployee: '',
@@ -186,16 +186,17 @@ function getPortalUser() {
       const u = typeof raw === 'object' ? raw : JSON.parse(raw);
       const role = u.role || (u.isAdmin ? 'ADMIN' : 'EMPLOYEE');
       const isAdmin = Boolean(
-        u.isAdmin ||
+        u.isAdmin === true ||
+        u.isAdmin === 1 ||
         String(role).toUpperCase() === 'ADMIN' ||
         String(role).toUpperCase() === 'SUPERADMIN'
       );
       return {
         id: u.id || u._id || 1,
-        username: u.userName || u.username || 'ST080014',
-        name: u.fullName || u.name || u.userName || 'ST080014',
-        employeeId: u.employeeId || u.empId || u.idCard || 'EMP0080',
-        department: u.department?.name || (typeof u.department === 'string' ? u.department : '') || 'Assembly',
+        username: u.userName || u.username || u.name || '',
+        name: u.fullName || u.name || u.userName || '',
+        employeeId: u.employeeId || u.empId || u.empCode || u.code || u.idCard || '',
+        department: u.department?.name || (typeof u.department === 'string' ? u.department : '') || u.deptName || 'Assembly',
         role: role,
         isAdmin: isAdmin,
       };
@@ -214,15 +215,15 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
     if (embedded || cmsIntegration) {
       const portalUser = getPortalUser();
       if (portalUser) return portalUser;
-      // Default fallback user for embedded CMS mode
+      // Default fallback user for embedded CMS mode (non-admin by default until context received)
       return {
-        id: 1,
-        username: 'ST080014',
-        name: 'ST080014',
-        employeeId: 'EMP0080',
+        id: 0,
+        username: '',
+        name: '',
+        employeeId: '',
         department: 'Assembly',
-        role: 'admin',
-        isAdmin: true,
+        role: 'EMPLOYEE',
+        isAdmin: false,
       };
     }
     return null;
@@ -241,15 +242,23 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
         const role = u.role || (u.isAdmin ? 'ADMIN' : 'EMPLOYEE');
         const adminStatus = Boolean(
           u.isAdmin === true ||
+          u.isAdmin === 1 ||
           String(role).toUpperCase() === 'ADMIN' ||
           String(role).toUpperCase() === 'SUPERADMIN'
         );
-        setCurrentUser((prev) => ({
-          ...(prev || {}),
-          ...u,
-          role,
+        const mappedUser = {
+          id: u.id || 1,
+          username: u.username || u.name || u.code || '',
+          name: u.name || u.fullName || u.username || '',
+          employeeId: u.code || u.employeeId || u.empId || '',
+          department: u.department || u.deptName || 'Assembly',
+          role: role,
           isAdmin: adminStatus,
-        }));
+        };
+        try {
+          localStorage.setItem('ptm_auth_user', JSON.stringify(mappedUser));
+        } catch {}
+        setCurrentUser(mappedUser);
       }
     };
     window.addEventListener('message', handleContextMessage);
@@ -304,11 +313,52 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
   const [listItems, setListItems] = useState(() => {
     try {
       const saved = localStorage.getItem('ptm_dashboard_items');
-      return saved ? JSON.parse(saved) : initialPTMData;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          const cleaned = parsed.filter(item => {
+            if (!item || !item.id) return false;
+            if (/^PTM-(?:GJ|BW)-(?:101|102|103|104|105|106|107|108|109|110|111|112|246|962)$/i.test(item.id)) return false;
+            const topic = (item.topic || '').trim().toLowerCase();
+            if (topic === 'testing' || topic === 'jhbi;.kjblhjb' || topic.includes('die-casting cycle time') || topic.includes('stamping tool changeover') || topic.includes('reduction of solder bridge')) return false;
+            return true;
+          });
+          return cleaned;
+        }
+      }
+      return initialPTMData;
     } catch {
       return initialPTMData;
     }
   });
+
+  useEffect(() => {
+    try {
+      const dummyIds = [
+        'PTM-GJ-101', 'PTM-BW-102', 'PTM-GJ-103', 'PTM-BW-104', 'PTM-GJ-105', 'PTM-BW-106',
+        'PTM-GJ-107', 'PTM-BW-108', 'PTM-GJ-109', 'PTM-BW-110', 'PTM-GJ-111', 'PTM-BW-112',
+        'PTM-BW-246', 'PTM-BW-962'
+      ];
+      dummyIds.forEach(id => {
+        localStorage.removeItem(`ptm_rows_item_${id}`);
+        localStorage.removeItem(`ptm_header_info_item_${id}`);
+      });
+      const raw = localStorage.getItem('ptm_dashboard_items');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          const cleaned = parsed.filter(item => {
+            if (!item || !item.id) return false;
+            if (/^PTM-(?:GJ|BW)-(?:101|102|103|104|105|106|107|108|109|110|111|112|246|962)$/i.test(item.id)) return false;
+            const topic = (item.topic || '').trim().toLowerCase();
+            if (topic === 'testing' || topic === 'jhbi;.kjblhjb' || topic.includes('die-casting cycle time') || topic.includes('stamping tool changeover') || topic.includes('reduction of solder bridge')) return false;
+            return true;
+          });
+          localStorage.setItem('ptm_dashboard_items', JSON.stringify(cleaned));
+        }
+      }
+    } catch {}
+  }, []);
 
   useEffect(() => {
     try {
@@ -322,7 +372,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
   useEffect(() => {
     if (!currentUser) return;
     ptmApi.getAll().then((res) => {
-      if (res && res.success && Array.isArray(res.data) && res.data.length > 0) {
+      if (res && res.success && Array.isArray(res.data)) {
         setListItems(res.data);
       }
     }).catch((err) => {

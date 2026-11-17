@@ -697,6 +697,8 @@ const AppRoutes = () => {
             <Route path="daily-meeting/morning-meeting" element={<DailyMeeting />} />
             <Route path="daily-meeting/monthly-report" element={<MonthlyMeetingReport />} />
             <Route path="daily-meeting/it-access-control" element={<ITAccessControlSheet />} />
+            <Route path="ptm" element={<FmeDashboardPage key="ptm" page="ptm" />} />
+            <Route path="ptm/:sheetTopic" element={<FmeDashboardPage key="ptm" page="ptm" />} />
             <Route path="pdca" element={
               <RequireAccess allow="pdca:read">
                 <FmeDashboardPage key="pdca" page="pdca" />

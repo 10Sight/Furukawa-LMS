@@ -129,7 +129,7 @@ const palette = (darkMode) => (darkMode
         negative: "text-red-600",
     });
 
-export default function DailyManpowerReportSheet({ report, visibleDates, darkMode, canEdit, large = false }) {
+export default function DailyManpowerReportSheet({ report, visibleDates, darkMode, canEditTraining, large = false }) {
     const p = palette(darkMode);
     const size = large ? SIZES.large : SIZES.normal;
     const W_SECTION = size.section;
@@ -140,7 +140,7 @@ export default function DailyManpowerReportSheet({ report, visibleDates, darkMod
 
     // ---- Inline Training editing ----
     // Not in the full-screen meeting view, where a stray click while presenting shouldn't open an editor.
-    const editable = Boolean(canEdit && !large && report.training);
+    const editable = Boolean(canEditTraining && !large && report.training);
     const [saveTraining] = useSaveTrainingInputsMutation();
     // { key, field, date, draft, nonce } of the cell being edited (nonce remounts the input).
     const [editing, setEditing] = useState(null);

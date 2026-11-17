@@ -122,6 +122,7 @@ const SYSTEM_PERMISSIONS = {
   // Daily HR Meeting (Daily Manpower Report)
   HR_MEETING_READ: "hr_meeting:read",
   HR_MEETING_UPDATE: "hr_meeting:update",
+  HR_MEETING_TRAINING_EDIT: "hr_meeting:training_edit",
 
   // IT Access Control Register (MIS Portal). Granted only explicitly — see ASSIGNABLE_PORTALS.
   IT_ACCESS_CONTROL_READ: "it_access_control:read",
@@ -678,7 +679,8 @@ export const getRolesAndPermissions = asyncHandler(async (req, res) => {
       ],
       "MIS Portal - Daily HR Meeting": [
         { id: SYSTEM_PERMISSIONS.HR_MEETING_READ, name: "View Daily HR Meeting", description: "View the Daily Manpower Report (present headcount, overtime and gap per department) and export it to Excel" },
-        { id: SYSTEM_PERMISSIONS.HR_MEETING_UPDATE, name: "Edit Daily HR Meeting", description: "Configure report sections, map attendance departments, enter Training figures and recalculate a month. Requires View Daily HR Meeting" }
+        { id: SYSTEM_PERMISSIONS.HR_MEETING_UPDATE, name: "Edit Daily HR Meeting", description: "Configure report sections, map attendance departments and recalculate a month. Requires View Daily HR Meeting" },
+        { id: SYSTEM_PERMISSIONS.HR_MEETING_TRAINING_EDIT, name: "Edit Training Row", description: "Enter and edit the Training row of the Daily Manpower Report (Indent 01 / Indent 16 required, daily Present and OT hours), inline on the sheet or in the Training inputs dialog. Requires View Daily HR Meeting" }
       ],
       "MIS Portal - IT Access Control": [
         { id: SYSTEM_PERMISSIONS.IT_ACCESS_CONTROL_READ, name: "View IT Access Control", description: "View the Access Control Register (system, network, SAP and physical access of ST staff), its change history, and export it to Excel" },

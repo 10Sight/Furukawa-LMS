@@ -70,6 +70,7 @@ export default function DailyHrMeeting({ lockedTab = null, embedded = false, ful
 
     const canRead = hasPermission(user, "hr_meeting:read");
     const canEdit = hasPermission(user, "hr_meeting:update");
+    const canEditTraining = hasPermission(user, "hr_meeting:training_edit");
 
     // The open tab lives in the URL (?tab=manpower | ?tab=handover) so a refresh or a shared link
     // keeps it; anything else falls back to the first tab.
@@ -277,17 +278,15 @@ export default function DailyHrMeeting({ lockedTab = null, embedded = false, ful
                         ))}
                     </div>
                     {canEdit && (
-                        <>
-                            <Button variant="outline" size="sm" onClick={() => openConfig("sections")}><IconSettings /> Configure sections</Button>
-                            {isManpower && (
-                                <>
-                                    <Button variant="outline" size="sm" onClick={() => setTrainingOpen(true)}><IconUsers /> Training inputs</Button>
-                                    <Button variant="outline" size="sm" onClick={handleRecalculate} disabled={recalculating}>
-                                        {recalculating ? <IconLoader2 className="animate-spin" /> : <IconCalculator />} Recalculate month
-                                    </Button>
-                                </>
-                            )}
-                        </>
+                        <Button variant="outline" size="sm" onClick={() => openConfig("sections")}><IconSettings /> Configure sections</Button>
+                    )}
+                    {isManpower && canEditTraining && (
+                        <Button variant="outline" size="sm" onClick={() => setTrainingOpen(true)}><IconUsers /> Training inputs</Button>
+                    )}
+                    {isManpower && canEdit && (
+                        <Button variant="outline" size="sm" onClick={handleRecalculate} disabled={recalculating}>
+                            {recalculating ? <IconLoader2 className="animate-spin" /> : <IconCalculator />} Recalculate month
+                        </Button>
                     )}
                     <Button variant="outline" size="sm" onClick={handleExport} disabled={!activeReport?.dates?.length || exporting}>
                         {exporting ? <IconLoader2 className="animate-spin" /> : <IconDownload />} Export Excel
@@ -332,17 +331,17 @@ export default function DailyHrMeeting({ lockedTab = null, embedded = false, ful
                         report={report}
                         visibleDates={visibleDates}
                         darkMode={darkMode}
-                        canEdit={canEdit}
+                        canEditTraining={canEditTraining}
                         large={fullScreen}
                     />
                 )}
             </div>
 
             {canEdit && (
-                <>
-                    <DepartmentConfigModal open={configOpen} onOpenChange={setConfigOpen} year={year} month={month} darkMode={darkMode} initialTab={configTab} />
-                    <ManualTrainingEditModal open={trainingOpen} onOpenChange={setTrainingOpen} year={year} month={month} darkMode={darkMode} />
-                </>
+                <DepartmentConfigModal open={configOpen} onOpenChange={setConfigOpen} year={year} month={month} darkMode={darkMode} initialTab={configTab} />
+            )}
+            {canEditTraining && (
+                <ManualTrainingEditModal open={trainingOpen} onOpenChange={setTrainingOpen} year={year} month={month} darkMode={darkMode} />
             )}
         </div>
     );

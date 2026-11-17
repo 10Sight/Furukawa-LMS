@@ -19,6 +19,8 @@ router.use(verifyJWT);
 
 const canRead = authorizeRoles("hr_meeting:read", "isAdmin", "SUPERADMIN");
 const canWrite = authorizeRoles("hr_meeting:update", "isAdmin", "SUPERADMIN");
+// The Training row has its own permission, separate from section/attendance configuration.
+const canEditTraining = authorizeRoles("hr_meeting:training_edit", "isAdmin", "SUPERADMIN");
 
 router.get("/data", canRead, getMonthlyReportData);
 router.get("/handover", canRead, getHandoverReportData);
@@ -27,7 +29,7 @@ router.post("/config", canWrite, saveDepartmentConfigs);
 router.get("/attendance-map", canRead, getAttendanceDeptMap);
 router.post("/attendance-map", canWrite, saveAttendanceDeptMap);
 router.get("/training", canRead, getTrainingInputs);
-router.post("/training", canWrite, saveTrainingInputs);
+router.post("/training", canEditTraining, saveTrainingInputs);
 router.post("/recalculate", canWrite, recalculateMonth);
 
 export default router;

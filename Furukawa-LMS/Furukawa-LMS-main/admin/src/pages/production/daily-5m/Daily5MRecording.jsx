@@ -1406,9 +1406,11 @@ const CrimpingRecord = ({ recIndex, formData, initialFormData, handleInputChange
                                         {rowStatus === 'APPROVED' ? <IconCheck size={16} className="stroke-[3]" /> : <IconX size={16} className="stroke-[3]" />}
                                         {rowStatus}
                                     </div>
-                                    <div className="text-[12px] font-bold leading-none">{formData[`rec_${recIndex}_ActionBy`]}</div>
-                                    <div className="text-[10px] opacity-70 whitespace-nowrap">
-                                        {formData[`rec_${recIndex}_ActionAt`] && new Date(formData[`rec_${recIndex}_ActionAt`]).toLocaleDateString()}
+                                    <div
+                                        className="text-[12px] font-bold leading-none"
+                                        title={formData[`rec_${recIndex}_ActionAt`] ? new Date(formData[`rec_${recIndex}_ActionAt`]).toLocaleString() : undefined}
+                                    >
+                                        {formData[`rec_${recIndex}_ActionBy`]}
                                     </div>
                                 </div>
                                 {canApprove && canChangeRowDecision && (
@@ -1597,6 +1599,9 @@ const Daily5MRecording = () => {
     const [addDialogType, setAddDialogType] = useState('standard');
     const [addDialogDate, setAddDialogDate] = useState(new Date().toLocaleDateString('en-CA'));
     const [currentRecordId, setCurrentRecordId] = useState(null);
+    // Set by handleSaveRecord just before it writes ?recordId= to the URL, so the record-loading
+    // effect doesn't re-fetch (and reset the form under the preview dialog) for a record already on screen.
+    const justSavedRecordIdRef = React.useRef(null);
     const [sessionId, setSessionId] = useState(null);
     const [recordStatus, setRecordStatus] = useState('PENDING');
     // Source department/section of a sheet opened through approval routing by a user outside
@@ -1771,9 +1776,19 @@ const Daily5MRecording = () => {
             setTableConfig(null);
             setConfigError(null);
         }
-    }, [selectedDepartment, urlRecordId, location.state?.recordId, isRestricted, assignableSections.length]);
+        // Layout config is department-wide, so a record change (e.g. ?recordId= written after a save)
+        // must not re-fetch it — that toggled loadingConfig and remounted the full-screen sheet on top
+        // of the preview dialog. The record ids are only read above to decide the section reset.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedDepartment, isRestricted, assignableSections.length]);
 
     useEffect(() => {
+        // Record was just saved from the open sheet — it's already loaded, nothing to fetch.
+        if (urlRecordId && justSavedRecordIdRef.current === String(urlRecordId)) {
+            justSavedRecordIdRef.current = null;
+            return;
+        }
+        justSavedRecordIdRef.current = null;
         // Priority 1: Check for recordId in URL search params
         if (urlRecordId) {
             fetchRecordById(urlRecordId).then((loaded) => {
@@ -2500,6 +2515,7 @@ const Daily5MRecording = () => {
                 setCurrentRecordId(saved.id);
                 setSessionId(saved.sessionId);
                 setSavedRevisionInfo({ docNo: saved.docNo, revNo: saved.revNo, revDate: saved.revDate });
+                if (String(urlRecordId) !== String(saved.id)) justSavedRecordIdRef.current = String(saved.id);
                 navigate(`${location.pathname}?recordId=${saved.id}`, { replace: true });
             }
 
@@ -3034,9 +3050,11 @@ const Daily5MRecording = () => {
                                                                                 {rowStatus === 'APPROVED' ? <IconCheck size={14} className="stroke-[3]" /> : <IconX size={14} className="stroke-[3]" />}
                                                                                 {rowStatus}
                                                                             </div>
-                                                                            <div className="text-[11px] font-bold leading-none">{formData[`rec_${recIndex}_ActionBy`]}</div>
-                                                                            <div className="text-[9px] opacity-70 whitespace-nowrap">
-                                                                                {formData[`rec_${recIndex}_ActionAt`] && new Date(formData[`rec_${recIndex}_ActionAt`]).toLocaleDateString()}
+                                                                            <div
+                                                                                className="text-[11px] font-bold leading-none"
+                                                                                title={formData[`rec_${recIndex}_ActionAt`] ? new Date(formData[`rec_${recIndex}_ActionAt`]).toLocaleString() : undefined}
+                                                                            >
+                                                                                {formData[`rec_${recIndex}_ActionBy`]}
                                                                             </div>
                                                                         </div>
                                                                         {canApprove && canChangeRowDecision && !isReview && (
@@ -3175,7 +3193,9 @@ const Daily5MRecording = () => {
     };
 
     // An open recording sheet renders full-screen (portaled below), like the 16-Day sheet.
-    const isFullScreenSheet = Boolean(selectedDepartment && selectedSection && !loadingConfig && !configError && tableConfig && !showFormList);
+    // A background config refetch (tableConfig already present) keeps the sheet mounted rather than
+    // unmounting and re-portaling it to the end of <body>, where it would cover any open dialog.
+    const isFullScreenSheet = Boolean(selectedDepartment && selectedSection && !(loadingConfig && !tableConfig) && !configError && tableConfig && !showFormList);
 
     // Escape closes the full-screen sheet — but not while a dialog/popover/dropdown is open
     // (Escape is closing that instead) or while the user is typing in a cell.

@@ -6,9 +6,43 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/common/ui
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/forms/primitives/select.jsx";
 import { Badge } from "@/components/common/ui/badge.jsx";
 import { Switch } from "@/components/forms/primitives/switch.jsx";
-import { IconMail, IconDeviceFloppy, IconLoader2, IconSettings, IconFilter, IconUserCheck, IconClock } from "@tabler/icons-react";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/common/ui/alert-dialog.jsx";
+import EmailChipInput from "@/components/forms/EmailChipInput.jsx";
+import { normalizeEmails, parseEmails } from "@/components/forms/emailList.js";
+import { IconMail, IconDeviceFloppy, IconLoader2, IconSettings, IconFilter, IconUserCheck, IconClock, IconTrash } from "@tabler/icons-react";
 import axiosInstance from "@/services/requests/axiosInstance.js";
 import { toast } from "sonner";
+
+// Forms whose daily scheduled email is sent per saved department/section row
+// (the schedulers read rows directly, with no fallback to a parent config).
+const SCHEDULED_DIGEST_FORMS = [
+    "Handover Sheet",
+    "16-Day Monitoring Sheet",
+    "Skill Upgradation Sheet",
+    "Multi Skill Sheet"
+];
+
+const toEditState = (config) => ({
+    toEmails: normalizeEmails(config?.toEmails),
+    ccEmails: normalizeEmails(config?.ccEmails),
+    includeTrainer: config?.includeTrainer || false,
+    scheduledTime: config?.scheduledTime || ""
+});
+
+const isSameEdit = (a, b) =>
+    normalizeEmails(a?.toEmails) === normalizeEmails(b?.toEmails) &&
+    normalizeEmails(a?.ccEmails) === normalizeEmails(b?.ccEmails) &&
+    !!a?.includeTrainer === !!b?.includeTrainer &&
+    (a?.scheduledTime || "") === (b?.scheduledTime || "");
 
 const AVAILABLE_FORMS = [
     "Multi Skill Sheet",
@@ -39,29 +73,36 @@ export default function EmailConfiguration() {
     const [selectedDeptId, setSelectedDeptId] = useState("all");
     const [selectedSectionId, setSelectedSectionId] = useState("all");
     const [savingForm, setSavingForm] = useState(null);
+    const [deletingForm, setDeletingForm] = useState(null);
+    const [pendingDeleteForm, setPendingDeleteForm] = useState(null);
 
     // Local state for edits before saving
     const [editState, setEditState] = useState({});
 
-    const fetchConfigs = async () => {
+    // Config row saved for exactly the selected department/section context
+    const findContextConfig = (list, formName) => list.find(c =>
+        c.formName === formName &&
+        (selectedDeptId === "all" ? !c.departmentId : c.departmentId?.toString() === selectedDeptId) &&
+        (selectedSectionId === "all" ? !c.sectionId : c.sectionId?.toString() === selectedSectionId)
+    );
+
+    // With `onlyForm`, only that form's edit state is reset from the server, so
+    // unsaved edits on the other cards survive a save/remove.
+    const fetchConfigs = async ({ onlyForm } = {}) => {
         try {
             const res = await axiosInstance.get("/api/email-configurations");
-            setConfigs(res.data.data);
+            const data = res.data.data;
+            setConfigs(data);
+
+            if (onlyForm) {
+                setEditState(prev => ({ ...prev, [onlyForm]: toEditState(findContextConfig(data, onlyForm)) }));
+                return;
+            }
 
             // Initialize edit state from fetched configs based on current context
             const initialEdits = {};
             AVAILABLE_FORMS.forEach(form => {
-                const config = res.data.data.find(c =>
-                    c.formName === form &&
-                    (selectedDeptId === "all" ? !c.departmentId : c.departmentId?.toString() === selectedDeptId) &&
-                    (selectedSectionId === "all" ? !c.sectionId : c.sectionId?.toString() === selectedSectionId)
-                );
-                initialEdits[form] = {
-                    toEmails: config?.toEmails || "",
-                    ccEmails: config?.ccEmails || "",
-                    includeTrainer: config?.includeTrainer || false,
-                    scheduledTime: config?.scheduledTime || ""
-                };
+                initialEdits[form] = toEditState(findContextConfig(data, form));
             });
             setEditState(initialEdits);
         } catch (error) {
@@ -120,25 +161,22 @@ export default function EmailConfiguration() {
 
     const handleSave = async (formName) => {
         const data = editState[formName];
-        if (!data.toEmails) {
-            toast.error("To Emails are required");
+        const existing = findContextConfig(configs, formName);
+        if (parseEmails(data?.toEmails).length === 0) {
+            toast.error(existing
+                ? "At least one To recipient is required. To stop using this configuration, use Remove Config."
+                : "To Emails are required");
             return;
         }
 
         setSavingForm(formName);
         try {
-            const existing = configs.find(c =>
-                c.formName === formName &&
-                (selectedDeptId === "all" ? !c.departmentId : c.departmentId?.toString() === selectedDeptId) &&
-                (selectedSectionId === "all" ? !c.sectionId : c.sectionId?.toString() === selectedSectionId)
-            );
-
             const payload = {
                 formName,
                 departmentId: selectedDeptId === "all" ? null : parseInt(selectedDeptId),
                 sectionId: selectedSectionId === "all" ? null : parseInt(selectedSectionId),
-                toEmails: data.toEmails,
-                ccEmails: data.ccEmails,
+                toEmails: normalizeEmails(data.toEmails),
+                ccEmails: normalizeEmails(data.ccEmails),
                 includeTrainer: data.includeTrainer,
                 scheduledTime: data.scheduledTime || null,
                 isActive: true
@@ -151,11 +189,64 @@ export default function EmailConfiguration() {
             }
 
             toast.success(`${formName} configuration saved`);
-            fetchConfigs();
+            await fetchConfigs({ onlyForm: formName });
         } catch (error) {
             toast.error("Failed to save configuration");
         } finally {
             setSavingForm(null);
+        }
+    };
+
+    const contextLabel = selectedDeptId === "all"
+        ? "Global"
+        : selectedSectionId === "all"
+            ? `department "${departments.find(d => d.id.toString() === selectedDeptId)?.name ?? ""}"`
+            : `section "${sections.find(s => s.id.toString() === selectedSectionId)?.name ?? ""}"`;
+
+    // Explains what happens after removing the config, mirroring the server's
+    // section -> department -> global lookup (EmailConfiguration.findByFormDeptAndSection).
+    const describeRemoval = (formName) => {
+        const existing = findContextConfig(configs, formName);
+        const lines = [];
+
+        if (SCHEDULED_DIGEST_FORMS.includes(formName) && existing?.scheduledTime && selectedDeptId !== "all") {
+            lines.push(`The daily ${existing.scheduledTime} scheduled email set here will stop.`);
+        }
+
+        if (selectedDeptId === "all") {
+            lines.push("Departments and sections that do not have their own configuration will stop receiving emails for this form.");
+            return lines;
+        }
+
+        const deptConfig = selectedSectionId !== "all"
+            ? configs.find(c => c.formName === formName && c.departmentId?.toString() === selectedDeptId && !c.sectionId && c.isActive)
+            : null;
+        const globalConfig = configs.find(c => c.formName === formName && !c.departmentId && !c.sectionId && c.isActive);
+        const fallback = deptConfig
+            ? { name: "Department", config: deptConfig }
+            : globalConfig
+                ? { name: "Global", config: globalConfig }
+                : null;
+
+        lines.push(fallback
+            ? `Other emails for this form from this ${selectedSectionId === "all" ? "department" : "section"} will go to the ${fallback.name} recipients instead (${normalizeEmails(fallback.config.toEmails)}).`
+            : `No ${selectedSectionId === "all" ? "" : "Department or "}Global configuration exists for this form, so no emails will be sent for this ${selectedSectionId === "all" ? "department" : "section"}.`);
+        return lines;
+    };
+
+    const handleDeleteConfig = async (formName) => {
+        const existing = findContextConfig(configs, formName);
+        if (!existing) return;
+
+        setDeletingForm(formName);
+        try {
+            await axiosInstance.delete(`/api/email-configurations/${existing.id}`);
+            toast.success(`Removed configuration for ${formName}`);
+            await fetchConfigs({ onlyForm: formName });
+        } catch {
+            toast.error("Failed to remove email configuration");
+        } finally {
+            setDeletingForm(null);
         }
     };
 
@@ -234,12 +325,14 @@ export default function EmailConfiguration() {
             <div className="grid grid-cols-1 gap-4">
                 {AVAILABLE_FORMS.map((formName) => {
                     const isSaving = savingForm === formName;
+                    const isDeleting = deletingForm === formName;
+                    const isBusy = isSaving || isDeleting;
                     const currentEdit = editState[formName] || { toEmails: "", ccEmails: "", includeTrainer: false };
-                    const hasConfig = configs.some(c =>
-                        c.formName === formName &&
-                        (selectedDeptId === "all" ? !c.departmentId : c.departmentId?.toString() === selectedDeptId) &&
-                        (selectedSectionId === "all" ? !c.sectionId : c.sectionId?.toString() === selectedSectionId)
-                    );
+                    const contextConfig = findContextConfig(configs, formName);
+                    const hasConfig = !!contextConfig;
+                    const isDirty = !isSameEdit(currentEdit, toEditState(contextConfig));
+                    // Remount chip inputs on context switch so half-typed text doesn't carry over
+                    const chipKey = `${formName}|${selectedDeptId}|${selectedSectionId}`;
 
                     return (
                         <Card key={formName} className="hover:shadow-md transition-shadow">
@@ -255,6 +348,11 @@ export default function EmailConfiguration() {
                                                 <Badge variant={hasConfig ? "success" : "outline"} className="text-[10px] py-0 h-4">
                                                     {hasConfig ? "Configured" : "Not Set"}
                                                 </Badge>
+                                                {isDirty && (
+                                                    <Badge variant="outline" className="text-[10px] py-0 h-4 border-amber-300 bg-amber-50 text-amber-700">
+                                                        Unsaved changes
+                                                    </Badge>
+                                                )}
                                                 <span className="text-[10px] text-gray-400">
                                                     {selectedDeptId === "all" ? "Global Context" : 
                                                      selectedSectionId === "all" ? `Department: ${departments.find(d => d.id.toString() === selectedDeptId)?.name}` :
@@ -263,15 +361,29 @@ export default function EmailConfiguration() {
                                             </div>
                                         </div>
                                     </div>
-                                    <Button
-                                        size="sm"
-                                        onClick={() => handleSave(formName)}
-                                        disabled={isSaving}
-                                        className="h-8 gap-2"
-                                    >
-                                        {isSaving ? <IconLoader2 className="w-3 h-3 animate-spin" /> : <IconDeviceFloppy className="w-3 h-3" />}
-                                        Save Changes
-                                    </Button>
+                                    <div className="flex items-center gap-2">
+                                        {hasConfig && (
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => setPendingDeleteForm(formName)}
+                                                disabled={isBusy}
+                                                className="h-8 gap-1.5 text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300 hover:text-red-700"
+                                            >
+                                                {isDeleting ? <IconLoader2 className="w-3.5 h-3.5 animate-spin" /> : <IconTrash className="w-3.5 h-3.5" />}
+                                                Remove Config
+                                            </Button>
+                                        )}
+                                        <Button
+                                            size="sm"
+                                            onClick={() => handleSave(formName)}
+                                            disabled={isBusy}
+                                            className="h-8 gap-2"
+                                        >
+                                            {isSaving ? <IconLoader2 className="w-3 h-3 animate-spin" /> : <IconDeviceFloppy className="w-3 h-3" />}
+                                            Save Changes
+                                        </Button>
+                                    </div>
                                 </div>
                             </CardHeader>
                             <CardContent className="pt-4 pb-4">
@@ -286,22 +398,25 @@ export default function EmailConfiguration() {
                                     </div>
                                 )}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-                                    <div className="space-y-1.5 md:col-span-1">
-                                        <Label className="text-xs font-semibold text-gray-600">To: Recipients (comma separated)</Label>
-                                        <Input
-                                            placeholder="manager@example.com, tech_lead@example.com"
+                                    <div className="md:col-span-1">
+                                        <EmailChipInput
+                                            key={`to|${chipKey}`}
+                                            label="To: Recipients"
+                                            required
+                                            placeholder="Type or paste emails, press Enter..."
                                             value={currentEdit.toEmails}
-                                            onChange={(e) => handleInputChange(formName, "toEmails", e.target.value)}
-                                            className="h-9 focus-visible:ring-blue-400"
+                                            onChange={(val) => handleInputChange(formName, "toEmails", val)}
+                                            disabled={isBusy}
                                         />
                                     </div>
-                                    <div className="space-y-1.5 md:col-span-1">
-                                        <Label className="text-xs font-semibold text-gray-600">CC: Recipients (comma separated)</Label>
-                                        <Input
-                                            placeholder="admin_copy@example.com"
+                                    <div className="md:col-span-1">
+                                        <EmailChipInput
+                                            key={`cc|${chipKey}`}
+                                            label="CC: Recipients"
+                                            placeholder="Type or paste emails, press Enter..."
                                             value={currentEdit.ccEmails}
-                                            onChange={(e) => handleInputChange(formName, "ccEmails", e.target.value)}
-                                            className="h-9 focus-visible:ring-blue-400"
+                                            onChange={(val) => handleInputChange(formName, "ccEmails", val)}
+                                            disabled={isBusy}
                                         />
                                     </div>
 
@@ -367,6 +482,42 @@ export default function EmailConfiguration() {
                     );
                 })}
             </div>
+
+            <AlertDialog
+                open={!!pendingDeleteForm}
+                onOpenChange={(open) => { if (!open) setPendingDeleteForm(null); }}
+            >
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Remove email configuration?</AlertDialogTitle>
+                        <AlertDialogDescription asChild>
+                            <div className="space-y-2">
+                                <p>
+                                    This deletes the <strong>{pendingDeleteForm}</strong> recipients saved for the {contextLabel} level.
+                                </p>
+                                {pendingDeleteForm && (
+                                    <ul className="list-disc pl-5 space-y-1">
+                                        {describeRemoval(pendingDeleteForm).map((line) => <li key={line}>{line}</li>)}
+                                    </ul>
+                                )}
+                            </div>
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            className="bg-red-600 text-white hover:bg-red-700"
+                            onClick={() => {
+                                const formName = pendingDeleteForm;
+                                setPendingDeleteForm(null);
+                                handleDeleteConfig(formName);
+                            }}
+                        >
+                            Remove
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }

@@ -3,10 +3,28 @@ import { createPortal } from "react-dom"
 import { cn } from "@/utils/classNames.js"
 
 const Dialog = ({ children, open, onOpenChange, className }) => {
+  const onOpenChangeRef = React.useRef(onOpenChange)
+  onOpenChangeRef.current = onOpenChange
+
+  // Escape closes the dialog. Capture phase + preventDefault so page-level Escape handlers
+  // (e.g. the Daily 5M full-screen sheet) see e.defaultPrevented and leave themselves open.
+  React.useEffect(() => {
+    if (!open) return
+    const onKeyDown = (e) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return
+      // A select/menu/popover open inside the dialog closes first; the next Escape closes the dialog.
+      if (document.querySelector('[data-radix-popper-content-wrapper], [role="listbox"], [role="menu"]')) return
+      e.preventDefault()
+      onOpenChangeRef.current?.(false)
+    }
+    window.addEventListener("keydown", onKeyDown, true)
+    return () => window.removeEventListener("keydown", onKeyDown, true)
+  }, [open])
+
   if (!open) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
         className="fixed inset-0 bg-black/60 backdrop-blur-sm backdrop-saturate-150 transition-all duration-300"
         onClick={() => onOpenChange(false)}

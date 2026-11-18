@@ -108,14 +108,14 @@ export default function HistoryCardChecksheet({ document = {}, onSave = () => {}
       )}
 
       {/* ── Checksheet Canvas (Exact replica of image, pure white, no extra borders) ── */}
-      <div className="w-[1240px] max-w-[1240px] shrink-0 bg-white border-2 border-black shadow-md text-black font-sans text-xs">
+      <div className="w-[1240px] max-w-[1240px] shrink-0 bg-white border-2 border-black shadow-md text-black font-sans text-xs overflow-hidden">
         {/* Document Title Header */}
-        <div className="w-full min-w-[1050px] border-b-2 border-black p-2 text-center font-bold text-sm sm:text-base tracking-wide bg-white">
+        <div className="w-full border-b-2 border-black p-2 text-center font-bold text-sm sm:text-base tracking-wide bg-white">
           CALIBRATION HISTORY CARD
         </div>
 
         {/* ── 1. Top Instrument Specifications Block (Open layout, no vertical borders) ── */}
-        <div className="w-full min-w-[1050px] p-2.5 px-3.5 bg-white text-[11px]">
+        <div className="w-full p-2.5 px-3.5 bg-white text-[11px]">
           {/* Row 1: Manufactrure of Instruments: | Year of purchase: | Range of Instrument */}
           <div className="flex items-center gap-8 py-1">
             <div className="flex items-center flex-1 min-w-0">
@@ -198,7 +198,7 @@ export default function HistoryCardChecksheet({ document = {}, onSave = () => {}
         </div>
 
         {/* Row 3: Special Instruction : (Divided by solid horizontal lines, multi-line textarea for long input) */}
-        <div className="w-full min-w-[1050px] border-t-2 border-b-2 border-black p-2.5 px-3.5 bg-white">
+        <div className="w-full border-t-2 border-b-2 border-black p-2.5 px-3.5 bg-white">
           <div className="flex flex-col w-full">
             <span className="font-bold whitespace-nowrap text-[11px] mb-1">Special Instruction :</span>
             <textarea
@@ -211,7 +211,7 @@ export default function HistoryCardChecksheet({ document = {}, onSave = () => {}
         </div>
 
         {/* ── 2. Calibration History Table (9 Columns with S.No. and borders) ── */}
-        <div className="w-full min-w-[1050px]">
+        <div className="w-full">
           <table className="w-full border-collapse text-[11px] table-fixed">
             <colgroup>
               <col style={{ width: '4%' }} />
@@ -361,7 +361,7 @@ export default function HistoryCardChecksheet({ document = {}, onSave = () => {}
         </div>
 
         {/* ── 3. Footer Metadata Row (Matching Screenshot Exactly) ── */}
-        <div className="w-full min-w-[1050px] grid grid-cols-12 border-t-2 border-black bg-white text-[10px] font-bold p-1 px-3">
+        <div className="w-full grid grid-cols-12 border-t-2 border-black bg-white text-[10px] font-bold p-1 px-3">
           <div className="col-span-3 flex items-center justify-start text-black">
             {footerInfo.docCode}
           </div>

@@ -3,8 +3,8 @@ export const CALIBRATION_DOCUMENTS_BY_TAB = {
     {
       id: 'DOC-CAL-01-SOP',
       sNo: 1,
-      documentName: 'Standard Operating Procedure (SOP-QA-CAL-001)',
-      code: 'SOP-QA-CAL-001',
+      documentName: 'Standard Operating Procedure (PRC-WH-QA-007)',
+      code: 'PRC-WH-QA-007',
       unit: 'Bawal',
       department: 'Quality',
       section: 'Quality Lab',

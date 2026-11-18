@@ -108,9 +108,9 @@ export default function UsabilityDeclarationChecksheet({ document = {}, onSave =
       )}
 
       {/* ── Checksheet Canvas (Exact replica of image) ── */}
-      <div className="w-[1300px] max-w-[1300px] shrink-0 bg-white border-2 border-black shadow-md text-black font-sans text-xs">
+      <div className="w-[1300px] max-w-[1300px] shrink-0 bg-white border-2 border-black shadow-md text-black font-sans text-xs overflow-hidden">
         {/* Table Structure */}
-        <table className="w-full border-collapse text-[11px] table-fixed min-w-[1150px]">
+        <table className="w-full border-collapse text-[11px] table-fixed">
           <colgroup>
             {/* Col 1: S.N. */}
             <col style={{ width: '4%' }} />
@@ -286,7 +286,7 @@ export default function UsabilityDeclarationChecksheet({ document = {}, onSave =
         </table>
 
         {/* ── Signatures Row Below Table ── */}
-        <div className="w-full min-w-[1150px] border-t-2 border-b-2 border-black p-2 px-6 flex items-center justify-between bg-white text-[11px]">
+        <div className="w-full border-t-2 border-b-2 border-black p-2 px-6 flex items-center justify-between bg-white text-[11px]">
           <div className="flex items-center gap-2">
             <span className="font-normal">Sign of area in-charge</span>
             <input
@@ -314,7 +314,7 @@ export default function UsabilityDeclarationChecksheet({ document = {}, onSave =
         </div>
 
         {/* ── Footer Metadata Row ── */}
-        <div className="w-full min-w-[1150px] grid grid-cols-12 bg-white text-[10px] font-bold p-1 px-3">
+        <div className="w-full grid grid-cols-12 bg-white text-[10px] font-bold p-1 px-3">
           <div className="col-span-3 text-left">
             {footerInfo.docCode}
           </div>

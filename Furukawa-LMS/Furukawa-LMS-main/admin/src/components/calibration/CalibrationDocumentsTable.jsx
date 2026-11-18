@@ -45,8 +45,8 @@ export default function CalibrationDocumentsTable({
   });
 
   if (filteredItems.length === 0) {
-    let emptyTitle = 'No Documents Found';
-    let emptyDesc = 'No calibration document matches your active search or filter criteria. Try adjusting your filters.';
+    let emptyTitle = 'No checksheets added yet';
+    let emptyDesc = 'No checksheets have been created for this tab yet. Click "+ Add Checksheet" to create one.';
 
     if (!selectedUnit) {
       emptyTitle = 'Please select the unit';
@@ -54,6 +54,9 @@ export default function CalibrationDocumentsTable({
     } else if (selectedUnit === 'Gujrat') {
       emptyTitle = 'No checksheets added yet';
       emptyDesc = 'No calibration checksheets have been registered for Gujrat plant yet.';
+    } else if (items.some((i) => i.unit === selectedUnit)) {
+      emptyTitle = 'No Documents Found';
+      emptyDesc = 'No calibration document matches your active search or filter criteria. Try adjusting your filters.';
     }
 
     return (
@@ -150,7 +153,7 @@ export default function CalibrationDocumentsTable({
                       type="button"
                       variant="ghost"
                       size="icon"
-                      onClick={() => handleEdit(doc)}
+                      onClick={() => (typeof onEdit === 'function' ? onEdit(doc) : handleEdit(doc))}
                       title="Edit Checksheet"
                       className="h-8 w-8 text-muted-foreground hover:text-emerald-600 hover:bg-emerald-50 cursor-pointer"
                     >

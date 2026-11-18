@@ -706,3 +706,230 @@ test('26. Procedure tab contains 6 required documents and procedure sheet is emp
   const viewContent = fs.readFileSync(viewPath, 'utf8');
   assert.ok(viewContent.includes('no checksheet added yet') || viewContent.includes('No checksheet added yet'), 'Must show empty checksheet message for procedure');
 });
+
+test('27. Calibration checksheet routes with unique ID and persists in localStorage with empty state on new', () => {
+  // 1. Verify AppRoutes has calibration/:tab/:checksheetId route
+  const routesPath = path.join(adminRoot, 'src/routes/AppRoutes.jsx');
+  const routesContent = fs.readFileSync(routesPath, 'utf8');
+  assert.ok(
+    routesContent.includes('calibration/:tab/:checksheetId'),
+    'AppRoutes must register calibration/:tab/:checksheetId route'
+  );
+
+  // 2. Verify CalibrationPage supports checksheetId and localStorage persistence
+  const pagePath = path.join(adminRoot, 'src/pages/calibration/CalibrationPage.jsx');
+  const pageContent = fs.readFileSync(pagePath, 'utf8');
+  assert.ok(pageContent.includes('checksheetId'), 'CalibrationPage must read checksheetId param');
+  assert.ok(pageContent.includes('CALIBRATION_STORAGE_KEY'), 'CalibrationPage must define localStorage key');
+  assert.ok(pageContent.includes('localStorage.getItem'), 'CalibrationPage must retrieve checksheets from localStorage');
+  assert.ok(pageContent.includes('localStorage.setItem'), 'CalibrationPage must save checksheets to localStorage');
+  assert.ok(pageContent.includes('EMPTY_DOCUMENTS_BY_TAB'), 'CalibrationPage must define empty state on new');
+  assert.ok(pageContent.includes('activeDocument'), 'CalibrationPage must look up activeDocument by checksheetId');
+
+  // 3. Verify CalibrationDocumentsTable has empty state "No checksheets added yet" when no checksheets are created
+  const tablePath = path.join(adminRoot, 'src/components/calibration/CalibrationDocumentsTable.jsx');
+  const tableContent = fs.readFileSync(tablePath, 'utf8');
+  assert.ok(tableContent.includes('No checksheets added yet'), 'Table must show "No checksheets added yet" when list is empty');
+});
+
+test('28. Calibration table Edit action button opens modal to edit department, section, and checksheet details', () => {
+  const tablePath = path.join(adminRoot, 'src/components/calibration/CalibrationDocumentsTable.jsx');
+  const tableContent = fs.readFileSync(tablePath, 'utf8');
+  assert.ok(tableContent.includes('onEdit'), 'Table must accept onEdit prop');
+  assert.ok(tableContent.includes('onEdit(doc)'), 'Edit action button must invoke onEdit with doc');
+
+  const pagePath = path.join(adminRoot, 'src/pages/calibration/CalibrationPage.jsx');
+  const pageContent = fs.readFileSync(pagePath, 'utf8');
+  assert.ok(pageContent.includes('handleOpenEditModal'), 'CalibrationPage must define handleOpenEditModal');
+  assert.ok(pageContent.includes('onEdit: handleOpenEditModal'), 'CalibrationPage must pass onEdit to tabProps');
+  assert.ok(pageContent.includes('isEditModalOpen'), 'CalibrationPage must manage isEditModalOpen state');
+  assert.ok(pageContent.includes('editingDocument'), 'CalibrationPage must manage editingDocument state');
+
+  const modalPath = path.join(adminRoot, 'src/components/calibration/AddChecksheetModal.jsx');
+  const modalContent = fs.readFileSync(modalPath, 'utf8');
+  assert.ok(modalContent.includes('editingDocument'), 'AddChecksheetModal must accept editingDocument');
+  assert.ok(modalContent.includes('isEditMode'), 'AddChecksheetModal must support edit mode');
+  assert.ok(modalContent.includes('Edit Checksheet Details'), 'AddChecksheetModal must display "Edit Checksheet Details" title in edit mode');
+  assert.ok(modalContent.includes('Save Changes'), 'AddChecksheetModal must have Save Changes button in edit mode');
+});
+
+test('29. Selected unit persists across checksheet refresh and back navigation', () => {
+  const pagePath = path.join(adminRoot, 'src/pages/calibration/CalibrationPage.jsx');
+  const pageContent = fs.readFileSync(pagePath, 'utf8');
+  assert.ok(pageContent.includes('CALIBRATION_UNIT_STORAGE_KEY'), 'CalibrationPage must define unit storage key');
+  assert.ok(pageContent.includes('handleSelectUnit'), 'CalibrationPage must define handleSelectUnit to persist selected plant');
+  assert.ok(pageContent.includes('savedUnit'), 'CalibrationPage must restore savedUnit on load or checksheet refresh');
+  assert.ok(pageContent.includes('activeDocument?.unit'), 'CalibrationPage must use activeDocument.unit if available');
+});
+
+test('30. Procedure tab has 6 fixed static documents, hides Add Checksheet button, and renders SOP checksheet from screenshots', () => {
+  // 1. Verify procedure has 6 fixed documents and hides Add Checksheet button
+  const pagePath = path.join(adminRoot, 'src/pages/calibration/CalibrationPage.jsx');
+  const pageContent = fs.readFileSync(pagePath, 'utf8');
+  assert.ok(pageContent.includes('FIXED_PROCEDURE_DOCUMENTS'), 'CalibrationPage must define FIXED_PROCEDURE_DOCUMENTS');
+  assert.ok(pageContent.includes('procedureItems'), 'CalibrationPage must define procedureItems');
+
+  const filterBarPath = path.join(adminRoot, 'src/components/calibration/CalibrationFilterBar.jsx');
+  const filterBarContent = fs.readFileSync(filterBarPath, 'utf8');
+  assert.ok(filterBarContent.includes("activeTabId !== 'procedure'"), 'FilterBar must hide Add Checksheet button on procedure tab');
+
+  // 2. Verify StandardOperatingProcedureChecksheet exists and has all required sections from screenshots
+  const sopPath = path.join(adminRoot, 'src/components/calibration/checksheets/StandardOperatingProcedureChecksheet.jsx');
+  assert.ok(fs.existsSync(sopPath), 'StandardOperatingProcedureChecksheet.jsx must exist');
+  const sopContent = fs.readFileSync(sopPath, 'utf8');
+
+  assert.ok(sopContent.includes('PRC-WH-QA-007'), 'SOP must contain document code PRC-WH-QA-007');
+  assert.ok(sopContent.includes('MEASURING & TEST DEVICE'), 'SOP must contain subtitle MEASURING & TEST DEVICE');
+  assert.ok(sopContent.includes('Prepared By:- Khushboo'), 'SOP must contain Prepared By Khushboo');
+  assert.ok(sopContent.includes('Checked By: Arvind'), 'SOP must contain Checked By Arvind');
+  assert.ok(sopContent.includes('SignatureApprovalControl'), 'SOP must use SignatureApprovalControl for approvals');
+  assert.ok(sopContent.includes('TITLE:'), 'SOP must contain Title section');
+  assert.ok(sopContent.includes('PURPOSE:'), 'SOP must contain Purpose section');
+  assert.ok(sopContent.includes('SCOPE:'), 'SOP must contain Scope section');
+  assert.ok(sopContent.includes('Reference Documents / Standards:'), 'SOP must contain Reference Documents section');
+  assert.ok(sopContent.includes('5 Activity detail of Process:'), 'SOP must contain Activity detail of Process');
+  assert.ok(sopContent.includes('Calibration') && sopContent.includes('Decommissioning Report'), 'SOP must contain Calibration and Decommissioning Report groups');
+  assert.ok(sopContent.includes('5.1') && sopContent.includes('5.19'), 'SOP must contain steps from 5.1 to 5.19');
+
+  // 3. Verify CalibrationChecksheetView wires StandardOperatingProcedureChecksheet
+  const viewPath = path.join(adminRoot, 'src/components/calibration/CalibrationChecksheetView.jsx');
+  const viewContent = fs.readFileSync(viewPath, 'utf8');
+  assert.ok(viewContent.includes('StandardOperatingProcedureChecksheet'), 'CalibrationChecksheetView must import StandardOperatingProcedureChecksheet');
+  assert.ok(viewContent.includes('isProcedureSOP'), 'CalibrationChecksheetView must identify isProcedureSOP');
+});
+
+test('31. Annexure 1 checksheet renders workflow, Start/END hexagons, decision loop, and revision records', () => {
+  const annex1Path = path.join(adminRoot, 'src/components/calibration/checksheets/Annexure1Checksheet.jsx');
+  assert.ok(fs.existsSync(annex1Path), 'Annexure1Checksheet.jsx must exist');
+  const content = fs.readFileSync(annex1Path, 'utf8');
+
+  assert.ok(content.includes('ANNEXURE - 1'), 'Annexure 1 must have title ANNEXURE - 1');
+  assert.ok(content.includes('Rule for esclaration for withdrawn the instruments'), 'Must contain exact subtitle');
+  assert.ok(content.includes('PRC-WH-QA-007'), 'Must reference PRC-WH-QA-007');
+  assert.ok(content.includes('Start') && content.includes('END'), 'Must contain Start and END shapes');
+  assert.ok(content.includes('Monthly Plan of Calibration'), 'Must contain Step 1');
+  assert.ok(content.includes('Check Monthly Plan of Calibration'), 'Must contain Step 2');
+  assert.ok(content.includes('Is inst. under') && content.includes('due date?'), 'Must contain Step 3 Diamond');
+  assert.ok(content.includes('Inform to concern person'), 'Must contain Step 4');
+  assert.ok(content.includes('Collect the inst. for calibration'), 'Must contain Step 5');
+  assert.ok(content.includes('Exchange the inst. with calibrated inst.(if applicable)'), 'Must contain Step 6');
+  assert.ok(content.includes('Follow the inst. calibration procedure.'), 'Must contain Step 7');
+  assert.ok(content.includes('Details of Change'), 'Must contain Revision Table header');
+  assert.ok(content.includes('Original issue'), 'Must contain Rev 00 Original issue');
+  assert.ok(content.includes('15.03.19'), 'Must contain Rev 01 date 15.03.19');
+  assert.ok(content.includes('SignatureApprovalControl'), 'Must wire SignatureApprovalControl');
+
+  const viewPath = path.join(adminRoot, 'src/components/calibration/CalibrationChecksheetView.jsx');
+  const viewContent = fs.readFileSync(viewPath, 'utf8');
+  assert.ok(viewContent.includes('Annexure1Checksheet'), 'CalibrationChecksheetView must import Annexure1Checksheet');
+  assert.ok(viewContent.includes('isAnnexure1'), 'CalibrationChecksheetView must identify isAnnexure1');
+});
+
+test('32. Annexure 2 checksheet renders all 216 acceptance criteria rows, revision table, signatures, and footer', () => {
+  const annex2Path = path.join(adminRoot, 'src/components/calibration/checksheets/Annexure2Checksheet.jsx');
+  assert.ok(fs.existsSync(annex2Path), 'Annexure2Checksheet.jsx must exist');
+  const content = fs.readFileSync(annex2Path, 'utf8');
+
+  assert.ok(content.includes('ANNEXURE - 2'), 'Annexure 2 must have title ANNEXURE - 2');
+  assert.ok(content.includes('ACCEPATANCE CRITERIA FOR CALIBRATION'), 'Must contain exact subtitle');
+  assert.ok(content.includes('Deep Freezer/Cold Freezer'), 'Must contain item 1');
+  assert.ok(content.includes('Durometer ( Shore -A- Hardness Tester)'), 'Must contain item 2');
+  assert.ok(content.includes('SSG/TSN8-18M'), 'Must contain item 150');
+  assert.ok(content.includes('SSE - SB - 6M'), 'Must contain item 151');
+  assert.ok(content.includes('Kalvin Double Bridge'), 'Must contain item 159');
+  assert.ok(content.includes('YY8 Protector Torque Jig'), 'Must contain item 213');
+  assert.ok(content.includes('Stripping Gauge'), 'Must contain item 216');
+  assert.ok(content.includes('sNo: 216'), 'Must contain all 216 rows');
+  assert.ok(content.includes('ANNEXURE_2_DATA'), 'Must export ANNEXURE_2_DATA array');
+  assert.ok(content.includes('isScaleGroupStart') && content.includes('inScaleGroup'), 'Must handle merged measuring scale criteria');
+  assert.ok(content.includes('Details of Change'), 'Must contain Revision Table header');
+  assert.ok(content.includes('Original issue'), 'Must contain Rev 0 Original issue');
+  assert.ok(content.includes('15.03.19'), 'Must contain Rev 1 date 15.03.19');
+  assert.ok(content.includes('FRM-WH-QA-214'), 'Must contain footer code FRM-WH-QA-214');
+  assert.ok(content.includes('Issue Date: 25.02.2019'), 'Must contain footer issue date');
+  assert.ok(content.includes('SignatureApprovalControl'), 'Must wire SignatureApprovalControl');
+
+  const viewPath = path.join(adminRoot, 'src/components/calibration/CalibrationChecksheetView.jsx');
+  const viewContent = fs.readFileSync(viewPath, 'utf8');
+  assert.ok(viewContent.includes('Annexure2Checksheet'), 'CalibrationChecksheetView must import Annexure2Checksheet');
+  assert.ok(viewContent.includes('isAnnexure2'), 'CalibrationChecksheetView must identify isAnnexure2');
+});
+
+test('33. Annexure 3 checksheet renders workflow, dual decision loops, return path to step 2, revision table, and footer', () => {
+  const annex3Path = path.join(adminRoot, 'src/components/calibration/checksheets/Annexure3Checksheet.jsx');
+  assert.ok(fs.existsSync(annex3Path), 'Annexure3Checksheet.jsx must exist');
+  const content = fs.readFileSync(annex3Path, 'utf8');
+
+  assert.ok(content.includes('ANNEXURE - 3'), 'Annexure 3 must have title ANNEXURE - 3');
+  assert.ok(content.includes('Rule for declaration of instruments usable condition'), 'Must contain exact subtitle');
+  assert.ok(content.includes('PRC-WH-QA-007'), 'Must reference PRC-WH-QA-007');
+  assert.ok(content.includes('Area wise inst. calibration list circulate to concern person'), 'Must contain step 1');
+  assert.ok(content.includes('Take the confirm on declaration sheet'), 'Must contain step 2');
+  assert.ok(content.includes('Is declaration') && content.includes('report received ?'), 'Must contain step 3 diamond');
+  assert.ok(content.includes('Match declaration report details from calibration plan'), 'Must contain step 4');
+  assert.ok(content.includes('report match') && content.includes('calibration plan?'), 'Must contain step 5 diamond');
+  assert.ok(content.includes('Follow the inst. calibration procedure.'), 'Must contain step 7');
+  assert.ok(content.includes('Start') && content.includes('END'), 'Must contain Start and END shapes');
+  assert.ok(content.includes('FRM-WH-QA-208'), 'Must reference FRM-WH-QA-208');
+  assert.ok(content.includes('04.07.19'), 'Must contain Rev 00 date 04.07.19');
+  assert.ok(content.includes('Original issue'), 'Must contain Rev 00 Original issue');
+  assert.ok(content.includes('FRM-WH-QA-214'), 'Must contain footer code FRM-WH-QA-214');
+  assert.ok(content.includes('Issue Date: 25.02.2019'), 'Must contain footer issue date');
+  assert.ok(content.includes('SignatureApprovalControl'), 'Must wire SignatureApprovalControl');
+
+  const viewPath = path.join(adminRoot, 'src/components/calibration/CalibrationChecksheetView.jsx');
+  const viewContent = fs.readFileSync(viewPath, 'utf8');
+  assert.ok(viewContent.includes('Annexure3Checksheet'), 'CalibrationChecksheetView must import Annexure3Checksheet');
+  assert.ok(viewContent.includes('isAnnexure3'), 'CalibrationChecksheetView must identify isAnnexure3');
+});
+
+test('34. Scope for calibration and Scope for inspection checksheets render exact rows, columns, and headers', () => {
+  const scopeCalPath = path.join(adminRoot, 'src/components/calibration/checksheets/ScopeForCalibrationChecksheet.jsx');
+  assert.ok(fs.existsSync(scopeCalPath), 'ScopeForCalibrationChecksheet.jsx must exist');
+  const calContent = fs.readFileSync(scopeCalPath, 'utf8');
+
+  assert.ok(calContent.includes('Scope for calibration instruments in-house'), 'Must have title Scope for calibration instruments in-house');
+  assert.ok(calContent.includes('Sr. No.'), 'Must have Sr. No. column');
+  assert.ok(calContent.includes('Instrument Name'), 'Must have Instrument Name column');
+  assert.ok(calContent.includes('Calibration Range'), 'Must have Calibration Range column');
+  assert.ok(calContent.includes('Source'), 'Must have Source column');
+  assert.ok(calContent.includes('Master equipment'), 'Must have Master equipment column');
+  assert.ok(calContent.includes('Master equipment No.'), 'Must have Master equipment No. column');
+  assert.ok(calContent.includes('Calibration Method'), 'Must have Calibration Method column');
+  assert.ok(calContent.includes('Digital Point Micrometer'), 'Must contain item 1');
+  assert.ok(calContent.includes('YY8 Protector Torque Jig'), 'Must contain item 8');
+  assert.ok(calContent.includes('Nir-007 Pigital Checking Jig S Ab'), 'Must contain item 20');
+  assert.ok(calContent.includes('SZR017 [FFC-2] BENDING JIG'), 'Must contain item 25');
+  assert.ok(calContent.includes('Mandrel'), 'Must contain item 44');
+  assert.ok(calContent.includes('sNo: 45'), 'Must contain all 45 calibration rows');
+
+  const scopeInspPath = path.join(adminRoot, 'src/components/calibration/checksheets/ScopeForInspectionChecksheet.jsx');
+  assert.ok(fs.existsSync(scopeInspPath), 'ScopeForInspectionChecksheet.jsx must exist');
+  const inspContent = fs.readFileSync(scopeInspPath, 'utf8');
+
+  assert.ok(inspContent.includes('Scope for Inspection &amp; testing') || inspContent.includes('Scope for Inspection & testing'), 'Must have title Scope for Inspection & testing');
+  assert.ok(inspContent.includes('Sr. No.'), 'Must have Sr. No. column');
+  assert.ok(inspContent.includes('Part Name'), 'Must have Part Name column');
+  assert.ok(inspContent.includes('Part type'), 'Must have Part type column');
+  assert.ok(inspContent.includes('Source'), 'Must have Source column');
+  assert.ok(inspContent.includes('Standard name'), 'Must have Standard name column');
+  assert.ok(inspContent.includes('Person Competent'), 'Must have Person Competent column');
+  assert.ok(inspContent.includes('Master Instrument/Eqp. Used'), 'Must have Master Instrument/Eqp. Used column');
+  assert.ok(inspContent.includes('Wire Stripper Jig'), 'Must contain item 46');
+  assert.ok(inspContent.includes('Digital Weihing Blance'), 'Must contain item 49');
+  assert.ok(inspContent.includes('Pressure gauge'), 'Must contain pressure gauge items');
+  assert.ok(inspContent.includes('Digital micro ohm meter'), 'Must contain item 53');
+  assert.ok(inspContent.includes('Busbar Arrangement Jig'), 'Must contain item 71');
+  assert.ok(inspContent.includes('TSN-8M'), 'Must contain item 72');
+  assert.ok(inspContent.includes('Pigital Measuring Template For Xba/Xbb'), 'Must contain item 78');
+  assert.ok(inspContent.includes('YSN-8M'), 'Must contain item 85');
+  assert.ok(inspContent.includes('Right Angle'), 'Must contain item 90');
+  assert.ok(inspContent.includes('sNo: 90'), 'Must contain all rows up to 90');
+
+  const viewPath = path.join(adminRoot, 'src/components/calibration/CalibrationChecksheetView.jsx');
+  const viewContent = fs.readFileSync(viewPath, 'utf8');
+  assert.ok(viewContent.includes('ScopeForCalibrationChecksheet'), 'CalibrationChecksheetView must import ScopeForCalibrationChecksheet');
+  assert.ok(viewContent.includes('ScopeForInspectionChecksheet'), 'CalibrationChecksheetView must import ScopeForInspectionChecksheet');
+  assert.ok(viewContent.includes('isScopeCalibration'), 'CalibrationChecksheetView must identify isScopeCalibration');
+  assert.ok(viewContent.includes('isScopeInspection'), 'CalibrationChecksheetView must identify isScopeInspection');
+});

@@ -185,19 +185,19 @@ export default function FormatChecksheet({ document = {}, onSave = () => {} }) {
       )}
 
       {/* ── Checksheet Canvas ── */}
-      <div className="w-[1240px] max-w-[1240px] shrink-0 bg-white border-2 border-black shadow-md text-black font-sans text-xs">
+      <div className="w-[1240px] max-w-[1240px] shrink-0 bg-white border-2 border-black shadow-md text-black font-sans text-xs overflow-hidden">
         {/* Company Header */}
-        <div className="w-full min-w-[1100px] border-b-2 border-black p-2 text-center font-bold text-sm sm:text-base tracking-wide bg-white">
+        <div className="w-full border-b-2 border-black p-2 text-center font-bold text-sm sm:text-base tracking-wide bg-white">
           FURUKAWA MINDA ELECTRIC PVT. LTD.
         </div>
 
         {/* Report Title */}
-        <div className="w-full min-w-[1100px] border-b-2 border-black p-1.5 text-center font-bold text-xs sm:text-sm tracking-wide bg-white">
+        <div className="w-full border-b-2 border-black p-1.5 text-center font-bold text-xs sm:text-sm tracking-wide bg-white">
           CALIBRATION REPORT
         </div>
 
         {/* ── 1. Instrument Under Calibration Details Block ── */}
-        <div className="w-full min-w-[1100px] border-b-2 border-black divide-y divide-black text-[11px]">
+        <div className="w-full border-b-2 border-black divide-y divide-black text-[11px]">
           {/* Row 1: Item Description */}
           <div className="grid grid-cols-12 min-h-[30px]">
             <div className="col-span-2 p-1.5 font-normal border-r border-black flex items-center">
@@ -450,7 +450,7 @@ export default function FormatChecksheet({ document = {}, onSave = () => {} }) {
         </div>
 
         {/* ── 3. Appearance Section (1. Appreance) ── */}
-        <div className="w-full min-w-[1100px] border-b-2 border-black text-[11px]">
+        <div className="w-full border-b-2 border-black text-[11px]">
           <div className="p-1 px-2 font-bold border-b border-black">1. Appreance</div>
           <div className="grid grid-cols-12 divide-x divide-black min-h-[28px] border-b border-black bg-white font-bold text-center">
             <div className="col-span-1 p-1">S.NO.</div>
@@ -490,14 +490,14 @@ export default function FormatChecksheet({ document = {}, onSave = () => {} }) {
         </div>
 
         {/* ── 4. Results Section (4 Columns: S. No., Standard Reading, Observed Reading, Deviation) ── */}
-        <div className="w-full min-w-[1100px] border-b-2 border-black text-[11px]">
+        <div className="w-full border-b-2 border-black text-[11px]">
           <div className="p-1 px-2 font-bold border-b border-black">Results :</div>
           <table className="w-full border-collapse table-fixed">
             <colgroup>
-              <col style={{ width: '80px' }} />
-              <col style={{ width: '400px' }} />
-              <col style={{ width: '320px' }} />
-              <col style={{ width: '300px' }} />
+              <col style={{ width: '8%' }} />
+              <col style={{ width: '38%' }} />
+              <col style={{ width: '27%' }} />
+              <col style={{ width: '27%' }} />
             </colgroup>
             <thead>
               <tr className="border-b border-black text-center font-bold bg-white leading-tight">
@@ -544,7 +544,7 @@ export default function FormatChecksheet({ document = {}, onSave = () => {} }) {
         </div>
 
         {/* ── 5. Acceptance Criteria & Status Section ── */}
-        <div className="w-full min-w-[1100px] border-b-2 border-black p-3 px-4 bg-white text-[11px] min-h-[90px] flex flex-col justify-between">
+        <div className="w-full border-b-2 border-black p-3 px-4 bg-white text-[11px] min-h-[90px] flex flex-col justify-between">
           <div className="space-y-2">
             <div className="flex items-center">
               <span className="font-bold mr-2 whitespace-nowrap">Acceptance Criteria :</span>
@@ -568,7 +568,7 @@ export default function FormatChecksheet({ document = {}, onSave = () => {} }) {
         </div>
 
         {/* ── 6. Signatures Row (4 Columns) ── */}
-        <div className="w-full min-w-[1100px] border-b-2 border-black grid grid-cols-4 divide-x divide-black bg-white text-[11px]">
+        <div className="w-full border-b-2 border-black grid grid-cols-4 divide-x divide-black bg-white text-[11px]">
           <div className="p-2 min-h-[50px] flex items-center">
             <span className="font-bold mr-2 whitespace-nowrap">Prepared by :</span>
             <input
@@ -632,7 +632,7 @@ export default function FormatChecksheet({ document = {}, onSave = () => {} }) {
         </div>
 
         {/* ── 7. Footer Metadata Row ── */}
-        <div className="w-full min-w-[1100px] grid grid-cols-12 bg-white text-[10px] font-bold p-1 px-3">
+        <div className="w-full grid grid-cols-12 bg-white text-[10px] font-bold p-1 px-3">
           <div className="col-span-3 text-left">{footerInfo.docCode}</div>
           <div className="col-span-3 text-center">{footerInfo.revNo}</div>
           <div className="col-span-3 text-center">{footerInfo.revDate}</div>

@@ -108,19 +108,19 @@ export default function InstrumentScrapReportChecksheet({ document = {}, onSave 
       )}
 
       {/* ── Checksheet Canvas (Exact replica of image) ── */}
-      <div className="w-[950px] max-w-[950px] shrink-0 bg-white border-2 border-black shadow-md text-black font-sans text-xs">
+      <div className="w-[950px] max-w-[950px] shrink-0 bg-white border-2 border-black shadow-md text-black font-sans text-xs overflow-hidden">
         {/* Top-Right Company Banner */}
-        <div className="w-full min-w-[780px] flex justify-end p-1 px-3 bg-white font-bold text-xs sm:text-sm">
+        <div className="w-full flex justify-end p-1 px-3 bg-white font-bold text-xs sm:text-sm">
           <span>FURUKAWA MINDA ELECTRIC PVT. LTD.</span>
         </div>
 
         {/* Report Title */}
-        <div className="w-full min-w-[780px] border-t-2 border-b-2 border-black p-2.5 text-center font-bold text-base sm:text-lg tracking-wide bg-white">
+        <div className="w-full border-t-2 border-b-2 border-black p-2.5 text-center font-bold text-base sm:text-lg tracking-wide bg-white">
           INSTRUMENT SCRAP REPORT
         </div>
 
         {/* ── Section 1: Header / Instrument Identification ── */}
-        <div className="w-full min-w-[780px] border-b-2 border-black p-3 px-4 bg-white text-[11px]">
+        <div className="w-full border-b-2 border-black p-3 px-4 bg-white text-[11px]">
           {/* Top-Right: REPORT NO. & DATE */}
           <div className="flex justify-end mb-2">
             <div className="w-56 space-y-1">
@@ -314,7 +314,7 @@ export default function InstrumentScrapReportChecksheet({ document = {}, onSave 
         </div>
 
         {/* ── Section 4: Footer Metadata Row ── */}
-        <div className="w-full min-w-[780px] grid grid-cols-12 bg-white text-[10px] font-bold p-1 px-3">
+        <div className="w-full grid grid-cols-12 bg-white text-[10px] font-bold p-1 px-3">
           <div className="col-span-3 text-left">
             {footerInfo.docCode}
           </div>

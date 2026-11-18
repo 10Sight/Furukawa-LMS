@@ -175,19 +175,19 @@ export default function MatingGaugeChecksheet({ document = {}, onSave = () => { 
       )}
 
       {/* ── Checksheet Canvas ── */}
-      <div className="w-[1240px] max-w-[1240px] shrink-0 bg-white border-2 border-black shadow-md text-black font-sans text-xs">
+      <div className="w-[1240px] max-w-[1240px] shrink-0 bg-white border-2 border-black shadow-md text-black font-sans text-xs overflow-hidden">
         {/* Company Header */}
-        <div className="w-full min-w-[1100px] border-b-2 border-black p-2 text-center font-bold text-sm sm:text-base tracking-wide bg-white">
+        <div className="w-full border-b-2 border-black p-2 text-center font-bold text-sm sm:text-base tracking-wide bg-white">
           FURUKAWA MINDA ELECTRIC PVT. LTD.
         </div>
 
         {/* Report Title */}
-        <div className="w-full min-w-[1100px] border-b-2 border-black p-1.5 text-center font-bold text-xs sm:text-sm tracking-wide bg-white">
+        <div className="w-full border-b-2 border-black p-1.5 text-center font-bold text-xs sm:text-sm tracking-wide bg-white">
           CALIBRATION REPORT
         </div>
 
         {/* ── 1. Instrument Under Calibration Details Block ── */}
-        <div className="w-full min-w-[1100px] border-b-2 border-black divide-y divide-black text-[11px]">
+        <div className="w-full border-b-2 border-black divide-y divide-black text-[11px]">
           {/* Row 1: Item Description */}
           <div className="grid grid-cols-12 min-h-[30px]">
             <div className="col-span-2 p-1.5 font-normal border-r border-black flex items-center">
@@ -527,14 +527,14 @@ export default function MatingGaugeChecksheet({ document = {}, onSave = () => { 
         </div>
 
         {/* ── 3. 1. Appearance Section Header & Table ── */}
-        <div className="w-full min-w-[1100px] border-b-2 border-black">
+        <div className="w-full border-b-2 border-black">
           <div className="p-1 px-2 font-bold text-xs bg-white">1. Appearance</div>
           <table className="w-full border-t border-black border-collapse text-[11px] table-fixed">
             <colgroup>
-              <col style={{ width: '90px' }} />
-              <col style={{ width: '290px' }} />
-              <col style={{ width: '310px' }} />
-              <col style={{ width: '410px' }} />
+              <col style={{ width: '8%' }} />
+              <col style={{ width: '26%' }} />
+              <col style={{ width: '28%' }} />
+              <col style={{ width: '38%' }} />
             </colgroup>
             <thead>
               <tr className="border-b border-black text-center font-normal bg-white">
@@ -577,14 +577,14 @@ export default function MatingGaugeChecksheet({ document = {}, onSave = () => { 
         </div>
 
         {/* ── 4. Main Calibration Readings Table ── */}
-        <div className="w-full min-w-[1100px] border-b-2 border-black">
+        <div className="w-full border-b-2 border-black">
           <table className="w-full border-collapse text-[11px] table-fixed">
             <colgroup>
-              <col style={{ width: '90px' }} />
-              <col style={{ width: '290px' }} />
-              <col style={{ width: '310px' }} />
-              <col style={{ width: '310px' }} />
-              <col style={{ width: '100px' }} />
+              <col style={{ width: '8%' }} />
+              <col style={{ width: '26%' }} />
+              <col style={{ width: '28%' }} />
+              <col style={{ width: '28%' }} />
+              <col style={{ width: '10%' }} />
             </colgroup>
             <thead>
               <tr className="border-b border-black text-center font-normal bg-white">
@@ -653,7 +653,7 @@ export default function MatingGaugeChecksheet({ document = {}, onSave = () => { 
         </div>
 
         {/* ── 5. Status Section ── */}
-        <div className="w-full min-w-[1100px] border-b-2 border-black p-2 min-h-[80px] bg-white">
+        <div className="w-full border-b-2 border-black p-2 min-h-[80px] bg-white">
           <div className="flex items-center gap-2">
             <span className="font-bold text-xs text-black">Status :</span>
             <input
@@ -666,7 +666,7 @@ export default function MatingGaugeChecksheet({ document = {}, onSave = () => { 
         </div>
 
         {/* ── 6. Document Footer Approvals Section (Matching Screenshot 3) ── */}
-        <div className="w-full min-w-[1100px] grid grid-cols-4 border-t border-black bg-white text-[11px] divide-x-2 divide-black">
+        <div className="w-full grid grid-cols-4 border-t border-black bg-white text-[11px] divide-x-2 divide-black">
           {/* Column 1: Prepared by */}
           <div className="p-2 space-y-1">
             <div className="flex items-center">

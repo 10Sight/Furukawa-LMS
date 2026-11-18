@@ -159,19 +159,19 @@ export default function DecommissioningReportChecksheet({ document = {}, onSave 
       )}
 
       {/* ── Checksheet Canvas ── */}
-      <div className="w-[1100px] max-w-[1100px] shrink-0 bg-white border-2 border-black shadow-md text-black font-sans text-xs">
+      <div className="w-[1100px] max-w-[1100px] shrink-0 bg-white border-2 border-black shadow-md text-black font-sans text-xs overflow-hidden">
         {/* Top-Right Company Banner */}
-        <div className="w-full min-w-[900px] flex justify-end p-1 px-3 bg-white font-bold text-xs sm:text-sm">
+        <div className="w-full flex justify-end p-1 px-3 bg-white font-bold text-xs sm:text-sm">
           <span>FURUKAWA MINDA ELECTRIC PVT. LTD.</span>
         </div>
 
         {/* Report Title */}
-        <div className="w-full min-w-[900px] border-t-2 border-b-2 border-black p-2 text-center font-bold text-sm sm:text-base tracking-wide bg-white">
+        <div className="w-full border-t-2 border-b-2 border-black p-2 text-center font-bold text-sm sm:text-base tracking-wide bg-white">
           INSTRUMENT / GAUGE DECOMMISSIONING REPORT
         </div>
 
         {/* ── 1. Header Information Block (2 Rows) ── */}
-        <div className="w-full min-w-[900px] border-b-2 border-black divide-y divide-black text-[11px]">
+        <div className="w-full border-b-2 border-black divide-y divide-black text-[11px]">
           {/* Row 1: FROM : QA LAB | Location | DATE : */}
           <div className="grid grid-cols-12 min-h-[32px] divide-x divide-black">
             {/* FROM */}
@@ -475,7 +475,7 @@ export default function DecommissioningReportChecksheet({ document = {}, onSave 
         </div>
 
         {/* ── 8. Process Flow Block & Footer Metadata ── */}
-        <div className="w-full min-w-[900px] bg-white text-[11px]">
+        <div className="w-full bg-white text-[11px]">
           {/* Process Flow Diagram */}
           <div className="p-2.5 px-4 flex flex-wrap items-center gap-3 border-b border-black">
             <span className="font-bold text-xs whitespace-nowrap">Process Flow:</span>

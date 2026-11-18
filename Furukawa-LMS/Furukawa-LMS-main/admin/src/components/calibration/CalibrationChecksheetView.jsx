@@ -13,36 +13,93 @@ import HistoryCardChecksheet from './checksheets/HistoryCardChecksheet.jsx';
 import DecommissioningReportChecksheet from './checksheets/DecommissioningReportChecksheet.jsx';
 import InstrumentScrapReportChecksheet from './checksheets/InstrumentScrapReportChecksheet.jsx';
 import UsabilityDeclarationChecksheet from './checksheets/UsabilityDeclarationChecksheet.jsx';
+import StandardOperatingProcedureChecksheet from './checksheets/StandardOperatingProcedureChecksheet.jsx';
+import Annexure1Checksheet from './checksheets/Annexure1Checksheet.jsx';
+import Annexure2Checksheet from './checksheets/Annexure2Checksheet.jsx';
+import Annexure3Checksheet from './checksheets/Annexure3Checksheet.jsx';
+import ScopeForCalibrationChecksheet from './checksheets/ScopeForCalibrationChecksheet.jsx';
+import ScopeForInspectionChecksheet from './checksheets/ScopeForInspectionChecksheet.jsx';
 
 export default function CalibrationChecksheetView({
   document = {},
   onBack = () => { },
   onSave = null
 }) {
+  const isProcedureSOP =
+    document.id === 'DOC-CAL-01-SOP' ||
+    document.code === 'PRC-WH-QA-007' ||
+    document.code === 'SOP-QA-CAL-001' ||
+    document.documentName?.toLowerCase().includes('standard operating procedure') ||
+    document.documentName?.toLowerCase().includes('measuring & test device');
+
+  const isAnnexure1 =
+    document.id === 'DOC-CAL-01-ANNEX-1' ||
+    document.code === 'ANNEXURE-01' ||
+    document.code === 'ANNEXURE-1' ||
+    document.documentName?.toLowerCase().includes('annexure 1') ||
+    document.documentName?.toLowerCase().includes('annexure-1') ||
+    document.documentName?.toLowerCase().includes('rule for esclaration');
+
+  const isAnnexure2 =
+    document.id === 'DOC-CAL-01-ANNEX-2' ||
+    document.code === 'ANNEXURE-02' ||
+    document.code === 'ANNEXURE-2' ||
+    document.documentName?.toLowerCase().includes('annexure 2') ||
+    document.documentName?.toLowerCase().includes('annexure-2') ||
+    document.documentName?.toLowerCase().includes('accepatance criteria') ||
+    document.documentName?.toLowerCase().includes('acceptance criteria');
+
+  const isAnnexure3 =
+    document.id === 'DOC-CAL-01-ANNEX-3' ||
+    document.code === 'ANNEXURE-03' ||
+    document.code === 'ANNEXURE-3' ||
+    document.documentName?.toLowerCase().includes('annexure 3') ||
+    document.documentName?.toLowerCase().includes('annexure-3') ||
+    document.documentName?.toLowerCase().includes('rule for declaration of instruments usable condition') ||
+    document.documentName?.toLowerCase().includes('declaration of instruments usable condition');
+
+  const isScopeCalibration =
+    document.id === 'DOC-CAL-01-SCOPE-CAL' ||
+    document.code === 'SCOPE-CAL-01' ||
+    document.documentName?.toLowerCase().includes('scope for calibration');
+
+  const isScopeInspection =
+    document.id === 'DOC-CAL-01-SCOPE-INSP' ||
+    document.code === 'SCOPE-INSP-01' ||
+    document.documentName?.toLowerCase().includes('scope for inspection');
+
   const isAdditionDeletion =
+    document.tab === 'addition-deletion' ||
     document.code === 'F-CAL-02' ||
     document.id === 'DOC-CAL-02' ||
+    document.id?.includes('ADDITION-DELETION') ||
     document.documentName?.includes('Addition & Deletion') ||
     document.documentName?.includes('addition/deletion');
 
   const isHalfYearlyPlan =
+    document.tab === 'half-yearly-plan' ||
     document.code === 'F-CAL-03' ||
     document.id === 'DOC-CAL-03' ||
+    document.id?.includes('HALF-YEARLY-PLAN') ||
     document.documentName?.includes('Half-Yearly') ||
     document.documentName?.includes('half yearly') ||
     document.documentName?.includes('In-House Calibration Plan Half-Yearly') ||
     document.documentName?.includes('Inhouse Calibration Plan Jul');
 
   const isMonthlyPlan =
+    document.tab === 'monthly-plan' ||
     document.code === 'F-CAL-04' ||
     document.id === 'DOC-CAL-04' ||
+    document.id?.includes('MONTHLY-PLAN') ||
     document.documentName?.includes('Monthly') ||
     document.documentName?.includes('monthly') ||
     document.documentName?.includes('Monthly Execution');
 
   const isHistoryCard =
+    document.tab === 'history-card' ||
     document.code === 'F-CAL-06' ||
     document.id === 'DOC-CAL-06' ||
+    document.id?.includes('HISTORY-CARD') ||
     document.documentName?.includes('History Card') ||
     document.documentName?.includes('history card');
 
@@ -54,27 +111,35 @@ export default function CalibrationChecksheetView({
 
   const isFormatChecksheet =
     !isMatingGauge &&
-    (document.subType === 'format-checksheet' ||
+    (document.tab === 'report-format' ||
+      document.subType === 'format-checksheet' ||
       document.id === 'DOC-CAL-05-FORMAT' ||
       document.id === 'DOC-CAL-05' ||
+      document.id?.includes('REPORT-FORMAT') ||
       document.code === 'F-CAL-05');
 
   const isDecommissioning =
+    document.tab === 'decommissioning' ||
     document.code === 'F-CAL-07' ||
     document.id === 'DOC-CAL-07' ||
+    document.id?.includes('DECOMMISSIONING') ||
     document.documentName?.includes('Decommissioning') ||
     document.documentName?.includes('decommissioning');
 
   const isScrapReport =
+    document.tab === 'scrap-note' ||
     document.code === 'F-CAL-08' ||
     document.id === 'DOC-CAL-08' ||
+    document.id?.includes('SCRAP-NOTE') ||
     document.documentName?.includes('Scrap') ||
     document.documentName?.includes('scrap') ||
     document.documentName?.includes('Disposal');
 
   const isUsabilityDeclaration =
+    document.tab === 'usability-declaration' ||
     document.code === 'F-CAL-09' ||
     document.id === 'DOC-CAL-09' ||
+    document.id?.includes('USABILITY-DECLARATION') ||
     document.documentName?.includes('Usable Condition') ||
     document.documentName?.includes('usable condition') ||
     document.documentName?.includes('Declaration') ||
@@ -228,7 +293,19 @@ export default function CalibrationChecksheetView({
           className="w-fit min-w-full mx-auto flex flex-col items-center origin-top transition-[zoom]"
           style={{ zoom: `${zoom}%` }}
         >
-          {isAdditionDeletion ? (
+          {isProcedureSOP ? (
+            <StandardOperatingProcedureChecksheet document={document} onSave={onSave} />
+          ) : isAnnexure1 ? (
+            <Annexure1Checksheet document={document} onSave={onSave} />
+          ) : isAnnexure2 ? (
+            <Annexure2Checksheet document={document} onSave={onSave} />
+          ) : isAnnexure3 ? (
+            <Annexure3Checksheet document={document} onSave={onSave} />
+          ) : isScopeCalibration ? (
+            <ScopeForCalibrationChecksheet document={document} onSave={onSave} />
+          ) : isScopeInspection ? (
+            <ScopeForInspectionChecksheet document={document} onSave={onSave} />
+          ) : isAdditionDeletion ? (
             <AdditionDeletionChecksheet document={document} />
           ) : isHalfYearlyPlan ? (
             <HalfYearlyPlanChecksheet document={document} />

@@ -430,6 +430,7 @@ const AppRoutes = () => {
             <Route path="designations/:designationName" element={<DesignationUsersPage />} />
             <Route path="calibration" element={<CalibrationPage />} />
             <Route path="calibration/:tab" element={<CalibrationPage />} />
+            <Route path="calibration/:tab/:checksheetId" element={<CalibrationPage />} />
 
             <Route path="settings" element={<AdminSettings />} />
             <Route path="data-management" element={<DataManagement />} />
@@ -483,6 +484,7 @@ const AppRoutes = () => {
             <Route path="suggestion-checksheet" element={<SuggestionChecksheetPage />} />
             <Route path="calibration" element={<CalibrationPage />} />
             <Route path="calibration/:tab" element={<CalibrationPage />} />
+            <Route path="calibration/:tab/:checksheetId" element={<CalibrationPage />} />
           </Route>
 
           {/* Daily Meeting Layout Routes */}
@@ -717,6 +719,7 @@ const AppRoutes = () => {
             <Route path="designations/:designationName" element={<DesignationUsersPage />} />
             <Route path="calibration" element={<CalibrationPage />} />
             <Route path="calibration/:tab" element={<CalibrationPage />} />
+            <Route path="calibration/:tab/:checksheetId" element={<CalibrationPage />} />
 
           </Route>
 

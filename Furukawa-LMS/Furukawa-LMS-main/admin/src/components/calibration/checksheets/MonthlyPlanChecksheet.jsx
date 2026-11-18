@@ -123,9 +123,9 @@ export default function MonthlyPlanChecksheet({ document = {}, onSave = () => {}
       )}
 
       {/* ── Checksheet Canvas ── */}
-      <div className="w-[1520px] max-w-[1520px] shrink-0 bg-white border border-black shadow-md text-black font-sans text-xs">
+      <div className="w-[1520px] max-w-[1520px] shrink-0 bg-white border-2 border-black shadow-md text-black font-sans text-xs overflow-hidden">
         {/* Top Bar with Title and Legends Box (Matching Screenshot 2 & 3) */}
-        <div className="w-full min-w-[1440px] px-4 py-2 bg-white flex items-end justify-between border-b border-black">
+        <div className="w-full px-4 py-2 bg-white flex items-end justify-between border-b border-black">
           {/* Centered Document Title */}
           <div className="flex-1 flex justify-center pl-32">
             <input
@@ -155,21 +155,21 @@ export default function MonthlyPlanChecksheet({ document = {}, onSave = () => {}
         </div>
 
         {/* ── Main Spreadsheet Table ── */}
-        <table className="w-full min-w-[1440px] border-collapse border border-black table-fixed text-[11px]">
+        <table className="w-full border-collapse table-fixed text-[11px]">
           {/* Colgroup defining exact widths */}
           <colgroup>
-            <col style={{ width: '38px' }} />
-            <col style={{ width: '150px' }} />
-            <col style={{ width: '105px' }} />
-            <col style={{ width: '85px' }} />
-            <col style={{ width: '120px' }} />
-            <col style={{ width: '80px' }} />
-            <col style={{ width: '80px' }} />
-            <col style={{ width: '75px' }} />
-            <col style={{ width: '85px' }} />
-            <col style={{ width: '55px' }} />
+            <col style={{ width: '2.5%' }} />
+            <col style={{ width: '10%' }} />
+            <col style={{ width: '7%' }} />
+            <col style={{ width: '5.5%' }} />
+            <col style={{ width: '8%' }} />
+            <col style={{ width: '5.2%' }} />
+            <col style={{ width: '5.2%' }} />
+            <col style={{ width: '5%' }} />
+            <col style={{ width: '5.6%' }} />
+            <col style={{ width: '3.6%' }} />
             {Array.from({ length: DAYS_IN_MONTH }, (_, i) => (
-              <col key={i} style={{ width: '22px' }} />
+              <col key={i} style={{ width: `${42.4 / DAYS_IN_MONTH}%` }} />
             ))}
           </colgroup>
 
@@ -345,7 +345,7 @@ export default function MonthlyPlanChecksheet({ document = {}, onSave = () => {}
         </table>
 
         {/* ── Document Footer Section (Matching Screenshot 3 & 4) ── */}
-        <div className="w-full min-w-[1440px] grid grid-cols-4 border-t-2 border-black bg-white text-[11px] font-bold divide-x-2 divide-black">
+        <div className="w-full grid grid-cols-4 border-t-2 border-black bg-white text-[11px] font-bold divide-x-2 divide-black">
           {/* Column 1: Prepared By */}
           <div className="p-2 space-y-1">
             <div className="flex items-center">

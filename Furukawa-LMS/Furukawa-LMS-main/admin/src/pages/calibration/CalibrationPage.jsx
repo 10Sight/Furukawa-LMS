@@ -8,6 +8,108 @@ import CalibrationTabBar, { CALIBRATION_TABS } from '@/components/calibration/Ca
 import CalibrationFilterBar from '@/components/calibration/CalibrationFilterBar.jsx';
 import { CALIBRATION_DOCUMENTS_BY_TAB } from '@/components/calibration/calibrationDocumentsData.js';
 import ProcedureTab from '@/components/calibration/tabs/ProcedureTab.jsx';
+
+export const CALIBRATION_STORAGE_KEY = 'furukawa_calibration_documents';
+export const CALIBRATION_UNIT_STORAGE_KEY = 'furukawa_calibration_selected_unit';
+
+export const FIXED_PROCEDURE_DOCUMENTS = [
+  {
+    id: 'DOC-CAL-01-SOP',
+    sNo: 1,
+    documentName: 'Standard Operating Procedure (PRC-WH-QA-007)',
+    code: 'PRC-WH-QA-007',
+    department: 'Quality',
+    section: 'Quality Lab',
+    date: '05 Aug 2024',
+    status: 'Active',
+    tab: 'procedure'
+  },
+  {
+    id: 'DOC-CAL-01-ANNEX-1',
+    sNo: 2,
+    documentName: 'Annexure 1',
+    code: 'ANNEXURE-01',
+    department: 'Quality',
+    section: 'Quality Lab',
+    date: '18 Nov 2026',
+    status: 'Active',
+    tab: 'procedure'
+  },
+  {
+    id: 'DOC-CAL-01-ANNEX-2',
+    sNo: 3,
+    documentName: 'Annexure 2',
+    code: 'ANNEXURE-02',
+    department: 'Quality',
+    section: 'Quality Lab',
+    date: '18 Nov 2026',
+    status: 'Active',
+    tab: 'procedure'
+  },
+  {
+    id: 'DOC-CAL-01-ANNEX-3',
+    sNo: 4,
+    documentName: 'Annexure 3',
+    code: 'ANNEXURE-03',
+    department: 'Quality',
+    section: 'Quality Lab',
+    date: '18 Nov 2026',
+    status: 'Active',
+    tab: 'procedure'
+  },
+  {
+    id: 'DOC-CAL-01-SCOPE-CAL',
+    sNo: 5,
+    documentName: 'Scope for Calibration',
+    code: 'SCOPE-CAL-01',
+    department: 'Quality',
+    section: 'Quality Lab',
+    date: '18 Nov 2026',
+    status: 'Active',
+    tab: 'procedure'
+  },
+  {
+    id: 'DOC-CAL-01-SCOPE-INSP',
+    sNo: 6,
+    documentName: 'Scope for Inspection',
+    code: 'SCOPE-INSP-01',
+    department: 'Quality',
+    section: 'Quality Lab',
+    date: '18 Nov 2026',
+    status: 'Active',
+    tab: 'procedure'
+  }
+];
+
+export const EMPTY_DOCUMENTS_BY_TAB = {
+  procedure: FIXED_PROCEDURE_DOCUMENTS,
+  'addition-deletion': [],
+  'half-yearly-plan': [],
+  'monthly-plan': [],
+  'report-format': [],
+  'history-card': [],
+  decommissioning: [],
+  'scrap-note': [],
+  'usability-declaration': []
+};
+
+const getInitialDocuments = () => {
+  try {
+    const saved = localStorage.getItem(CALIBRATION_STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed && typeof parsed === 'object') {
+        return {
+          ...EMPTY_DOCUMENTS_BY_TAB,
+          ...parsed
+        };
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load calibration documents from localStorage:', err);
+  }
+  return EMPTY_DOCUMENTS_BY_TAB;
+};
 import AdditionDeletionTab from '@/components/calibration/tabs/AdditionDeletionTab.jsx';
 import HalfYearlyPlanTab from '@/components/calibration/tabs/HalfYearlyPlanTab.jsx';
 import MonthlyPlanTab from '@/components/calibration/tabs/MonthlyPlanTab.jsx';
@@ -76,47 +178,23 @@ class CalibrationErrorBoundary extends React.Component {
 }
 
 export default function CalibrationPage() {
-  const { tab } = useParams();
+  const { tab, checksheetId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
   const outletCtx = useOutletContext() || {};
   const { isFormView, setIsFormView } = outletCtx;
 
-  // View state: 'list' (documents table) | 'detail' (checksheet view)
-  const [currentPage, setCurrentPage] = useState('list');
-  const [selectedDocument, setSelectedDocument] = useState(null);
-  const [documentsByTab, setDocumentsByTab] = useState(CALIBRATION_DOCUMENTS_BY_TAB);
+  // Documents state persisted in localStorage (localhost)
+  const [documentsByTab, setDocumentsByTab] = useState(getInitialDocuments);
 
-  const handleOpenChecksheet = (doc) => {
-    setSelectedDocument(doc);
-    setCurrentPage('detail');
-    if (typeof setIsFormView === 'function') {
-      setIsFormView(true);
+  const saveDocuments = (newDocs) => {
+    setDocumentsByTab(newDocs);
+    try {
+      localStorage.setItem(CALIBRATION_STORAGE_KEY, JSON.stringify(newDocs));
+    } catch (err) {
+      console.error('Failed to save calibration documents to localStorage:', err);
     }
   };
-
-  const handleBackToList = () => {
-    setCurrentPage('list');
-    setSelectedDocument(null);
-    if (typeof setIsFormView === 'function') {
-      setIsFormView(false);
-    }
-  };
-
-  // Ensure isFormView resets if component unmounts or returns to list view
-  useEffect(() => {
-    if (currentPage === 'list' && typeof setIsFormView === 'function') {
-      setIsFormView(false);
-    }
-  }, [currentPage, setIsFormView]);
-
-  useEffect(() => {
-    return () => {
-      if (typeof setIsFormView === 'function') {
-        setIsFormView(false);
-      }
-    };
-  }, [setIsFormView]);
 
   // 1. Unit dropdown state (default unit must be null)
   const [selectedUnit, setSelectedUnit] = useState(null);
@@ -125,6 +203,22 @@ export default function CalibrationPage() {
 
   const unitOptions = ['Bawal', 'Gujrat'];
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingDocument, setEditingDocument] = useState(null);
+
+  const handleSelectUnit = (unit) => {
+    setSelectedUnit(unit);
+    setIsUnitDropdownOpen(false);
+    try {
+      if (unit) {
+        localStorage.setItem(CALIBRATION_UNIT_STORAGE_KEY, unit);
+      } else {
+        localStorage.removeItem(CALIBRATION_UNIT_STORAGE_KEY);
+      }
+    } catch (err) {
+      console.error('Failed to save selected unit to localStorage:', err);
+    }
+  };
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -150,7 +244,10 @@ export default function CalibrationPage() {
     if (location.pathname.startsWith('/portal')) {
       return '/portal/calibration';
     }
-    return '/cms/calibration';
+    if (location.pathname.startsWith('/cms')) {
+      return '/cms/calibration';
+    }
+    return '/calibration';
   }, [location.pathname]);
 
   // Active tab selection
@@ -159,51 +256,139 @@ export default function CalibrationPage() {
     return valid ? tab : 'procedure';
   }, [tab]);
 
+  // Find active checksheet from URL parameter by unique ID
+  const activeDocument = useMemo(() => {
+    if (!checksheetId) return null;
+    const inFixedProcedure = FIXED_PROCEDURE_DOCUMENTS.find(
+      (d) => String(d.id) === String(checksheetId) || String(d.code) === String(checksheetId)
+    );
+    if (inFixedProcedure) {
+      return { ...inFixedProcedure, unit: selectedUnit || 'Bawal' };
+    }
+
+    const currentTabDocs = documentsByTab[activeTabId] || [];
+    const foundInTab = currentTabDocs.find((d) => String(d.id) === String(checksheetId));
+    if (foundInTab) return foundInTab;
+
+    // Check across all tabs
+    for (const key of Object.keys(documentsByTab)) {
+      const found = (documentsByTab[key] || []).find((d) => String(d.id) === String(checksheetId));
+      if (found) return found;
+    }
+    return null;
+  }, [checksheetId, activeTabId, documentsByTab, selectedUnit]);
+
+  // Restore selected unit from localStorage or currently viewed checksheet
+  useEffect(() => {
+    try {
+      const savedUnit = localStorage.getItem(CALIBRATION_UNIT_STORAGE_KEY);
+      if (savedUnit) {
+        setSelectedUnit(savedUnit);
+      } else if (activeDocument?.unit) {
+        setSelectedUnit(activeDocument.unit);
+        localStorage.setItem(CALIBRATION_UNIT_STORAGE_KEY, activeDocument.unit);
+      }
+    } catch (err) {
+      console.error('Failed to load selected unit from localStorage:', err);
+    }
+  }, [activeDocument]);
+
+  // Sync isFormView with checksheet view state in parent layout
+  useEffect(() => {
+    if (checksheetId) {
+      if (typeof setIsFormView === 'function') {
+        setIsFormView(true);
+      }
+    } else {
+      if (typeof setIsFormView === 'function') {
+        setIsFormView(false);
+      }
+    }
+  }, [checksheetId, setIsFormView]);
+
+  useEffect(() => {
+    return () => {
+      if (typeof setIsFormView === 'function') {
+        setIsFormView(false);
+      }
+    };
+  }, [setIsFormView]);
+
   const handleSelectTab = (tabId) => {
     navigate(`${basePath}/${tabId}`);
   };
 
+  const handleOpenChecksheet = (doc) => {
+    if (typeof setIsFormView === 'function') {
+      setIsFormView(true);
+    }
+    if (doc.unit) {
+      handleSelectUnit(doc.unit);
+    }
+    const targetTab = doc.tab || activeTabId;
+    navigate(`${basePath}/${targetTab}/${doc.id}`);
+  };
+
+  const handleBackToList = () => {
+    if (typeof setIsFormView === 'function') {
+      setIsFormView(false);
+    }
+    navigate(`${basePath}/${activeTabId}`);
+  };
+
   const handleSaveDocument = (savedDoc) => {
     if (!savedDoc) return;
-    setDocumentsByTab((prev) => {
-      const currentList = prev[activeTabId] || [];
-      const existsIndex = currentList.findIndex((d) => d.id === savedDoc.id);
-      if (existsIndex >= 0) {
-        const updated = [...currentList];
-        updated[existsIndex] = { ...savedDoc, isNew: false };
-        return { ...prev, [activeTabId]: updated };
-      } else {
-        return {
-          ...prev,
-          [activeTabId]: [
-            ...currentList,
-            { ...savedDoc, isNew: false, sNo: currentList.length + 1 }
-          ]
-        };
-      }
-    });
+    const targetTab = savedDoc.tab || activeTabId;
+    const currentList = documentsByTab[targetTab] || [];
+    const existsIndex = currentList.findIndex((d) => d.id === savedDoc.id);
+    let updatedList;
+    if (existsIndex >= 0) {
+      updatedList = [...currentList];
+      updatedList[existsIndex] = { ...savedDoc, isNew: false };
+    } else {
+      updatedList = [
+        ...currentList,
+        { ...savedDoc, isNew: false, sNo: currentList.length + 1 }
+      ];
+    }
+    const updated = {
+      ...documentsByTab,
+      [targetTab]: updatedList
+    };
+    saveDocuments(updated);
   };
 
   const handleAddModalSubmit = (newDoc) => {
-    setDocumentsByTab((prev) => {
-      const currentList = prev[activeTabId] || [];
-      return {
-        ...prev,
-        [activeTabId]: [
-          ...currentList,
-          { ...newDoc, sNo: currentList.length + 1 }
-        ]
-      };
-    });
+    const currentList = documentsByTab[activeTabId] || [];
+    const docWithMeta = {
+      ...newDoc,
+      tab: activeTabId,
+      sNo: currentList.length + 1
+    };
+    const updated = {
+      ...documentsByTab,
+      [activeTabId]: [...currentList, docWithMeta]
+    };
+    saveDocuments(updated);
     toast.success('Checksheet added successfully!');
+    setIsAddModalOpen(false);
+
+    // Immediately navigate to the created checksheet by its unique ID
+    if (typeof setIsFormView === 'function') {
+      setIsFormView(true);
+    }
+    navigate(`${basePath}/${activeTabId}/${docWithMeta.id}`);
   };
 
   const handleDeleteDocument = (docToDelete) => {
-    setDocumentsByTab((prev) => {
-      const currentList = prev[activeTabId] || [];
-      const updated = currentList.filter((d) => d.id !== docToDelete.id);
-      return { ...prev, [activeTabId]: updated };
-    });
+    const targetTab = docToDelete.tab || activeTabId;
+    const currentList = documentsByTab[targetTab] || [];
+    const updatedList = currentList.filter((d) => d.id !== docToDelete.id);
+    const updated = {
+      ...documentsByTab,
+      [targetTab]: updatedList
+    };
+    saveDocuments(updated);
     toast.success('Checksheet deleted successfully');
   };
 
@@ -215,6 +400,30 @@ export default function CalibrationPage() {
     setIsAddModalOpen(true);
   };
 
+  const handleOpenEditModal = (doc) => {
+    setEditingDocument(doc);
+    setIsEditModalOpen(true);
+  };
+
+  const handleSaveEditedDocument = (updatedDoc) => {
+    handleSaveDocument(updatedDoc);
+    setIsEditModalOpen(false);
+    setEditingDocument(null);
+    toast.success('Checksheet details updated successfully!');
+  };
+
+  // Procedure tab documents are fixed/static and do not use localStorage
+  const procedureItems = useMemo(() => {
+    return FIXED_PROCEDURE_DOCUMENTS.map((doc) => ({
+      ...doc,
+      unit: selectedUnit || 'Bawal'
+    }));
+  }, [selectedUnit]);
+
+  const activeTabItems = activeTabId === 'procedure'
+    ? procedureItems
+    : (documentsByTab[activeTabId] || []);
+
   // Render sub-tab content
   const tabProps = {
     searchQuery,
@@ -222,8 +431,9 @@ export default function CalibrationPage() {
     selectedDepartment,
     selectedSection,
     subFilter: reportFormatSubFilter,
-    items: documentsByTab[activeTabId] || [],
+    items: activeTabItems,
     onOpenDocument: handleOpenChecksheet,
+    onEdit: handleOpenEditModal,
     onDelete: handleDeleteDocument,
     onDownload: () => toast.warning('currently no excel export not available')
   };
@@ -253,14 +463,39 @@ export default function CalibrationPage() {
     }
   };
 
-  if (currentPage === 'detail' && selectedDocument) {
+  if (checksheetId) {
+    if (activeDocument) {
+      return (
+        <CalibrationErrorBoundary onReset={handleBackToList}>
+          <CalibrationChecksheetView
+            document={activeDocument}
+            onBack={handleBackToList}
+            onSave={handleSaveDocument}
+          />
+        </CalibrationErrorBoundary>
+      );
+    }
+
+    // Checksheet ID in URL was not found in saved checksheets
     return (
       <CalibrationErrorBoundary onReset={handleBackToList}>
-        <CalibrationChecksheetView
-          document={selectedDocument}
-          onBack={handleBackToList}
-          onSave={handleSaveDocument}
-        />
+        <div className="min-h-[400px] flex items-center justify-center p-6">
+          <div className="max-w-md w-full bg-white rounded-2xl border border-border p-8 text-center shadow-xs">
+            <h3 className="text-base font-bold text-foreground">Checksheet Not Found</h3>
+            <p className="text-xs text-muted-foreground mt-1 mb-5">
+              The checksheet with ID <span className="font-mono font-semibold text-foreground">{checksheetId}</span> could not be found in your saved checksheets.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleBackToList}
+              className="text-xs font-semibold cursor-pointer"
+            >
+              Back to Calibration List
+            </Button>
+          </div>
+        </div>
       </CalibrationErrorBoundary>
     );
   }
@@ -306,10 +541,7 @@ export default function CalibrationPage() {
                       key={unit}
                       type="button"
                       id={`calibration-unit-option-${unit.toLowerCase()}`}
-                      onClick={() => {
-                        setSelectedUnit(unit);
-                        setIsUnitDropdownOpen(false);
-                      }}
+                      onClick={() => handleSelectUnit(unit)}
                       className={`w-full text-left px-3.5 py-2 hover:bg-muted/70 hover:text-foreground flex items-center justify-between transition-colors cursor-pointer ${isSelected ? 'font-bold text-blue-600 bg-blue-50/70' : 'text-foreground'
                         }`}
                     >
@@ -321,10 +553,7 @@ export default function CalibrationPage() {
                 {selectedUnit && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setSelectedUnit(null);
-                      setIsUnitDropdownOpen(false);
-                    }}
+                    onClick={() => handleSelectUnit(null)}
                     className="w-full text-left px-3.5 py-1.5 mt-1 border-t border-border text-muted-foreground hover:text-destructive text-[11px] cursor-pointer"
                   >
                     Clear Selection (All Units)
@@ -384,6 +613,7 @@ export default function CalibrationPage() {
           setSelectedSection={setSelectedSection}
           selectedExtraFilter={selectedExtraFilter}
           setSelectedExtraFilter={setSelectedExtraFilter}
+          activeTabId={activeTabId}
           onAddChecksheet={handleAddChecksheet}
         />
 
@@ -400,6 +630,20 @@ export default function CalibrationPage() {
           selectedUnit={selectedUnit}
           subFilter={reportFormatSubFilter}
           onAdd={handleAddModalSubmit}
+        />
+
+        {/* Edit Checksheet Details Modal */}
+        <AddChecksheetModal
+          open={isEditModalOpen}
+          onOpenChange={(open) => {
+            setIsEditModalOpen(open);
+            if (!open) setEditingDocument(null);
+          }}
+          activeTabId={editingDocument?.tab || activeTabId}
+          selectedUnit={editingDocument?.unit || selectedUnit}
+          subFilter={editingDocument?.subType || reportFormatSubFilter}
+          editingDocument={editingDocument}
+          onSave={handleSaveEditedDocument}
         />
       </div>
     </CalibrationErrorBoundary>

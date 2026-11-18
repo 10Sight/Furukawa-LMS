@@ -12,6 +12,7 @@ export default function CalibrationFilterBar({
   setSelectedSection,
   selectedExtraFilter,
   setSelectedExtraFilter,
+  activeTabId = '',
   onAddChecksheet
 }) {
   return (
@@ -86,17 +87,19 @@ export default function CalibrationFilterBar({
         <ChevronDown className="w-3.5 h-3.5 text-muted-foreground absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
       </div>
 
-      {/* 5. Add Checksheet Button (Right Side) */}
-      <Button
-        type="button"
-        id="calibration-add-checksheet-btn"
-        onClick={onAddChecksheet}
-        className="w-full md:w-auto h-9 px-4 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs flex items-center justify-center gap-1.5 shrink-0 transition-all cursor-pointer"
-        title="Add Checksheet"
-      >
-        <Plus className="w-4 h-4" />
-        <span>Add Checksheet</span>
-      </Button>
+      {/* 5. Add Checksheet Button (Right Side) - hidden on procedure tab */}
+      {activeTabId !== 'procedure' && onAddChecksheet && (
+        <Button
+          type="button"
+          id="calibration-add-checksheet-btn"
+          onClick={onAddChecksheet}
+          className="w-full md:w-auto h-9 px-4 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs flex items-center justify-center gap-1.5 shrink-0 transition-all cursor-pointer"
+          title="Add Checksheet"
+        >
+          <Plus className="w-4 h-4" />
+          <span>Add Checksheet</span>
+        </Button>
+      )}
     </div>
   );
 }

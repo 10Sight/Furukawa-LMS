@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Button } from '@/components/common/ui/button.jsx';
 import { PDCA_DEPARTMENTS, DEFAULT_LINE_AREAS } from '../../pages/pdca/data/pdcaConstants.js';
 import { CALIBRATION_TABS } from './CalibrationTabBar.jsx';
-import { X, Plus, FileText } from 'lucide-react';
+import { X, Plus, FileText, Save, Edit3 } from 'lucide-react';
 
 export const TAB_DYNAMIC_FIELDS = {
   procedure: {
@@ -59,10 +59,14 @@ export default function AddChecksheetModal({
   activeTabId = 'procedure',
   selectedUnit = null,
   subFilter = 'format-checksheet',
-  onAdd = () => { }
+  onAdd = () => { },
+  editingDocument = null,
+  onSave = null
 }) {
-  const tabMeta = CALIBRATION_TABS.find((t) => t.id === activeTabId) || CALIBRATION_TABS[0];
-  const dynamicFieldMeta = TAB_DYNAMIC_FIELDS[activeTabId] || {
+  const isEditMode = Boolean(editingDocument);
+  const effectiveTabId = editingDocument?.tab || activeTabId;
+  const tabMeta = CALIBRATION_TABS.find((t) => t.id === effectiveTabId) || CALIBRATION_TABS[0];
+  const dynamicFieldMeta = TAB_DYNAMIC_FIELDS[effectiveTabId] || {
     label: 'Checksheet Reference / Note',
     placeholder: 'Enter reference details...',
     defaultValue: ''
@@ -73,22 +77,46 @@ export default function AddChecksheetModal({
   const [dynamicValue, setDynamicValue] = useState(dynamicFieldMeta.defaultValue);
   const [documentName, setDocumentName] = useState('');
 
-  // Synchronize defaults whenever the modal opens or active tab changes
+  // Synchronize defaults whenever the modal opens or document changes
   useEffect(() => {
     if (open) {
-      setDepartment('Quality');
-      setSection('Quality Lab');
-      setDynamicValue(dynamicFieldMeta.defaultValue);
-      setDocumentName(tabMeta.fullTitle || tabMeta.shortLabel);
+      if (editingDocument) {
+        setDepartment(editingDocument.department || 'Quality');
+        setSection(editingDocument.section || 'Quality Lab');
+        setDynamicValue(editingDocument.extraField || '');
+        setDocumentName(editingDocument.documentName || '');
+      } else {
+        setDepartment('Quality');
+        setSection('Quality Lab');
+        setDynamicValue(dynamicFieldMeta.defaultValue);
+        setDocumentName(tabMeta.fullTitle || tabMeta.shortLabel);
+      }
     }
-  }, [open, activeTabId]);
+  }, [open, editingDocument, effectiveTabId]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
 
-    let code = 'F-CAL-01';
     let docTitle = documentName.trim() || tabMeta.fullTitle || tabMeta.shortLabel;
 
+    if (isEditMode && editingDocument) {
+      const updatedDoc = {
+        ...editingDocument,
+        documentName: docTitle,
+        department: department || 'Quality',
+        section: section || 'Quality Lab',
+        extraField: dynamicValue
+      };
+      if (typeof onSave === 'function') {
+        onSave(updatedDoc);
+      } else if (typeof onAdd === 'function') {
+        onAdd(updatedDoc);
+      }
+      onOpenChange(false);
+      return;
+    }
+
+    let code = 'F-CAL-01';
     switch (activeTabId) {
       case 'procedure':
         code = 'SOP-QA-CAL-001';
@@ -125,6 +153,7 @@ export default function AddChecksheetModal({
       id: `DOC-CAL-${activeTabId.toUpperCase()}-${Date.now()}`,
       documentName: docTitle,
       code,
+      tab: activeTabId,
       subType: activeTabId === 'report-format' ? subFilter : undefined,
       unit: selectedUnit || 'Bawal',
       department: department || 'Quality',
@@ -144,18 +173,31 @@ export default function AddChecksheetModal({
         {/* Header */}
         <div className="bg-muted/40 border-b border-border px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600">
-              <FileText className="w-4 h-4" />
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+              isEditMode
+                ? 'bg-emerald-50 border border-emerald-100 text-emerald-600'
+                : 'bg-blue-50 border border-blue-100 text-blue-600'
+            }`}>
+              {isEditMode ? <Edit3 className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
             </div>
             <div>
               <DialogTitle className="text-base font-bold text-foreground">
-                Add New Checksheet
+                {isEditMode ? 'Edit Checksheet Details' : 'Add New Checksheet'}
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground flex items-center gap-1.5 flex-wrap">
-                <span>Add a new checksheet entry for <span className="font-semibold text-foreground">{tabMeta.shortLabel}</span></span>
-                {selectedUnit && (
+                {isEditMode ? (
+                  <span>Edit department, section, and checksheet details for <span className="font-semibold text-foreground">{tabMeta.shortLabel}</span></span>
+                ) : (
+                  <span>Add a new checksheet entry for <span className="font-semibold text-foreground">{tabMeta.shortLabel}</span></span>
+                )}
+                {(editingDocument?.unit || selectedUnit) && (
                   <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-blue-50 text-blue-700 border border-blue-200">
-                    Plant: {selectedUnit}
+                    Plant: {editingDocument?.unit || selectedUnit}
+                  </span>
+                )}
+                {isEditMode && editingDocument?.code && (
+                  <span className="px-1.5 py-0.5 text-[10px] font-mono font-bold rounded bg-muted text-muted-foreground border border-border">
+                    {editingDocument.code}
                   </span>
                 )}
               </DialogDescription>
@@ -253,10 +295,23 @@ export default function AddChecksheetModal({
             <Button
               type="submit"
               size="sm"
-              className="h-9 px-4 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs flex items-center gap-1.5 cursor-pointer"
+              className={`h-9 px-4 rounded-lg font-semibold text-xs shadow-xs flex items-center gap-1.5 cursor-pointer text-white ${
+                isEditMode
+                  ? 'bg-emerald-600 hover:bg-emerald-700'
+                  : 'bg-blue-600 hover:bg-blue-700'
+              }`}
             >
-              <Plus className="w-4 h-4" />
-              <span>Add Checksheet</span>
+              {isEditMode ? (
+                <>
+                  <Save className="w-4 h-4" />
+                  <span>Save Changes</span>
+                </>
+              ) : (
+                <>
+                  <Plus className="w-4 h-4" />
+                  <span>Add Checksheet</span>
+                </>
+              )}
             </Button>
           </div>
         </form>

@@ -102,23 +102,23 @@ export default function HalfYearlyPlanChecksheet({ document = {}, onSave = () =>
       )}
 
       {/* ── Checksheet Canvas ── */}
-      <div className="w-[1320px] max-w-[1320px] shrink-0 bg-white border-2 border-black shadow-md text-black font-sans text-xs">
-        <table className="w-full min-w-[1240px] border-collapse border border-black table-fixed">
-          {/* Column Sizing */}
+      <div className="w-[1280px] max-w-[1280px] shrink-0 bg-white border-2 border-black shadow-md text-black font-sans text-xs overflow-hidden">
+        <table className="w-full border-collapse table-fixed">
+          {/* Column Sizing (Percentages summing to 100%) */}
           <colgroup>
-            <col style={{ width: '42px' }} />
-            <col style={{ width: '165px' }} />
-            <col style={{ width: '145px' }} />
-            <col style={{ width: '95px' }} />
-            <col style={{ width: '120px' }} />
-            <col style={{ width: '90px' }} />
-            <col style={{ width: '95px' }} />
-            <col style={{ width: '85px' }} />
-            <col style={{ width: '85px' }} />
-            <col style={{ width: '85px' }} />
-            <col style={{ width: '95px' }} />
-            <col style={{ width: '135px' }} />
-            <col style={{ width: '110px' }} />
+            <col style={{ width: '3.5%' }} />
+            <col style={{ width: '13.5%' }} />
+            <col style={{ width: '11.5%' }} />
+            <col style={{ width: '7.5%' }} />
+            <col style={{ width: '9.5%' }} />
+            <col style={{ width: '7%' }} />
+            <col style={{ width: '7.5%' }} />
+            <col style={{ width: '7%' }} />
+            <col style={{ width: '7%' }} />
+            <col style={{ width: '7%' }} />
+            <col style={{ width: '7.5%' }} />
+            <col style={{ width: '11%' }} />
+            <col style={{ width: '8%' }} />
           </colgroup>
 
           {/* ── 1. Yellow Header Block (Matches Screenshot 2 Exactly) ── */}
@@ -368,7 +368,7 @@ export default function HalfYearlyPlanChecksheet({ document = {}, onSave = () =>
         </table>
 
         {/* ── Document Footer Signatures Section ── */}
-        <div className="w-full min-w-[1440px] grid grid-cols-4 border-t-2 border-black bg-white text-[11px] font-bold divide-x-2 divide-black">
+        <div className="w-full grid grid-cols-4 border-t-2 border-black bg-white text-[11px] font-bold divide-x-2 divide-black">
           {/* Column 1: Prepared By */}
           <div className="p-2 space-y-1">
             <div className="flex items-center">

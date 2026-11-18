@@ -129,13 +129,13 @@ test('7. All 9 sub-tab component files render CalibrationDocumentsTable', () => 
   }
 });
 
-test('8. CalibrationPage has default unit null, date range, and single-row filter bar', () => {
+test('8. CalibrationPage has default unit null, date range removed, and single-row filter bar', () => {
   const pagePath = path.join(adminRoot, 'src/pages/calibration/CalibrationPage.jsx');
   assert.ok(fs.existsSync(pagePath), 'CalibrationPage.jsx must exist');
   const content = fs.readFileSync(pagePath, 'utf8');
 
   assert.ok(content.includes('useState(null)'), 'Default unit must be null');
-  assert.ok(content.includes('From Date') && content.includes('To Date'), 'Date range From and To must exist');
+  assert.ok(!content.includes('id="calibration-from-date"') && !content.includes('From Date'), 'Date range must be removed from CalibrationPage');
   assert.ok(!content.includes('isSendMailOpen'), 'Send Mail must not be present');
   assert.ok(content.includes('CalibrationTabBar'), 'CalibrationPage must render CalibrationTabBar');
   assert.ok(content.includes('CalibrationFilterBar'), 'CalibrationPage must render CalibrationFilterBar');
@@ -687,4 +687,22 @@ test('25. SignatureApprovalControl exists with Approved/Rejected buttons and hid
     const csContent = fs.readFileSync(csPath, 'utf8');
     assert.ok(csContent.includes('SignatureApprovalControl'), `${file} must import and use SignatureApprovalControl`);
   }
+});
+
+test('26. Procedure tab contains 6 required documents and procedure sheet is empty placeholder', () => {
+  const dataPath = path.join(adminRoot, 'src/components/calibration/calibrationDocumentsData.js');
+  const dataContent = fs.readFileSync(dataPath, 'utf8');
+
+  // Verify all 6 documents in procedure
+  assert.ok(dataContent.includes('Standard Operating Procedure'), 'Must contain Standard Operating Procedure');
+  assert.ok(dataContent.includes('Annexure 1'), 'Must contain Annexure 1');
+  assert.ok(dataContent.includes('Annexure 2'), 'Must contain Annexure 2');
+  assert.ok(dataContent.includes('Annexure 3'), 'Must contain Annexure 3');
+  assert.ok(dataContent.includes('Scope for Calibration'), 'Must contain Scope for Calibration');
+  assert.ok(dataContent.includes('Scope for Inspection'), 'Must contain Scope for Inspection');
+
+  // Verify CalibrationChecksheetView displays empty placeholder when no checksheet template is configured for procedure
+  const viewPath = path.join(adminRoot, 'src/components/calibration/CalibrationChecksheetView.jsx');
+  const viewContent = fs.readFileSync(viewPath, 'utf8');
+  assert.ok(viewContent.includes('no checksheet added yet') || viewContent.includes('No checksheet added yet'), 'Must show empty checksheet message for procedure');
 });

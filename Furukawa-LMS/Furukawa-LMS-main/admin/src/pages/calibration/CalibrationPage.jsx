@@ -136,11 +136,7 @@ export default function CalibrationPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // 2. Date range state
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
-
-  // 3. Search and filter state
+  // 2. Search and filter state
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState('');
   const [selectedSection, setSelectedSection] = useState('');
@@ -335,38 +331,6 @@ export default function CalibrationPage() {
                   </button>
                 )}
               </div>
-            )}
-          </div>
-
-          {/* Date Range Card */}
-          <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1.5 shadow-xs text-xs">
-            <span className="text-muted-foreground font-semibold">From Date</span>
-            <input
-              type="date"
-              id="calibration-from-date"
-              value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
-              className="px-2 py-1 bg-transparent text-foreground text-xs font-medium border border-input rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
-            />
-            <span className="text-muted-foreground font-semibold ml-1">To Date</span>
-            <input
-              type="date"
-              id="calibration-to-date"
-              value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
-              className="px-2 py-1 bg-transparent text-foreground text-xs font-medium border border-input rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
-            />
-            {(fromDate || toDate) && (
-              <button
-                type="button"
-                onClick={() => {
-                  setFromDate('');
-                  setToDate('');
-                }}
-                className="text-xs text-muted-foreground hover:text-foreground underline ml-1 cursor-pointer"
-              >
-                Clear
-              </button>
             )}
           </div>
         </div>

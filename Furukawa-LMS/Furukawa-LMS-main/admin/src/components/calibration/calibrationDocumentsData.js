@@ -1,15 +1,76 @@
 export const CALIBRATION_DOCUMENTS_BY_TAB = {
   procedure: [
     {
-      id: 'DOC-CAL-01',
+      id: 'DOC-CAL-01-SOP',
       sNo: 1,
-      documentName: 'Calibration Standard Operating Procedure (SOP-QA-CAL-001)',
+      documentName: 'Standard Operating Procedure (SOP-QA-CAL-001)',
       code: 'SOP-QA-CAL-001',
       unit: 'Bawal',
       department: 'Quality',
       section: 'Quality Lab',
-      date: '17 Nov 2026',
-      status: 'Active'
+      date: '18 Nov 2026',
+      status: 'Active',
+      tab: 'procedure'
+    },
+    {
+      id: 'DOC-CAL-01-ANNEX-1',
+      sNo: 2,
+      documentName: 'Annexure 1',
+      code: 'ANNEXURE-01',
+      unit: 'Bawal',
+      department: 'Quality',
+      section: 'Quality Lab',
+      date: '18 Nov 2026',
+      status: 'Active',
+      tab: 'procedure'
+    },
+    {
+      id: 'DOC-CAL-01-ANNEX-2',
+      sNo: 3,
+      documentName: 'Annexure 2',
+      code: 'ANNEXURE-02',
+      unit: 'Bawal',
+      department: 'Quality',
+      section: 'Quality Lab',
+      date: '18 Nov 2026',
+      status: 'Active',
+      tab: 'procedure'
+    },
+    {
+      id: 'DOC-CAL-01-ANNEX-3',
+      sNo: 4,
+      documentName: 'Annexure 3',
+      code: 'ANNEXURE-03',
+      unit: 'Bawal',
+      department: 'Quality',
+      section: 'Quality Lab',
+      date: '18 Nov 2026',
+      status: 'Active',
+      tab: 'procedure'
+    },
+    {
+      id: 'DOC-CAL-01-SCOPE-CAL',
+      sNo: 5,
+      documentName: 'Scope for Calibration',
+      code: 'SCOPE-CAL-01',
+      unit: 'Bawal',
+      department: 'Quality',
+      section: 'Quality Lab',
+      date: '18 Nov 2026',
+      status: 'Active',
+      tab: 'procedure'
+    },
+    {
+      id: 'DOC-CAL-01-SCOPE-INSP',
+      sNo: 6,
+      documentName: 'Scope for Inspection',
+      code: 'SCOPE-INSP-01',
+      unit: 'Bawal',
+      department: 'Quality',
+      section: 'Quality Lab',
+      date: '18 Nov 2026',
+      status: 'Active',
+      tab: 'procedure'
     }
   ],
   'addition-deletion': [

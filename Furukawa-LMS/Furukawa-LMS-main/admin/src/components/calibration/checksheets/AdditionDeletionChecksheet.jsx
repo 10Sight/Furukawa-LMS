@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Check } from 'lucide-react';
+import SignatureApprovalControl from './SignatureApprovalControl';
 
 export default function AdditionDeletionChecksheet({ document = {}, onSave = () => {} }) {
   const [formData, setFormData] = useState(() => {
@@ -71,7 +72,7 @@ export default function AdditionDeletionChecksheet({ document = {}, onSave = () 
 
       {/* Main Form Sheet Box */}
       <div
-        className="bg-white text-black shadow-lg rounded-none w-full max-w-4xl p-6 sm:p-10"
+        className="bg-white text-black shadow-lg rounded-none w-[900px] max-w-[900px] shrink-0 p-6 sm:p-10"
         style={{
           border: '2px solid #000000',
           fontFamily: "'Calibri', 'Arial', sans-serif"
@@ -520,13 +521,21 @@ export default function AdditionDeletionChecksheet({ document = {}, onSave = () 
             {/* APPROVED BY: Dept. Head */}
             <div className="col-span-4 p-2 flex flex-col justify-center">
               <div className="font-bold">APPROVED BY:</div>
-              <div className="flex items-center text-xs font-semibold text-slate-700">
-                <span className="mr-1">Dept. Head:</span>
-                <input
-                  type="text"
-                  value={formData.approvedBy}
-                  onChange={(e) => updateField('approvedBy', e.target.value)}
-                  className="w-full bg-transparent font-medium focus:outline-none"
+              <div className="flex items-center gap-2 mt-1">
+                <div className="flex items-center text-xs font-semibold text-slate-700 flex-1 min-w-0">
+                  <span className="mr-1 shrink-0">Dept. Head:</span>
+                  <input
+                    type="text"
+                    value={formData.approvedBy}
+                    onChange={(e) => updateField('approvedBy', e.target.value)}
+                    className="w-full bg-transparent font-medium focus:outline-none"
+                  />
+                </div>
+                <SignatureApprovalControl
+                  status={formData.approvedBy_status || 'pending'}
+                  onApprove={() => updateField('approvedBy_status', 'approved')}
+                  onReject={() => updateField('approvedBy_status', 'rejected')}
+                  onReset={() => updateField('approvedBy_status', 'pending')}
                 />
               </div>
             </div>

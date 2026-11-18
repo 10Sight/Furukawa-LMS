@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ArrowLeft, Save, Download, FileText, FileQuestion } from 'lucide-react';
 import { Button } from '@/components/common/ui/button.jsx';
 import { Badge } from '@/components/common/ui/badge.jsx';
@@ -16,7 +16,8 @@ import UsabilityDeclarationChecksheet from './checksheets/UsabilityDeclarationCh
 
 export default function CalibrationChecksheetView({
   document = {},
-  onBack = () => { }
+  onBack = () => { },
+  onSave = null
 }) {
   const isAdditionDeletion =
     document.code === 'F-CAL-02' ||
@@ -80,13 +81,29 @@ export default function CalibrationChecksheetView({
     document.documentName?.includes('Usability') ||
     document.documentName?.includes('usability');
 
+  const [zoom, setZoom] = useState(100);
+
+  const handleZoomIn = () => {
+    setZoom((prev) => Math.min(prev + 10, 150));
+  };
+
+  const handleZoomOut = () => {
+    setZoom((prev) => Math.max(prev - 10, 50));
+  };
+
+  const handleResetZoom = () => {
+    setZoom(100);
+  };
+
   const handleSave = () => {
+    if (typeof onSave === 'function') {
+      onSave(document);
+    }
     toast.success('Checksheet saved successfully!');
   };
 
   const handleExport = () => {
-    toast.info('Preparing checksheet for print / export...');
-    window.print();
+    toast.warning('currently no excel export not available');
   };
 
   return (
@@ -145,8 +162,41 @@ export default function CalibrationChecksheetView({
           </div>
         </div>
 
-        {/* Right Side: Save & Export Action Buttons */}
-        <div className="flex items-center gap-2 shrink-0">
+        {/* Right Side: Zoom Controls (Minimise/Maximise), Save & Export Action Buttons */}
+        <div className="flex items-center gap-2.5 shrink-0">
+          {/* Zoom Control Pill ( - | 100% | + ) */}
+          <div className="inline-flex items-center border border-slate-300 rounded-lg bg-white overflow-hidden shadow-xs h-9 text-xs select-none divide-x divide-slate-200">
+            <button
+              type="button"
+              id="calibration-zoom-out-btn"
+              onClick={handleZoomOut}
+              disabled={zoom <= 50}
+              className="w-8 h-full flex items-center justify-center hover:bg-slate-100 active:bg-slate-200 text-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors font-bold text-base cursor-pointer"
+              title="Minimise (Zoom Out)"
+            >
+              −
+            </button>
+            <button
+              type="button"
+              id="calibration-zoom-reset-btn"
+              onClick={handleResetZoom}
+              className="px-3 h-full flex items-center justify-center font-bold text-xs text-blue-600 hover:bg-blue-50/70 transition-colors min-w-[54px] cursor-pointer"
+              title="Reset Zoom to 100%"
+            >
+              {zoom}%
+            </button>
+            <button
+              type="button"
+              id="calibration-zoom-in-btn"
+              onClick={handleZoomIn}
+              disabled={zoom >= 150}
+              className="w-8 h-full flex items-center justify-center hover:bg-slate-100 active:bg-slate-200 text-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors font-bold text-base cursor-pointer"
+              title="Maximise (Zoom In)"
+            >
+              +
+            </button>
+          </div>
+
           <Button
             type="button"
             size="sm"
@@ -172,9 +222,12 @@ export default function CalibrationChecksheetView({
         </div>
       </div>
 
-      {/* ── Main Checksheet Content Area: Full Vertical Scrolling ────────── */}
-      <div className="flex-1 min-h-0 w-full overflow-y-auto overscroll-contain p-3 sm:p-6 pb-28">
-        <div className="w-full max-w-[1560px] mx-auto flex flex-col items-center">
+      {/* ── Main Checksheet Content Area: Unified Horizontal & Vertical Page Scrolling ────────── */}
+      <div className="flex-1 min-h-0 w-full overflow-x-auto overflow-y-auto overscroll-contain p-3 sm:p-6 pb-28">
+        <div
+          className="w-fit min-w-full mx-auto flex flex-col items-center origin-top transition-[zoom]"
+          style={{ zoom: `${zoom}%` }}
+        >
           {isAdditionDeletion ? (
             <AdditionDeletionChecksheet document={document} />
           ) : isHalfYearlyPlan ? (

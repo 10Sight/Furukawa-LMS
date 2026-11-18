@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Check } from 'lucide-react';
+import SignatureApprovalControl from './SignatureApprovalControl';
 
 const SUNDAYS_AUG_2026 = [2, 9, 16, 23, 30];
 const DAYS_IN_MONTH = 31;
@@ -122,7 +123,7 @@ export default function MonthlyPlanChecksheet({ document = {}, onSave = () => {}
       )}
 
       {/* ── Checksheet Canvas ── */}
-      <div className="w-full max-w-[1520px] bg-white border border-black shadow-md overflow-x-auto text-black font-sans text-xs">
+      <div className="w-[1520px] max-w-[1520px] shrink-0 bg-white border border-black shadow-md text-black font-sans text-xs">
         {/* Top Bar with Title and Legends Box (Matching Screenshot 2 & 3) */}
         <div className="w-full min-w-[1440px] px-4 py-2 bg-white flex items-end justify-between border-b border-black">
           {/* Centered Document Title */}
@@ -361,13 +362,21 @@ export default function MonthlyPlanChecksheet({ document = {}, onSave = () => {}
 
           {/* Column 2: Checked By */}
           <div className="p-2 space-y-1">
-            <div className="flex items-center">
-              <span className="text-black mr-1">Checked By :</span>
-              <input
-                type="text"
-                value={footerInfo.checkedBy}
-                onChange={(e) => setFooterInfo((prev) => ({ ...prev, checkedBy: e.target.value }))}
-                className="bg-transparent font-bold focus:outline-none"
+            <div className="flex items-center justify-between gap-1 flex-wrap">
+              <div className="flex items-center min-w-0">
+                <span className="text-black mr-1 shrink-0">Checked By :</span>
+                <input
+                  type="text"
+                  value={footerInfo.checkedBy}
+                  onChange={(e) => setFooterInfo((prev) => ({ ...prev, checkedBy: e.target.value }))}
+                  className="bg-transparent font-bold focus:outline-none w-24"
+                />
+              </div>
+              <SignatureApprovalControl
+                status={footerInfo.checkedBy_status || 'pending'}
+                onApprove={() => setFooterInfo((prev) => ({ ...prev, checkedBy_status: 'approved' }))}
+                onReject={() => setFooterInfo((prev) => ({ ...prev, checkedBy_status: 'rejected' }))}
+                onReset={() => setFooterInfo((prev) => ({ ...prev, checkedBy_status: 'pending' }))}
               />
             </div>
             <div className="text-[10px] font-bold text-black">REV :- {footerInfo.revNo}</div>
@@ -375,13 +384,21 @@ export default function MonthlyPlanChecksheet({ document = {}, onSave = () => {}
 
           {/* Column 3: Reviewed By */}
           <div className="p-2 space-y-1">
-            <div className="flex items-center">
-              <span className="text-black mr-1">Reviewed By:</span>
-              <input
-                type="text"
-                value={footerInfo.reviewedBy}
-                onChange={(e) => setFooterInfo((prev) => ({ ...prev, reviewedBy: e.target.value }))}
-                className="bg-transparent font-bold focus:outline-none"
+            <div className="flex items-center justify-between gap-1 flex-wrap">
+              <div className="flex items-center min-w-0">
+                <span className="text-black mr-1 shrink-0">Reviewed By:</span>
+                <input
+                  type="text"
+                  value={footerInfo.reviewedBy}
+                  onChange={(e) => setFooterInfo((prev) => ({ ...prev, reviewedBy: e.target.value }))}
+                  className="bg-transparent font-bold focus:outline-none w-24"
+                />
+              </div>
+              <SignatureApprovalControl
+                status={footerInfo.reviewedBy_status || 'pending'}
+                onApprove={() => setFooterInfo((prev) => ({ ...prev, reviewedBy_status: 'approved' }))}
+                onReject={() => setFooterInfo((prev) => ({ ...prev, reviewedBy_status: 'rejected' }))}
+                onReset={() => setFooterInfo((prev) => ({ ...prev, reviewedBy_status: 'pending' }))}
               />
             </div>
             <div className="text-[10px] font-bold text-black">REV DATE:- {footerInfo.revDate}</div>
@@ -389,13 +406,21 @@ export default function MonthlyPlanChecksheet({ document = {}, onSave = () => {}
 
           {/* Column 4: Approved By */}
           <div className="p-2 space-y-1">
-            <div className="flex items-center">
-              <span className="text-black mr-1">Approved By:</span>
-              <input
-                type="text"
-                value={footerInfo.approvedBy}
-                onChange={(e) => setFooterInfo((prev) => ({ ...prev, approvedBy: e.target.value }))}
-                className="bg-transparent font-bold focus:outline-none"
+            <div className="flex items-center justify-between gap-1 flex-wrap">
+              <div className="flex items-center min-w-0">
+                <span className="text-black mr-1 shrink-0">Approved By:</span>
+                <input
+                  type="text"
+                  value={footerInfo.approvedBy}
+                  onChange={(e) => setFooterInfo((prev) => ({ ...prev, approvedBy: e.target.value }))}
+                  className="bg-transparent font-bold focus:outline-none w-24"
+                />
+              </div>
+              <SignatureApprovalControl
+                status={footerInfo.approvedBy_status || 'pending'}
+                onApprove={() => setFooterInfo((prev) => ({ ...prev, approvedBy_status: 'approved' }))}
+                onReject={() => setFooterInfo((prev) => ({ ...prev, approvedBy_status: 'rejected' }))}
+                onReset={() => setFooterInfo((prev) => ({ ...prev, approvedBy_status: 'pending' }))}
               />
             </div>
             <div className="text-[10px] font-bold text-black">ISSUE DATE {footerInfo.issueDate}</div>

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Check } from 'lucide-react';
+import SignatureApprovalControl from './SignatureApprovalControl';
 
 const INITIAL_READING_ROWS = [
   { sNo: '1', standardReading: '', observedReading: '', deviation: '' },
@@ -184,7 +185,7 @@ export default function FormatChecksheet({ document = {}, onSave = () => {} }) {
       )}
 
       {/* ── Checksheet Canvas ── */}
-      <div className="w-full max-w-[1240px] bg-white border-2 border-black shadow-md overflow-x-auto text-black font-sans text-xs">
+      <div className="w-[1240px] max-w-[1240px] shrink-0 bg-white border-2 border-black shadow-md text-black font-sans text-xs">
         {/* Company Header */}
         <div className="w-full min-w-[1100px] border-b-2 border-black p-2 text-center font-bold text-sm sm:text-base tracking-wide bg-white">
           FURUKAWA MINDA ELECTRIC PVT. LTD.
@@ -577,31 +578,55 @@ export default function FormatChecksheet({ document = {}, onSave = () => {} }) {
               className="w-full bg-transparent border-none focus:outline-none font-medium"
             />
           </div>
-          <div className="p-2 min-h-[50px] flex items-center">
-            <span className="font-bold mr-2 whitespace-nowrap">Checked By :</span>
-            <input
-              type="text"
-              value={footerInfo.checkedBy}
-              onChange={(e) => setFooterInfo((prev) => ({ ...prev, checkedBy: e.target.value }))}
-              className="w-full bg-transparent border-none focus:outline-none font-medium"
+          <div className="p-2 min-h-[50px] flex items-center justify-between gap-1.5">
+            <div className="flex items-center min-w-0 flex-1">
+              <span className="font-bold mr-2 whitespace-nowrap">Checked By :</span>
+              <input
+                type="text"
+                value={footerInfo.checkedBy}
+                onChange={(e) => setFooterInfo((prev) => ({ ...prev, checkedBy: e.target.value }))}
+                className="w-full bg-transparent border-none focus:outline-none font-medium"
+              />
+            </div>
+            <SignatureApprovalControl
+              status={footerInfo.checkedBy_status || 'pending'}
+              onApprove={() => setFooterInfo((prev) => ({ ...prev, checkedBy_status: 'approved' }))}
+              onReject={() => setFooterInfo((prev) => ({ ...prev, checkedBy_status: 'rejected' }))}
+              onReset={() => setFooterInfo((prev) => ({ ...prev, checkedBy_status: 'pending' }))}
             />
           </div>
-          <div className="p-2 min-h-[50px] flex items-center">
-            <span className="font-bold mr-2 whitespace-nowrap">Reviewed By :</span>
-            <input
-              type="text"
-              value={footerInfo.reviewBy}
-              onChange={(e) => setFooterInfo((prev) => ({ ...prev, reviewBy: e.target.value }))}
-              className="w-full bg-transparent border-none focus:outline-none font-medium"
+          <div className="p-2 min-h-[50px] flex items-center justify-between gap-1.5">
+            <div className="flex items-center min-w-0 flex-1">
+              <span className="font-bold mr-2 whitespace-nowrap">Reviewed By :</span>
+              <input
+                type="text"
+                value={footerInfo.reviewBy}
+                onChange={(e) => setFooterInfo((prev) => ({ ...prev, reviewBy: e.target.value }))}
+                className="w-full bg-transparent border-none focus:outline-none font-medium"
+              />
+            </div>
+            <SignatureApprovalControl
+              status={footerInfo.reviewBy_status || 'pending'}
+              onApprove={() => setFooterInfo((prev) => ({ ...prev, reviewBy_status: 'approved' }))}
+              onReject={() => setFooterInfo((prev) => ({ ...prev, reviewBy_status: 'rejected' }))}
+              onReset={() => setFooterInfo((prev) => ({ ...prev, reviewBy_status: 'pending' }))}
             />
           </div>
-          <div className="p-2 min-h-[50px] flex items-center">
-            <span className="font-bold mr-2 whitespace-nowrap">Approved By:</span>
-            <input
-              type="text"
-              value={footerInfo.approvedBy}
-              onChange={(e) => setFooterInfo((prev) => ({ ...prev, approvedBy: e.target.value }))}
-              className="w-full bg-transparent border-none focus:outline-none font-medium"
+          <div className="p-2 min-h-[50px] flex items-center justify-between gap-1.5">
+            <div className="flex items-center min-w-0 flex-1">
+              <span className="font-bold mr-2 whitespace-nowrap">Approved By:</span>
+              <input
+                type="text"
+                value={footerInfo.approvedBy}
+                onChange={(e) => setFooterInfo((prev) => ({ ...prev, approvedBy: e.target.value }))}
+                className="w-full bg-transparent border-none focus:outline-none font-medium"
+              />
+            </div>
+            <SignatureApprovalControl
+              status={footerInfo.approvedBy_status || 'pending'}
+              onApprove={() => setFooterInfo((prev) => ({ ...prev, approvedBy_status: 'approved' }))}
+              onReject={() => setFooterInfo((prev) => ({ ...prev, approvedBy_status: 'rejected' }))}
+              onReset={() => setFooterInfo((prev) => ({ ...prev, approvedBy_status: 'pending' }))}
             />
           </div>
         </div>

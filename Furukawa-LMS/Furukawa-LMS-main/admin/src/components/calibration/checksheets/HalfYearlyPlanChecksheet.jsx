@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Check } from 'lucide-react';
+import SignatureApprovalControl from './SignatureApprovalControl';
 
 const INITIAL_ROW_COUNT = 35;
 
@@ -22,6 +23,21 @@ export default function HalfYearlyPlanChecksheet({ document = {}, onSave = () =>
       issueNo: '2',
       revisionIssueDate: '01-07-2026',
       calibrationSource: 'FME QA LAB'
+    };
+  });
+
+  const [footerInfo, setFooterInfo] = useState(() => {
+    try {
+      const saved = localStorage.getItem(`${storageKey}_footer`);
+      if (saved) return JSON.parse(saved);
+    } catch {
+      /* ignore */
+    }
+    return {
+      preparedBy: 'Ujjawal Kumar',
+      checkedBy: 'Alok Singh',
+      reviewedBy: 'Vikas Phogat',
+      approvedBy: 'Arvind Chauhan'
     };
   });
 
@@ -67,12 +83,13 @@ export default function HalfYearlyPlanChecksheet({ document = {}, onSave = () =>
     try {
       localStorage.setItem(`${storageKey}_header`, JSON.stringify(headerInfo));
       localStorage.setItem(`${storageKey}_rows`, JSON.stringify(rows));
+      localStorage.setItem(`${storageKey}_footer`, JSON.stringify(footerInfo));
     } catch (e) {
       console.warn('Could not save to localStorage', e);
     }
     setSaveToast(true);
     setTimeout(() => setSaveToast(false), 2500);
-    onSave({ headerInfo, rows });
+    onSave({ headerInfo, rows, footerInfo });
   };
 
   return (
@@ -85,7 +102,7 @@ export default function HalfYearlyPlanChecksheet({ document = {}, onSave = () =>
       )}
 
       {/* ── Checksheet Canvas ── */}
-      <div className="w-full max-w-[1320px] bg-white border-2 border-black shadow-md overflow-x-auto text-black font-sans text-xs">
+      <div className="w-[1320px] max-w-[1320px] shrink-0 bg-white border-2 border-black shadow-md text-black font-sans text-xs">
         <table className="w-full min-w-[1240px] border-collapse border border-black table-fixed">
           {/* Column Sizing */}
           <colgroup>
@@ -349,6 +366,89 @@ export default function HalfYearlyPlanChecksheet({ document = {}, onSave = () =>
             ))}
           </tbody>
         </table>
+
+        {/* ── Document Footer Signatures Section ── */}
+        <div className="w-full min-w-[1440px] grid grid-cols-4 border-t-2 border-black bg-white text-[11px] font-bold divide-x-2 divide-black">
+          {/* Column 1: Prepared By */}
+          <div className="p-2 space-y-1">
+            <div className="flex items-center">
+              <span className="text-black mr-1 whitespace-nowrap">Prepared By:</span>
+              <input
+                type="text"
+                value={footerInfo.preparedBy}
+                onChange={(e) => setFooterInfo((prev) => ({ ...prev, preparedBy: e.target.value }))}
+                className="bg-transparent font-bold focus:outline-none w-full"
+              />
+            </div>
+            <div className="text-[10px] font-bold text-black">{headerInfo.docCode}</div>
+          </div>
+
+          {/* Column 2: Checked By */}
+          <div className="p-2 space-y-1">
+            <div className="flex items-center justify-between gap-1 flex-wrap">
+              <div className="flex items-center min-w-0">
+                <span className="text-black mr-1 shrink-0 whitespace-nowrap">Checked By :</span>
+                <input
+                  type="text"
+                  value={footerInfo.checkedBy}
+                  onChange={(e) => setFooterInfo((prev) => ({ ...prev, checkedBy: e.target.value }))}
+                  className="bg-transparent font-bold focus:outline-none w-24"
+                />
+              </div>
+              <SignatureApprovalControl
+                status={footerInfo.checkedBy_status || 'pending'}
+                onApprove={() => setFooterInfo((prev) => ({ ...prev, checkedBy_status: 'approved' }))}
+                onReject={() => setFooterInfo((prev) => ({ ...prev, checkedBy_status: 'rejected' }))}
+                onReset={() => setFooterInfo((prev) => ({ ...prev, checkedBy_status: 'pending' }))}
+              />
+            </div>
+            <div className="text-[10px] font-bold text-black">REV :- {headerInfo.revNo}</div>
+          </div>
+
+          {/* Column 3: Reviewed By */}
+          <div className="p-2 space-y-1">
+            <div className="flex items-center justify-between gap-1 flex-wrap">
+              <div className="flex items-center min-w-0">
+                <span className="text-black mr-1 shrink-0 whitespace-nowrap">Reviewed By:</span>
+                <input
+                  type="text"
+                  value={footerInfo.reviewedBy}
+                  onChange={(e) => setFooterInfo((prev) => ({ ...prev, reviewedBy: e.target.value }))}
+                  className="bg-transparent font-bold focus:outline-none w-24"
+                />
+              </div>
+              <SignatureApprovalControl
+                status={footerInfo.reviewedBy_status || 'pending'}
+                onApprove={() => setFooterInfo((prev) => ({ ...prev, reviewedBy_status: 'approved' }))}
+                onReject={() => setFooterInfo((prev) => ({ ...prev, reviewedBy_status: 'rejected' }))}
+                onReset={() => setFooterInfo((prev) => ({ ...prev, reviewedBy_status: 'pending' }))}
+              />
+            </div>
+            <div className="text-[10px] font-bold text-black">REV DATE:- {headerInfo.revDate}</div>
+          </div>
+
+          {/* Column 4: Approved By */}
+          <div className="p-2 space-y-1">
+            <div className="flex items-center justify-between gap-1 flex-wrap">
+              <div className="flex items-center min-w-0">
+                <span className="text-black mr-1 shrink-0 whitespace-nowrap">Approved By:</span>
+                <input
+                  type="text"
+                  value={footerInfo.approvedBy}
+                  onChange={(e) => setFooterInfo((prev) => ({ ...prev, approvedBy: e.target.value }))}
+                  className="bg-transparent font-bold focus:outline-none w-24"
+                />
+              </div>
+              <SignatureApprovalControl
+                status={footerInfo.approvedBy_status || 'pending'}
+                onApprove={() => setFooterInfo((prev) => ({ ...prev, approvedBy_status: 'approved' }))}
+                onReject={() => setFooterInfo((prev) => ({ ...prev, approvedBy_status: 'rejected' }))}
+                onReset={() => setFooterInfo((prev) => ({ ...prev, approvedBy_status: 'pending' }))}
+              />
+            </div>
+            <div className="text-[10px] font-bold text-black">ISSUE DATE {headerInfo.issueDate}</div>
+          </div>
+        </div>
 
         {/* Hidden button to trigger save */}
         <button id="cal-checksheet-save-btn" type="button" onClick={handleSave} className="hidden" />

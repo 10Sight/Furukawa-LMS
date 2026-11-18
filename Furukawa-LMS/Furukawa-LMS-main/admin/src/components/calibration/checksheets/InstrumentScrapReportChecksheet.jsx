@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Check } from 'lucide-react';
+import SignatureApprovalControl from './SignatureApprovalControl';
 
 export default function InstrumentScrapReportChecksheet({ document = {}, onSave = () => {} }) {
   const storageKey = `cal_checksheet_${document.id || 'DOC-CAL-08'}`;
@@ -107,7 +108,7 @@ export default function InstrumentScrapReportChecksheet({ document = {}, onSave 
       )}
 
       {/* ── Checksheet Canvas (Exact replica of image) ── */}
-      <div className="w-full max-w-[950px] bg-white border-2 border-black shadow-md overflow-x-auto text-black font-sans text-xs">
+      <div className="w-[950px] max-w-[950px] shrink-0 bg-white border-2 border-black shadow-md text-black font-sans text-xs">
         {/* Top-Right Company Banner */}
         <div className="w-full min-w-[780px] flex justify-end p-1 px-3 bg-white font-bold text-xs sm:text-sm">
           <span>FURUKAWA MINDA ELECTRIC PVT. LTD.</span>
@@ -241,9 +242,17 @@ export default function InstrumentScrapReportChecksheet({ document = {}, onSave 
 
           {/* Signatory 2: Reviewed By Lab Incharge: */}
           <div className="space-y-1.5 flex flex-col justify-between min-h-[75px]">
-            <div>
-              <div className="font-bold">Reviewed By</div>
-              <div className="font-bold">Lab Incharge:</div>
+            <div className="flex items-center justify-between gap-1 flex-wrap">
+              <div>
+                <div className="font-bold">Reviewed By</div>
+                <div className="font-bold">Lab Incharge:</div>
+              </div>
+              <SignatureApprovalControl
+                status={signatures.reviewedBy_status || 'pending'}
+                onApprove={() => updateSig('reviewedBy_status', 'approved')}
+                onReject={() => updateSig('reviewedBy_status', 'rejected')}
+                onReset={() => updateSig('reviewedBy_status', 'pending')}
+              />
             </div>
             <div className="space-y-1">
               <div className="flex items-center">
@@ -269,9 +278,17 @@ export default function InstrumentScrapReportChecksheet({ document = {}, onSave 
 
           {/* Signatory 3: Approved By QA Head: */}
           <div className="space-y-1.5 flex flex-col justify-between min-h-[75px]">
-            <div>
-              <div className="font-bold">Approved By</div>
-              <div className="font-bold">QA Head:</div>
+            <div className="flex items-center justify-between gap-1 flex-wrap">
+              <div>
+                <div className="font-bold">Approved By</div>
+                <div className="font-bold">QA Head:</div>
+              </div>
+              <SignatureApprovalControl
+                status={signatures.approvedBy_status || 'pending'}
+                onApprove={() => updateSig('approvedBy_status', 'approved')}
+                onReject={() => updateSig('approvedBy_status', 'rejected')}
+                onReset={() => updateSig('approvedBy_status', 'pending')}
+              />
             </div>
             <div className="space-y-1">
               <div className="flex items-center">

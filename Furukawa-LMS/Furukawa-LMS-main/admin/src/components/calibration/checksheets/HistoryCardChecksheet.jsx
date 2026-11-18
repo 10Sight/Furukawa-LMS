@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Check } from 'lucide-react';
+import SignatureApprovalControl from './SignatureApprovalControl';
 
-const INITIAL_HISTORY_ROWS = 22;
+const INITIAL_HISTORY_ROWS = 10;
 
 export default function HistoryCardChecksheet({ document = {}, onSave = () => {} }) {
   const storageKey = `cal_checksheet_${document.id || 'DOC-CAL-06'}`;
@@ -27,11 +28,16 @@ export default function HistoryCardChecksheet({ document = {}, onSave = () => {}
     };
   });
 
-  // Main History Records Table (8 Columns with vertical lines, clean white canvas)
+  // Main History Records Table (9 Columns with S.No. and borders, clean white canvas)
   const [historyRows, setHistoryRows] = useState(() => {
     try {
       const saved = localStorage.getItem(`${storageKey}_rows`);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.slice(0, INITIAL_HISTORY_ROWS);
+        }
+      }
     } catch {
       /* ignore */
     }
@@ -56,6 +62,8 @@ export default function HistoryCardChecksheet({ document = {}, onSave = () => {}
       /* ignore */
     }
     return {
+      preparedBy: '',
+      approvedBy: '',
       docCode: 'FRM-WH-QA-038',
       revNo: 'Rev. No.01',
       revDate: 'Rev. Date: 07.03.19',
@@ -100,7 +108,7 @@ export default function HistoryCardChecksheet({ document = {}, onSave = () => {}
       )}
 
       {/* ── Checksheet Canvas (Exact replica of image, pure white, no extra borders) ── */}
-      <div className="w-full max-w-[1240px] bg-white border-2 border-black shadow-md overflow-x-auto text-black font-sans text-xs">
+      <div className="w-[1240px] max-w-[1240px] shrink-0 bg-white border-2 border-black shadow-md text-black font-sans text-xs">
         {/* Document Title Header */}
         <div className="w-full min-w-[1050px] border-b-2 border-black p-2 text-center font-bold text-sm sm:text-base tracking-wide bg-white">
           CALIBRATION HISTORY CARD
@@ -202,21 +210,23 @@ export default function HistoryCardChecksheet({ document = {}, onSave = () => {}
           </div>
         </div>
 
-        {/* ── 2. Calibration History Table (8 Columns with vertical lines, clean white body without horizontal row stripes) ── */}
+        {/* ── 2. Calibration History Table (9 Columns with S.No. and borders) ── */}
         <div className="w-full min-w-[1050px]">
           <table className="w-full border-collapse text-[11px] table-fixed">
             <colgroup>
+              <col style={{ width: '4%' }} />
               <col style={{ width: '7.5%' }} />
               <col style={{ width: '11%' }} />
               <col style={{ width: '11%' }} />
               <col style={{ width: '11%' }} />
-              <col style={{ width: '11%' }} />
-              <col style={{ width: '27.5%' }} />
-              <col style={{ width: '11%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '26.5%' }} />
+              <col style={{ width: '10%' }} />
               <col style={{ width: '10%' }} />
             </colgroup>
             <thead>
               <tr className="border-b-2 border-black text-center font-normal bg-white leading-tight">
+                <th className="p-2 border-r border-black font-normal align-middle">S.No.</th>
                 <th className="p-2 border-r border-black font-normal align-middle">Date</th>
                 <th className="p-2 border-r border-black font-normal align-middle">Calibration<br />report no.</th>
                 <th className="p-2 border-r border-black font-normal align-middle">Calibration<br />Due date</th>
@@ -229,7 +239,12 @@ export default function HistoryCardChecksheet({ document = {}, onSave = () => {}
             </thead>
             <tbody className="bg-white">
               {historyRows.map((row, idx) => (
-                <tr key={idx} className="border-none hover:bg-slate-50/40">
+                <tr key={idx} className="border-b border-black hover:bg-slate-50/40">
+                  {/* S.No. */}
+                  <td className="p-0 border-r border-black text-center font-semibold text-slate-800">
+                    {idx + 1}
+                  </td>
+
                   {/* Date */}
                   <td className="p-0 border-r border-black text-center">
                     <input
@@ -313,6 +328,36 @@ export default function HistoryCardChecksheet({ document = {}, onSave = () => {}
               ))}
             </tbody>
           </table>
+        </div>
+
+        {/* ── Signatures Row ── */}
+        <div className="w-full min-w-[1050px] border-t-2 border-black grid grid-cols-2 divide-x-2 divide-black bg-white text-[11px]">
+          <div className="p-2 flex items-center">
+            <span className="font-bold mr-2 whitespace-nowrap">Prepared By:</span>
+            <input
+              type="text"
+              value={footerInfo.preparedBy || ''}
+              onChange={(e) => setFooterInfo((prev) => ({ ...prev, preparedBy: e.target.value }))}
+              className="w-full bg-transparent border-none focus:outline-none font-medium"
+            />
+          </div>
+          <div className="p-2 flex items-center justify-between gap-2">
+            <div className="flex items-center min-w-0 flex-1">
+              <span className="font-bold mr-2 whitespace-nowrap">Approved By:</span>
+              <input
+                type="text"
+                value={footerInfo.approvedBy || ''}
+                onChange={(e) => setFooterInfo((prev) => ({ ...prev, approvedBy: e.target.value }))}
+                className="w-full bg-transparent border-none focus:outline-none font-medium"
+              />
+            </div>
+            <SignatureApprovalControl
+              status={footerInfo.approvedBy_status || 'pending'}
+              onApprove={() => setFooterInfo((prev) => ({ ...prev, approvedBy_status: 'approved' }))}
+              onReject={() => setFooterInfo((prev) => ({ ...prev, approvedBy_status: 'rejected' }))}
+              onReset={() => setFooterInfo((prev) => ({ ...prev, approvedBy_status: 'pending' }))}
+            />
+          </div>
         </div>
 
         {/* ── 3. Footer Metadata Row (Matching Screenshot Exactly) ── */}

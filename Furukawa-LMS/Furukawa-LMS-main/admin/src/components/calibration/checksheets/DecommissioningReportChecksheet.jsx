@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Check, ArrowRight } from 'lucide-react';
+import SignatureApprovalControl from './SignatureApprovalControl';
 
 const INITIAL_TABLE1_ROWS = 5;
 const INITIAL_TABLE2_ROWS = 6;
@@ -158,7 +159,7 @@ export default function DecommissioningReportChecksheet({ document = {}, onSave 
       )}
 
       {/* ── Checksheet Canvas ── */}
-      <div className="w-full max-w-[1100px] bg-white border-2 border-black shadow-md overflow-x-auto text-black font-sans text-xs">
+      <div className="w-[1100px] max-w-[1100px] shrink-0 bg-white border-2 border-black shadow-md text-black font-sans text-xs">
         {/* Top-Right Company Banner */}
         <div className="w-full min-w-[900px] flex justify-end p-1 px-3 bg-white font-bold text-xs sm:text-sm">
           <span>FURUKAWA MINDA ELECTRIC PVT. LTD.</span>
@@ -327,13 +328,21 @@ export default function DecommissioningReportChecksheet({ document = {}, onSave 
 
           {/* HOD (PRD) */}
           <div className="p-2 space-y-1 min-h-[55px] flex flex-col justify-between">
-            <div className="flex items-center">
-              <span className="font-bold mr-1">Sign:</span>
-              <input
-                type="text"
-                value={signatures1.hodPrd}
-                onChange={(e) => updateSig1('hodPrd', e.target.value)}
-                className="w-full bg-transparent font-medium focus:outline-none text-[11px]"
+            <div className="flex items-center justify-between gap-1 flex-wrap">
+              <div className="flex items-center min-w-0">
+                <span className="font-bold mr-1 shrink-0">Sign:</span>
+                <input
+                  type="text"
+                  value={signatures1.hodPrd}
+                  onChange={(e) => updateSig1('hodPrd', e.target.value)}
+                  className="w-20 bg-transparent font-medium focus:outline-none text-[11px]"
+                />
+              </div>
+              <SignatureApprovalControl
+                status={signatures1.hodPrd_status || 'pending'}
+                onApprove={() => updateSig1('hodPrd_status', 'approved')}
+                onReject={() => updateSig1('hodPrd_status', 'rejected')}
+                onReset={() => updateSig1('hodPrd_status', 'pending')}
               />
             </div>
             <div className="font-bold">HOD (PRD)</div>
@@ -341,13 +350,21 @@ export default function DecommissioningReportChecksheet({ document = {}, onSave 
 
           {/* Shift Incharge (Quality) */}
           <div className="p-2 space-y-1 min-h-[55px] flex flex-col justify-between">
-            <div className="flex items-center">
-              <span className="font-bold mr-1">Sign:</span>
-              <input
-                type="text"
-                value={signatures1.shiftInchargeQuality}
-                onChange={(e) => updateSig1('shiftInchargeQuality', e.target.value)}
-                className="w-full bg-transparent font-medium focus:outline-none text-[11px]"
+            <div className="flex items-center justify-between gap-1 flex-wrap">
+              <div className="flex items-center min-w-0">
+                <span className="font-bold mr-1 shrink-0">Sign:</span>
+                <input
+                  type="text"
+                  value={signatures1.shiftInchargeQuality}
+                  onChange={(e) => updateSig1('shiftInchargeQuality', e.target.value)}
+                  className="w-20 bg-transparent font-medium focus:outline-none text-[11px]"
+                />
+              </div>
+              <SignatureApprovalControl
+                status={signatures1.shiftInchargeQuality_status || 'pending'}
+                onApprove={() => updateSig1('shiftInchargeQuality_status', 'approved')}
+                onReject={() => updateSig1('shiftInchargeQuality_status', 'rejected')}
+                onReset={() => updateSig1('shiftInchargeQuality_status', 'pending')}
               />
             </div>
             <div className="font-bold">Shift Incharge (Quality)</div>
@@ -355,13 +372,21 @@ export default function DecommissioningReportChecksheet({ document = {}, onSave 
 
           {/* HOD (Quality) */}
           <div className="p-2 space-y-1 min-h-[55px] flex flex-col justify-between">
-            <div className="flex items-center">
-              <span className="font-bold mr-1">Sign:</span>
-              <input
-                type="text"
-                value={signatures1.hodQuality}
-                onChange={(e) => updateSig1('hodQuality', e.target.value)}
-                className="w-full bg-transparent font-medium focus:outline-none text-[11px]"
+            <div className="flex items-center justify-between gap-1 flex-wrap">
+              <div className="flex items-center min-w-0">
+                <span className="font-bold mr-1 shrink-0">Sign:</span>
+                <input
+                  type="text"
+                  value={signatures1.hodQuality}
+                  onChange={(e) => updateSig1('hodQuality', e.target.value)}
+                  className="w-20 bg-transparent font-medium focus:outline-none text-[11px]"
+                />
+              </div>
+              <SignatureApprovalControl
+                status={signatures1.hodQuality_status || 'pending'}
+                onApprove={() => updateSig1('hodQuality_status', 'approved')}
+                onReject={() => updateSig1('hodQuality_status', 'rejected')}
+                onReset={() => updateSig1('hodQuality_status', 'pending')}
               />
             </div>
             <div className="font-bold">HOD (Quality)</div>
@@ -439,6 +464,12 @@ export default function DecommissioningReportChecksheet({ document = {}, onSave 
               value={bottomSignatures.qaLabIncharge}
               onChange={(e) => updateSig2('qaLabIncharge', e.target.value)}
               className="bg-transparent font-medium border-b border-black/40 focus:outline-none px-1 min-w-[140px]"
+            />
+            <SignatureApprovalControl
+              status={bottomSignatures.qaLabIncharge_status || 'pending'}
+              onApprove={() => updateSig2('qaLabIncharge_status', 'approved')}
+              onReject={() => updateSig2('qaLabIncharge_status', 'rejected')}
+              onReset={() => updateSig2('qaLabIncharge_status', 'pending')}
             />
           </div>
         </div>

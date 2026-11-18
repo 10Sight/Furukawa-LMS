@@ -6,6 +6,7 @@ import { Card } from '@/components/common/ui/card.jsx';
 import { Badge } from '@/components/common/ui/badge.jsx';
 import CalibrationTabBar, { CALIBRATION_TABS } from '@/components/calibration/CalibrationTabBar.jsx';
 import CalibrationFilterBar from '@/components/calibration/CalibrationFilterBar.jsx';
+import { CALIBRATION_DOCUMENTS_BY_TAB } from '@/components/calibration/calibrationDocumentsData.js';
 import ProcedureTab from '@/components/calibration/tabs/ProcedureTab.jsx';
 import AdditionDeletionTab from '@/components/calibration/tabs/AdditionDeletionTab.jsx';
 import HalfYearlyPlanTab from '@/components/calibration/tabs/HalfYearlyPlanTab.jsx';
@@ -16,6 +17,8 @@ import DecommissioningTab from '@/components/calibration/tabs/DecommissioningTab
 import ScrapTab from '@/components/calibration/tabs/ScrapTab.jsx';
 import UsabilityDeclarationTab from '@/components/calibration/tabs/UsabilityDeclarationTab.jsx';
 import CalibrationChecksheetView from '@/components/calibration/CalibrationChecksheetView.jsx';
+import AddChecksheetModal from '@/components/calibration/AddChecksheetModal.jsx';
+import { toast } from 'sonner';
 
 class CalibrationErrorBoundary extends React.Component {
   constructor(props) {
@@ -82,6 +85,7 @@ export default function CalibrationPage() {
   // View state: 'list' (documents table) | 'detail' (checksheet view)
   const [currentPage, setCurrentPage] = useState('list');
   const [selectedDocument, setSelectedDocument] = useState(null);
+  const [documentsByTab, setDocumentsByTab] = useState(CALIBRATION_DOCUMENTS_BY_TAB);
 
   const handleOpenChecksheet = (doc) => {
     setSelectedDocument(doc);
@@ -119,7 +123,8 @@ export default function CalibrationPage() {
   const [isUnitDropdownOpen, setIsUnitDropdownOpen] = useState(false);
   const unitDropdownRef = useRef(null);
 
-  const unitOptions = ['Bawal', 'Gujrat', 'Manesar'];
+  const unitOptions = ['Bawal', 'Gujrat'];
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -162,6 +167,58 @@ export default function CalibrationPage() {
     navigate(`${basePath}/${tabId}`);
   };
 
+  const handleSaveDocument = (savedDoc) => {
+    if (!savedDoc) return;
+    setDocumentsByTab((prev) => {
+      const currentList = prev[activeTabId] || [];
+      const existsIndex = currentList.findIndex((d) => d.id === savedDoc.id);
+      if (existsIndex >= 0) {
+        const updated = [...currentList];
+        updated[existsIndex] = { ...savedDoc, isNew: false };
+        return { ...prev, [activeTabId]: updated };
+      } else {
+        return {
+          ...prev,
+          [activeTabId]: [
+            ...currentList,
+            { ...savedDoc, isNew: false, sNo: currentList.length + 1 }
+          ]
+        };
+      }
+    });
+  };
+
+  const handleAddModalSubmit = (newDoc) => {
+    setDocumentsByTab((prev) => {
+      const currentList = prev[activeTabId] || [];
+      return {
+        ...prev,
+        [activeTabId]: [
+          ...currentList,
+          { ...newDoc, sNo: currentList.length + 1 }
+        ]
+      };
+    });
+    toast.success('Checksheet added successfully!');
+  };
+
+  const handleDeleteDocument = (docToDelete) => {
+    setDocumentsByTab((prev) => {
+      const currentList = prev[activeTabId] || [];
+      const updated = currentList.filter((d) => d.id !== docToDelete.id);
+      return { ...prev, [activeTabId]: updated };
+    });
+    toast.success('Checksheet deleted successfully');
+  };
+
+  const handleAddChecksheet = () => {
+    if (!selectedUnit) {
+      toast.warning('Please select the unit');
+      return;
+    }
+    setIsAddModalOpen(true);
+  };
+
   // Render sub-tab content
   const tabProps = {
     searchQuery,
@@ -169,7 +226,10 @@ export default function CalibrationPage() {
     selectedDepartment,
     selectedSection,
     subFilter: reportFormatSubFilter,
-    onOpenDocument: handleOpenChecksheet
+    items: documentsByTab[activeTabId] || [],
+    onOpenDocument: handleOpenChecksheet,
+    onDelete: handleDeleteDocument,
+    onDownload: () => toast.warning('currently no excel export not available')
   };
 
   const renderTabContent = () => {
@@ -203,6 +263,7 @@ export default function CalibrationPage() {
         <CalibrationChecksheetView
           document={selectedDocument}
           onBack={handleBackToList}
+          onSave={handleSaveDocument}
         />
       </CalibrationErrorBoundary>
     );
@@ -211,176 +272,172 @@ export default function CalibrationPage() {
   return (
     <CalibrationErrorBoundary onReset={() => window.location.reload()}>
       <div className="space-y-3.5 w-full min-w-0 pb-10">
-      {/* ── ROW 1: Unit Dropdown & Date Range Card ──────────────── */}
-      <div className="flex flex-wrap items-center gap-3">
-        {/* Select Unit Dropdown (Default null) */}
-        <div
-          ref={unitDropdownRef}
-          className="bg-card text-card-foreground rounded-xl p-1.5 shadow-xs border border-border inline-flex items-center gap-1.5 relative z-30"
-        >
-          <Button
-            type="button"
-            id="calibration-unit-select-btn"
-            variant={selectedUnit ? "default" : "outline"}
-            size="sm"
-            onClick={() => setIsUnitDropdownOpen(!isUnitDropdownOpen)}
-            className={`flex items-center gap-2 h-9 px-4 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-              selectedUnit
-                ? 'bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-xs'
-                : 'bg-background hover:bg-muted text-foreground border border-input shadow-xs'
-            }`}
-            title="Select Unit"
+        {/* ── ROW 1: Unit Dropdown & Date Range Card ──────────────── */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Select Unit Dropdown (Default null) */}
+          <div
+            ref={unitDropdownRef}
+            className="relative inline-block"
           >
-            <span>{selectedUnit ? `Plant: ${selectedUnit}` : 'Select Unit'}</span>
-            <ChevronDown
-              className={`w-3.5 h-3.5 transition-transform ${
-                isUnitDropdownOpen ? 'rotate-180' : ''
-              }`}
-            />
-          </Button>
-
-          {isUnitDropdownOpen && (
-            <div className="absolute left-0 top-full mt-2 w-48 bg-card rounded-xl shadow-xl border border-border py-2 z-50 text-xs font-semibold animate-in fade-in zoom-in-95">
-              <div className="px-3.5 py-1 text-[10px] uppercase tracking-wider text-muted-foreground font-bold border-b border-border mb-1">
-                Select Unit
-              </div>
-              {unitOptions.map((unit) => {
-                const isSelected = selectedUnit === unit;
-                return (
-                  <button
-                    key={unit}
-                    type="button"
-                    onClick={() => {
-                      setSelectedUnit(unit);
-                      setIsUnitDropdownOpen(false);
-                    }}
-                    className={`w-full text-left px-3.5 py-2 hover:bg-muted/70 hover:text-foreground flex items-center justify-between transition-colors cursor-pointer ${
-                      isSelected ? 'font-bold text-blue-600 bg-blue-50/70' : 'text-foreground'
-                    }`}
-                  >
-                    <span>{unit}</span>
-                    {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 stroke-[2.5]" />}
-                  </button>
-                );
-              })}
-              {selectedUnit && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedUnit(null);
-                    setIsUnitDropdownOpen(false);
-                  }}
-                  className="w-full text-left px-3.5 py-1.5 mt-1 border-t border-border text-muted-foreground hover:text-destructive text-[11px] cursor-pointer"
-                >
-                  Clear Selection (null)
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Date Range Card */}
-        <div className="flex flex-wrap items-center gap-2 bg-card text-card-foreground rounded-xl p-1.5 px-3 shadow-xs border border-border">
-          <label className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
-            <span className="text-[11px] font-bold text-muted-foreground">From Date</span>
-            <input
-              type="date"
-              value={fromDate}
-              max={toDate || undefined}
-              onChange={(e) => setFromDate(e.target.value)}
-              className="h-8 rounded-md border border-input bg-background px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-            />
-          </label>
-          <label className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
-            <span className="text-[11px] font-bold text-muted-foreground">To Date</span>
-            <input
-              type="date"
-              value={toDate}
-              min={fromDate || undefined}
-              onChange={(e) => setToDate(e.target.value)}
-              className="h-8 rounded-md border border-input bg-background px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-            />
-          </label>
-          {(fromDate || toDate) && (
             <Button
               type="button"
-              variant="outline"
+              id="calibration-unit-select-btn"
+              variant={selectedUnit ? "default" : "outline"}
               size="sm"
-              onClick={() => {
-                setFromDate('');
-                setToDate('');
-              }}
-              className="h-8 rounded-md px-2.5 text-xs font-semibold shadow-xs cursor-pointer"
+              onClick={() => setIsUnitDropdownOpen(!isUnitDropdownOpen)}
+              className={`flex items-center gap-2 h-9 px-4 rounded-lg text-xs font-semibold transition-all cursor-pointer ${selectedUnit
+                ? 'bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-xs'
+                : 'bg-background hover:bg-muted text-foreground border border-input shadow-xs'
+                }`}
+              title="Select Unit"
             >
-              Clear dates
+              <span>{selectedUnit ? `Plant: ${selectedUnit}` : 'Select Unit'}</span>
+              <ChevronDown
+                className={`w-3.5 h-3.5 transition-transform ${isUnitDropdownOpen ? 'rotate-180' : ''
+                  }`}
+              />
             </Button>
-          )}
-          {fromDate && toDate && fromDate > toDate && (
-            <span role="alert" className="text-xs text-destructive font-medium">
-              From Date must not be later than To Date.
-            </span>
-          )}
+
+            {isUnitDropdownOpen && (
+              <div className="absolute left-0 top-full mt-1.5 w-52 bg-white border border-gray-200 rounded-xl py-1.5 z-50 text-xs font-semibold shadow-xl animate-in fade-in zoom-in-95">
+                <div className="px-3.5 py-1 text-[10px] uppercase tracking-wider text-muted-foreground font-bold border-b border-border mb-1">
+                  Select Unit
+                </div>
+                {unitOptions.map((unit) => {
+                  const isSelected = selectedUnit === unit;
+                  return (
+                    <button
+                      key={unit}
+                      type="button"
+                      id={`calibration-unit-option-${unit.toLowerCase()}`}
+                      onClick={() => {
+                        setSelectedUnit(unit);
+                        setIsUnitDropdownOpen(false);
+                      }}
+                      className={`w-full text-left px-3.5 py-2 hover:bg-muted/70 hover:text-foreground flex items-center justify-between transition-colors cursor-pointer ${isSelected ? 'font-bold text-blue-600 bg-blue-50/70' : 'text-foreground'
+                        }`}
+                    >
+                      <span>{unit}</span>
+                      {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 stroke-[2.5]" />}
+                    </button>
+                  );
+                })}
+                {selectedUnit && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedUnit(null);
+                      setIsUnitDropdownOpen(false);
+                    }}
+                    className="w-full text-left px-3.5 py-1.5 mt-1 border-t border-border text-muted-foreground hover:text-destructive text-[11px] cursor-pointer"
+                  >
+                    Clear Selection (All Units)
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Date Range Card */}
+          <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1.5 shadow-xs text-xs">
+            <span className="text-muted-foreground font-semibold">From Date</span>
+            <input
+              type="date"
+              id="calibration-from-date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="px-2 py-1 bg-transparent text-foreground text-xs font-medium border border-input rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <span className="text-muted-foreground font-semibold ml-1">To Date</span>
+            <input
+              type="date"
+              id="calibration-to-date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="px-2 py-1 bg-transparent text-foreground text-xs font-medium border border-input rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            {(fromDate || toDate) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFromDate('');
+                  setToDate('');
+                }}
+                className="text-xs text-muted-foreground hover:text-foreground underline ml-1 cursor-pointer"
+              >
+                Clear
+              </button>
+            )}
+          </div>
         </div>
-      </div>
 
-      {/* ── ROW 2: 9 Calibration Tabs (Pill Buttons) ──────────── */}
-      <CalibrationTabBar
-        activeTab={activeTabId}
-        onSelectTab={handleSelectTab}
-        basePath={basePath}
-      />
+        {/* ── ROW 2: 9 Calibration Tabs (Pill Buttons) ──────────── */}
+        <CalibrationTabBar
+          activeTab={activeTabId}
+          onSelectTab={handleSelectTab}
+          basePath={basePath}
+        />
 
-      {/* ── ROW 2.5: Report Format Sub-Filter Tabs (Above Search Bar) ── */}
-      {activeTabId === 'report-format' && (
-        <div className="flex items-center gap-2 pt-0.5">
-          <Button
-            type="button"
-            id="report-subfilter-format-btn"
-            variant={reportFormatSubFilter === 'format-checksheet' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setReportFormatSubFilter('format-checksheet')}
-            className={`h-9 px-4 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-              reportFormatSubFilter === 'format-checksheet'
+        {/* ── ROW 2.5: Report Format Sub-Filter Tabs (Above Search Bar) ── */}
+        {activeTabId === 'report-format' && (
+          <div className="flex items-center gap-2 pt-0.5">
+            <Button
+              type="button"
+              id="report-subfilter-format-btn"
+              variant={reportFormatSubFilter === 'format-checksheet' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setReportFormatSubFilter('format-checksheet')}
+              className={`h-9 px-4 rounded-lg text-xs font-semibold transition-all cursor-pointer ${reportFormatSubFilter === 'format-checksheet'
                 ? 'bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-xs'
                 : 'bg-background hover:bg-muted text-foreground border border-input shadow-xs'
-            }`}
-          >
-            Format checksheet
-          </Button>
-          <Button
-            type="button"
-            id="report-subfilter-mating-btn"
-            variant={reportFormatSubFilter === 'mating-gauge' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setReportFormatSubFilter('mating-gauge')}
-            className={`h-9 px-4 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-              reportFormatSubFilter === 'mating-gauge'
+                }`}
+            >
+              Format checksheet
+            </Button>
+            <Button
+              type="button"
+              id="report-subfilter-mating-btn"
+              variant={reportFormatSubFilter === 'mating-gauge' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setReportFormatSubFilter('mating-gauge')}
+              className={`h-9 px-4 rounded-lg text-xs font-semibold transition-all cursor-pointer ${reportFormatSubFilter === 'mating-gauge'
                 ? 'bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-xs'
                 : 'bg-background hover:bg-muted text-foreground border border-input shadow-xs'
-            }`}
-          >
-            mating gauge
-          </Button>
+                }`}
+            >
+              mating gauge
+            </Button>
+          </div>
+        )}
+
+        {/* ── ROW 3: Single-Row Search Bar & 3 Filters ─────────────── */}
+        <CalibrationFilterBar
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          selectedDepartment={selectedDepartment}
+          setSelectedDepartment={setSelectedDepartment}
+          selectedSection={selectedSection}
+          setSelectedSection={setSelectedSection}
+          selectedExtraFilter={selectedExtraFilter}
+          setSelectedExtraFilter={setSelectedExtraFilter}
+          onAddChecksheet={handleAddChecksheet}
+        />
+
+        {/* ── ROW 4: Active Tab Content Area ───────────────────────── */}
+        <div className="w-full transition-all duration-200">
+          {renderTabContent()}
         </div>
-      )}
 
-      {/* ── ROW 3: Single-Row Search Bar & 3 Filters ─────────────── */}
-      <CalibrationFilterBar
-        searchQuery={searchQuery}
-        setSearchQuery={setSearchQuery}
-        selectedDepartment={selectedDepartment}
-        setSelectedDepartment={setSelectedDepartment}
-        selectedSection={selectedSection}
-        setSelectedSection={setSelectedSection}
-        selectedExtraFilter={selectedExtraFilter}
-        setSelectedExtraFilter={setSelectedExtraFilter}
-      />
-
-      {/* ── ROW 4: Active Tab Content Area ───────────────────────── */}
-      <div className="w-full transition-all duration-200">
-        {renderTabContent()}
+        {/* Add Checksheet Modal */}
+        <AddChecksheetModal
+          open={isAddModalOpen}
+          onOpenChange={setIsAddModalOpen}
+          activeTabId={activeTabId}
+          selectedUnit={selectedUnit}
+          subFilter={reportFormatSubFilter}
+          onAdd={handleAddModalSubmit}
+        />
       </div>
-    </div>
     </CalibrationErrorBoundary>
   );
 }

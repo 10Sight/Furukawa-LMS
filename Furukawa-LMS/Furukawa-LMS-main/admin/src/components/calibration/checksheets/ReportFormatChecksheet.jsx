@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Check } from 'lucide-react';
+import SignatureApprovalControl from './SignatureApprovalControl';
 
 const INITIAL_READING_ROWS = 30;
 
@@ -174,7 +175,7 @@ export default function ReportFormatChecksheet({ document = {}, onSave = () => {
       )}
 
       {/* ── Checksheet Canvas ── */}
-      <div className="w-full max-w-[1240px] bg-white border-2 border-black shadow-md overflow-x-auto text-black font-sans text-xs">
+      <div className="w-[1240px] max-w-[1240px] shrink-0 bg-white border-2 border-black shadow-md text-black font-sans text-xs">
         {/* Company Header */}
         <div className="w-full min-w-[1100px] border-b-2 border-black p-2 text-center font-bold text-sm sm:text-base tracking-wide bg-white">
           FURUKAWA MINDA ELECTRIC PVT. LTD.
@@ -682,13 +683,21 @@ export default function ReportFormatChecksheet({ document = {}, onSave = () => {
 
           {/* Column 2: Checked By */}
           <div className="p-2 space-y-1">
-            <div className="flex items-center">
-              <span className="text-black mr-1">Checked By :</span>
-              <input
-                type="text"
-                value={footerInfo.checkedBy}
-                onChange={(e) => setFooterInfo((prev) => ({ ...prev, checkedBy: e.target.value }))}
-                className="bg-transparent font-medium focus:outline-none"
+            <div className="flex items-center justify-between gap-1 flex-wrap">
+              <div className="flex items-center min-w-0">
+                <span className="text-black mr-1 shrink-0">Checked By :</span>
+                <input
+                  type="text"
+                  value={footerInfo.checkedBy}
+                  onChange={(e) => setFooterInfo((prev) => ({ ...prev, checkedBy: e.target.value }))}
+                  className="bg-transparent font-medium focus:outline-none w-24"
+                />
+              </div>
+              <SignatureApprovalControl
+                status={footerInfo.checkedBy_status || 'pending'}
+                onApprove={() => setFooterInfo((prev) => ({ ...prev, checkedBy_status: 'approved' }))}
+                onReject={() => setFooterInfo((prev) => ({ ...prev, checkedBy_status: 'rejected' }))}
+                onReset={() => setFooterInfo((prev) => ({ ...prev, checkedBy_status: 'pending' }))}
               />
             </div>
             <div className="text-[10px] font-bold text-black">{footerInfo.revNo}</div>
@@ -696,13 +705,21 @@ export default function ReportFormatChecksheet({ document = {}, onSave = () => {
 
           {/* Column 3: Review By */}
           <div className="p-2 space-y-1">
-            <div className="flex items-center">
-              <span className="text-black mr-1">Review By :</span>
-              <input
-                type="text"
-                value={footerInfo.reviewBy}
-                onChange={(e) => setFooterInfo((prev) => ({ ...prev, reviewBy: e.target.value }))}
-                className="bg-transparent font-medium focus:outline-none"
+            <div className="flex items-center justify-between gap-1 flex-wrap">
+              <div className="flex items-center min-w-0">
+                <span className="text-black mr-1 shrink-0">Review By :</span>
+                <input
+                  type="text"
+                  value={footerInfo.reviewBy}
+                  onChange={(e) => setFooterInfo((prev) => ({ ...prev, reviewBy: e.target.value }))}
+                  className="bg-transparent font-medium focus:outline-none w-24"
+                />
+              </div>
+              <SignatureApprovalControl
+                status={footerInfo.reviewBy_status || 'pending'}
+                onApprove={() => setFooterInfo((prev) => ({ ...prev, reviewBy_status: 'approved' }))}
+                onReject={() => setFooterInfo((prev) => ({ ...prev, reviewBy_status: 'rejected' }))}
+                onReset={() => setFooterInfo((prev) => ({ ...prev, reviewBy_status: 'pending' }))}
               />
             </div>
             <div className="text-[10px] font-bold text-black">{footerInfo.revDate}</div>
@@ -710,13 +727,21 @@ export default function ReportFormatChecksheet({ document = {}, onSave = () => {
 
           {/* Column 4: Approved By */}
           <div className="p-2 space-y-1">
-            <div className="flex items-center">
-              <span className="text-black mr-1">Approved By:</span>
-              <input
-                type="text"
-                value={footerInfo.approvedBy}
-                onChange={(e) => setFooterInfo((prev) => ({ ...prev, approvedBy: e.target.value }))}
-                className="bg-transparent font-medium focus:outline-none"
+            <div className="flex items-center justify-between gap-1 flex-wrap">
+              <div className="flex items-center min-w-0">
+                <span className="text-black mr-1 shrink-0">Approved By:</span>
+                <input
+                  type="text"
+                  value={footerInfo.approvedBy}
+                  onChange={(e) => setFooterInfo((prev) => ({ ...prev, approvedBy: e.target.value }))}
+                  className="bg-transparent font-medium focus:outline-none w-24"
+                />
+              </div>
+              <SignatureApprovalControl
+                status={footerInfo.approvedBy_status || 'pending'}
+                onApprove={() => setFooterInfo((prev) => ({ ...prev, approvedBy_status: 'approved' }))}
+                onReject={() => setFooterInfo((prev) => ({ ...prev, approvedBy_status: 'rejected' }))}
+                onReset={() => setFooterInfo((prev) => ({ ...prev, approvedBy_status: 'pending' }))}
               />
             </div>
             <div className="text-[10px] font-bold text-black">{footerInfo.pageInfo}</div>

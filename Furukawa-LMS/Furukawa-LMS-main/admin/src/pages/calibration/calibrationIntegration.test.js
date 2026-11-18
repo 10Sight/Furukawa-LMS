@@ -158,6 +158,12 @@ test('9. CalibrationChecksheetView has Back, Save, and Export buttons and no Clo
   // Must have Save and Export action buttons
   assert.ok(content.includes('Save'), 'Must have Save button in navbar');
   assert.ok(content.includes('Export'), 'Must have Export button in navbar');
+  assert.ok(content.includes('currently no excel export not available'), 'Export button must show alert in toast that currently no excel export not available');
+
+  // Must have zoom / maximise & minimise control pill (- | 100% | +)
+  assert.ok(content.includes('calibration-zoom-out-btn') && content.includes('calibration-zoom-in-btn'), 'Checksheet view must have zoom out and zoom in buttons');
+  assert.ok(content.includes('{zoom}%'), 'Checksheet view must display zoom percentage');
+  assert.ok(content.includes('zoom: `${zoom}%`'), 'Checksheet view must apply zoom style to canvas');
 
   // Must have vertical scrolling container
   assert.ok(content.includes('overflow-y-auto'), 'Must have vertical scrolling container');
@@ -371,8 +377,9 @@ test('17. HistoryCardChecksheet matches exact specs, table columns, and footer m
   assert.ok(content.includes('Acceptance criteria'), 'Must have Acceptance criteria');
   assert.ok(content.includes('Special Instruction :'), 'Must have Special Instruction :');
 
-  // 8 Table Columns
+  // 9 Table Columns (including S.No.)
   const expectedCols = [
+    'S.No.',
     'Date',
     'Calibration report no.',
     'Calibration Due date',
@@ -387,6 +394,10 @@ test('17. HistoryCardChecksheet matches exact specs, table columns, and footer m
     const fileClean = content.replace(/<br \/>/g, ' ').replace(/\s+/g, ' ');
     assert.ok(fileClean.includes(c), `HistoryCardChecksheet must have column: ${c}`);
   }
+
+  // Row count and borders
+  assert.ok(content.includes('INITIAL_HISTORY_ROWS = 10'), 'HistoryCardChecksheet must have 10 rows');
+  assert.ok(content.includes('border-b border-black'), 'Rows must be separated by border-b border-black');
 
   // Footer Metadata
   assert.ok(content.includes('FRM-WH-QA-038'), 'Must have FRM-WH-QA-038');
@@ -600,4 +611,80 @@ test('22. FormatChecksheet matches second screenshot and MatingGaugeChecksheet c
   const viewContent = fs.readFileSync(viewPath, 'utf8');
   assert.ok(viewContent.includes('FormatChecksheet'), 'CalibrationChecksheetView must integrate FormatChecksheet');
   assert.ok(viewContent.includes('MatingGaugeChecksheet'), 'CalibrationChecksheetView must integrate MatingGaugeChecksheet');
+});
+
+test('23. CalibrationFilterBar has Add Checksheet button and CalibrationPage supports adding checksheets across all 9 tabs', () => {
+  const filterBarPath = path.join(adminRoot, 'src/components/calibration/CalibrationFilterBar.jsx');
+  assert.ok(fs.existsSync(filterBarPath), 'CalibrationFilterBar.jsx must exist');
+  const filterContent = fs.readFileSync(filterBarPath, 'utf8');
+  assert.ok(filterContent.includes('calibration-add-checksheet-btn'), 'FilterBar must render Add Checksheet button with id calibration-add-checksheet-btn');
+  assert.ok(filterContent.includes('onAddChecksheet'), 'FilterBar must accept onAddChecksheet prop');
+  assert.ok(filterContent.includes('Add Checksheet'), 'Button text must be Add Checksheet');
+
+  const pagePath = path.join(adminRoot, 'src/pages/calibration/CalibrationPage.jsx');
+  const pageContent = fs.readFileSync(pagePath, 'utf8');
+  assert.ok(pageContent.includes('onAddChecksheet={handleAddChecksheet}'), 'CalibrationPage must pass handleAddChecksheet to CalibrationFilterBar');
+  assert.ok(pageContent.includes('handleAddChecksheet'), 'CalibrationPage must define handleAddChecksheet');
+  assert.ok(pageContent.includes('handleSaveDocument'), 'CalibrationPage must define handleSaveDocument');
+  assert.ok(pageContent.includes('documentsByTab'), 'CalibrationPage must maintain documentsByTab state');
+});
+
+test('24. AddChecksheetModal exists with 9 tab fields, Gujrat empty text is configured, and table actions have Eye and Download removed', () => {
+  // Modal check
+  const modalPath = path.join(adminRoot, 'src/components/calibration/AddChecksheetModal.jsx');
+  assert.ok(fs.existsSync(modalPath), 'AddChecksheetModal.jsx must exist');
+  const modalContent = fs.readFileSync(modalPath, 'utf8');
+  assert.ok(modalContent.includes('TAB_DYNAMIC_FIELDS'), 'AddChecksheetModal must define TAB_DYNAMIC_FIELDS');
+  assert.ok(modalContent.includes('department'), 'AddChecksheetModal must accept department');
+  assert.ok(modalContent.includes('section'), 'AddChecksheetModal must accept section');
+  assert.ok(modalContent.includes('dynamicValue'), 'AddChecksheetModal must handle dynamic field');
+
+  // CalibrationDocumentsTable check
+  const tablePath = path.join(adminRoot, 'src/components/calibration/CalibrationDocumentsTable.jsx');
+  const tableContent = fs.readFileSync(tablePath, 'utf8');
+  assert.ok(tableContent.includes('No checksheets added yet') || tableContent.includes('not checksheets added yet'), 'Table must display "No checksheets added yet" when Gujrat has no checksheets');
+  assert.ok(tableContent.includes('Please select the unit'), 'Table must display "Please select the unit" when no unit is selected');
+  assert.ok(!tableContent.includes('title="View Checksheet"'), 'Eye view button must be removed from table actions');
+  assert.ok(!tableContent.includes('title="Download Document"'), 'Download button must be removed from table actions');
+  assert.ok(tableContent.includes('title="Edit Checksheet"'), 'Edit button must remain in table actions');
+  assert.ok(tableContent.includes('title="Delete Document"'), 'Delete button must remain in table actions');
+
+  // CalibrationPage check
+  const pagePath = path.join(adminRoot, 'src/pages/calibration/CalibrationPage.jsx');
+  const pageContent = fs.readFileSync(pagePath, 'utf8');
+  assert.ok(pageContent.includes("unitOptions = ['Bawal', 'Gujrat']"), 'Unit options must contain Bawal and Gujrat');
+  assert.ok(pageContent.includes('AddChecksheetModal'), 'CalibrationPage must render AddChecksheetModal');
+});
+
+test('25. SignatureApprovalControl exists with Approved/Rejected buttons and hides buttons when approved', () => {
+  const ctrlPath = path.join(adminRoot, 'src/components/calibration/checksheets/SignatureApprovalControl.jsx');
+  assert.ok(fs.existsSync(ctrlPath), 'SignatureApprovalControl.jsx must exist');
+  const ctrlContent = fs.readFileSync(ctrlPath, 'utf8');
+
+  // Must have Approved and Rejected buttons
+  assert.ok(ctrlContent.includes('Approved'), 'Must contain Approved button text');
+  assert.ok(ctrlContent.includes('Rejected'), 'Must contain Rejected button text');
+  assert.ok(ctrlContent.includes("status === 'approved'"), 'Must handle approved state');
+  assert.ok(ctrlContent.includes("status === 'rejected'"), 'Must handle rejected state');
+
+  // Checksheets must import and integrate SignatureApprovalControl
+  const checksheets = [
+    'AdditionDeletionChecksheet.jsx',
+    'FormatChecksheet.jsx',
+    'ReportFormatChecksheet.jsx',
+    'MatingGaugeChecksheet.jsx',
+    'MonthlyPlanChecksheet.jsx',
+    'HalfYearlyPlanChecksheet.jsx',
+    'HistoryCardChecksheet.jsx',
+    'DecommissioningReportChecksheet.jsx',
+    'InstrumentScrapReportChecksheet.jsx',
+    'UsabilityDeclarationChecksheet.jsx'
+  ];
+
+  for (const file of checksheets) {
+    const csPath = path.join(adminRoot, 'src/components/calibration/checksheets', file);
+    assert.ok(fs.existsSync(csPath), `${file} must exist`);
+    const csContent = fs.readFileSync(csPath, 'utf8');
+    assert.ok(csContent.includes('SignatureApprovalControl'), `${file} must import and use SignatureApprovalControl`);
+  }
 });

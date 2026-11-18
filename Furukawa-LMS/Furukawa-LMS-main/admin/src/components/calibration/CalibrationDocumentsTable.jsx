@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText, Eye, Edit3, Download, Trash2, FileQuestion } from 'lucide-react';
+import { FileText, Edit3, Trash2, FileQuestion } from 'lucide-react';
 import { Button } from '@/components/common/ui/button.jsx';
 import { Badge } from '@/components/common/ui/badge.jsx';
 import { Card } from '@/components/common/ui/card.jsx';
@@ -20,7 +20,11 @@ export default function CalibrationDocumentsTable({
   const handleEdit = onEdit || onOpenDocument;
   // Apply filtering based on search query and filter dropdowns
   const filteredItems = items.filter((item) => {
-    if (selectedUnit && item.unit !== selectedUnit) {
+    // If no unit is selected, show no data
+    if (!selectedUnit) {
+      return false;
+    }
+    if (item.unit !== selectedUnit) {
       return false;
     }
     if (selectedDepartment && item.department !== selectedDepartment) {
@@ -41,12 +45,23 @@ export default function CalibrationDocumentsTable({
   });
 
   if (filteredItems.length === 0) {
+    let emptyTitle = 'No Documents Found';
+    let emptyDesc = 'No calibration document matches your active search or filter criteria. Try adjusting your filters.';
+
+    if (!selectedUnit) {
+      emptyTitle = 'Please select the unit';
+      emptyDesc = 'Please select a unit from the dropdown above to view calibration checksheets.';
+    } else if (selectedUnit === 'Gujrat') {
+      emptyTitle = 'No checksheets added yet';
+      emptyDesc = 'No calibration checksheets have been registered for Gujrat plant yet.';
+    }
+
     return (
       <Card className="rounded-xl border border-border bg-card p-8 sm:p-14 text-center shadow-xs w-full">
         <FileQuestion className="w-12 h-12 text-muted-foreground/60 mx-auto mb-3" />
-        <h3 className="text-base font-semibold text-foreground">No Documents Found</h3>
+        <h3 className="text-base font-semibold text-foreground">{emptyTitle}</h3>
         <p className="text-sm text-muted-foreground mt-1 max-w-sm mx-auto">
-          No calibration document matches your active search or filter criteria. Try adjusting your filters.
+          {emptyDesc}
         </p>
       </Card>
     );
@@ -135,31 +150,11 @@ export default function CalibrationDocumentsTable({
                       type="button"
                       variant="ghost"
                       size="icon"
-                      onClick={() => handleView(doc)}
-                      title="View Checksheet"
-                      className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 cursor-pointer"
-                    >
-                      <Eye className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
                       onClick={() => handleEdit(doc)}
                       title="Edit Checksheet"
                       className="h-8 w-8 text-muted-foreground hover:text-emerald-600 hover:bg-emerald-50 cursor-pointer"
                     >
                       <Edit3 className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => onDownload(doc)}
-                      title="Download Document"
-                      className="h-8 w-8 text-muted-foreground hover:text-blue-600 hover:bg-blue-50 cursor-pointer"
-                    >
-                      <Download className="w-4 h-4" />
                     </Button>
                     <Button
                       type="button"

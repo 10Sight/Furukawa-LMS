@@ -3,6 +3,6 @@ import CalibrationDocumentsTable from '../CalibrationDocumentsTable.jsx';
 import { CALIBRATION_DOCUMENTS_BY_TAB } from '../calibrationDocumentsData.js';
 
 export default function HalfYearlyPlanTab(props) {
-  const items = CALIBRATION_DOCUMENTS_BY_TAB['half-yearly-plan'];
+  const items = props.items || CALIBRATION_DOCUMENTS_BY_TAB['half-yearly-plan'];
   return <CalibrationDocumentsTable items={items} {...props} />;
 }

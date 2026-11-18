@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Check } from 'lucide-react';
+import SignatureApprovalControl from './SignatureApprovalControl';
 
 const INITIAL_ROWS = 6;
 
@@ -107,7 +108,7 @@ export default function UsabilityDeclarationChecksheet({ document = {}, onSave =
       )}
 
       {/* ── Checksheet Canvas (Exact replica of image) ── */}
-      <div className="w-full max-w-[1300px] bg-white border-2 border-black shadow-md overflow-x-auto text-black font-sans text-xs">
+      <div className="w-[1300px] max-w-[1300px] shrink-0 bg-white border-2 border-black shadow-md text-black font-sans text-xs">
         {/* Table Structure */}
         <table className="w-full border-collapse text-[11px] table-fixed min-w-[1150px]">
           <colgroup>
@@ -302,6 +303,12 @@ export default function UsabilityDeclarationChecksheet({ document = {}, onSave =
               value={signatures.signDeptHead}
               onChange={(e) => updateSignature('signDeptHead', e.target.value)}
               className="bg-transparent border-b border-black/40 focus:outline-none px-1 text-[11px] min-w-[140px]"
+            />
+            <SignatureApprovalControl
+              status={signatures.signDeptHead_status || 'pending'}
+              onApprove={() => updateSignature('signDeptHead_status', 'approved')}
+              onReject={() => updateSignature('signDeptHead_status', 'rejected')}
+              onReset={() => updateSignature('signDeptHead_status', 'pending')}
             />
           </div>
         </div>

@@ -363,12 +363,9 @@ export const PAGE_REGISTRY = [
     { layout: "admin", prefix: "/admin/attempt-evaluation-test/", key: "dojo-hiring" },
     { layout: "admin", prefix: "/admin/view-evaluation-attempt/", key: "dojo-hiring" },
     { layout: "cms", prefix: "/cms/abnormal-condition", key: "abnormal-condition" },
-<<<<<<< HEAD
     { layout: "cms", prefix: "/cms/calibration", key: "cms-calibration" },
-=======
     { layout: "cms", prefix: "/cms/ptm", key: "cms-ptm" },
     { layout: "custom", prefix: "/portal/ptm", key: "cms-ptm" },
->>>>>>> d46e3ba4d886f4e87f9f4e52d9a7cf31d9184cb0
 
     // Trainer layout
     { key: "trainer-dashboard", label: "Dashboard", labelKey: "nav.dashboard", layout: "trainer", link: "/trainer", icon: "IconLayoutDashboardFilled" },

@@ -139,8 +139,8 @@ export default function DailyManpowerReportSheet({ report, visibleDates, darkMod
     const latestComputed = [...report.dates].reverse().find((d) => d.computed)?.date || null;
 
     // ---- Inline Training editing ----
-    // Not in the full-screen meeting view, where a stray click while presenting shouldn't open an editor.
-    const editable = Boolean(canEditTraining && !large && report.training);
+    // Editable in both the normal and the full-screen meeting view.
+    const editable = Boolean(canEditTraining && report.training);
     const [saveTraining] = useSaveTrainingInputsMutation();
     // { key, field, date, draft, nonce } of the cell being edited (nonce remounts the input).
     const [editing, setEditing] = useState(null);

@@ -1,10 +1,47 @@
-import React, { useLayoutEffect, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CalendarDays, ChevronDown } from 'lucide-react';
 import CalendarDateInput from './CalendarDateInput';
 import SearchableLeaderInput from './SearchableLeaderInput';
-import CheckboxMultiSelect from './CheckboxMultiSelect';
 
 const RANK_OPTIONS = ['A', 'B', 'C1', 'C2', 'S'].map((r) => ({ value: r, label: r }));
+
+const HEADER_PHASE_OPTIONS = [
+  '1: Plan & Define',
+  '2: Product & Process Design',
+  '3: Process & Development',
+  '4: Product & Process Validation',
+  '5: Feedback & Corrective Action',
+  'Other',
+];
+
+const mapHeaderRanksToKeys = (ranks) => {
+  const keys = new Set();
+  ranks.forEach((r) => {
+    const val = String(r || '').trim().toUpperCase();
+    if (val === 'A') keys.add('rankA');
+    else if (val === 'B') keys.add('rankB');
+    else if (val === 'C1' || val === 'C2') keys.add('rankC');
+    else if (val === 'S') keys.add('rankS');
+  });
+  return Array.from(keys);
+};
+
+const formatDotDateDDMMYYYY = (value, fallback = '') => {
+  const raw = String(value || '').trim() || fallback;
+  if (!raw) return '';
+  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    return `${isoMatch[3]}.${isoMatch[2]}.${isoMatch[1]}`;
+  }
+  const dmyMatch = raw.match(/^(\d{1,2})[-./](\d{1,2})[-./](\d{2}|\d{4})$/);
+  if (dmyMatch) {
+    const day = dmyMatch[1].padStart(2, '0');
+    const month = dmyMatch[2].padStart(2, '0');
+    const year = dmyMatch[3].length === 2 ? `20${dmyMatch[3]}` : dmyMatch[3];
+    return `${day}.${month}.${year}`;
+  }
+  return raw;
+};
 
 const MILESTONE_COLUMNS = [
   { key: 'DPT', label: 'DPT' },
@@ -134,9 +171,29 @@ function MilestoneDateTextCell({ value = '', onChange, ariaLabel, rowIdx, colKey
 
   return (
     <div
-      className="relative flex items-center w-full h-full min-h-[48px]"
+      className="relative flex flex-col items-center justify-start gap-1 w-full h-full min-h-[56px] py-1 px-1"
       style={{ width: `${autoWidthPx}px`, minWidth: `${autoWidthPx}px` }}
     >
+      <div className="relative inline-flex items-center justify-center h-5 w-6 shrink-0">
+        <CalendarDays
+          aria-hidden="true"
+          className="pointer-events-none h-3.5 w-3.5 text-slate-400"
+        />
+        <input
+          ref={pickerRef}
+          type="date"
+          value={extractDateForPicker(value)}
+          onClick={(event) => event.currentTarget.showPicker?.()}
+          onChange={(event) => {
+            const nextVal = mergePickerDateWithText(event.target.value, value);
+            onChange(nextVal);
+          }}
+          aria-label={`${ariaLabel} calendar picker`}
+          title="Select date from calendar (can be combined with manual text)"
+          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+          tabIndex={-1}
+        />
+      </div>
       <textarea
         ref={textareaRef}
         rows={1}
@@ -150,31 +207,42 @@ function MilestoneDateTextCell({ value = '', onChange, ariaLabel, rowIdx, colKey
         data-milestone-row={rowIdx}
         data-milestone-col={colKey}
         aria-label={ariaLabel}
-        className="w-full bg-transparent outline-none text-slate-900 text-center focus:bg-blue-50/50 rounded pl-1 pr-5 py-1 text-[11.5px] font-medium resize-none overflow-hidden whitespace-pre-wrap break-words leading-snug"
-      />
-      <CalendarDays
-        aria-hidden="true"
-        className="pointer-events-none absolute right-1 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
-      />
-      <input
-        ref={pickerRef}
-        type="date"
-        value={extractDateForPicker(value)}
-        onClick={(event) => event.currentTarget.showPicker?.()}
-        onChange={(event) => {
-          const nextVal = mergePickerDateWithText(event.target.value, value);
-          onChange(nextVal);
-        }}
-        aria-label={`${ariaLabel} calendar picker`}
-        title="Select date from calendar (can be combined with manual text)"
-        className="absolute right-0 top-1/2 h-6 w-5 -translate-y-1/2 cursor-pointer opacity-0"
-        tabIndex={-1}
+        className="w-full bg-transparent outline-none text-slate-900 text-center focus:bg-blue-50/50 rounded px-1 py-0.5 text-[11.5px] font-medium resize-none overflow-hidden whitespace-pre-wrap break-words leading-snug"
       />
     </div>
   );
 }
 
-export default function PTMHeader({ headerInfo, setHeaderInfo, projectLeaderOptions = [], isMerged = false, formActions, readOnly = false }) {
+export default function PTMHeader({
+  headerInfo,
+  setHeaderInfo,
+  projectLeaderOptions = [],
+  isMerged = false,
+  formActions,
+  readOnly = false,
+  sheetTopic = '',
+  sheetDescription = '',
+  onBulkFillRank,
+  onBulkFillPhase,
+}) {
+  const [rankDropdownOpen, setRankDropdownOpen] = useState(false);
+  const rankDropdownRef = useRef(null);
+  const [isCustomPhaseMode, setIsCustomPhaseMode] = useState(() => {
+    const p = String(headerInfo?.phase || '').trim();
+    return Boolean(p && !HEADER_PHASE_OPTIONS.slice(0, -1).includes(p));
+  });
+
+  useEffect(() => {
+    if (!rankDropdownOpen) return;
+    const handleOutside = (e) => {
+      if (rankDropdownRef.current && !rankDropdownRef.current.contains(e.target)) {
+        setRankDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [rankDropdownOpen]);
+
   const handleChange = (field, val) => {
     if (readOnly) return;
     setHeaderInfo((prev) => ({
@@ -189,24 +257,38 @@ export default function PTMHeader({ headerInfo, setHeaderInfo, projectLeaderOpti
 
       {/* Grid containing the exact header sections from the spreadsheet image */}
       <div className={`w-full grid grid-cols-[4fr_3fr_2fr_minmax(620px,auto)_minmax(210px,1fr)] divide-x divide-[#64748B] ${readOnly ? 'pointer-events-none opacity-95' : ''}`}>
-        
+
         {/* Section 1: Left Form Info — inline label+input with soft blue & rank amber accents */}
         <div className="[&_*]:!text-black bg-white text-sm border-r border-[#64748B]">
-          <table className="w-full h-full border-collapse text-[13px]" style={{tableLayout:'fixed'}}>
+          <table className="w-full h-full border-collapse text-[13px]" style={{ tableLayout: 'fixed' }}>
             <colgroup>
               {/* Left half: Model + APQP (65%) | Right half: Rank label (20%) + Rank value (15%) */}
-              <col style={{width:'40%'}} />
-              <col style={{width:'25%'}} />
-              <col style={{width:'20%'}} />
-              <col style={{width:'15%'}} />
+              <col style={{ width: '40%' }} />
+              <col style={{ width: '25%' }} />
+              <col style={{ width: '20%' }} />
+              <col style={{ width: '15%' }} />
             </colgroup>
             <tbody>
               {/* Colored top header row aligned with Program Identification below */}
-              <tr className="border-b border-[#64748B]" style={{height:'26px'}}>
-                <td colSpan={4} className="bg-white px-2.5 align-middle">
-                  <span className="font-extrabold text-slate-800 tracking-wide font-mono text-base">
-                    {(headerInfo.formTitle || 'FRM-WH-DD-006 Project Tracking Matrix Rev. 17').replace(/\s*\([^)]*\)\s*$/, '') || 'FRM-WH-DD-006 Project Tracking Matrix Rev. 17'}
-                  </span>
+              <tr className="border-b border-[#64748B]" style={{ height: '26px' }}>
+                <td colSpan={4} className="bg-white px-2.5 py-1 align-middle">
+                  <div className="flex items-center justify-between gap-4 w-full">
+                    <div className="flex items-center gap-3 min-w-0">
+                      {sheetTopic && (
+                        <span className="font-extrabold text-[#1E40AF] text-xs sm:text-sm truncate" title={`Topic: ${sheetTopic}`}>
+                          {sheetTopic}
+                        </span>
+                      )}
+                      {sheetDescription && (
+                        <span className="font-medium text-slate-600 text-xs truncate border-l border-slate-300 pl-3" title={`Description: ${sheetDescription}`}>
+                          {sheetDescription}
+                        </span>
+                      )}
+                    </div>
+                    <span className="font-extrabold text-slate-800 tracking-wide font-mono text-base whitespace-nowrap text-center flex-1">
+                      {(headerInfo.formTitle || 'FRM-WH-DD-006 Project Tracking Matrix Rev. 17').replace(/\s*\([^)]*\)\s*$/, '') || 'FRM-WH-DD-006 Project Tracking Matrix Rev. 17'}
+                    </span>
+                  </div>
                 </td>
               </tr>
 
@@ -214,50 +296,124 @@ export default function PTMHeader({ headerInfo, setHeaderInfo, projectLeaderOpti
               <tr className="border-b border-[#64748B]">
                 <td className="px-2.5 py-1.5 align-middle bg-white" colSpan={2}>
                   <div className="flex items-baseline gap-1.5">
-                    <span className="font-bold text-[#2C5282] text-xs sm:text-[13px] whitespace-nowrap">Model:</span>
+                    <span className="font-bold text-[#2C5282] text-xs sm:text-[13px] whitespace-nowrap">
+                      Model: <span className="text-red-500 font-bold">*</span>
+                    </span>
                     <input
                       type="text"
                       value={headerInfo.model || ''}
                       onChange={(e) => handleChange('model', e.target.value)}
                       className="font-bold text-slate-900 outline-none bg-transparent text-sm min-w-0 flex-1 px-1 py-0.5 rounded focus:bg-white focus:ring-1 focus:ring-blue-400"
-                      placeholder=""
+                      placeholder="Required..."
                     />
                   </div>
                 </td>
                 <td className="border-l border-[#64748B] px-2 py-1.5 align-middle text-right bg-white">
-                  <span className="font-bold text-[#975A16] text-xs sm:text-[13px] whitespace-nowrap">Rank:</span>
+                  <span className="font-bold text-[#975A16] text-xs sm:text-[13px] whitespace-nowrap">
+                    Rank: <span className="text-red-500 font-bold">*</span>
+                  </span>
                 </td>
-                <td className="px-2 py-1.5 align-middle bg-white">
-                  <CheckboxMultiSelect
-                    disabled={readOnly}
-                    value={
-                      Array.isArray(headerInfo.rank)
-                        ? headerInfo.rank
-                        : String(headerInfo.rank || '')
-                            .split(',')
-                            .map((s) => s.trim())
-                            .filter(Boolean)
-                    }
-                    options={RANK_OPTIONS}
-                    placeholder="—"
-                    onChange={(newRanks) => handleChange('rank', newRanks.join(', '))}
-                    renderTrigger={({ open, setOpen, selected, buttonRef }) => (
-                      <button
-                        ref={buttonRef}
-                        type="button"
-                        disabled={readOnly}
-                        aria-label="Rank"
-                        aria-haspopup="listbox"
-                        aria-expanded={open}
-                        onClick={() => setOpen((current) => !current)}
-                        title={selected.length ? selected.join(', ') : 'Select Rank'}
-                        className="w-full flex items-center justify-between gap-1 cursor-pointer font-bold text-[#975A16] outline-none bg-transparent text-sm px-1 py-0.5 rounded focus:bg-white focus:ring-1 focus:ring-amber-400"
-                      >
-                        <span className="truncate">{selected.length ? selected.join(', ') : '—'}</span>
-                        <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-slate-500 transition-transform ${open ? 'rotate-180' : ''}`} />
-                      </button>
-                    )}
-                  />
+                <td className="px-2 py-1.5 align-middle bg-white relative">
+                  {(() => {
+                    const selectedRanks = Array.isArray(headerInfo.rank)
+                      ? headerInfo.rank
+                      : String(headerInfo.rank || '')
+                          .split(',')
+                          .map((s) => s.trim())
+                          .filter(Boolean);
+                    const toggleRank = (val) => {
+                      const next = selectedRanks.includes(val)
+                        ? selectedRanks.filter((r) => r !== val)
+                        : [...selectedRanks, val];
+                      handleChange('rank', next.join(', '));
+                    };
+                    const applyRankSymbol = (symbolVal) => {
+                      const rankKeys = mapHeaderRanksToKeys(selectedRanks);
+                      if (onBulkFillRank && rankKeys.length > 0) {
+                        onBulkFillRank(rankKeys, symbolVal);
+                      }
+                      setRankDropdownOpen(false);
+                    };
+
+                    return (
+                      <div ref={rankDropdownRef} className="relative w-full">
+                        <button
+                          type="button"
+                          disabled={readOnly}
+                          aria-label="Rank"
+                          aria-haspopup="listbox"
+                          aria-expanded={rankDropdownOpen}
+                          onClick={() => setRankDropdownOpen((prev) => !prev)}
+                          title={selectedRanks.length ? selectedRanks.join(', ') : 'Select Rank'}
+                          className="w-full flex items-center justify-between gap-1 cursor-pointer font-bold text-[#975A16] outline-none bg-transparent text-sm px-1 py-0.5 rounded focus:bg-white focus:ring-1 focus:ring-amber-400"
+                        >
+                          <span className="truncate">{selectedRanks.length ? selectedRanks.join(', ') : '—'}</span>
+                          <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-slate-500 transition-transform ${rankDropdownOpen ? 'rotate-180' : ''}`} />
+                        </button>
+
+                        {rankDropdownOpen && (
+                          <div className="absolute right-0 top-full mt-1 z-[120] w-52 rounded-lg border border-slate-200 bg-white p-1.5 shadow-xl text-left">
+                            <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                              Select Rank
+                            </div>
+                            <div className="space-y-0.5">
+                              {RANK_OPTIONS.map((opt) => {
+                                const checked = selectedRanks.includes(opt.value);
+                                return (
+                                  <label
+                                    key={opt.value}
+                                    className={`flex items-center gap-2 px-2 py-1 rounded text-xs cursor-pointer ${
+                                      checked ? 'bg-amber-50 text-amber-900 font-bold' : 'hover:bg-slate-50 text-slate-700'
+                                    }`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={() => toggleRank(opt.value)}
+                                      className="h-3.5 w-3.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                                    />
+                                    <span>{opt.label}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+
+                            {selectedRanks.length > 0 && (
+                              <div className="mt-1.5 pt-1.5 border-t border-slate-200">
+                                <div className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                  Fill Selected Rank Column
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => applyRankSymbol('applicable')}
+                                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs font-semibold text-slate-800 hover:bg-amber-50 cursor-pointer"
+                                >
+                                  <span className="inline-block w-3.5 h-3.5 bg-black rounded-xs shrink-0" />
+                                  <span>Applicable</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => applyRankSymbol('if_required')}
+                                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs font-semibold text-slate-800 hover:bg-amber-50 cursor-pointer"
+                                >
+                                  <span className="inline-block w-3.5 h-3.5 border-2 border-black bg-white rounded-xs shrink-0" />
+                                  <span>If Required</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => applyRankSymbol('')}
+                                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                                >
+                                  <span className="inline-flex items-center justify-center w-3.5 h-3.5 text-slate-400 font-bold shrink-0">—</span>
+                                  <span>Blank</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </td>
               </tr>
 
@@ -265,28 +421,74 @@ export default function PTMHeader({ headerInfo, setHeaderInfo, projectLeaderOpti
               <tr className="border-b border-[#64748B]">
                 <td className="px-2.5 py-1.5 align-middle bg-white" colSpan={2}>
                   <div className="flex items-baseline gap-1.5">
-                    <span className="font-bold text-[#2C5282] text-xs sm:text-[13px] whitespace-nowrap">APQP Leader:</span>
+                    <span className="font-bold text-[#2C5282] text-xs sm:text-[13px] whitespace-nowrap">
+                      APQP Leader: <span className="text-red-500 font-bold">*</span>
+                    </span>
                     <SearchableLeaderInput
                       value={headerInfo.apqpLeader || ''}
                       onChange={(e) => handleChange('apqpLeader', e.target.value)}
                       options={projectLeaderOptions}
                       id="apqp-leader"
                       className="w-full select-text cursor-text font-bold text-slate-900 outline-none bg-transparent text-sm min-w-0 px-1 py-0.5 rounded focus:bg-white focus:ring-1 focus:ring-blue-400"
-                      placeholder=""
+                      placeholder="Required..."
                     />
                   </div>
                 </td>
                 <td className="border-l border-[#64748B] px-2 py-1.5 align-middle text-right bg-white">
-                  <span className="font-bold text-[#2C5282] text-xs sm:text-[13px] whitespace-nowrap">Phase:</span>
+                  <span className="font-bold text-[#2C5282] text-xs sm:text-[13px] whitespace-nowrap">
+                    Phase: <span className="text-red-500 font-bold">*</span>
+                  </span>
                 </td>
                 <td className="px-2 py-1.5 align-middle bg-white">
-                  <input
-                    type="text"
-                    value={headerInfo.phase ?? ''}
-                    onChange={(e) => handleChange('phase', e.target.value)}
-                    className="w-full select-text cursor-text font-bold text-slate-900 outline-none bg-transparent text-sm px-1 py-0.5 rounded focus:bg-white focus:ring-1 focus:ring-blue-400"
-                    placeholder="1"
-                  />
+                  {(() => {
+                    const currentPhase = String(headerInfo.phase || '').trim();
+                    const isPreset = HEADER_PHASE_OPTIONS.slice(0, -1).includes(currentPhase);
+                    const selectValue = isCustomPhaseMode ? 'Other' : (isPreset ? currentPhase : '');
+                    return (
+                      <div className="flex flex-col gap-1">
+                        <select
+                          value={selectValue}
+                          disabled={readOnly}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val === 'Other') {
+                              setIsCustomPhaseMode(true);
+                              handleChange('phase', '');
+                            } else {
+                              setIsCustomPhaseMode(false);
+                              handleChange('phase', val);
+                              if (onBulkFillPhase && val) {
+                                onBulkFillPhase(val);
+                              }
+                            }
+                          }}
+                          className="w-full cursor-pointer font-bold text-slate-900 outline-none bg-transparent text-xs px-1 py-0.5 rounded focus:bg-white focus:ring-1 focus:ring-blue-400"
+                        >
+                          <option value="">Select Phase...</option>
+                          {HEADER_PHASE_OPTIONS.map((opt) => (
+                            <option key={opt} value={opt}>
+                              {opt === 'Other' ? 'Other (Manual Input)' : opt}
+                            </option>
+                          ))}
+                        </select>
+                        {isCustomPhaseMode && (
+                          <input
+                            type="text"
+                            value={headerInfo.phase || ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              handleChange('phase', val);
+                              if (onBulkFillPhase) {
+                                onBulkFillPhase(val);
+                              }
+                            }}
+                            placeholder="Enter phase..."
+                            className="w-full select-text cursor-text font-bold text-slate-900 outline-none bg-slate-50 border border-slate-300 text-xs px-1.5 py-0.5 rounded focus:bg-white focus:ring-1 focus:ring-blue-400"
+                          />
+                        )}
+                      </div>
+                    );
+                  })()}
                 </td>
               </tr>
 
@@ -294,14 +496,16 @@ export default function PTMHeader({ headerInfo, setHeaderInfo, projectLeaderOpti
               <tr className="border-b border-[#64748B]">
                 <td className="px-2.5 py-1.5 align-middle bg-white" colSpan={4}>
                   <div className="flex items-baseline gap-1.5">
-                    <span className="font-bold text-[#2C5282] text-xs sm:text-[13px] whitespace-nowrap">Project Leader:</span>
+                    <span className="font-bold text-[#2C5282] text-xs sm:text-[13px] whitespace-nowrap">
+                      Project Leader: <span className="text-red-500 font-bold">*</span>
+                    </span>
                     <SearchableLeaderInput
                       value={headerInfo.projectLeader || ''}
                       onChange={(e) => handleChange('projectLeader', e.target.value)}
                       options={projectLeaderOptions}
                       id="project-leader"
                       className="w-full select-text cursor-text font-bold text-slate-900 outline-none bg-transparent text-sm min-w-0 px-1 py-0.5 rounded focus:bg-white focus:ring-1 focus:ring-blue-400"
-                      placeholder=""
+                      placeholder="Required..."
                     />
                   </div>
                 </td>
@@ -311,7 +515,9 @@ export default function PTMHeader({ headerInfo, setHeaderInfo, projectLeaderOpti
               <tr>
                 <td className="px-2.5 py-1.5 align-middle bg-white" colSpan={4}>
                   <div className="flex items-baseline gap-1.5">
-                    <span className="font-bold text-[#2C5282] text-xs sm:text-[13px] whitespace-nowrap">Review Date:</span>
+                    <span className="font-bold text-[#2C5282] text-xs sm:text-[13px] whitespace-nowrap">
+                      Review Date: <span className="text-red-500 font-bold">*</span>
+                    </span>
                     <CalendarDateInput
                       value={headerInfo.reviewDate || ''}
                       onChange={(e) => handleChange('reviewDate', e.target.value)}
@@ -328,16 +534,16 @@ export default function PTMHeader({ headerInfo, setHeaderInfo, projectLeaderOpti
 
         {/* Section 2: Legend / Symbol Guidance — matching section colors and enlarged bold symbols */}
         <div className="[&_*]:!text-black bg-white">
-          <table className="w-full h-full border-collapse text-[13px]" style={{tableLayout:'fixed'}}>
+          <table className="w-full h-full border-collapse text-[13px]" style={{ tableLayout: 'fixed' }}>
             <colgroup>
-              <col style={{width:'22%'}} />  {/* "Legend" label cell */}
-              <col style={{width:'22%'}} />  {/* Activity / Rank / Deptt labels */}
-              <col style={{width:'14%'}} />  {/* Symbol */}
-              <col style={{width:'42%'}} />  {/* Description */}
+              <col style={{ width: '22%' }} />  {/* "Legend" label cell */}
+              <col style={{ width: '22%' }} />  {/* Activity / Rank / Deptt labels */}
+              <col style={{ width: '14%' }} />  {/* Symbol */}
+              <col style={{ width: '42%' }} />  {/* Description */}
             </colgroup>
             <tbody>
               {/* Top empty row with header tint */}
-              <tr className="border-b border-[#64748B]" style={{height:'26px'}}>
+              <tr className="border-b border-[#64748B]" style={{ height: '26px' }}>
                 <td colSpan={4}></td>
               </tr>
 
@@ -346,7 +552,7 @@ export default function PTMHeader({ headerInfo, setHeaderInfo, projectLeaderOpti
                 <td
                   className="border-r border-[#64748B] text-center font-extrabold text-[#2C5282] uppercase tracking-wider align-middle text-xs sm:text-[13px] px-1"
                   rowSpan={5}
-                  style={{verticalAlign:'middle'}}
+                  style={{ verticalAlign: 'middle' }}
                 >
                   Legend
                 </td>
@@ -388,7 +594,7 @@ export default function PTMHeader({ headerInfo, setHeaderInfo, projectLeaderOpti
         <div className="bg-white text-xs">
           <table className="w-full h-full border-collapse text-xs">
             <tbody>
-              <tr className="border-b border-[#64748B]" style={{height:'26px'}}>
+              <tr className="border-b border-[#64748B]" style={{ height: '26px' }}>
                 <td className="px-2.5 font-extrabold text-[#1E40AF] uppercase tracking-wider text-xs sm:text-[13px] align-middle bg-[#EEF4FA]">
                   Notes:
                 </td>
@@ -419,7 +625,7 @@ export default function PTMHeader({ headerInfo, setHeaderInfo, projectLeaderOpti
 
         {/* Section 4: Milestones (DPT, PPT, MPT, PILOT, SOP) — Excel reference section */}
         <div className="[&_*]:!text-black bg-white text-xs">
-          <table className="w-full h-full border-collapse text-xs" style={{tableLayout:'auto'}}>
+          <table className="w-full h-full border-collapse text-xs" style={{ tableLayout: 'auto' }}>
             <tbody>
               {/* Column Headers: blank | DPT | PPT | MPT | PILOT | SOP */}
               <tr className="border-b border-[#64748B]" style={{ height: '28px' }}>
@@ -485,50 +691,32 @@ export default function PTMHeader({ headerInfo, setHeaderInfo, projectLeaderOpti
           </table>
         </div>
 
-        {/* Section 5: Document Metadata — compact with polished header styling */}
-        <div className="bg-[#F4F7FA] flex flex-col justify-center px-1.5 py-1">
+        {/* Section 5: Document Metadata — frozen / non-editable */}
+        <div className="bg-[#F4F7FA] flex flex-col justify-center px-1.5 py-1 select-none border-r border-[#64748B]">
           <table className="w-full border border-[#64748B] text-xs bg-white rounded-xs overflow-hidden shadow-2xs">
             <tbody>
               <tr className="border-b border-[#64748B]">
                 <td className="px-1 py-0.5 font-bold text-[#2C5282] bg-[#EEF4FA] whitespace-nowrap text-[11px]">Doc No.:</td>
-                <td className="px-1.5 py-0.5 font-mono text-slate-800 bg-white">
-                  <input
-                    type="text"
-                    value={headerInfo.docNo || 'FRM-DD-WH-006'}
-                    onChange={(e) => handleChange('docNo', e.target.value)}
-                    className="w-full bg-transparent outline-none font-mono font-bold text-xs"
-                  />
+                <td className="px-1.5 py-0.5 font-mono font-bold text-xs text-slate-800 bg-white">
+                  {headerInfo.docNo || 'FRM-DD-WH-006'}
                 </td>
               </tr>
               <tr className="border-b border-[#64748B]">
                 <td className="px-1 py-0.5 font-bold text-[#2C5282] bg-[#EEF4FA] whitespace-nowrap text-[11px]">Rev No.:</td>
-                <td className="px-1.5 py-0.5 font-bold text-slate-800 bg-white">
-                  <input
-                    type="text"
-                    value={headerInfo.revNo || '17'}
-                    onChange={(e) => handleChange('revNo', e.target.value)}
-                    className="w-full bg-transparent outline-none font-bold text-xs"
-                  />
+                <td className="px-1.5 py-0.5 font-bold text-xs text-slate-800 bg-white">
+                  {headerInfo.revNo || '17'}
                 </td>
               </tr>
               <tr className="border-b border-[#64748B]">
                 <td className="px-1 py-0.5 font-bold text-[#2C5282] bg-[#EEF4FA] whitespace-nowrap text-[11px]">Issue Date:</td>
-                <td className="px-1.5 py-0.5 text-slate-700 bg-white">
-                  <CalendarDateInput
-                    value={headerInfo.issueDate || '07.11.2013'}
-                    onChange={(e) => handleChange('issueDate', e.target.value)}
-                    className="w-full bg-transparent outline-none font-bold text-xs"
-                  />
+                <td className="px-1.5 py-0.5 font-bold text-xs text-slate-700 bg-white whitespace-nowrap">
+                  {formatDotDateDDMMYYYY(headerInfo.issueDate, '07.11.2013')}
                 </td>
               </tr>
               <tr className="bg-[#FEF08A] font-bold text-amber-950">
                 <td className="px-1 py-1 font-extrabold border-r border-amber-300 whitespace-nowrap text-[11px]">Rev. Date:</td>
-                <td className="px-1 py-1">
-                  <CalendarDateInput
-                    value={headerInfo.revDate || '17.10.23'}
-                    onChange={(e) => handleChange('revDate', e.target.value)}
-                    className="w-full bg-transparent outline-none font-extrabold text-xs text-amber-950"
-                  />
+                <td className="px-1.5 py-1 font-extrabold text-xs text-amber-950 whitespace-nowrap">
+                  {formatDotDateDDMMYYYY(headerInfo.revDate, '17.10.2023')}
                 </td>
               </tr>
             </tbody>

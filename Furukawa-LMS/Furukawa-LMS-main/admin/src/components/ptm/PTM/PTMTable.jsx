@@ -48,7 +48,8 @@ import {
   Upload,
   FileText,
   FileSpreadsheet,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Filter
 } from 'lucide-react';
 
 const DEPARTMENTS = [
@@ -95,7 +96,7 @@ const revisedDateFromDuration = (startDate, duration) => {
 
 const DEFAULT_ACTION_COLUMN_WIDTH = 120;
 const MIN_ACTION_COLUMN_WIDTH = 100;
-const STATUS_COLUMN_WIDTH = 95;
+const STATUS_COLUMN_MIN_WIDTH = 128;
 const PHASE_NAME_COLUMN_WIDTH = 180;
 const DEFAULT_ROW_HEIGHT = 34;
 const MIN_ROW_HEIGHT = 34;
@@ -242,9 +243,8 @@ function EndDatePlanCell({ row, onSelectDate, disabled = false, rowIndex }) {
 
   return (
     <div
-      className={`relative flex items-center justify-center min-w-[112px] w-full min-h-[34px] py-1 pl-2 pr-6 ${
-        disabled ? 'pointer-events-none opacity-75' : 'cursor-pointer hover:bg-blue-50/40'
-      }`}
+      className={`relative flex items-center justify-center min-w-[112px] w-full min-h-[34px] py-1 pl-2 pr-6 ${disabled ? 'pointer-events-none opacity-75' : 'cursor-pointer hover:bg-blue-50/40'
+        }`}
       onClick={() => {
         if (!disabled) pickerRef.current?.showPicker?.();
       }}
@@ -326,6 +326,8 @@ export default function PTMTable({
   currentUser = null,
   hasFullSheetAccess = true,
   savedColumnSuggestions = null,
+  isHeaderComplete = true,
+  selectedHeaderRank = '',
 }) {
   const tableRef = useRef(null);
   const activeResizeRef = useRef(null);
@@ -350,6 +352,9 @@ export default function PTMTable({
   const [rowHeights, setRowHeights] = useState({});
   const [openStaffDropdown, setOpenStaffDropdown] = useState(null);
   const [staffSearchQuery, setStaffSearchQuery] = useState('');
+  const [columnFilters, setColumnFilters] = useState({});
+  const [openHeaderFilter, setOpenHeaderFilter] = useState(null);
+  const [headerFilterSearch, setHeaderFilterSearch] = useState('');
   const [staffEmployeeModal, setStaffEmployeeModal] = useState({
     isOpen: false,
     rowIndex: null,
@@ -380,9 +385,30 @@ export default function PTMTable({
     [externalDbEmployees, fetchedEmployees]
   );
 
+  const activeRankKeys = useMemo(() => {
+    const tokens = String(selectedHeaderRank || '')
+      .split(',')
+      .map((s) => s.trim().toUpperCase())
+      .filter(Boolean);
+    if (tokens.length === 0) return null;
+    const keys = new Set();
+    tokens.forEach((t) => {
+      if (t === 'A') keys.add('rankA');
+      else if (t === 'B') keys.add('rankB');
+      else if (t === 'C1' || t === 'C2') keys.add('rankC');
+      else if (t === 'S') keys.add('rankS');
+    });
+    return keys;
+  }, [selectedHeaderRank]);
+
+  const isRankColumnActive = useCallback(
+    (rankKey) => !activeRankKeys || activeRankKeys.has(rankKey),
+    [activeRankKeys]
+  );
+
   const canEditCell = useCallback(
-    (row, colKey) => canUserEditPtmRowColumn(row, colKey, currentUser, hasFullSheetAccess),
-    [currentUser, hasFullSheetAccess]
+    (row, colKey) => isHeaderComplete && canUserEditPtmRowColumn(row, colKey, currentUser, hasFullSheetAccess),
+    [isHeaderComplete, currentUser, hasFullSheetAccess]
   );
 
   useEffect(() => {
@@ -395,6 +421,17 @@ export default function PTMTable({
     window.addEventListener('mousedown', handleOutsideClick);
     return () => window.removeEventListener('mousedown', handleOutsideClick);
   }, [openStaffDropdown]);
+
+  useEffect(() => {
+    if (!openHeaderFilter) return;
+    const handleOutsideClick = (e) => {
+      if (!e.target.closest('.ptm-header-filter-popover') && !e.target.closest('.ptm-header-filter-trigger')) {
+        setOpenHeaderFilter(null);
+      }
+    };
+    window.addEventListener('mousedown', handleOutsideClick);
+    return () => window.removeEventListener('mousedown', handleOutsideClick);
+  }, [openHeaderFilter]);
 
   const getResponsiblePersonStructure = (row) => {
     if (!row) return { units: [], deptsByUnit: {} };
@@ -524,7 +561,7 @@ export default function PTMTable({
     );
   };
 
-  const handleSelectStaffForUnitDept = (rowIndex, unit, department, empObj) => {
+  const handleSelectStaffForUnitDept = (rowIndex, unit, department, empObj, appendMode = false) => {
     setRows((prev) => {
       const updated = [...prev];
       const currentRow = updated[rowIndex];
@@ -544,20 +581,30 @@ export default function PTMTable({
       }
 
       const currentList = Array.isArray(currentRow.staffEmployees) ? [...currentRow.staffEmployees] : [];
-      const filtered = currentList.filter(
-        (emp) => !(targetUnit && emp.unit === targetUnit && (targetDept ? emp.department === targetDept : true))
-      );
+      const filtered = appendMode
+        ? currentList
+        : currentList.filter(
+          (emp) => !(targetUnit && emp.unit === targetUnit && (targetDept ? emp.department === targetDept : true))
+        );
 
       if (empObj && empObj.name) {
         const cleanName = stripEmployeeId(empObj.name);
         const code = (empObj.code || '').toUpperCase();
-        filtered.push({
-          id: empObj.id || undefined,
-          name: cleanName,
-          code,
-          department: targetDept,
-          unit: targetUnit
-        });
+        const alreadyExists = filtered.some(
+          (e) =>
+            (e.unit || '') === (targetUnit || '') &&
+            (e.department || '') === (targetDept || '') &&
+            (code ? (e.code || '').toUpperCase() === code : (e.name || '').toLowerCase() === cleanName.toLowerCase())
+        );
+        if (!alreadyExists) {
+          filtered.push({
+            id: empObj.id || undefined,
+            name: cleanName,
+            code,
+            department: targetDept,
+            unit: targetUnit
+          });
+        }
       }
 
       const formattedStaff = filtered
@@ -758,12 +805,13 @@ export default function PTMTable({
     }));
   };
 
-  const handleToggleStaffDropdownForDept = (rowIndex, unit, department, e) => {
+  const handleToggleStaffDropdownForDept = (rowIndex, unit, department, e, appendMode = false) => {
     e.stopPropagation();
     if (
       openStaffDropdown?.rowIndex === rowIndex &&
       openStaffDropdown?.unit === unit &&
-      openStaffDropdown?.department === department
+      openStaffDropdown?.department === department &&
+      Boolean(openStaffDropdown?.appendMode) === Boolean(appendMode)
     ) {
       setOpenStaffDropdown(null);
       return;
@@ -789,6 +837,7 @@ export default function PTMTable({
       rowIndex,
       unit,
       department,
+      appendMode: Boolean(appendMode),
       top: topPos,
       left: Math.max(12, leftPos),
       width: dropdownWidth
@@ -830,7 +879,7 @@ export default function PTMTable({
       );
     }
 
-    if (currentDept) {
+    if (currentDept && !openStaffDropdown?.appendMode) {
       const deptOnlyMatches = list.filter((item) => (item.department || '').toLowerCase() === currentDept);
       if (deptOnlyMatches.length > 0) {
         return deptOnlyMatches;
@@ -1045,6 +1094,7 @@ export default function PTMTable({
 
   /* ── Cycle Rank: ■ (applicable) -> □ (if_required) -> '' (none) ── */
   const cycleRank = (rowIndex, rankKey) => {
+    if (!isHeaderComplete || !isRankColumnActive(rankKey)) return;
     if (!canEditCell(rows[rowIndex], rankKey)) return;
     setRows((prev) => {
       const updated = [...prev];
@@ -1578,6 +1628,170 @@ export default function PTMTable({
     }
   };
 
+  /* ── Column Header Filters ── */
+  const BLANK_FILTER_VAL = '__BLANK__';
+
+  const getRowFilterValues = useCallback((row, colKey) => {
+    switch (colKey) {
+      case 'phaseName': {
+        const val = String(row.phaseName || '').trim();
+        return val ? [val] : [BLANK_FILTER_VAL];
+      }
+      case 'rankA':
+      case 'rankB':
+      case 'rankC':
+      case 'rankS': {
+        const val = String(row[colKey] || '').trim();
+        return val ? [val] : [BLANK_FILTER_VAL];
+      }
+      case 'critical': {
+        const val = String(row.critical || '').trim().toLowerCase();
+        return val === 'yes' ? ['Yes'] : ['No'];
+      }
+      case 'hitMiss': {
+        const val = String(row.hitMiss || '').trim().toUpperCase();
+        return val === 'HIT' || val === 'MISS' ? [val] : [BLANK_FILTER_VAL];
+      }
+      case 'respUnit': {
+        const { units } = getResponsiblePersonStructure(row);
+        return units.length > 0 ? units : [BLANK_FILTER_VAL];
+      }
+      case 'respDept': {
+        const { deptsByUnit } = getResponsiblePersonStructure(row);
+        const depts = new Set(Object.values(deptsByUnit).flat().filter(Boolean));
+        if (row.responsiblePersonDept) {
+          String(row.responsiblePersonDept).split(/[,;]/).map((d) => d.trim()).filter(Boolean).forEach((d) => depts.add(d));
+        }
+        return depts.size > 0 ? Array.from(depts) : [BLANK_FILTER_VAL];
+      }
+      case 'respStaff': {
+        const names = new Set();
+        (row.staffEmployees || []).forEach((e) => {
+          const n = stripEmployeeId(e?.name || e?.label || '').trim();
+          if (n) names.add(n);
+        });
+        if (names.size === 0 && row.staffEmployee) {
+          String(row.staffEmployee).split(/[,;]/).map((s) => stripEmployeeId(s).trim()).filter(Boolean).forEach((n) => names.add(n));
+        }
+        return names.size > 0 ? Array.from(names) : [BLANK_FILTER_VAL];
+      }
+      case 'status': {
+        return [normalizePtmStatus(row.status || 'Not-Started')];
+      }
+      default:
+        return [];
+    }
+  }, []);
+
+  const headerFilterOptionsMap = useMemo(() => {
+    const rankOptions = [
+      { value: 'applicable', label: 'Applicable', symbol: 'applicable' },
+      { value: 'if_required', label: 'If Required', symbol: 'if_required' },
+      { value: BLANK_FILTER_VAL, label: 'Blank (—)' },
+    ];
+
+    const phaseSet = new Set(PTM_PHASE_OPTIONS.map((p) => String(p.label || p.value || p).trim()).filter(Boolean));
+    rows.forEach((r) => {
+      const p = String(r.phaseName || '').trim();
+      if (p) phaseSet.add(p);
+    });
+
+    const deptSet = new Set();
+    const staffSet = new Set();
+    rows.forEach((r) => {
+      getRowFilterValues(r, 'respDept').forEach((d) => { if (d !== BLANK_FILTER_VAL) deptSet.add(d); });
+      getRowFilterValues(r, 'respStaff').forEach((s) => { if (s !== BLANK_FILTER_VAL) staffSet.add(s); });
+    });
+
+    return {
+      phaseName: [
+        ...Array.from(phaseSet).map((p) => ({ value: p, label: p })),
+        { value: BLANK_FILTER_VAL, label: 'Blank' },
+      ],
+      rankA: rankOptions,
+      rankB: rankOptions,
+      rankC: rankOptions,
+      rankS: rankOptions,
+      critical: [
+        { value: 'Yes', label: 'Yes (◆)' },
+        { value: 'No', label: 'No' },
+      ],
+      hitMiss: [
+        { value: 'HIT', label: 'HIT' },
+        { value: 'MISS', label: 'MISS' },
+        { value: BLANK_FILTER_VAL, label: 'Blank (—)' },
+      ],
+      respUnit: [
+        ...PDCA_UNITS.map((u) => ({ value: u, label: u })),
+        { value: BLANK_FILTER_VAL, label: 'Blank' },
+      ],
+      respDept: [
+        ...Array.from(deptSet).sort().map((d) => ({ value: d, label: d })),
+        { value: BLANK_FILTER_VAL, label: 'Blank' },
+      ],
+      respStaff: [
+        ...Array.from(staffSet).sort().map((s) => ({ value: s, label: s })),
+        { value: BLANK_FILTER_VAL, label: 'Blank' },
+      ],
+      status: PTM_STATUS_OPTIONS.map((opt) => ({ value: opt.value, label: opt.label })),
+    };
+  }, [rows, getRowFilterValues]);
+
+  const handleOpenHeaderFilter = (colKey, title, event) => {
+    event.stopPropagation();
+    if (openHeaderFilter?.colKey === colKey) {
+      setOpenHeaderFilter(null);
+      return;
+    }
+    setHeaderFilterSearch('');
+    const rect = event.currentTarget.getBoundingClientRect();
+    const width = 230;
+    let left = rect.left + rect.width / 2 - width / 2;
+    if (left + width > window.innerWidth - 12) left = window.innerWidth - width - 12;
+    if (left < 12) left = 12;
+    const top = Math.min(rect.bottom + 6, window.innerHeight - 320);
+    setOpenHeaderFilter({ colKey, title, top, left, width });
+  };
+
+  const toggleHeaderFilterOption = (colKey, value) => {
+    setColumnFilters((prev) => {
+      const current = prev[colKey] || [];
+      const exists = current.includes(value);
+      const next = exists ? current.filter((v) => v !== value) : [...current, value];
+      if (next.length === 0) {
+        const { [colKey]: _, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [colKey]: next };
+    });
+  };
+
+  const clearHeaderFilter = (colKey) => {
+    setColumnFilters((prev) => {
+      const { [colKey]: _, ...rest } = prev;
+      return rest;
+    });
+  };
+
+  const renderHeaderFilterButton = (colKey, title) => {
+    const activeCount = (columnFilters[colKey] || []).length;
+    const isOpen = openHeaderFilter?.colKey === colKey;
+    return (
+      <button
+        type="button"
+        onClick={(e) => handleOpenHeaderFilter(colKey, title, e)}
+        title={activeCount > 0 ? `Filtered (${activeCount}) — click to edit` : `Filter ${title}`}
+        aria-label={`Filter ${title}`}
+        className={`ptm-header-filter-trigger inline-flex items-center justify-center rounded p-0.5 transition-colors cursor-pointer shrink-0 ${activeCount > 0 || isOpen
+          ? 'bg-blue-100 text-blue-700 ring-1 ring-blue-300'
+          : 'text-slate-400 hover:text-slate-700 hover:bg-black/5'
+          }`}
+      >
+        <Filter className="w-3 h-3" />
+      </button>
+    );
+  };
+
   /* ── Filtered Rows ── */
   const hiddenParentIds = new Set(
     rows.filter(isParentRow).filter((row) => areChildrenHidden(row)).map((row) => row.id)
@@ -1591,6 +1805,11 @@ export default function PTMTable({
     if (phaseFilter && phaseFilter !== 'all') {
       const match = String(r.phaseName || '').startsWith(phaseFilter) || String(r.phaseNo || '') === phaseFilter;
       if (!match) return false;
+    }
+    for (const [colKey, selectedVals] of Object.entries(columnFilters)) {
+      if (!Array.isArray(selectedVals) || selectedVals.length === 0) continue;
+      const rowVals = getRowFilterValues(r, colKey);
+      if (!rowVals.some((v) => selectedVals.includes(v))) return false;
     }
     if (searchQuery && searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -1611,11 +1830,16 @@ export default function PTMTable({
     : [];
   return (
     <div className={`ptm-data-table bg-white select-none ${isMerged ? '' : 'rounded-xl border border-[#64748B] shadow-sm overflow-hidden'}`}>
+      {!isHeaderComplete && (
+        <div className="bg-amber-50 border-b border-amber-300 px-4 py-2 text-xs font-bold text-amber-900 flex items-center gap-2">
+          <span>⚠️ Please fill all mandatory header fields (Model, APQP Leader, Project Leader, Review Date, Rank, Phase) to unlock sheet editing.</span>
+        </div>
+      )}
       <div className={isMerged ? 'w-full' : 'overflow-x-auto max-h-[calc(100vh-140px)]'} ref={tableRef} onInput={handleTableInput}>
         <ManualInputOptionsContext.Provider value={manualOptionsByColumn}>
           <table className="w-full border-collapse text-xs">
             <colgroup>
-              <col span={36} />
+              <col span={34} />
               <col
                 style={{
                   width: `${colWidths.actions}px`,
@@ -1626,7 +1850,7 @@ export default function PTMTable({
             {/* ══════════════════════════════════════════════════════════════════
               HEADER ROW: INDIVIDUAL COLUMN TITLES WITH MATCHING TINTS
               ══════════════════════════════════════════════════════════════════ */}
-            <thead className="sticky top-0 z-20 shadow-xs border-b border-[#64748B]">
+            <thead className="sticky top-0 z-20 shadow-xs border-t border-b border-[#64748B]">
               {/* ══════════════════════════════════════════════════════════════════
                 COLUMN TITLES
                 ══════════════════════════════════════════════════════════════════ */}
@@ -1643,10 +1867,11 @@ export default function PTMTable({
                     minWidth: `${colWidths.phaseName}px`,
                   }}
                 >
-                  <div className="flex items-center justify-between pr-2">
+                  <div className="flex items-center justify-between gap-1 pr-2">
                     <span>Phase No. / Name</span>
+                    {renderHeaderFilterButton('phaseName', 'Phase No. / Name')}
                   </div>
-                  
+
                   <span
                     role="separator"
                     aria-label="Resize Phase Name column"
@@ -1674,7 +1899,7 @@ export default function PTMTable({
                   <div className="flex items-center justify-between pr-2">
                     <span>Custom Event Name</span>
                   </div>
-                  
+
                   <span
                     role="separator"
                     aria-label="Resize Custom Event Name column"
@@ -1690,22 +1915,37 @@ export default function PTMTable({
                 </th>
 
                 {/* Group 2 Columns (Pale Yellow tint) - compact */}
-                <th rowSpan={2} className="py-2 px-1 w-9 min-w-[34px] max-w-[38px] bg-[#FFF9E6] text-[#975A16] whitespace-normal leading-tight text-center">
-                  Rank A
+                <th rowSpan={2} className={`py-2 px-1 w-9 min-w-[34px] max-w-[38px] bg-[#FFF9E6] text-[#975A16] whitespace-normal leading-tight text-center transition-all ${!isRankColumnActive('rankA') ? 'opacity-35 blur-[1px] bg-slate-100/80 pointer-events-none select-none' : ''}`}>
+                  <div className="flex flex-col items-center gap-0.5">
+                    <span>Rank A</span>
+                    {renderHeaderFilterButton('rankA', 'Rank A')}
+                  </div>
                 </th>
-                <th rowSpan={2} className="py-2 px-1 w-9 min-w-[34px] max-w-[38px] bg-[#FFF9E6] text-[#975A16] whitespace-normal leading-tight text-center">
-                  Rank B
+                <th rowSpan={2} className={`py-2 px-1 w-9 min-w-[34px] max-w-[38px] bg-[#FFF9E6] text-[#975A16] whitespace-normal leading-tight text-center transition-all ${!isRankColumnActive('rankB') ? 'opacity-35 blur-[1px] bg-slate-100/80 pointer-events-none select-none' : ''}`}>
+                  <div className="flex flex-col items-center gap-0.5">
+                    <span>Rank B</span>
+                    {renderHeaderFilterButton('rankB', 'Rank B')}
+                  </div>
                 </th>
-                <th rowSpan={2} className="py-2 px-1 w-11 min-w-[42px] max-w-[48px] bg-[#FFF9E6] text-[#975A16] whitespace-normal leading-tight text-center">
-                  Rank C1 & C2
+                <th rowSpan={2} className={`py-2 px-1 w-11 min-w-[42px] max-w-[48px] bg-[#FFF9E6] text-[#975A16] whitespace-normal leading-tight text-center transition-all ${!isRankColumnActive('rankC') ? 'opacity-35 blur-[1px] bg-slate-100/80 pointer-events-none select-none' : ''}`}>
+                  <div className="flex flex-col items-center gap-0.5">
+                    <span>Rank C1 & C2</span>
+                    {renderHeaderFilterButton('rankC', 'Rank C1 & C2')}
+                  </div>
                 </th>
-                <th rowSpan={2} className="py-2 px-1 w-9 min-w-[34px] max-w-[38px] bg-[#FFF9E6] text-[#975A16] whitespace-normal leading-tight text-center">
-                  Rank S
+                <th rowSpan={2} className={`py-2 px-1 w-9 min-w-[34px] max-w-[38px] bg-[#FFF9E6] text-[#975A16] whitespace-normal leading-tight text-center transition-all ${!isRankColumnActive('rankS') ? 'opacity-35 blur-[1px] bg-slate-100/80 pointer-events-none select-none' : ''}`}>
+                  <div className="flex flex-col items-center gap-0.5">
+                    <span>Rank S</span>
+                    {renderHeaderFilterButton('rankS', 'Rank S')}
+                  </div>
                 </th>
 
                 {/* Group 3 Columns (Slate tint) */}
                 <th rowSpan={2} className="py-2 px-1 w-14 min-w-[50px] max-w-[56px] bg-[#F8F9FA] text-[#4A5568] whitespace-normal leading-tight text-center">
-                  Critical Activity
+                  <div className="flex flex-col items-center gap-0.5">
+                    <span>Critical Activity</span>
+                    {renderHeaderFilterButton('critical', 'Critical Activity')}
+                  </div>
                 </th>
                 <th
                   rowSpan={2}
@@ -1718,7 +1958,7 @@ export default function PTMTable({
                   <div className="flex items-center justify-between pr-2">
                     <span>Activity (New)</span>
                   </div>
-                  
+
                   <span
                     role="separator"
                     aria-label="Resize Activity (New) column"
@@ -1756,7 +1996,7 @@ export default function PTMTable({
                   <div className="flex items-center justify-between pr-2">
                     <span>Deliverable Required Yes / No (if yes than put Format no.)</span>
                   </div>
-                  
+
                   <span
                     role="separator"
                     aria-label="Resize Deliverable column"
@@ -1790,7 +2030,10 @@ export default function PTMTable({
 
                 {/* Group 7 Columns (Mint Green tint) */}
                 <th rowSpan={2} className="py-2 px-1.5 w-auto min-w-[78px] bg-[#EAF5EC] text-[#276749] whitespace-nowrap leading-tight text-center">
-                  HIT/MISS
+                  <div className="flex items-center justify-center gap-1">
+                    <span>HIT/MISS</span>
+                    {renderHeaderFilterButton('hitMiss', 'HIT/MISS')}
+                  </div>
                 </th>
 
                 {/* Group 8 Columns (Pastel Rose tint) */}
@@ -1811,7 +2054,7 @@ export default function PTMTable({
                   <div className="flex items-center justify-between pr-2">
                     <span>Action Taken Against Failure</span>
                   </div>
-                  
+
                   <span
                     role="separator"
                     aria-label="Resize Action Taken Against Failure column"
@@ -1837,13 +2080,15 @@ export default function PTMTable({
                 {/* Group 9 Columns (Slate tint) */}
                 <th
                   rowSpan={2}
-                  className="py-2 px-1 bg-[#F8F9FA] text-[#4A5568] whitespace-normal leading-tight text-center"
+                  className="py-2 px-1.5 w-auto bg-[#F8F9FA] text-[#4A5568] whitespace-nowrap leading-tight text-center"
                   style={{
-                    width: `${STATUS_COLUMN_WIDTH}px`,
-                    minWidth: `${STATUS_COLUMN_WIDTH}px`,
+                    minWidth: `${STATUS_COLUMN_MIN_WIDTH}px`,
                   }}
                 >
-                  Status
+                  <div className="flex items-center justify-center gap-1">
+                    <span>Status</span>
+                    {renderHeaderFilterButton('status', 'Status')}
+                  </div>
                 </th>
                 <th
                   rowSpan={2}
@@ -1856,7 +2101,7 @@ export default function PTMTable({
                   <div className="flex items-center justify-between pr-2">
                     <span>Remarks</span>
                   </div>
-                  
+
                   <span
                     role="separator"
                     aria-label="Resize Remarks column"
@@ -1904,14 +2149,23 @@ export default function PTMTable({
 
               {/* Row 2: Sub-columns for Responsible Person */}
               <tr className="divide-x divide-[#64748B] text-xs sm:text-[12.5px] font-bold text-center border-b-2 border-slate-400 bg-[#ECEFF1] text-slate-800">
-                <th className="py-1 px-1 text-center w-[110px] min-w-[100px]">
-                  Unit
+                <th className="py-1 px-1 text-center w-[110px] min-w-[100px] border-l border-[#64748B]">
+                  <div className="flex items-center justify-center gap-1">
+                    <span>Unit</span>
+                    {renderHeaderFilterButton('respUnit', 'Responsible Unit')}
+                  </div>
                 </th>
                 <th className="py-1 px-1 text-center w-[145px] min-w-[135px]">
-                  Dept
+                  <div className="flex items-center justify-center gap-1">
+                    <span>Dept</span>
+                    {renderHeaderFilterButton('respDept', 'Responsible Dept')}
+                  </div>
                 </th>
                 <th className="py-1 px-1 text-center w-[160px] min-w-[150px]">
-                  <span>Staff Name</span> <span className="text-red-500 font-bold">*</span>
+                  <div className="flex items-center justify-center gap-1">
+                    <span>Staff Name</span> <span className="text-red-500 font-bold">*</span>
+                    {renderHeaderFilterButton('respStaff', 'Staff Name')}
+                  </div>
                 </th>
               </tr>
             </thead>
@@ -1919,7 +2173,7 @@ export default function PTMTable({
             {/* ══════════════════════════════════════════════════════════════════
               TABLE BODY: EVERY CELL HAS DROPDOWN / MANUAL INPUT AS SHOWN IN IMAGE
               ══════════════════════════════════════════════════════════════════ */}
-            <tbody className="divide-y divide-[#64748B] bg-white">
+            <tbody className={`divide-y divide-[#64748B] bg-white ${!isHeaderComplete ? 'pointer-events-none opacity-60 select-none' : ''}`}>
               {filteredRows.length === 0 ? (
                 <tr>
                   <td
@@ -2114,7 +2368,13 @@ export default function PTMTable({
                         {/* 5. Rank A — Interactive checkbox */}
                         <td
                           onClick={() => cycleRank(originalIndex, 'rankA')}
-                          className={`py-1 px-1 text-center cursor-pointer hover:bg-amber-50/50 transition-colors select-none ${!canEditCell(row, 'rankA') ? 'pointer-events-none opacity-75' : ''}`}
+                          className={`py-1 px-1 text-center transition-all select-none ${
+                            !isRankColumnActive('rankA')
+                              ? 'opacity-35 blur-[1px] bg-slate-100/80 pointer-events-none'
+                              : !canEditCell(row, 'rankA')
+                                ? 'pointer-events-none opacity-75'
+                                : 'cursor-pointer hover:bg-amber-50/50'
+                          }`}
                           title="Click: ■ Applicable / □ If Required / Clear"
                         >
                           <div className="flex items-center justify-center">
@@ -2131,7 +2391,13 @@ export default function PTMTable({
                         {/* 6. Rank B — Interactive checkbox */}
                         <td
                           onClick={() => cycleRank(originalIndex, 'rankB')}
-                          className={`py-1 px-1 text-center cursor-pointer hover:bg-amber-50/50 transition-colors select-none ${!canEditCell(row, 'rankB') ? 'pointer-events-none opacity-75' : ''}`}
+                          className={`py-1 px-1 text-center transition-all select-none ${
+                            !isRankColumnActive('rankB')
+                              ? 'opacity-35 blur-[1px] bg-slate-100/80 pointer-events-none'
+                              : !canEditCell(row, 'rankB')
+                                ? 'pointer-events-none opacity-75'
+                                : 'cursor-pointer hover:bg-amber-50/50'
+                          }`}
                           title="Click: ■ Applicable / □ If Required / Clear"
                         >
                           <div className="flex items-center justify-center">
@@ -2148,7 +2414,13 @@ export default function PTMTable({
                         {/* 7. Rank C1 & C2 — Interactive checkbox */}
                         <td
                           onClick={() => cycleRank(originalIndex, 'rankC')}
-                          className={`py-1 px-1 text-center cursor-pointer hover:bg-amber-50/50 transition-colors select-none ${!canEditCell(row, 'rankC') ? 'pointer-events-none opacity-75' : ''}`}
+                          className={`py-1 px-1 text-center transition-all select-none ${
+                            !isRankColumnActive('rankC')
+                              ? 'opacity-35 blur-[1px] bg-slate-100/80 pointer-events-none'
+                              : !canEditCell(row, 'rankC')
+                                ? 'pointer-events-none opacity-75'
+                                : 'cursor-pointer hover:bg-amber-50/50'
+                          }`}
                           title="Click: ■ Applicable / □ If Required / Clear"
                         >
                           <div className="flex items-center justify-center">
@@ -2165,7 +2437,13 @@ export default function PTMTable({
                         {/* 7b. Rank S — Interactive checkbox */}
                         <td
                           onClick={() => cycleRank(originalIndex, 'rankS')}
-                          className={`py-1 px-1 text-center cursor-pointer hover:bg-amber-50/50 transition-colors select-none ${!canEditCell(row, 'rankS') ? 'pointer-events-none opacity-75' : ''}`}
+                          className={`py-1 px-1 text-center transition-all select-none ${
+                            !isRankColumnActive('rankS')
+                              ? 'opacity-35 blur-[1px] bg-slate-100/80 pointer-events-none'
+                              : !canEditCell(row, 'rankS')
+                                ? 'pointer-events-none opacity-75'
+                                : 'cursor-pointer hover:bg-amber-50/50'
+                          }`}
                           title="Click: ■ Applicable / □ If Required / Clear"
                         >
                           <div className="flex items-center justify-center">
@@ -2447,11 +2725,10 @@ export default function PTMTable({
                                           value={rev.reasonOfFailure || ''}
                                           onChange={(e) => handleRevisionCellChange(originalIndex, revIdx, 'reasonOfFailure', e.target.value)}
                                           placeholder={`Reason of failure ${rev.revisionNo || revIdx + 1} *`}
-                                          className={`w-full py-1.5 px-2 text-xs sm:text-sm outline-none ${
-                                            !String(rev.reasonOfFailure || '').trim()
-                                              ? 'bg-rose-50/70 text-slate-800 ring-1 ring-inset ring-rose-400 placeholder:text-rose-600 placeholder:font-semibold focus:bg-amber-50 focus:ring-blue-500'
-                                              : 'bg-transparent text-slate-700 focus:bg-amber-50 focus:ring-1 focus:ring-blue-500'
-                                          }`}
+                                          className={`w-full py-1.5 px-2 text-xs sm:text-sm outline-none ${!String(rev.reasonOfFailure || '').trim()
+                                            ? 'bg-rose-50/70 text-slate-800 ring-1 ring-inset ring-rose-400 placeholder:text-rose-600 placeholder:font-semibold focus:bg-amber-50 focus:ring-blue-500'
+                                            : 'bg-transparent text-slate-700 focus:bg-amber-50 focus:ring-1 focus:ring-blue-500'
+                                            }`}
                                         />
                                       </div>
 
@@ -2494,13 +2771,12 @@ export default function PTMTable({
                                       value={revText || ''}
                                       onChange={(e) => handleCellChange(originalIndex, 'noOfTimesRevised', e.target.value)}
                                       placeholder={isDelayOrMiss ? '1) DD-MM-YY *' : '0'}
-                                      className={`w-full text-center py-2 px-1 text-xs sm:text-sm whitespace-nowrap ${
-                                        revText
-                                          ? 'font-semibold text-rose-800'
-                                          : isDelayOrMiss
-                                            ? 'bg-rose-50/70 ring-1 ring-inset ring-rose-400 placeholder:text-rose-600 font-semibold'
-                                            : 'text-slate-700'
-                                      } bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500`}
+                                      className={`w-full text-center py-2 px-1 text-xs sm:text-sm whitespace-nowrap ${revText
+                                        ? 'font-semibold text-rose-800'
+                                        : isDelayOrMiss
+                                          ? 'bg-rose-50/70 ring-1 ring-inset ring-rose-400 placeholder:text-rose-600 font-semibold'
+                                          : 'text-slate-700'
+                                        } bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500`}
                                     />
                                   </div>
                                   <div className="flex items-center gap-0.5 shrink-0">
@@ -2547,11 +2823,10 @@ export default function PTMTable({
                                       ? 'Enter Reason of Failure *'
                                       : 'Reason of failure...'
                                   }
-                                  className={`w-full py-2 px-2 text-xs sm:text-sm outline-none ${
-                                    (isDelayOrMiss || revText) && !String(row.reasonOfFailure || '').trim()
-                                      ? 'bg-rose-50/70 text-slate-800 ring-1 ring-inset ring-rose-400 placeholder:text-rose-600 placeholder:font-semibold focus:bg-amber-50 focus:ring-blue-500'
-                                      : 'bg-transparent text-slate-700 focus:bg-amber-50 focus:ring-1 focus:ring-blue-500'
-                                  }`}
+                                  className={`w-full py-2 px-2 text-xs sm:text-sm outline-none ${(isDelayOrMiss || revText) && !String(row.reasonOfFailure || '').trim()
+                                    ? 'bg-rose-50/70 text-slate-800 ring-1 ring-inset ring-rose-400 placeholder:text-rose-600 placeholder:font-semibold focus:bg-amber-50 focus:ring-blue-500'
+                                    : 'bg-transparent text-slate-700 focus:bg-amber-50 focus:ring-1 focus:ring-blue-500'
+                                    }`}
                                 />
                               </td>
 
@@ -2686,7 +2961,7 @@ export default function PTMTable({
                                         </div>
 
                                         {/* 3. Staff Name Child */}
-                                        <div className="w-[160px] min-w-[150px] shrink-0 flex items-center justify-center">
+                                        <div className="w-[160px] min-w-[150px] shrink-0 flex flex-col justify-center">
                                           {unitDepts.length === 0 ? (
                                             (() => {
                                               const assignedEmps = (row.staffEmployees || []).filter(
@@ -2705,7 +2980,9 @@ export default function PTMTable({
                                                         <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(originalIndex, unitName, '', null) : handleRemoveDepartmentEmployee(originalIndex, unitName, '', employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3.5 w-3.5 stroke-[2.5]" /></button>
                                                       </div>
                                                     ))}
-                                                    <button type="button" onClick={() => handleOpenAddStaffModal(originalIndex, unitName, '')} className="flex items-center justify-center gap-1 rounded py-0.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 cursor-pointer"><Plus className="h-3.5 w-3.5" /> Add Employee</button>
+                                                    <div className="flex justify-end w-full">
+                                                      <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, '', e, true)} className="rounded p-0.5 text-blue-600 hover:bg-blue-50 cursor-pointer" title="Add staff name"><Plus className="h-3.5 w-3.5 stroke-[2.5]" /></button>
+                                                    </div>
                                                   </div>
                                                 );
                                               }
@@ -2728,44 +3005,55 @@ export default function PTMTable({
                                               );
                                             })()
                                           ) : (
-                                            <div className="flex flex-col h-full w-full divide-y divide-[#CBD5E1] justify-center">
-                                              {unitDepts.map((deptName) => {
-                                                const assignedEmps = (row.staffEmployees || []).filter(
-                                                  (e) => e.department === deptName && (e.unit === unitName || (!e.unit && units.length === 1))
-                                                );
-                                                const legacyDisplay = units.length === 1 && unitDepts.length === 1 && !(row.staffEmployees || []).length ? row.staffEmployee : '';
+                                            <div className="flex flex-col h-full w-full justify-center">
+                                              <div className="flex flex-col flex-1 w-full divide-y divide-[#CBD5E1] justify-center">
+                                                {unitDepts.map((deptName) => {
+                                                  const assignedEmps = (row.staffEmployees || []).filter(
+                                                    (e) => e.department === deptName && (e.unit === unitName || (!e.unit && units.length === 1))
+                                                  );
+                                                  const legacyDisplay = units.length === 1 && unitDepts.length === 1 && !(row.staffEmployees || []).length ? row.staffEmployee : '';
 
-                                                if (assignedEmps.length || legacyDisplay) {
+                                                  if (assignedEmps.length || legacyDisplay) {
+                                                    return (
+                                                      <div
+                                                        key={deptName}
+                                                        className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors justify-center"
+                                                      >
+                                                        {(assignedEmps.length ? assignedEmps : (legacyDisplay ? [{ name: legacyDisplay, department: deptName, unit: unitName, legacy: true }] : [])).map((employee, employeeIndex) => (
+                                                          <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
+                                                            <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, deptName, e)} className="min-w-0 flex-1 truncate text-left text-sm font-semibold text-slate-800 cursor-pointer hover:text-blue-600" title={`${unitName} - ${deptName}: ${employee.name}`}>
+                                                              {stripEmployeeId(employee.name || employee.label || '')}
+                                                            </button>
+                                                            <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(originalIndex, unitName, deptName, null) : handleRemoveDepartmentEmployee(originalIndex, unitName, deptName, employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3.5 w-3.5 stroke-[2.5]" /></button>
+                                                          </div>
+                                                        ))}
+                                                      </div>
+                                                    );
+                                                  }
+
                                                   return (
                                                     <div
                                                       key={deptName}
-                                                      className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors justify-center"
+                                                      className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1"
                                                     >
-                                                      {(assignedEmps.length ? assignedEmps : (legacyDisplay ? [{ name: legacyDisplay, department: deptName, unit: unitName, legacy: true }] : [])).map((employee, employeeIndex) => (
-                                                        <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
-                                                          <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, deptName, e)} className="min-w-0 flex-1 truncate text-left text-sm font-semibold text-slate-800 cursor-pointer hover:text-blue-600" title={`${unitName} - ${deptName}: ${employee.name}`}>
-                                                            {stripEmployeeId(employee.name || employee.label || '')}
-                                                          </button>
-                                                          <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(originalIndex, unitName, deptName, null) : handleRemoveDepartmentEmployee(originalIndex, unitName, deptName, employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3.5 w-3.5 stroke-[2.5]" /></button>
+                                                      <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, deptName, e)} className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer" title={`Select staff for ${unitName} - ${deptName}`}>
+                                                        <div className="flex items-center gap-1 text-sm">
+                                                          <Search className="h-3.5 w-3.5" />
+                                                          <span>Staff...</span>
+                                                          <ChevronDown className="h-3 w-3" />
                                                         </div>
-                                                      ))}
-                                                      <button type="button" onClick={() => handleOpenAddStaffModal(originalIndex, unitName, deptName)} className="flex items-center justify-center gap-1 rounded py-0.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 cursor-pointer"><Plus className="h-3.5 w-3.5" /> Add Employee</button>
+                                                      </button>
                                                     </div>
                                                   );
-                                                }
-
-                                                return (
-                                                  <div
-                                                    key={deptName}
-                                                    className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1"
-                                                  >
-                                                    <div className="flex w-full flex-col items-center">
-                                                      <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, deptName, e)} className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer" title={`Select staff for ${unitName} - ${deptName}`}><div className="flex items-center gap-1 text-sm"><Search className="h-3.5 w-3.5" /><span>Staff...</span><ChevronDown className="h-3 w-3" /></div></button>
-                                                      <button type="button" onClick={() => handleOpenAddStaffModal(originalIndex, unitName, deptName)} className="flex items-center gap-1 py-0.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded cursor-pointer"><Plus className="h-3.5 w-3.5" /> Add Employee</button>
-                                                    </div>
-                                                  </div>
-                                                );
-                                              })}
+                                                })}
+                                              </div>
+                                              {(row.staffEmployees || []).some((e) => (e.unit === unitName || (!e.unit && units.length === 1))) && (
+                                                <div className="flex justify-end w-full px-1 pb-0.5">
+                                                  <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, '', e, true)} className="rounded p-0.5 text-blue-600 hover:bg-blue-50 cursor-pointer" title="Add staff name">
+                                                    <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
+                                                  </button>
+                                                </div>
+                                              )}
                                             </div>
                                           )}
                                         </div>
@@ -2892,6 +3180,9 @@ export default function PTMTable({
                                               <button type="button" onClick={() => handleSelectStaffForUnitDept(originalIndex, '', '', null)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3.5 w-3.5 stroke-[2.5]" /></button>
                                             </div>
                                           ))}
+                                          <div className="flex justify-end w-full">
+                                            <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, '', '', e, true)} className="rounded p-0.5 text-blue-600 hover:bg-blue-50 cursor-pointer" title="Add staff name"><Plus className="h-3.5 w-3.5 stroke-[2.5]" /></button>
+                                          </div>
                                         </div>
                                       );
                                     }
@@ -2933,6 +3224,9 @@ export default function PTMTable({
                                               <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(originalIndex, unitName, '', null) : handleRemoveDepartmentEmployee(originalIndex, unitName, '', employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3.5 w-3.5 stroke-[2.5]" /></button>
                                             </div>
                                           ))}
+                                          <div className="flex justify-end w-full">
+                                            <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, '', e, true)} className="rounded p-0.5 text-blue-600 hover:bg-blue-50 cursor-pointer" title="Add staff name"><Plus className="h-3.5 w-3.5 stroke-[2.5]" /></button>
+                                          </div>
                                         </div>
                                       );
                                     }
@@ -2955,45 +3249,60 @@ export default function PTMTable({
                                     );
                                   }
 
-                                  return (
-                                    <div className="flex flex-col h-full w-full divide-y divide-[#CBD5E1] justify-center">
-                                      {unitDepts.map((deptName) => {
-                                        const assignedEmps = (row.staffEmployees || []).filter(
-                                          (e) => e.department === deptName && (e.unit === unitName || (!e.unit && units.length === 1))
-                                        );
-                                        const legacyDisplay = units.length === 1 && unitDepts.length === 1 && !(row.staffEmployees || []).length ? row.staffEmployee : '';
+                                  const hasAnyAssignedInUnit = (row.staffEmployees || []).some(
+                                    (e) => e.unit === unitName || (!e.unit && units.length === 1)
+                                  ) || Boolean(units.length === 1 && unitDepts.length === 1 && row.staffEmployee);
 
-                                        if (assignedEmps.length || legacyDisplay) {
+                                  return (
+                                    <div className="flex flex-col h-full w-full justify-center">
+                                      <div className="flex flex-col flex-1 w-full divide-y divide-[#CBD5E1] justify-center">
+                                        {unitDepts.map((deptName) => {
+                                          const assignedEmps = (row.staffEmployees || []).filter(
+                                            (e) => e.department === deptName && (e.unit === unitName || (!e.unit && units.length === 1))
+                                          );
+                                          const legacyDisplay = units.length === 1 && unitDepts.length === 1 && !(row.staffEmployees || []).length ? row.staffEmployee : '';
+
+                                          if (assignedEmps.length || legacyDisplay) {
+                                            return (
+                                              <div
+                                                key={deptName}
+                                                className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors"
+                                              >
+                                                {(assignedEmps.length ? assignedEmps : (legacyDisplay ? [{ name: legacyDisplay, department: deptName, unit: unitName, legacy: true }] : [])).map((employee, employeeIndex) => (
+                                                  <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
+                                                    <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, deptName, e)} className="min-w-0 flex-1 truncate text-left text-sm font-semibold text-slate-800 cursor-pointer hover:text-blue-600" title={`${unitName} - ${deptName}: ${employee.name}`}>
+                                                      {stripEmployeeId(employee.name || employee.label || '')}
+                                                    </button>
+                                                    <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(originalIndex, unitName, deptName, null) : handleRemoveDepartmentEmployee(originalIndex, unitName, deptName, employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3.5 w-3.5 stroke-[2.5]" /></button>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            );
+                                          }
+
                                           return (
                                             <div
                                               key={deptName}
-                                              className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors"
+                                              className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1"
                                             >
-                                              {(assignedEmps.length ? assignedEmps : (legacyDisplay ? [{ name: legacyDisplay, department: deptName, unit: unitName, legacy: true }] : [])).map((employee, employeeIndex) => (
-                                                <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
-                                                  <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, deptName, e)} className="min-w-0 flex-1 truncate text-left text-sm font-semibold text-slate-800 cursor-pointer hover:text-blue-600" title={`${unitName} - ${deptName}: ${employee.name}`}>
-                                                    {stripEmployeeId(employee.name || employee.label || '')}
-                                                  </button>
-                                                  <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(originalIndex, unitName, deptName, null) : handleRemoveDepartmentEmployee(originalIndex, unitName, deptName, employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3.5 w-3.5 stroke-[2.5]" /></button>
+                                              <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, deptName, e)} className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer" title={`Select staff for ${unitName} - ${deptName}`}>
+                                                <div className="flex items-center gap-1 text-sm">
+                                                  <Search className="h-3.5 w-3.5" />
+                                                  <span>Staff...</span>
+                                                  <ChevronDown className="h-3 w-3" />
                                                 </div>
-                                              ))}
-                                              <button type="button" onClick={() => handleOpenAddStaffModal(originalIndex, unitName, deptName)} className="flex items-center justify-center gap-1 rounded py-0.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 cursor-pointer"><Plus className="h-3.5 w-3.5" /> Add Employee</button>
+                                              </button>
                                             </div>
                                           );
-                                        }
-
-                                        return (
-                                          <div
-                                            key={deptName}
-                                            className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1"
-                                          >
-                                            <div className="flex w-full flex-col items-center">
-                                              <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, deptName, e)} className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer" title={`Select staff for ${unitName} - ${deptName}`}><div className="flex items-center gap-1 text-sm"><Search className="h-3.5 w-3.5" /><span>Staff...</span><ChevronDown className="h-3 w-3" /></div></button>
-                                              <button type="button" onClick={() => handleOpenAddStaffModal(originalIndex, unitName, deptName)} className="flex items-center gap-1 py-0.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded cursor-pointer"><Plus className="h-3.5 w-3.5" /> Add Employee</button>
-                                            </div>
-                                          </div>
-                                        );
-                                      })}
+                                        })}
+                                      </div>
+                                      {hasAnyAssignedInUnit && (
+                                        <div className="flex justify-end w-full px-1 pb-0.5">
+                                          <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(originalIndex, unitName, '', e, true)} className="rounded p-0.5 text-blue-600 hover:bg-blue-50 cursor-pointer" title="Add staff name">
+                                            <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
+                                          </button>
+                                        </div>
+                                      )}
                                     </div>
                                   );
                                 })()}
@@ -3004,10 +3313,9 @@ export default function PTMTable({
 
                         {/* 30. Status (Not-Started / In-Progress / Done / Delay) — Done is selectable only manually by sheet creator / admin */}
                         <td
-                          className="p-0.5 text-center relative"
+                          className="p-0.5 text-center relative w-auto"
                           style={{
-                            width: `${STATUS_COLUMN_WIDTH}px`,
-                            minWidth: `${STATUS_COLUMN_WIDTH}px`,
+                            minWidth: `${STATUS_COLUMN_MIN_WIDTH}px`,
                           }}
                         >
                           <div className="relative flex items-center justify-center">
@@ -3018,17 +3326,15 @@ export default function PTMTable({
                                   disabled={!hasFullSheetAccess}
                                   value={currentStatus}
                                   onChange={(e) => handleCellChange(originalIndex, 'status', e.target.value)}
-                                  className={`appearance-none w-full py-1 pr-3.5 pl-1 rounded text-center text-xs sm:text-sm font-semibold outline-none border transition-colors ${
-                                    !hasFullSheetAccess ? 'pointer-events-none cursor-default select-none' : 'cursor-pointer hover:opacity-90'
-                                  } ${
-                                    currentStatus === 'Done'
+                                  className={`appearance-none w-full whitespace-nowrap py-1 pr-5 pl-2 rounded text-center text-xs sm:text-sm font-semibold outline-none border transition-colors ${!hasFullSheetAccess ? 'pointer-events-none cursor-default select-none' : 'cursor-pointer hover:opacity-90'
+                                    } ${currentStatus === 'Done'
                                       ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
                                       : currentStatus === 'In-Progress'
                                         ? 'bg-yellow-50 text-yellow-800 border-yellow-300'
                                         : currentStatus === 'Delay'
                                           ? 'bg-rose-50 text-rose-700 border-rose-300'
                                           : 'bg-blue-50 text-blue-800 border-blue-300'
-                                  }`}
+                                    }`}
                                   title={
                                     hasFullSheetAccess
                                       ? 'Change Status (Done can be marked manually by sheet creator/admin)'
@@ -3162,6 +3468,119 @@ export default function PTMTable({
         }}
       />
 
+      {/* Column Header Filter Popover Portal */}
+      {openHeaderFilter && createPortal(
+        (() => {
+          const allOptions = headerFilterOptionsMap[openHeaderFilter.colKey] || [];
+          const q = headerFilterSearch.trim().toLowerCase();
+          const visibleOptions = q
+            ? allOptions.filter((o) => String(o.label || '').toLowerCase().includes(q))
+            : allOptions;
+          const selectedValues = columnFilters[openHeaderFilter.colKey] || [];
+          const showSearch = allOptions.length > 6 || ['phaseName', 'respDept', 'respStaff'].includes(openHeaderFilter.colKey);
+
+          return (
+            <div
+              style={{
+                position: 'fixed',
+                top: `${openHeaderFilter.top}px`,
+                left: `${openHeaderFilter.left}px`,
+                width: `${openHeaderFilter.width}px`,
+                zIndex: 9999,
+              }}
+              className="ptm-header-filter-popover bg-white rounded-xl shadow-2xl border border-slate-200 p-2.5 select-none flex flex-col max-h-[310px]"
+            >
+              <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-slate-100">
+                <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider truncate">
+                  Filter: {openHeaderFilter.title}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setOpenHeaderFilter(null)}
+                  className="text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
+                  title="Close"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {showSearch && (
+                <div className="relative mb-1.5">
+                  <Search className="w-3 h-3 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    autoFocus
+                    value={headerFilterSearch}
+                    onChange={(e) => setHeaderFilterSearch(e.target.value)}
+                    placeholder="Search..."
+                    className="w-full bg-slate-50 border border-slate-200 rounded-md pl-6 pr-6 py-1 text-xs text-slate-700 focus:outline-none focus:border-blue-500"
+                  />
+                  {headerFilterSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setHeaderFilterSearch('')}
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              )}
+
+              <div className="overflow-y-auto flex-1 space-y-0.5 pr-0.5 max-h-[185px]">
+                {visibleOptions.length > 0 ? (
+                  visibleOptions.map((opt) => {
+                    const checked = selectedValues.includes(opt.value);
+                    return (
+                      <label
+                        key={opt.value}
+                        className={`flex items-center gap-2 px-2 py-1 rounded-md text-xs cursor-pointer transition-colors ${checked ? 'bg-blue-50 text-blue-900 font-semibold' : 'hover:bg-slate-50 text-slate-700'
+                          }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleHeaderFilterOption(openHeaderFilter.colKey, opt.value)}
+                          className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        />
+                        {opt.symbol === 'applicable' && (
+                          <span className="inline-block w-3.5 h-3.5 bg-black rounded-xs shrink-0" title="Applicable (■)" />
+                        )}
+                        {opt.symbol === 'if_required' && (
+                          <span className="inline-block w-3.5 h-3.5 border-2 border-black bg-white rounded-xs shrink-0" title="If Required (□)" />
+                        )}
+                        <span className="truncate">{opt.label}</span>
+                      </label>
+                    );
+                  })
+                ) : (
+                  <div className="py-3 text-center text-xs text-slate-400">No options found</div>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between pt-1.5 mt-1.5 border-t border-slate-100 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => clearHeaderFilter(openHeaderFilter.colKey)}
+                  disabled={selectedValues.length === 0}
+                  className="text-rose-600 hover:text-rose-700 font-semibold disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  Clear Filter
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOpenHeaderFilter(null)}
+                  className="text-blue-600 hover:text-blue-700 font-semibold cursor-pointer"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          );
+        })(),
+        document.body
+      )}
+
       {/* Staff Dropdown Popover Portal */}
       {openStaffDropdown && createPortal(
         <div
@@ -3244,7 +3663,13 @@ export default function PTMTable({
                         department: openStaffDropdown.department || empItem.department || '',
                         unit: openStaffDropdown.unit || empItem.unit || ''
                       };
-                      handleSelectStaffForUnitDept(openStaffDropdown.rowIndex, openStaffDropdown.unit, openStaffDropdown.department, empObj);
+                      handleSelectStaffForUnitDept(
+                        openStaffDropdown.rowIndex,
+                        openStaffDropdown.unit,
+                        openStaffDropdown.department,
+                        empObj,
+                        Boolean(openStaffDropdown.appendMode)
+                      );
                       setOpenStaffDropdown(null);
                     }}
                     className={`w-full text-left px-2.5 py-1.5 rounded-lg transition-colors flex items-center justify-between cursor-pointer group text-xs ${isSelected
@@ -3328,7 +3753,17 @@ export default function PTMTable({
       />
 
       {/* Table Footer: Total Rows & Add Row button */}
-      <div className="bg-[#FAFBFD] border-t border-[#64748B] p-2 px-4 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
+      <div className="bg-[#FAFBFD] border-t border-[#64748B] p-2 px-4 flex flex-wrap items-center justify-start gap-3 text-xs text-slate-600">
+        {hasFullSheetAccess && (
+          <button
+            disabled={!isHeaderComplete}
+            onClick={() => addNewRow()}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#2563EB] hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
+          >
+            <Plus className="w-4 h-4 stroke-[2.5]" />
+            <span>+ Add New Row</span>
+          </button>
+        )}
         <div className="flex items-center gap-3">
           <span className="font-bold text-slate-800">
             Total Rows: {rows.length} {filteredRows.length !== rows.length && `(Filtered: ${filteredRows.length})`}
@@ -3338,16 +3773,6 @@ export default function PTMTable({
             Tip: Press <kbd className="px-1.5 py-0.5 bg-white border border-[#64748B] rounded font-mono font-bold text-slate-800">Enter</kbd> in any cell to advance downwards (auto-creates infinite rows at bottom).
           </span>
         </div>
-
-        {hasFullSheetAccess && (
-          <button
-            onClick={() => addNewRow()}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#2563EB] hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
-          >
-            <Plus className="w-4 h-4 stroke-[2.5]" />
-            <span>+ Add New Row</span>
-          </button>
-        )}
       </div>
     </div>
   );

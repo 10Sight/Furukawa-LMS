@@ -201,7 +201,7 @@ function getPortalUser() {
         isAdmin: isAdmin,
       };
     }
-  } catch {}
+  } catch { }
   return null;
 }
 
@@ -211,7 +211,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
     try {
       const stored = localStorage.getItem('ptm_auth_user');
       if (stored) return JSON.parse(stored);
-    } catch {}
+    } catch { }
     if (embedded || cmsIntegration) {
       const portalUser = getPortalUser();
       if (portalUser) return portalUser;
@@ -257,7 +257,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
         };
         try {
           localStorage.setItem('ptm_auth_user', JSON.stringify(mappedUser));
-        } catch {}
+        } catch { }
         setCurrentUser(mappedUser);
       }
     };
@@ -266,7 +266,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
       if (window.parent && window.parent !== window) {
         window.parent.postMessage({ type: 'fme-cms-user-context-request', page: 'ptm' }, '*');
       }
-    } catch {}
+    } catch { }
     return () => window.removeEventListener('message', handleContextMessage);
   }, []);
 
@@ -357,7 +357,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
           localStorage.setItem('ptm_dashboard_items', JSON.stringify(cleaned));
         }
       }
-    } catch {}
+    } catch { }
   }, []);
 
   useEffect(() => {
@@ -454,6 +454,41 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
 
   const updateHeaderInfo = (update) => updateFormState('headerInfo', setHeaderInfo, update);
   const updatePtmRows = (update) => updateFormState('ptmRows', setPtmRows, update);
+
+  const isHeaderComplete = Boolean(
+    String(headerInfo?.model || '').trim() &&
+    String(headerInfo?.apqpLeader || '').trim() &&
+    String(headerInfo?.projectLeader || '').trim() &&
+    String(headerInfo?.reviewDate || '').trim() &&
+    String(headerInfo?.rank || '').trim() &&
+    String(headerInfo?.phase || '').trim()
+  );
+
+  const handleBulkFillRank = (rankKeys, symbolValue) => {
+    if (!Array.isArray(rankKeys) || rankKeys.length === 0) return;
+    updatePtmRows((prev) =>
+      prev.map((row) => {
+        const next = { ...row };
+        rankKeys.forEach((key) => {
+          next[key] = symbolValue;
+        });
+        return next;
+      })
+    );
+  };
+
+  const handleBulkFillPhase = (phaseValue) => {
+    const val = String(phaseValue || '').trim();
+    const numMatch = val.match(/^(\d+)\s*:/);
+    const phaseNo = numMatch ? numMatch[1] : '';
+    updatePtmRows((prev) =>
+      prev.map((row) => ({
+        ...row,
+        phaseName: val,
+        ...(phaseNo ? { phaseNo } : {}),
+      }))
+    );
+  };
 
   const undoFormChange = () => {
     const previous = historyRef.current.undo.pop();
@@ -565,7 +600,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
     const nextUnit = isAll ? 'All' : (VALID_UNITS.includes(unit) ? unit : 'Bawal');
     try {
       sessionStorage.setItem('ptm_selected_unit', nextUnit);
-    } catch {}
+    } catch { }
     const targetUnit = isAll ? 'All Units' : nextUnit;
     const nextRows = loadUnitRows(targetUnit);
     const nextHeaderInfo = loadUnitHeaderInfo(targetUnit);
@@ -966,9 +1001,8 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
 
       {/* Main Layout */}
       <div
-        className={`flex-1 min-w-0 flex flex-col ${isFormFullScreen ? 'h-screen min-h-0 overflow-hidden' : 'min-h-screen'} transition-all duration-300 ${
-          embedded || cmsIntegration || currentView === 'form' ? 'ml-0' : sidebarCollapsed ? 'ml-16' : 'ml-60'
-        }`}
+        className={`flex-1 min-w-0 flex flex-col ${isFormFullScreen ? 'h-screen min-h-0 overflow-hidden' : 'min-h-screen'} transition-all duration-300 ${embedded || cmsIntegration || currentView === 'form' ? 'ml-0' : sidebarCollapsed ? 'ml-16' : 'ml-60'
+          }`}
       >
         {/* Top Header (Only in standalone mode) */}
         {!embedded && !cmsIntegration && currentView !== 'form' && (
@@ -1043,20 +1077,18 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
                     setActivePtmSection('Ongoing');
                     setCurrentPage(1);
                   }}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm sm:text-base font-bold transition-all cursor-pointer ${
-                    activePtmSection === 'Ongoing'
-                      ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm sm:text-base font-bold transition-all cursor-pointer ${activePtmSection === 'Ongoing'
+                    ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
                 >
                   <Clock className="w-4 h-4" />
                   <span>Ongoing</span>
                   <span
-                    className={`px-2.5 py-0.5 rounded-full text-xs sm:text-sm font-black ${
-                      activePtmSection === 'Ongoing'
-                        ? 'bg-white/20 text-white'
-                        : 'bg-slate-200 text-slate-700'
-                    }`}
+                    className={`px-2.5 py-0.5 rounded-full text-xs sm:text-sm font-black ${activePtmSection === 'Ongoing'
+                      ? 'bg-white/20 text-white'
+                      : 'bg-slate-200 text-slate-700'
+                      }`}
                   >
                     {ptmSectionCounts.Ongoing}
                   </span>
@@ -1068,20 +1100,18 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
                     setActivePtmSection('Done');
                     setCurrentPage(1);
                   }}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm sm:text-base font-bold transition-all cursor-pointer ${
-                    activePtmSection === 'Done'
-                      ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/20'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm sm:text-base font-bold transition-all cursor-pointer ${activePtmSection === 'Done'
+                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/20'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
                 >
                   <CheckCircle2 className="w-4 h-4" />
                   <span>Done</span>
                   <span
-                    className={`px-2.5 py-0.5 rounded-full text-xs sm:text-sm font-black ${
-                      activePtmSection === 'Done'
-                        ? 'bg-white/20 text-white'
-                        : 'bg-slate-200 text-slate-700'
-                    }`}
+                    className={`px-2.5 py-0.5 rounded-full text-xs sm:text-sm font-black ${activePtmSection === 'Done'
+                      ? 'bg-white/20 text-white'
+                      : 'bg-slate-200 text-slate-700'
+                      }`}
                   >
                     {ptmSectionCounts.Done}
                   </span>
@@ -1223,8 +1253,8 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
               />
 
               {/* MERGED PTM FORM + MATRIX TABLE AS A SINGLE UNIFIED DOCUMENT */}
-              <div className="relative z-0 w-full min-w-0 flex-auto shrink-0 min-h-[320px] max-h-[calc(100vh-62px)] bg-white rounded-xl border border-slate-300 shadow-sm overflow-hidden">
-                <div className="h-full min-h-0 min-w-0 overflow-auto overscroll-contain [scrollbar-gutter:stable]">
+              <div className="relative z-0 w-full min-w-0 shrink-0 bg-white rounded-xl border border-slate-300 shadow-sm overflow-hidden">
+                <div className="min-w-0 overflow-x-auto">
                   <div className="min-w-[3200px] w-full ptm-zoom-surface">
                     <PTMHeader
                       headerInfo={headerInfo}
@@ -1232,6 +1262,10 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
                       projectLeaderOptions={projectLeaderOptions}
                       isMerged={true}
                       readOnly={!hasFullSheetAccess}
+                      sheetTopic={selectedTopicItem?.topic || ''}
+                      sheetDescription={selectedTopicItem?.description || ''}
+                      onBulkFillRank={handleBulkFillRank}
+                      onBulkFillPhase={handleBulkFillPhase}
                     />
                     <PTMTable
                       rows={ptmRows}
@@ -1252,6 +1286,8 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
                       currentUser={currentUser}
                       hasFullSheetAccess={hasFullSheetAccess}
                       savedColumnSuggestions={headerInfo.savedColumnSuggestions}
+                      isHeaderComplete={isHeaderComplete}
+                      selectedHeaderRank={headerInfo?.rank || ''}
                     />
                   </div>
                 </div>

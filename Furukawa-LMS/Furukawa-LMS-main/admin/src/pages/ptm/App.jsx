@@ -1289,7 +1289,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
 
               {/* MERGED PTM FORM + MATRIX TABLE AS A SINGLE UNIFIED DOCUMENT */}
               <div className="relative z-0 w-full min-w-0 shrink-0 bg-white rounded-xl border border-slate-300 shadow-sm overflow-hidden">
-                <div className="min-w-0 overflow-x-auto">
+                <div className="ptm-sheet-scroll-container min-w-0 overflow-x-auto">
                   <div className="min-w-[3200px] w-full ptm-zoom-surface">
                     <PTMHeader
                       headerInfo={headerInfo}

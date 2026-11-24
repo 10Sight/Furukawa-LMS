@@ -153,10 +153,42 @@ export const employeeApi = {
   },
 };
 
+export const ptmMailApi = {
+  sendEmail: async (emailData, idempotencyKey) => {
+    const res = await request('/ptm/send-email', {
+      method: 'POST',
+      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {},
+      body: JSON.stringify(emailData),
+    });
+    if (!res?.success) {
+      throw new Error(res?.message || 'Email could not be sent. Please try again.');
+    }
+    return res.data;
+  },
+  getDefaultMailRecipients: async () => {
+    const res = await request('/ptm/default-mails');
+    if (!res?.success) {
+      throw new Error(res?.message || 'Could not load default mail addresses.');
+    }
+    return res.data;
+  },
+  saveDefaultMailRecipients: async (to, cc = []) => {
+    const res = await request('/ptm/default-mails', {
+      method: 'PUT',
+      body: JSON.stringify({ to, cc }),
+    });
+    if (!res?.success) {
+      throw new Error(res?.message || 'Could not save default mail addresses.');
+    }
+    return res.data;
+  },
+};
+
 export default {
   authApi,
   ptmApi,
   sheetApi,
   apqpApi,
   employeeApi,
+  ptmMailApi,
 };

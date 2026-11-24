@@ -71,6 +71,12 @@ export function initDatabase() {
       value TEXT UNIQUE NOT NULL,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS ptm_default_mail_recipients (
+      user_id TEXT PRIMARY KEY,
+      email_addresses TEXT NOT NULL,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   seedInitialData();

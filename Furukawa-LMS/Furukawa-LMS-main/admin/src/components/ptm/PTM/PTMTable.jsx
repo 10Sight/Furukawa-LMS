@@ -35,6 +35,8 @@ import {
   Trash2,
   Copy,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Check,
   Square,
   CheckSquare,
@@ -234,20 +236,117 @@ const formatIsoToShortDMY = (isoDate) => {
   return `${day}-${month}-${year.slice(-2)}`;
 };
 
+const CALENDAR_MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+const CALENDAR_WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+
 function EndDatePlanCell({ row, onSelectDate, disabled = false, rowIndex }) {
-  const pickerRef = useRef(null);
+  const triggerRef = useRef(null);
+  const popoverRef = useRef(null);
   const history = getEndDatePlanHistory(row);
   const previousDates = history.length > 1 ? history.slice(0, -1) : [];
   const latestDate = history.length > 0 ? history[history.length - 1] : '';
   const pickerIsoValue = latestDate ? normalizeDateToYMD(latestDate) : '';
 
+  const [isOpen, setIsOpen] = useState(false);
+  const [coords, setCoords] = useState({ top: 0, left: 0 });
+  const [viewYear, setViewYear] = useState(() => new Date().getFullYear());
+  const [viewMonth, setViewMonth] = useState(() => new Date().getMonth());
+
+  const openCalendar = (e) => {
+    e.stopPropagation();
+    if (disabled) return;
+    const baseIso = pickerIsoValue || getTodayYMD();
+    const parts = baseIso.split('-').map(Number);
+    if (parts.length === 3 && !Number.isNaN(parts[0]) && !Number.isNaN(parts[1])) {
+      setViewYear(parts[0]);
+      setViewMonth(parts[1] - 1);
+    } else {
+      const now = new Date();
+      setViewYear(now.getFullYear());
+      setViewMonth(now.getMonth());
+    }
+
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (rect) {
+      const popoverWidth = 264;
+      const popoverHeight = 296;
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const top = spaceBelow >= popoverHeight + 8 ? rect.bottom + 4 : Math.max(8, rect.top - popoverHeight - 4);
+      const left = Math.min(Math.max(8, rect.left), window.innerWidth - popoverWidth - 8);
+      setCoords({ top, left });
+    }
+    setIsOpen(true);
+  };
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const handleOutsideClick = (event) => {
+      if (
+        popoverRef.current?.contains(event.target) ||
+        triggerRef.current?.contains(event.target)
+      ) {
+        return;
+      }
+      setIsOpen(false);
+    };
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setIsOpen(false);
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen]);
+
+  const handlePrevMonth = (e) => {
+    e.stopPropagation();
+    setViewMonth((prev) => {
+      if (prev === 0) {
+        setViewYear((y) => y - 1);
+        return 11;
+      }
+      return prev - 1;
+    });
+  };
+
+  const handleNextMonth = (e) => {
+    e.stopPropagation();
+    setViewMonth((prev) => {
+      if (prev === 11) {
+        setViewYear((y) => y + 1);
+        return 0;
+      }
+      return prev + 1;
+    });
+  };
+
+  const handleDayClick = (dayNum) => {
+    if (disabled) return;
+    const iso = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+    const formatted = formatIsoToShortDMY(iso);
+    if (formatted) {
+      onSelectDate(formatted);
+    }
+    setIsOpen(false);
+  };
+
+  const firstDayOfMonth = new Date(viewYear, viewMonth, 1).getDay();
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const todayIso = getTodayYMD();
+
   return (
     <div
+      ref={triggerRef}
+      data-row={rowIndex}
+      data-col="endDatePlan"
+      onClick={openCalendar}
       className={`relative flex items-center justify-center min-w-[112px] w-full min-h-[34px] py-1 pl-2 pr-6 ${disabled ? 'pointer-events-none opacity-75' : 'cursor-pointer hover:bg-blue-50/40'
         }`}
-      onClick={() => {
-        if (!disabled) pickerRef.current?.showPicker?.();
-      }}
       title={
         history.length > 0
           ? `End Date (Plan): ${history.join(' → ')} (Click calendar to select new End Date Plan)`
@@ -276,29 +375,118 @@ function EndDatePlanCell({ row, onSelectDate, disabled = false, rowIndex }) {
         aria-hidden="true"
         className="pointer-events-none absolute right-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
       />
-      <input
-        ref={pickerRef}
-        type="date"
-        disabled={disabled}
-        value={pickerIsoValue}
-        data-row={rowIndex}
-        data-col="endDatePlan"
-        onClick={(event) => {
-          event.stopPropagation();
-          if (!disabled) event.currentTarget.showPicker?.();
-        }}
-        onChange={(event) => {
-          if (disabled) return;
-          const formatted = formatIsoToShortDMY(event.target.value);
-          if (formatted) {
-            onSelectDate(formatted);
-          }
-        }}
-        aria-label="Choose End Date (Plan) from calendar"
-        title="Choose End Date (Plan) from calendar"
-        className="absolute right-0 top-1/2 h-6 w-6 -translate-y-1/2 cursor-pointer opacity-0"
-        tabIndex={-1}
-      />
+
+      {isOpen && createPortal(
+        <div
+          ref={popoverRef}
+          style={{ top: coords.top, left: coords.left }}
+          onClick={(e) => e.stopPropagation()}
+          className="fixed z-[100] w-[264px] rounded-xl border border-slate-200 bg-white p-3 shadow-2xl select-none"
+          role="dialog"
+          aria-label="Choose End Date (Plan)"
+        >
+          {/* Month / Year Navigation — only changes calendar view, never selects a date */}
+          <div className="mb-2 flex items-center justify-between gap-1">
+            <button
+              type="button"
+              onClick={handlePrevMonth}
+              className="rounded-md p-1 text-slate-600 hover:bg-slate-100 cursor-pointer"
+              aria-label="Previous month"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <div className="flex items-center gap-1 text-xs font-bold text-slate-800">
+              <select
+                value={viewMonth}
+                onChange={(e) => setViewMonth(Number(e.target.value))}
+                className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 cursor-pointer"
+                aria-label="Month"
+              >
+                {CALENDAR_MONTH_NAMES.map((name, idx) => (
+                  <option key={name} value={idx}>{name.slice(0, 3)}</option>
+                ))}
+              </select>
+              <select
+                value={viewYear}
+                onChange={(e) => setViewYear(Number(e.target.value))}
+                className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 cursor-pointer"
+                aria-label="Year"
+              >
+                {Array.from({ length: 21 }, (_, idx) => new Date().getFullYear() - 10 + idx).map((yr) => (
+                  <option key={yr} value={yr}>{yr}</option>
+                ))}
+              </select>
+            </div>
+            <button
+              type="button"
+              onClick={handleNextMonth}
+              className="rounded-md p-1 text-slate-600 hover:bg-slate-100 cursor-pointer"
+              aria-label="Next month"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Weekday Headers */}
+          <div className="mb-1 grid grid-cols-7 text-center text-[10px] font-bold text-slate-400">
+            {CALENDAR_WEEKDAYS.map((day) => (
+              <div key={day} className="py-1">{day}</div>
+            ))}
+          </div>
+
+          {/* Calendar Day Grid */}
+          <div className="grid grid-cols-7 gap-0.5 text-center text-xs">
+            {Array.from({ length: firstDayOfMonth }, (_, idx) => (
+              <div key={`empty-${idx}`} />
+            ))}
+            {Array.from({ length: daysInMonth }, (_, idx) => {
+              const dayNum = idx + 1;
+              const iso = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+              const isSelected = iso === pickerIsoValue;
+              const isToday = iso === todayIso;
+              return (
+                <button
+                  key={iso}
+                  type="button"
+                  onClick={() => handleDayClick(dayNum)}
+                  className={`h-7 w-full rounded-md font-medium transition-colors cursor-pointer ${
+                    isSelected
+                      ? 'bg-blue-600 font-bold text-white'
+                      : isToday
+                      ? 'border border-blue-400 bg-blue-50 font-semibold text-blue-700 hover:bg-blue-100'
+                      : 'text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  {dayNum}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Footer Actions */}
+          <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 text-[11px]">
+            <button
+              type="button"
+              onClick={() => {
+                const formatted = formatIsoToShortDMY(todayIso);
+                if (formatted) onSelectDate(formatted);
+                setIsOpen(false);
+              }}
+              className="font-semibold text-blue-600 hover:text-blue-800 cursor-pointer"
+            >
+              Today
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsOpen(false)}
+              className="font-semibold text-slate-500 hover:text-slate-700 cursor-pointer"
+            >
+              Close
+            </button>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

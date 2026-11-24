@@ -8,6 +8,7 @@ import AddPTMModal from '../../components/ptm/PTM/AddPTMModal';
 import PTMTable from '../../components/ptm/PTM/PTMTable';
 import PTMHeader from '../../components/ptm/PTM/PTMHeader';
 import PTMGraphSection from '../../components/ptm/PTM/PTMGraphSection';
+import PTMSendMailModal from '../../components/ptm/PTM/PTMSendMailModal';
 import LoginPage from '../../components/ptm/Auth/LoginPage';
 import FormZoomControls from '../../components/shared/FormZoomControls';
 import PTMTabNavigation from '../../components/ptm/PTM/PTMTabNavigation';
@@ -21,7 +22,7 @@ import {
 import { authApi, ptmApi, sheetApi, employeeApi } from './services/api';
 import { initialPTMData } from './data/mockData';
 import { initialHeaderInfo, initialPTMRows } from './data/ptmData';
-import { ChevronDown, Check, Plus, Download, ArrowLeft, Undo2, Redo2, Save, Clock, CheckCircle2 } from 'lucide-react';
+import { ChevronDown, Check, Plus, Download, ArrowLeft, Undo2, Redo2, Save, Clock, CheckCircle2, Mail } from 'lucide-react';
 
 const ProcessAudit = lazy(() => import('../process-audit/ProcessAudit'));
 const VALID_UNITS = ['Bawal', 'Gujrat', 'All'];
@@ -437,8 +438,10 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
   );
 
   const formStateRef = useRef({ headerInfo, ptmRows });
+  const savedSnapshotRef = useRef('');
   const historyRef = useRef({ undo: [], redo: [] });
   const [, refreshHistory] = useState(0);
+  const [isSendMailOpen, setIsSendMailOpen] = useState(false);
 
   const updateFormState = (key, setter, update) => {
     const current = formStateRef.current;
@@ -510,11 +513,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
     refreshHistory((version) => version + 1);
   };
 
-  const saveFormChanges = async () => {
-    if (!selectedUnit) return;
-
-    // Validate mandatory fields
-    const currentRows = formStateRef.current.ptmRows || [];
+  const validatePtmRowsForSave = (currentRows = []) => {
     for (let i = 0; i < currentRows.length; i++) {
       const r = currentRows[i];
       const hasContent = Boolean(
@@ -525,28 +524,52 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
         const endPlanVal = String(r.endDatePlan ?? '').trim();
         if (!endPlanVal || endPlanVal === '—' || endPlanVal === '-') {
           showToast(`⚠️ Row ${i + 1}: End Date (Plan) is mandatory.`);
-          return;
+          return false;
         }
         const revVal = String(r.noOfTimesRevised ?? '').trim();
         const hasRevisions = Boolean(revVal && revVal !== '0') || (Array.isArray(r.revisions) && r.revisions.length > 0);
         if (r.status === 'Delay' || r.hitMiss === 'MISS') {
           if (!hasRevisions) {
             showToast(`⚠️ Row ${i + 1}: No. of Times Revised is mandatory when status is Delay / MISS.`);
-            return;
+            return false;
           }
           const failVal = String(r.reasonOfFailure ?? '').trim();
           if (!failVal) {
             showToast(`⚠️ Row ${i + 1}: Reason of Failure is mandatory when status is Delay / MISS.`);
-            return;
+            return false;
           }
         } else if (hasRevisions) {
           const failVal = String(r.reasonOfFailure ?? '').trim();
           if (!failVal) {
             showToast(`⚠️ Row ${i + 1}: Reason of Failure is mandatory when No. of Times Revised is taken.`);
-            return;
+            return false;
           }
         }
       }
+    }
+    return true;
+  };
+
+  const handleSendMailClick = () => {
+    const currentSnapshot = JSON.stringify(formStateRef.current);
+    if (savedSnapshotRef.current && currentSnapshot !== savedSnapshotRef.current) {
+      showToast('⚠️ Please save the sheet before sending mail.');
+      return;
+    }
+    const currentRows = formStateRef.current.ptmRows || [];
+    if (!validatePtmRowsForSave(currentRows)) {
+      return;
+    }
+    setIsSendMailOpen(true);
+  };
+
+  const saveFormChanges = async () => {
+    if (!selectedUnit) return;
+
+    // Validate mandatory fields
+    const currentRows = formStateRef.current.ptmRows || [];
+    if (!validatePtmRowsForSave(currentRows)) {
+      return;
     }
 
     // Persist per-sheet suggestion dropdown entries when saving this sheet
@@ -588,9 +611,11 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
         rows: formStateRef.current.ptmRows,
       });
 
+      savedSnapshotRef.current = JSON.stringify(formStateRef.current);
       showToast('Changes saved successfully.');
     } catch (error) {
       console.warn('Could not save PTM form changes', error);
+      savedSnapshotRef.current = JSON.stringify(formStateRef.current);
       showToast('Changes saved locally.');
     }
   };
@@ -710,6 +735,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
     setPtmRows(nextRows);
     setHeaderInfo(nextHeaderInfo);
     formStateRef.current = { ptmRows: nextRows, headerInfo: nextHeaderInfo };
+    savedSnapshotRef.current = JSON.stringify(formStateRef.current);
     historyRef.current = { undo: [], redo: [] };
     setCurrentView('form');
     showToast(`Opening PTM Form for: ${item.topic}`);
@@ -1241,6 +1267,15 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
                 <span>Export CSV</span>
               </button>
               <FormZoomControls selector=".ptm-zoom-surface" rootSelector="main" />
+              <button
+                type="button"
+                onClick={handleSendMailClick}
+                title="Send PTM report by email (Requires sheet to be saved and mandatory columns filled)"
+                className="ml-auto flex items-center gap-1.5 rounded-lg border border-blue-600 bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-700 hover:bg-blue-100 cursor-pointer transition-colors"
+              >
+                <Mail className="h-4 w-4 text-blue-600" />
+                <span>Send Mail</span>
+              </button>
             </div>
 
             {/* Scrollable body: graph + sheet scroll under the fixed toolbar */}
@@ -1294,6 +1329,24 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
               </div>
             </div>
           </main>
+        )}
+        {/* ── VIEW 2: PTM FORM MATRIX VIEW ── */}
+        {currentView === 'form' && (
+          <PTMSendMailModal
+            isOpen={isSendMailOpen}
+            onClose={() => setIsSendMailOpen(false)}
+            title={selectedTopicItem?.topic || headerInfo?.model || 'PTM Sheet'}
+            ptmSheet={{
+              id: selectedTopicItem?.id || '',
+              sheetKey: (selectedTopicItem?.isBlankPTM || (selectedTopicItem?.id && localStorage.getItem(`ptm_rows_item_${selectedTopicItem.id}`)))
+                ? `item_${selectedTopicItem.id}`
+                : `unit_${selectedUnit}`,
+              topic: selectedTopicItem?.topic || '',
+              title: selectedTopicItem?.topic || headerInfo?.model || 'PTM Sheet',
+              unit: selectedTopicItem?.plant || selectedUnit || '',
+              rows: ptmRows,
+            }}
+          />
         )}
       </div>
     </div>

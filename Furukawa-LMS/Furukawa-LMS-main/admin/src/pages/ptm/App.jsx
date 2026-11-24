@@ -998,7 +998,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
     <div className={`${isFormFullScreen ? 'h-screen min-h-0 overflow-hidden' : 'min-h-screen'} bg-[#F4F6F9] text-slate-800 flex`}>
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-4 py-2.5 rounded-xl shadow-xl text-xs font-semibold flex items-center gap-2 animate-fade-in">
+        <div className="fixed bottom-6 right-6 z-[95] bg-slate-900 text-white px-4 py-2.5 rounded-xl shadow-xl text-xs font-semibold flex items-center gap-2 animate-fade-in">
           <span className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0"></span>
           {toastMessage}
         </div>
@@ -1335,6 +1335,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
           <PTMSendMailModal
             isOpen={isSendMailOpen}
             onClose={() => setIsSendMailOpen(false)}
+            onNotify={showToast}
             title={selectedTopicItem?.topic || headerInfo?.model || 'PTM Sheet'}
             ptmSheet={{
               id: selectedTopicItem?.id || '',

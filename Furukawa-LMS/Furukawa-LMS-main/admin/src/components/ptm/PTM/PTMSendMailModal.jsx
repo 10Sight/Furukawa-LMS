@@ -9,7 +9,6 @@ import {
   Plus,
   Trash2,
 } from 'lucide-react';
-import { toast } from 'sonner';
 import { ptmMailApi } from '../../../pages/ptm/services/api';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -35,6 +34,7 @@ export default function PTMSendMailModal({
   ptmSheet = null,
   title = 'PTM Sheet',
   onSendSuccess,
+  onNotify,
 }) {
   const [toInput, setToInput] = useState('');
   const [recipients, setRecipients] = useState([]);
@@ -43,6 +43,7 @@ export default function PTMSendMailModal({
   const [remarks, setRemarks] = useState('');
   const [sending, setSending] = useState(false);
   const [sentSuccess, setSentSuccess] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   const [showDefaultMailPopup, setShowDefaultMailPopup] = useState(false);
   const [defaultToEmails, setDefaultToEmails] = useState([]);
@@ -75,6 +76,7 @@ export default function PTMSendMailModal({
     setCcEmails(['']);
     setShowCc(false);
     setRemarks('');
+    setErrorMessage('');
     setAttachedDefaultToEmails([]);
     setAttachedDefaultCcEmails([]);
 
@@ -108,6 +110,16 @@ export default function PTMSendMailModal({
 
   if (!isOpen) return null;
 
+  const notify = (type, message) => {
+    if (type === 'error') {
+      setErrorMessage(message);
+      onNotify?.(`⚠️ ${message}`);
+    } else {
+      setErrorMessage('');
+      onNotify?.(message);
+    }
+  };
+
   const addRecipient = (rawValue = toInput) => {
     const parts = String(rawValue || '')
       .split(/[,;\s]+/)
@@ -117,7 +129,7 @@ export default function PTMSendMailModal({
 
     const invalid = parts.find((email) => !EMAIL_PATTERN.test(email));
     if (invalid) {
-      toast.error(`Please enter a valid email address: ${invalid}`);
+      notify('error', `Please enter a valid email address: ${invalid}`);
       return;
     }
 
@@ -176,7 +188,7 @@ export default function PTMSendMailModal({
       .map((email) => email.trim())
       .find((email) => email && !EMAIL_PATTERN.test(email));
     if (invalidEmail) {
-      toast.error(`Enter a valid email address: ${invalidEmail}`);
+      notify('error', `Enter a valid email address: ${invalidEmail}`);
       return;
     }
     const hasDuplicate = (addresses) => {
@@ -184,7 +196,7 @@ export default function PTMSendMailModal({
       return new Set(values).size !== values.length;
     };
     if (hasDuplicate(defaultToDraft) || hasDuplicate(defaultCcDraft)) {
-      toast.error('Remove duplicate addresses within the To or CC list before saving.');
+      notify('error', 'Remove duplicate addresses within the To or CC list before saving.');
       return;
     }
 
@@ -198,9 +210,9 @@ export default function PTMSendMailModal({
       setDefaultToDraft(savedTo);
       setDefaultCcDraft(savedCc);
       setShowDefaultMailPopup(false);
-      toast.success('Default To and CC addresses saved.');
+      notify('success', 'Default To and CC addresses saved.');
     } catch (error) {
-      toast.error(error?.message || 'Could not save default email addresses.');
+      notify('error', error?.message || 'Could not save default email addresses.');
     } finally {
       setDefaultMailsSaving(false);
     }
@@ -244,8 +256,8 @@ export default function PTMSendMailModal({
     }
     setAttachedDefaultToEmails((current) => [...new Set([...current, ...addedTo.map((email) => email.toLowerCase())])]);
     setAttachedDefaultCcEmails((current) => [...new Set([...current, ...addedCc.map((email) => email.toLowerCase())])]);
-    if (hasDefaults) toast.success('Saved default To and CC addresses added to their matching fields.');
-    else toast.info('No default To or CC addresses are configured.');
+    if (hasDefaults) notify('success', 'Saved default To and CC addresses added to their matching fields.');
+    else notify('info', 'No default To or CC addresses are configured.');
   };
 
   const removeAttachedDefaultEmails = () => {
@@ -260,7 +272,7 @@ export default function PTMSendMailModal({
     });
     setAttachedDefaultToEmails([]);
     setAttachedDefaultCcEmails([]);
-    toast.success('Attached default addresses removed.');
+    notify('success', 'Attached default addresses removed.');
   };
 
   const handleAddCcRow = () => {
@@ -327,31 +339,32 @@ export default function PTMSendMailModal({
 
   const handleSend = async () => {
     if (requestInFlightRef.current || sentSuccess) return;
+    setErrorMessage('');
     if (!ptmSheet) {
-      toast.error('No PTM sheet is selected.');
+      notify('error', 'No PTM sheet is selected.');
       return;
     }
 
     const parsedInput = toInput.trim() ? toInput.split(/[,;\s]+/).filter(Boolean) : [];
     const finalRecipients = [...new Set([...recipients, ...parsedInput])];
     if (recipients.length === 0 && !toInput.trim()) {
-      toast.error('Please enter at least one recipient email address.');
+      notify('error', 'Please enter at least one recipient email address.');
       return;
     }
     const invalidEmail = finalRecipients.find((email) => !EMAIL_PATTERN.test(email));
     if (invalidEmail) {
-      toast.error(`Please enter a valid email address: ${invalidEmail}`);
+      notify('error', `Please enter a valid email address: ${invalidEmail}`);
       return;
     }
     if (!finalRecipients.length) {
-      toast.error('Please enter at least one recipient email address.');
+      notify('error', 'Please enter at least one recipient email address.');
       return;
     }
 
     const finalCcList = ccEmails.map((e) => e.trim()).filter(Boolean);
     const invalidCcEmail = finalCcList.find((email) => !EMAIL_PATTERN.test(email));
     if (invalidCcEmail) {
-      toast.error(`Please enter a valid CC email address: ${invalidCcEmail}`);
+      notify('error', `Please enter a valid CC email address: ${invalidCcEmail}`);
       return;
     }
 
@@ -408,7 +421,7 @@ export default function PTMSendMailModal({
 
       const providerResult = await ptmMailApi.sendEmail(emailPayload, idempotencyKeyRef.current);
       setSentSuccess(true);
-      toast.success(`Email accepted by the mail service for ${finalRecipients.join(', ')}`);
+      notify('success', `Email accepted by the mail service for ${finalRecipients.join(', ')}`);
       if (typeof onSendSuccess === 'function') {
         try {
           onSendSuccess({ recipients: finalRecipients, cc: finalCcList, remarks, providerResult });
@@ -419,7 +432,7 @@ export default function PTMSendMailModal({
       setTimeout(onClose, 900);
     } catch (error) {
       const message = error?.message || 'Email could not be sent. Please try again.';
-      toast.error(message);
+      notify('error', message);
     } finally {
       setSending(false);
       requestInFlightRef.current = false;
@@ -495,6 +508,11 @@ export default function PTMSendMailModal({
 
         {/* Modal Body */}
         <div className="p-5 overflow-y-auto space-y-4 text-xs text-slate-700 flex-1">
+          {errorMessage && (
+            <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+              {errorMessage}
+            </div>
+          )}
           {/* TO Field */}
           <div>
             <div className="flex items-center justify-between mb-1.5">

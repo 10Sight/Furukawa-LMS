@@ -41,11 +41,11 @@ function getAuthHeaders() {
 
 async function request(url, options = {}) {
   const config = {
+    ...options,
     headers: {
       ...getAuthHeaders(),
       ...options.headers,
     },
-    ...options,
   };
 
   try {

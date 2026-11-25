@@ -243,7 +243,7 @@ const CALENDAR_MONTH_NAMES = [
 ];
 const CALENDAR_WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
-function EndDatePlanCell({ row, onSelectDate, disabled = false, rowIndex }) {
+function EndDatePlanCell({ row, onSelectDate, onRemoveBeforeDate, isAdmin = false, disabled = false, rowIndex }) {
   const triggerRef = useRef(null);
   const popoverRef = useRef(null);
   const history = getEndDatePlanHistory(row);
@@ -370,9 +370,25 @@ function EndDatePlanCell({ row, onSelectDate, disabled = false, rowIndex }) {
           {previousDates.map((prevDate, idx) => (
             <span
               key={`${prevDate}-${idx}`}
-              className="text-[11px] leading-tight text-slate-400 line-through decoration-slate-500 decoration-1 font-mono select-none"
+              className="inline-flex items-center gap-1 text-[11px] leading-tight text-slate-400 font-mono select-none"
             >
-              {prevDate}
+              <span className="line-through decoration-slate-500 decoration-1">
+                {prevDate}
+              </span>
+              {isAdmin && !disabled && onRemoveBeforeDate && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRemoveBeforeDate(idx);
+                  }}
+                  title={`Remove previous date ${prevDate}`}
+                  aria-label={`Remove previous date ${prevDate}`}
+                  className="p-0.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded cursor-pointer leading-none"
+                >
+                  <X className="w-2.5 h-2.5" />
+                </button>
+              )}
             </span>
           ))}
           <span className="text-sm font-bold leading-snug text-slate-900 font-mono">
@@ -1530,6 +1546,49 @@ export default function PTMTable({
       updated[rowIndex] = row;
       return updated;
     });
+  };
+
+  const handleRemoveBeforeDate = (rowIndex, prevIdx) => {
+    if (!isAdmin) return;
+    const prevRow = rows[rowIndex];
+    if (!canEditCell(prevRow, 'endDatePlan')) {
+      if (showToast) showToast('⚠️ You only have permission to edit your assigned row');
+      return;
+    }
+
+    setRows((prev) => {
+      const updated = [...prev];
+      const currentRow = updated[rowIndex];
+      if (!currentRow) return prev;
+
+      const prevHistory = getEndDatePlanHistory(currentRow);
+      if (prevHistory.length <= 1 || prevIdx < 0 || prevIdx >= prevHistory.length - 1) {
+        return prev;
+      }
+
+      const nextHistory = prevHistory.filter((_, idx) => idx !== prevIdx);
+      const row = {
+        ...currentRow,
+        endDatePlanHistory: nextHistory,
+        endDatePlan: nextHistory.join('\n'),
+        revisions: [],
+        noOfTimesRevised: '',
+        reasonOfFailure: '',
+      };
+
+      const evalRes = evaluatePtmRowStatus(row);
+      row.status = evalRes.status;
+      if (currentRow.hitMiss === 'HIT' || currentRow.hitMiss === 'MISS') {
+        row.hitMiss = currentRow.hitMiss;
+      } else {
+        row.hitMiss = evalRes.hitMiss;
+      }
+
+      updated[rowIndex] = row;
+      return updated;
+    });
+
+    if (showToast) showToast('Previous End Date (Plan) removed');
   };
 
   const handleAddRevision = (rowIndex) => {
@@ -3050,8 +3109,10 @@ export default function PTMTable({
                           <EndDatePlanCell
                             row={row}
                             rowIndex={originalIndex}
+                            isAdmin={isAdmin}
                             disabled={!canEditCell(row, 'endDatePlan')}
                             onSelectDate={(newDate) => handleSelectEndDatePlan(originalIndex, newDate)}
+                            onRemoveBeforeDate={(prevIdx) => handleRemoveBeforeDate(originalIndex, prevIdx)}
                           />
                         </td>
 

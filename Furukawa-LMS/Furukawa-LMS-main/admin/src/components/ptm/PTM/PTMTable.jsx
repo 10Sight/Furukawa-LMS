@@ -96,8 +96,9 @@ const revisedDateFromDuration = (startDate, duration) => {
   return `${day}-${month}-${start.getUTCFullYear()}`;
 };
 
-const DEFAULT_ACTION_COLUMN_WIDTH = 120;
-const MIN_ACTION_COLUMN_WIDTH = 100;
+const DEFAULT_ACTION_COLUMN_WIDTH = 132;
+const MIN_ACTION_COLUMN_WIDTH = 110;
+const COLLAPSED_ACTION_COLUMN_WIDTH = 38;
 const STATUS_COLUMN_MIN_WIDTH = 128;
 const PHASE_NAME_COLUMN_WIDTH = 180;
 const DEFAULT_ROW_HEIGHT = 34;
@@ -573,6 +574,7 @@ export default function PTMTable({
 }) {
   const tableRef = useRef(null);
   const activeResizeRef = useRef(null);
+  const [actionsCollapsed, setActionsCollapsed] = useState(false);
   const [colWidths, setColWidths] = useState({
     phaseName: 240,
     customerEvent: 120,
@@ -1723,10 +1725,10 @@ export default function PTMTable({
       unit: selectedUnit || 'Both',
       phaseNo: '',
       phaseName: '',
-      reqNo: childReqNo,
+      reqNo: '',
       reqName: '',
       customerEvent: '',
-      rankA: 'applicable',
+      rankA: '',
       rankB: '',
       rankC: '',
       rankS: '',
@@ -1743,15 +1745,15 @@ export default function PTMTable({
         SCM: '',
         Quality: '',
       },
-      deliverable: 'Evidence Doc.',
+      deliverable: '',
       duration: '',
-      startDatePlan: 'N/A',
-      startDateActual: 'N/A',
-      endDatePlan: 'N/A',
-      endDateActual: 'N/A',
+      startDatePlan: '',
+      startDateActual: '',
+      endDatePlan: '',
+      endDateActual: '',
       hitMiss: '',
       revisedDate: '',
-      noOfTimesRevised: '0',
+      noOfTimesRevised: '',
       reasonOfFailure: '',
       actionTaken: '',
       respUnits: [],
@@ -1779,30 +1781,102 @@ export default function PTMTable({
     }, 60);
   };
 
-  /* ── Duplicate Row ── */
-  const duplicateRow = (rowIndex) => {
-    const target = rows[rowIndex];
-    const copy = {
-      ...target,
+  /* ── Add Parent Row After Current Group ── */
+  const addParentRowAfter = (rowIndex) => {
+    const anchorRow = rows[rowIndex];
+    const parentId = anchorRow ? getParentRowId(anchorRow) : null;
+    let insertAt = rowIndex + 1;
+    if (parentId) {
+      while (insertAt < rows.length && getParentRowId(rows[insertAt]) === parentId) {
+        insertAt += 1;
+      }
+    }
+
+    const newRow = {
       id: 'row-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
-      addedFrom: 'duplicate',
+      addedFrom: 'filters',
       rowType: 'parent',
-      parentRowId: undefined,
       childrenHidden: false,
-      formGroupId: undefined,
-      formGroupRole: undefined,
-      isHidden: false,
-      activity: target.activity ? `${target.activity} (Copy)` : '',
-      departments: { ...(target.departments || {}) },
+      phaseNo: anchorRow?.phaseNo || '',
+      phaseName: anchorRow?.phaseName || '',
+      reqNo: '',
+      reqName: '',
+      customerEvent: '',
+      rankA: '',
+      rankB: '',
+      rankC: '',
+      rankS: '',
+      critical: false,
+      activity: '',
+      departments: {
+        FA: '',
+        HR: '',
+        MKT: '',
+        DD: '',
+        PE: '',
+        PPC: '',
+        PROD: '',
+        SCM: '',
+        Quality: '',
+      },
+      deliverableRequired: 'Yes',
+      deliverable: '',
+      duration: '',
+      startDatePlan: '',
+      startDateActual: '',
+      endDatePlan: '',
+      endDateActual: '',
+      hitMiss: '',
+      revisedDate: '',
+      noOfTimesRevised: '',
+      reasonOfFailure: '',
+      actionTaken: '',
+      respUnits: [],
+      respUnit: '',
+      respDeptsByUnit: {},
+      staffEmployees: [],
+      staffEmployee: '',
+      staffName: '',
+      staffId: '',
+      responsiblePersonDept: '',
+      status: 'Not-Started',
+      remarks: '',
+      unit: selectedUnit || 'Both',
     };
-    const newRows = [...rows];
-    newRows.splice(rowIndex + 1, 0, copy);
-    setRows(newRows);
-    setRowHeights((currentHeights) => {
-      if (!Object.prototype.hasOwnProperty.call(currentHeights, target.id)) return currentHeights;
-      return { ...currentHeights, [copy.id]: currentHeights[target.id] };
+
+    const nextRows = [...rows];
+    nextRows.splice(insertAt, 0, newRow);
+    let parentSerial = 0;
+    const renumbered = nextRows.map((r) => {
+      if (!isParentRow(r)) return r;
+      parentSerial += 1;
+      return { ...r, parentSerialNo: parentSerial };
     });
-    if (showToast) showToast('✓ Row duplicated');
+    setRows(renumbered);
+    if (showToast) showToast('✓ Parent row added');
+  };
+
+  const parseDurationHours = (val) => {
+    if (val === null || val === undefined || val === '') return null;
+    const num = parseFloat(String(val).trim());
+    return Number.isFinite(num) ? num : null;
+  };
+
+  const getParentTotalDurationDisplay = (parentRow, allRows = rows) => {
+    const baseHours = parseDurationHours(parentRow?.duration);
+    const childRows = allRows.filter(
+      (r) => isChildRow(r) && getParentRowId(r) === parentRow.id
+    );
+    const childHoursList = childRows
+      .map((c) => parseDurationHours(c.duration))
+      .filter((n) => n !== null);
+
+    if (childHoursList.length === 0) {
+      return parentRow?.duration || '—';
+    }
+
+    const total = (baseHours || 0) + childHoursList.reduce((sum, n) => sum + n, 0);
+    return Number.isInteger(total) ? String(total) : String(Number(total.toFixed(2)));
   };
 
   const toggleRowHidden = (rowIndex) => {
@@ -2088,13 +2162,13 @@ export default function PTMTable({
         <ManualInputOptionsContext.Provider value={manualOptionsByColumn}>
           <table className="w-full border-collapse text-xs">
             <colgroup>
-              <col span={34} />
               <col
                 style={{
-                  width: `${colWidths.actions}px`,
-                  minWidth: `${MIN_ACTION_COLUMN_WIDTH}px`,
+                  width: `${actionsCollapsed ? COLLAPSED_ACTION_COLUMN_WIDTH : colWidths.actions}px`,
+                  minWidth: `${actionsCollapsed ? COLLAPSED_ACTION_COLUMN_WIDTH : MIN_ACTION_COLUMN_WIDTH}px`,
                 }}
               />
+              <col span={34} />
             </colgroup>
             {/* ══════════════════════════════════════════════════════════════════
               HEADER ROW: INDIVIDUAL COLUMN TITLES WITH MATCHING TINTS
@@ -2104,6 +2178,55 @@ export default function PTMTable({
                 COLUMN TITLES
                 ══════════════════════════════════════════════════════════════════ */}
               <tr className="divide-x divide-[#64748B] text-xs sm:text-[12.5px] font-bold text-center border-b border-slate-300">
+                {/* Actions Column: At the start of the sheet with collapse toggle */}
+                <th
+                  rowSpan={2}
+                  className="relative overflow-visible py-2 px-1.5 bg-[#F4F6F9] text-slate-600 font-extrabold uppercase text-xs sm:text-[11px] tracking-wider text-center align-middle"
+                  style={{
+                    width: `${actionsCollapsed ? COLLAPSED_ACTION_COLUMN_WIDTH : colWidths.actions}px`,
+                    minWidth: `${actionsCollapsed ? COLLAPSED_ACTION_COLUMN_WIDTH : MIN_ACTION_COLUMN_WIDTH}px`,
+                  }}
+                >
+                  {actionsCollapsed ? (
+                    <button
+                      type="button"
+                      onClick={() => setActionsCollapsed(false)}
+                      title="Expand Actions column"
+                      aria-label="Expand Actions column"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-white border border-slate-300 shadow-xs text-slate-600 hover:text-blue-600 hover:bg-blue-50 cursor-pointer"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  ) : (
+                    <>
+                      <div className="inline-flex items-center justify-center gap-1 px-2 py-1 rounded-lg bg-white border border-slate-200/90 shadow-xs text-slate-600">
+                        <span>Actions</span>
+                        <button
+                          type="button"
+                          onClick={() => setActionsCollapsed(true)}
+                          title="Collapse Actions column"
+                          aria-label="Collapse Actions column"
+                          className="p-0.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 cursor-pointer"
+                        >
+                          <ChevronLeft className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <span
+                        role="separator"
+                        aria-label="Resize Actions column"
+                        title="Drag horizontally to resize the Actions column"
+                        onPointerDown={(event) => startColResize(event, 'actions')}
+                        onPointerMove={continueResize}
+                        onPointerUp={finishResize}
+                        onPointerCancel={finishResize}
+                        className="group absolute inset-y-0 right-0 z-20 flex w-2 cursor-col-resize touch-none items-center justify-center focus:outline-none"
+                      >
+                        <span className="h-4 w-0.5 rounded-full bg-slate-400 group-hover:bg-blue-500" />
+                      </span>
+                    </>
+                  )}
+                </th>
+
                 {/* Group 1 Columns (Ice Blue tint) */}
                 <th rowSpan={2} className="py-2 px-1 w-10 min-w-[36px] max-w-[42px] bg-[#EEF4FA] text-[#2C5282] whitespace-normal leading-tight text-center">
                   S.No
@@ -2364,36 +2487,6 @@ export default function PTMTable({
                     <span className="h-4 w-0.5 rounded-full bg-slate-300 group-hover:bg-blue-500" />
                   </span>
                 </th>
-
-                {/* Actions Column: Visually separated section outside the sheet grid */}
-                <th
-                  rowSpan={2}
-                  className="relative overflow-visible py-2 pl-4 pr-2 bg-[#F4F6F9] text-slate-600 font-extrabold uppercase text-xs sm:text-[11px] tracking-wider text-center align-middle"
-                  style={{
-                    width: `${colWidths.actions}px`,
-                    minWidth: `${MIN_ACTION_COLUMN_WIDTH}px`,
-                    borderTopStyle: 'hidden',
-                    borderBottomStyle: 'hidden',
-                    borderRightStyle: 'hidden',
-                    borderLeft: '2px solid #64748B',
-                  }}
-                >
-                  <div className="inline-flex items-center justify-center px-3 py-1 rounded-lg bg-white border border-slate-200/90 shadow-xs text-slate-600">
-                    <span>Actions</span>
-                  </div>
-                  <span
-                    role="separator"
-                    aria-label="Resize Actions column"
-                    title="Drag horizontally to resize the Actions column"
-                    onPointerDown={(event) => startColResize(event, 'actions')}
-                    onPointerMove={continueResize}
-                    onPointerUp={finishResize}
-                    onPointerCancel={finishResize}
-                    className="group absolute inset-y-0 left-0 z-20 flex w-2 cursor-col-resize touch-none items-center justify-center focus:outline-none"
-                  >
-                    <span className="h-4 w-0.5 rounded-full bg-slate-400 group-hover:bg-blue-500" />
-                  </span>
-                </th>
               </tr>
 
               {/* Row 2: Sub-columns for Responsible Person */}
@@ -2451,6 +2544,82 @@ export default function PTMTable({
                           ? { height: `${Math.max(rowHeights[row.id] || 0, row.manualRowHeight || 0)}px` }
                           : undefined}
                       >
+                        {/* Actions Column at start of row */}
+                        <td
+                          className={`relative overflow-visible py-1.5 px-1 text-center bg-[#F4F6F9] z-10 ${!canEditCell(row, 'actions') ? 'pointer-events-none opacity-50' : ''}`}
+                          style={{
+                            width: `${actionsCollapsed ? COLLAPSED_ACTION_COLUMN_WIDTH : colWidths.actions}px`,
+                            minWidth: `${actionsCollapsed ? COLLAPSED_ACTION_COLUMN_WIDTH : MIN_ACTION_COLUMN_WIDTH}px`,
+                          }}
+                        >
+                          {actionsCollapsed ? (
+                            <span className="text-slate-300 text-xs select-none">•</span>
+                          ) : (
+                            <div className="inline-flex items-center justify-center gap-0.5 p-1 bg-white rounded-xl border border-slate-200/90 shadow-xs">
+                              <button
+                                type="button"
+                                onClick={() => addParentRowAfter(originalIndex)}
+                                title="Add Row (Parent row)"
+                                aria-label="Add Parent Row"
+                                className="flex h-6 px-1.5 shrink-0 items-center justify-center rounded-lg text-[10px] font-bold text-blue-700 bg-blue-50/70 hover:bg-blue-100 transition-colors cursor-pointer"
+                              >
+                                +R
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => addNewRow(originalIndex + 1, 'activity')}
+                                title="Add Sub Row (Child row)"
+                                aria-label="Add Sub Row"
+                                className="flex h-6 px-1.5 shrink-0 items-center justify-center rounded-lg text-[10px] font-bold text-emerald-700 bg-emerald-50/70 hover:bg-emerald-100 transition-colors cursor-pointer"
+                              >
+                                +S
+                              </button>
+                              {isAdmin && (
+                                <button
+                                  type="button"
+                                  onClick={() => deleteRow(originalIndex)}
+                                  title="Delete this row"
+                                  aria-label="Delete row"
+                                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5 stroke-[2]" />
+                                </button>
+                              )}
+                              {isParentRow(row) && (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleRowHidden(originalIndex)}
+                                  title={`${childrenHidden ? 'Unhide' : 'Hide'} child rows for this parent`}
+                                  aria-label={`${childrenHidden ? 'Unhide' : 'Hide'} child rows`}
+                                  className="inline-flex h-6 shrink-0 items-center justify-center gap-0.5 whitespace-nowrap rounded px-1 text-xs font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 cursor-pointer"
+                                >
+                                  {childrenHidden
+                                    ? <Eye className="h-3.5 w-3.5" />
+                                    : <EyeOff className="h-3.5 w-3.5" />}
+                                </button>
+                              )}
+                            </div>
+                          )}
+                          <span
+                            role="separator"
+                            aria-label={`Resize row ${idx + 1}`}
+                            aria-orientation="horizontal"
+                            aria-valuemin={MIN_ROW_HEIGHT}
+                            aria-valuenow={rowHeights[row.id] ?? DEFAULT_ROW_HEIGHT}
+                            tabIndex={0}
+                            title="Drag vertically to resize the entire row"
+                            onPointerDown={(event) => startRowResize(event, row.id)}
+                            onPointerMove={continueResize}
+                            onPointerUp={finishResize}
+                            onPointerCancel={finishResize}
+                            onLostPointerCapture={finishResize}
+                            onKeyDown={(event) => handleResizeKeyDown(event, 'row', row.id)}
+                            className="group absolute bottom-0 right-0 z-20 flex h-3 w-5 cursor-row-resize touch-none items-center justify-center focus:outline-none"
+                          >
+                            <span className="h-0.5 w-3 rounded-full bg-slate-300 transition-colors group-hover:bg-blue-500" />
+                          </span>
+                        </td>
+
                         {isChildRow(row) ? (
                           <td
                             colSpan={2}
@@ -2845,7 +3014,7 @@ export default function PTMTable({
                           <div className="flex items-center justify-center gap-1.5 py-1.5 px-2">
                             <Clock className="w-3.5 h-3.5 text-blue-500 group-hover/duration:text-blue-600 shrink-0" />
                             <span className="font-mono text-sm font-semibold text-slate-800">
-                              {row.duration || '—'}
+                              {isParentRow(row) ? getParentTotalDurationDisplay(row, rows) : (row.duration || '—')}
                             </span>
                           </div>
                         </td>
@@ -3622,78 +3791,6 @@ export default function PTMTable({
                             placeholder="Remarks..."
                             className="w-full py-2 px-2 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm"
                           />
-                        </td>
-
-                        {/* Actions: Visually separated section outside the sheet grid */}
-                        <td
-                          className={`relative overflow-visible py-1.5 pl-4 pr-2 text-center bg-[#F4F6F9] z-10 ${!canEditCell(row, 'actions') ? 'pointer-events-none opacity-50' : ''}`}
-                          style={{
-                            width: `${colWidths.actions}px`,
-                            minWidth: `${MIN_ACTION_COLUMN_WIDTH}px`,
-                            borderTopStyle: 'hidden',
-                            borderBottomStyle: 'hidden',
-                            borderRightStyle: 'hidden',
-                            borderLeft: '2px solid #64748B',
-                          }}
-                        >
-                          <div className="inline-flex items-center justify-center gap-1 p-1 bg-white rounded-xl border border-slate-200/90 shadow-xs">
-                            <button
-                              onClick={() => addNewRow(originalIndex + 1, 'activity')}
-                              title="Insert row below"
-                              aria-label="Insert child row below"
-                              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-slate-600 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
-                            >
-                              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-                            </button>
-                            <button
-                              onClick={() => duplicateRow(originalIndex)}
-                              title="Duplicate this row"
-                              aria-label="Duplicate row"
-                              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 transition-colors cursor-pointer"
-                            >
-                              <Copy className="w-3.5 h-3.5 stroke-[2]" />
-                            </button>
-                            {isAdmin && (
-                              <button
-                                onClick={() => deleteRow(originalIndex)}
-                                title="Delete this row"
-                                aria-label="Delete row"
-                                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                              >
-                                <Trash2 className="w-3.5 h-3.5 stroke-[2]" />
-                              </button>
-                            )}
-                            {isParentRow(row) && (
-                              <button
-                                onClick={() => toggleRowHidden(originalIndex)}
-                                title={`${childrenHidden ? 'Unhide' : 'Hide'} child rows for this parent`}
-                                aria-label={`${childrenHidden ? 'Unhide' : 'Hide'} child rows`}
-                                className="inline-flex h-6 shrink-0 items-center justify-center gap-0.5 whitespace-nowrap rounded px-1 text-xs font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                              >
-                                {childrenHidden
-                                  ? <Eye className="h-3.5 w-3.5" />
-                                  : <EyeOff className="h-3.5 w-3.5" />}
-                              </button>
-                            )}
-                          </div>
-                          <span
-                            role="separator"
-                            aria-label={`Resize row ${idx + 1}`}
-                            aria-orientation="horizontal"
-                            aria-valuemin={MIN_ROW_HEIGHT}
-                            aria-valuenow={rowHeights[row.id] ?? DEFAULT_ROW_HEIGHT}
-                            tabIndex={0}
-                            title="Drag vertically to resize the entire row"
-                            onPointerDown={(event) => startRowResize(event, row.id)}
-                            onPointerMove={continueResize}
-                            onPointerUp={finishResize}
-                            onPointerCancel={finishResize}
-                            onLostPointerCapture={finishResize}
-                            onKeyDown={(event) => handleResizeKeyDown(event, 'row', row.id)}
-                            className="group absolute bottom-0 right-0 z-20 flex h-3 w-5 cursor-row-resize touch-none items-center justify-center focus:outline-none"
-                          >
-                            <span className="h-0.5 w-3 rounded-full bg-slate-300 transition-colors group-hover:bg-blue-500" />
-                          </span>
                         </td>
                       </tr>
                     </React.Fragment>

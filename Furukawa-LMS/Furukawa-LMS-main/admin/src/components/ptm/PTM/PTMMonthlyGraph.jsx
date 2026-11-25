@@ -93,28 +93,12 @@ export function parsePtmDate(rawVal) {
 }
 
 /**
- * Extracts the active parsed date from a PTM row.
- * Returns { year, month, day } or null if the row has no valid date.
+ * Extracts the active parsed Start Date (Plan) from a PTM row.
+ * Returns { year, month, day } or null if Start Date (Plan) is not selected.
  */
 export function extractPtmRowDate(row) {
   if (!row) return null;
-  if (Array.isArray(row.endDatePlanHistory) && row.endDatePlanHistory.length > 0) {
-    const parsedHistory = parsePtmDate(row.endDatePlanHistory);
-    if (parsedHistory) return parsedHistory;
-  }
-  const candidates = [
-    row.endDatePlan,
-    row.startDatePlan,
-    row.endDateActual,
-    row.startDateActual,
-    row.revisedDate,
-    row.date
-  ];
-  for (const candidate of candidates) {
-    const parsed = parsePtmDate(candidate);
-    if (parsed) return parsed;
-  }
-  return null;
+  return parsePtmDate(row.startDatePlan);
 }
 
 /**
@@ -270,11 +254,21 @@ export default function PTMMonthlyGraph({
     };
   }, [currentDate, topic?.date]);
 
-  // Dated records from the current PTM sheet only (rows without a valid date are excluded)
+  // Frozen graph snapshots once a row has End Date (Actual) set
+  const frozenRowsRef = useRef(new Map());
+
+  // Dated records from the current PTM sheet only (requires Start Date (Plan); freezes when End Date (Actual) is set)
   const activeItems = useMemo(() => {
-    const parseRow = (r) => {
+    const parseRow = (r, idx) => {
       const parsedDate = extractPtmRowDate(r);
       if (!parsedDate) return null;
+
+      const rowKey = r.id || `row-${idx}`;
+      const parsedEndActual = parsePtmDate(r.endDateActual);
+
+      if (parsedEndActual && frozenRowsRef.current.has(rowKey)) {
+        return frozenRowsRef.current.get(rowKey);
+      }
 
       const { year, month, day } = parsedDate;
       const explicitStatus = String(r.status || '').trim();
@@ -287,12 +281,20 @@ export default function PTMMonthlyGraph({
       else if (rawStatus === 'In-Progress' || rawStatus === 'In- Progress') category = 'inProgress';
       else if (rawStatus === 'Delay') category = 'delay';
 
-      return { year, month, day, fullDateStr: toDateKey(year, month, day), status: rawStatus, category };
+      const entry = { year, month, day, fullDateStr: toDateKey(year, month, day), status: rawStatus, category };
+
+      if (parsedEndActual) {
+        frozenRowsRef.current.set(rowKey, entry);
+      } else {
+        frozenRowsRef.current.delete(rowKey);
+      }
+
+      return entry;
     };
 
     const list = [];
-    (rows || []).forEach(r => {
-      const item = parseRow(r);
+    (rows || []).forEach((r, idx) => {
+      const item = parseRow(r, idx);
       if (item) list.push(item);
     });
     return list;

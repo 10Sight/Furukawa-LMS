@@ -12,6 +12,8 @@ import PTMSendMailModal from '../../components/ptm/PTM/PTMSendMailModal';
 import LoginPage from '../../components/ptm/Auth/LoginPage';
 import FormZoomControls from '../../components/shared/FormZoomControls';
 import PTMTabNavigation from '../../components/ptm/PTM/PTMTabNavigation';
+import PTMTemplateManager from '../../components/ptm/PTM/PTMTemplateManager';
+import PTMTemplatePickerModal from '../../components/ptm/PTM/PTMTemplatePickerModal';
 import {
   PTM_VALID_UNITS,
   getPTMVisibleSheets,
@@ -296,19 +298,14 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [currentView, setCurrentView] = useState(activeSection === 'process-audit' ? 'process-audit' : 'list');
   const [isProcessAuditFormOpen, setIsProcessAuditFormOpen] = useState(false);
+  const [isTemplateSheetOpen, setIsTemplateSheetOpen] = useState(false);
   const [selectedTopicItem, setSelectedTopicItem] = useState(null);
+  const [phaseAttachmentModalPhase, setPhaseAttachmentModalPhase] = useState('');
 
   useEffect(() => {
     if (activeSection === 'process-audit') setCurrentView('process-audit');
     else if (activeSection === 'ptm' && currentView === 'process-audit') setCurrentView('list');
   }, [activeSection]);
-
-  useEffect(() => {
-    onFormViewChange?.(
-      (activeSection === 'ptm' && currentView === 'form') ||
-      (activeSection === 'process-audit' && isProcessAuditFormOpen)
-    );
-  }, [activeSection, currentView, isProcessAuditFormOpen, onFormViewChange]);
 
   /* ── 2. PTM Dashboard List State ── */
   const [listItems, setListItems] = useState(() => {
@@ -381,7 +378,15 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
     });
   }, [currentUser]);
 
-  const [activeTab, setActiveTab] = useState('Company'); // 'Company' (Plant) | 'Department' | 'Self PTM'
+  const [activeTab, setActiveTab] = useState('Company'); // 'Company' (Plant) | 'Department' | 'Self PTM' | 'Template'
+
+  useEffect(() => {
+    onFormViewChange?.(
+      (activeSection === 'ptm' && currentView === 'form') ||
+      (activeSection === 'ptm' && currentView === 'list' && activeTab === 'Template' && isTemplateSheetOpen) ||
+      (activeSection === 'process-audit' && isProcessAuditFormOpen)
+    );
+  }, [activeSection, currentView, activeTab, isTemplateSheetOpen, isProcessAuditFormOpen, onFormViewChange]);
   const [activePtmSection, setActivePtmSection] = useState('Ongoing'); // 'Ongoing' | 'Done'
   const [listSearch, setListSearch] = useState('');
   const [fromDate, setFromDate] = useState('');
@@ -552,6 +557,38 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
         ...(phaseNo ? { phaseNo } : {}),
       }))
     );
+  };
+
+  const handleApplyTemplateToSheet = (template) => {
+    if (!template || !Array.isArray(template.rows)) return;
+    const unitForRow = selectedUnit && selectedUnit !== 'All Units' ? selectedUnit : 'Both';
+    const mappedRows = template.rows.map((tplRow, idx) => {
+      const base = createBlankRow(idx, unitForRow);
+      return {
+        ...base,
+        phaseNo: tplRow.phaseNo || '',
+        phaseName: tplRow.phaseName || template.phaseLabel || '',
+        reqNo: tplRow.reqNo || '',
+        reqName: tplRow.reqName || '',
+        customerEvent: tplRow.customerEvent || '',
+        rankA: tplRow.rankA || '',
+        rankB: tplRow.rankB || '',
+        rankC: tplRow.rankC || '',
+        rankS: tplRow.rankS || '',
+        critical: Boolean(tplRow.critical),
+        activity: tplRow.activity || '',
+        departments: {
+          ...base.departments,
+          ...(tplRow.departments || {}),
+        },
+        deliverableRequired: tplRow.deliverableRequired || 'Yes',
+        deliverable: tplRow.deliverable || '',
+      };
+    });
+
+    updatePtmRows(mappedRows.length > 0 ? mappedRows : createDefaultBlankRows(10, unitForRow));
+    setPhaseAttachmentModalPhase('');
+    showToast(`✓ Loaded template "${template.templateName}" into PTM Sheet`);
   };
 
   const undoFormChange = () => {
@@ -1053,7 +1090,8 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
     return <LoginPage onLoginSuccess={(user) => setCurrentUser(user)} />;
   }
 
-  const isFormFullScreen = currentView === 'form' || (currentView === 'process-audit' && isProcessAuditFormOpen);
+  const isTemplateFullScreen = currentView === 'list' && activeTab === 'Template' && isTemplateSheetOpen;
+  const isFormFullScreen = currentView === 'form' || (currentView === 'process-audit' && isProcessAuditFormOpen) || isTemplateFullScreen;
 
   return (
     <div className={`${isFormFullScreen ? 'h-screen min-h-0 overflow-hidden' : 'min-h-screen'} bg-[#F4F6F9] text-slate-800 flex`}>
@@ -1079,7 +1117,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
         <Sidebar
           collapsed={sidebarCollapsed}
           setCollapsed={setSidebarCollapsed}
-          hidden={currentView === 'form'}
+          hidden={currentView === 'form' || isTemplateFullScreen}
           currentView={currentView}
           setCurrentView={(view) => setCurrentView(view)}
           onLogout={handleLogout}
@@ -1088,11 +1126,11 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
 
       {/* Main Layout */}
       <div
-        className={`flex-1 min-w-0 flex flex-col ${isFormFullScreen ? 'h-screen min-h-0 overflow-hidden' : 'min-h-screen'} transition-all duration-300 ${embedded || cmsIntegration || currentView === 'form' ? 'ml-0' : sidebarCollapsed ? 'ml-16' : 'ml-60'
+        className={`flex-1 min-w-0 flex flex-col ${isFormFullScreen ? 'h-screen min-h-0 overflow-hidden' : 'min-h-screen'} transition-all duration-300 ${embedded || cmsIntegration || currentView === 'form' || isTemplateFullScreen ? 'ml-0' : sidebarCollapsed ? 'ml-16' : 'ml-60'
           }`}
       >
         {/* Top Header (Only in standalone mode) */}
-        {!embedded && !cmsIntegration && currentView !== 'form' && (
+        {!embedded && !cmsIntegration && currentView !== 'form' && !isTemplateFullScreen && (
           <TopHeader
             currentView={currentView}
             currentUser={currentUser}
@@ -1104,8 +1142,9 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
 
         {/* ── VIEW 1: PTM DASHBOARD LIST VIEW ── */}
         {currentView === 'list' && (
-          <main className="ptm-page-root p-4 md:p-6 space-y-4 flex-1 w-full mx-auto max-w-[1600px]">
+          <main className={`ptm-page-root ${isTemplateFullScreen ? 'p-3 md:p-4 flex-1 min-h-0 h-full w-full max-w-full flex flex-col overflow-hidden' : 'p-4 md:p-6 space-y-4 flex-1 w-full mx-auto max-w-[1600px]'}`}>
             {/* 1. Scope Tabs: Plant (with Dropdown), Department, Self PTM and Calendar Filter */}
+            {!isTemplateFullScreen && (
             <div className="flex flex-wrap items-center gap-3">
               <PTMTabNavigation
                 activeTab={activeTab}
@@ -1119,6 +1158,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
               />
 
               {/* Calendar Filter in the Green Marked Place */}
+              {activeTab !== 'Template' && (
               <div id="ptm-date-filter-bar" className="flex flex-wrap items-center gap-2 bg-white rounded-2xl p-2 px-3 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-[#ECEFF3]">
                 <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-600">
                   <span className="text-xs sm:text-sm font-bold text-slate-500">From Date</span>
@@ -1153,8 +1193,19 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
                   <span role="alert" className="text-xs text-red-600 font-medium">From Date must not be later than To Date.</span>
                 )}
               </div>
+              )}
             </div>
+            )}
 
+            {activeTab === 'Template' ? (
+              <PTMTemplateManager
+                isAdmin={isAdmin}
+                currentUser={currentUser}
+                showToast={showToast}
+                onTemplateOpenChange={setIsTemplateSheetOpen}
+              />
+            ) : (
+            <>
             {/* 2. Section Navigation: Ongoing & Done (No sub-filter bar!) */}
             <div className="bg-white rounded-2xl p-3 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-[#ECEFF3] flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2">
@@ -1250,6 +1301,8 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
                   onPageChange={(p) => setCurrentPage(p)}
                 />
               </div>
+            )}
+            </>
             )}
           </main>
         )}
@@ -1362,6 +1415,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
                       sheetDescription={selectedTopicItem?.description || ''}
                       onBulkFillRank={handleBulkFillRank}
                       onBulkFillPhase={handleBulkFillPhase}
+                      onOpenPhaseAttachment={(phase) => setPhaseAttachmentModalPhase(phase)}
                     />
                     <PTMTable
                       rows={ptmRows}
@@ -1415,6 +1469,14 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
               unit: selectedTopicItem?.plant || selectedUnit || '',
               rows: ptmRows,
             }}
+          />
+        )}
+        {currentView === 'form' && (
+          <PTMTemplatePickerModal
+            isOpen={Boolean(phaseAttachmentModalPhase)}
+            selectedPhase={phaseAttachmentModalPhase}
+            onClose={() => setPhaseAttachmentModalPhase('')}
+            onApplyTemplate={handleApplyTemplateToSheet}
           />
         )}
       </div>

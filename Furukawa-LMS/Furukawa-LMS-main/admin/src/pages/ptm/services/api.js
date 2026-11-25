@@ -184,6 +184,33 @@ export const ptmMailApi = {
   },
 };
 
+export const ptmTemplateApi = {
+  getAll: async (phase = '') => {
+    const query = phase ? `?phase=${encodeURIComponent(phase)}` : '';
+    return request(`/ptm/templates${query}`);
+  },
+  getById: async (id) => {
+    return request(`/ptm/templates/${encodeURIComponent(id)}`);
+  },
+  create: async (payload) => {
+    return request('/ptm/templates', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  update: async (id, payload) => {
+    return request(`/ptm/templates/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  },
+  delete: async (id) => {
+    return request(`/ptm/templates/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  },
+};
+
 export default {
   authApi,
   ptmApi,
@@ -191,4 +218,5 @@ export default {
   apqpApi,
   employeeApi,
   ptmMailApi,
+  ptmTemplateApi,
 };

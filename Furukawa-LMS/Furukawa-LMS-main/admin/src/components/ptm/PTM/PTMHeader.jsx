@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { CalendarDays, ChevronDown } from 'lucide-react';
+import { CalendarDays, ChevronDown, Check, Layers, FileText, Paperclip } from 'lucide-react';
 import CalendarDateInput from './CalendarDateInput';
 import SearchableLeaderInput from './SearchableLeaderInput';
 
@@ -225,24 +225,30 @@ export default function PTMHeader({
   sheetDescription = '',
   onBulkFillRank,
   onBulkFillPhase,
+  onOpenPhaseAttachment,
 }) {
   const [rankDropdownOpen, setRankDropdownOpen] = useState(false);
   const rankDropdownRef = useRef(null);
+  const [phaseDropdownOpen, setPhaseDropdownOpen] = useState(false);
+  const phaseDropdownRef = useRef(null);
   const [isCustomPhaseMode, setIsCustomPhaseMode] = useState(() => {
     const p = String(headerInfo?.phase || '').trim();
     return Boolean(p && !HEADER_PHASE_OPTIONS.slice(0, -1).includes(p));
   });
 
   useEffect(() => {
-    if (!rankDropdownOpen) return;
+    if (!rankDropdownOpen && !phaseDropdownOpen) return;
     const handleOutside = (e) => {
       if (rankDropdownRef.current && !rankDropdownRef.current.contains(e.target)) {
         setRankDropdownOpen(false);
       }
+      if (phaseDropdownRef.current && !phaseDropdownRef.current.contains(e.target)) {
+        setPhaseDropdownOpen(false);
+      }
     };
     document.addEventListener('mousedown', handleOutside);
     return () => document.removeEventListener('mousedown', handleOutside);
-  }, [rankDropdownOpen]);
+  }, [rankDropdownOpen, phaseDropdownOpen]);
 
   const handleChange = (field, val) => {
     if (readOnly) return;
@@ -446,38 +452,145 @@ export default function PTMHeader({
                     Phase: <span className="text-red-500 font-bold">*</span>
                   </span>
                 </td>
-                <td className="px-2 py-1.5 align-middle bg-white">
+                <td className="px-2 py-1.5 align-middle bg-white relative">
                   {(() => {
                     const currentPhase = String(headerInfo.phase || '').trim();
                     const isPreset = HEADER_PHASE_OPTIONS.slice(0, -1).includes(currentPhase);
-                    const selectValue = isCustomPhaseMode ? 'Other' : (isPreset ? currentPhase : '');
+                    const isTemplateCapablePhase = HEADER_PHASE_OPTIONS.slice(0, 5).includes(currentPhase);
+                    const displayPhase = isCustomPhaseMode
+                      ? 'Other (Manual Input)'
+                      : (isPreset ? currentPhase : 'Select Phase...');
+
+                    const handleSelectPhaseOption = (opt) => {
+                      if (opt === 'Other') {
+                        setIsCustomPhaseMode(true);
+                        handleChange('phase', '');
+                        setPhaseDropdownOpen(false);
+                      } else {
+                        setIsCustomPhaseMode(false);
+                        handleChange('phase', opt);
+                        if (onBulkFillPhase && opt) {
+                          onBulkFillPhase(opt);
+                        }
+                        if (!HEADER_PHASE_OPTIONS.slice(0, 5).includes(opt)) {
+                          setPhaseDropdownOpen(false);
+                        }
+                      }
+                    };
+
                     return (
-                      <div className="flex flex-col gap-1">
-                        <select
-                          value={selectValue}
+                      <div ref={phaseDropdownRef} className="relative flex flex-col gap-1 w-full">
+                        <button
+                          type="button"
                           disabled={readOnly}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            if (val === 'Other') {
-                              setIsCustomPhaseMode(true);
-                              handleChange('phase', '');
-                            } else {
-                              setIsCustomPhaseMode(false);
-                              handleChange('phase', val);
-                              if (onBulkFillPhase && val) {
-                                onBulkFillPhase(val);
-                              }
-                            }
-                          }}
-                          className="w-full cursor-pointer font-bold text-slate-900 outline-none bg-transparent text-xs px-1 py-0.5 rounded focus:bg-white focus:ring-1 focus:ring-blue-400"
+                          aria-label="Phase"
+                          aria-haspopup="listbox"
+                          aria-expanded={phaseDropdownOpen}
+                          onClick={() => setPhaseDropdownOpen((prev) => !prev)}
+                          title={currentPhase || 'Select Phase'}
+                          className={`w-full flex items-center justify-between gap-1.5 cursor-pointer font-bold outline-none text-xs px-1.5 py-1 rounded-md transition-colors ${
+                            phaseDropdownOpen
+                              ? 'bg-blue-50/80 ring-1 ring-blue-400 !text-blue-800'
+                              : 'bg-transparent hover:bg-slate-50 text-slate-900 focus:bg-white focus:ring-1 focus:ring-blue-400'
+                          }`}
                         >
-                          <option value="">Select Phase...</option>
-                          {HEADER_PHASE_OPTIONS.map((opt) => (
-                            <option key={opt} value={opt}>
-                              {opt === 'Other' ? 'Other (Manual Input)' : opt}
-                            </option>
-                          ))}
-                        </select>
+                          <span className="truncate">{displayPhase}</span>
+                          <ChevronDown className={`h-3.5 w-3.5 shrink-0 !text-slate-500 transition-transform duration-200 ${phaseDropdownOpen ? 'rotate-180 !text-blue-600' : ''}`} />
+                        </button>
+
+                        {phaseDropdownOpen && (
+                          <div className="absolute right-0 top-full mt-1.5 z-[120] w-72 rounded-xl border border-slate-200/90 bg-white shadow-[0_14px_34px_rgba(15,23,42,0.14)] overflow-hidden text-left">
+                            <div className="flex items-center gap-1.5 px-3 py-2 bg-slate-50/90 border-b border-slate-100">
+                              <Layers className="w-3.5 h-3.5 !text-blue-600 shrink-0" />
+                              <span className="text-[11px] font-bold uppercase tracking-wider !text-slate-500">
+                                Select Phase
+                              </span>
+                            </div>
+
+                            <div className="p-1.5 space-y-0.5 max-h-64 overflow-y-auto">
+                              {HEADER_PHASE_OPTIONS.map((opt, idx) => {
+                                const isSelected = opt === 'Other' ? isCustomPhaseMode : (!isCustomPhaseMode && currentPhase === opt);
+                                const phaseNumMatch = opt.match(/^(\d+)\s*:\s*(.+)$/);
+                                const isDividerBefore = opt === 'Not - Applicable';
+                                return (
+                                  <React.Fragment key={opt}>
+                                    {isDividerBefore && <div className="my-1 border-t border-slate-100" />}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSelectPhaseOption(opt)}
+                                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs cursor-pointer flex items-center justify-between gap-2 transition-colors ${
+                                        isSelected
+                                          ? 'bg-blue-50 !text-blue-700 font-bold'
+                                          : 'hover:bg-slate-50 !text-slate-700 font-medium'
+                                      }`}
+                                    >
+                                      <span className="flex items-center gap-2 min-w-0">
+                                        {phaseNumMatch ? (
+                                          <span
+                                            className={`inline-flex items-center justify-center w-5 h-5 rounded-md text-[10px] font-extrabold shrink-0 ${
+                                              isSelected
+                                                ? 'bg-blue-600 !text-white'
+                                                : 'bg-slate-100 !text-slate-600'
+                                            }`}
+                                          >
+                                            {phaseNumMatch[1]}
+                                          </span>
+                                        ) : (
+                                          <span className="inline-flex items-center justify-center w-5 h-5 rounded-md text-[10px] font-bold shrink-0 bg-slate-100 !text-slate-500">
+                                            {opt === 'Other' ? '✎' : '—'}
+                                          </span>
+                                        )}
+                                        <span className="truncate">
+                                          {opt === 'Other'
+                                            ? 'Other (Manual Input)'
+                                            : phaseNumMatch
+                                              ? phaseNumMatch[2]
+                                              : opt}
+                                        </span>
+                                      </span>
+                                      {isSelected && <Check className="w-3.5 h-3.5 !text-blue-600 shrink-0" />}
+                                    </button>
+                                  </React.Fragment>
+                                );
+                              })}
+                            </div>
+
+                            {!readOnly && isTemplateCapablePhase && (
+                              <div className="bg-slate-50/80 border-t border-slate-200/80 p-2 space-y-1.5">
+                                <div className="px-1 text-[10px] font-bold uppercase tracking-wider !text-slate-500">
+                                  Sheet Data Option
+                                </div>
+                                <div className="grid grid-cols-2 gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (onBulkFillPhase && currentPhase) {
+                                        onBulkFillPhase(currentPhase);
+                                      }
+                                      setPhaseDropdownOpen(false);
+                                    }}
+                                    className="flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-bold !text-slate-700 hover:bg-slate-100 shadow-2xs transition-colors cursor-pointer"
+                                  >
+                                    <FileText className="w-3.5 h-3.5 !text-slate-500 shrink-0" />
+                                    <span>Blank</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setPhaseDropdownOpen(false);
+                                      onOpenPhaseAttachment?.(currentPhase);
+                                    }}
+                                    className="flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-2.5 py-1.5 text-xs font-bold !text-white hover:bg-blue-700 shadow-xs transition-colors cursor-pointer"
+                                  >
+                                    <Paperclip className="w-3.5 h-3.5 !text-white shrink-0" />
+                                    <span>Add Attachment</span>
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
                         {isCustomPhaseMode && (
                           <input
                             type="text"

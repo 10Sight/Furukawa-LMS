@@ -30,6 +30,7 @@ export default function PTMTabNavigation({
     { id: 'Company', label: 'Plant', isDropdown: true },
     { id: 'Department', label: 'Department' },
     { id: 'Self PTM', label: 'Self PTM' },
+    { id: 'Template', label: 'Template' },
   ];
 
   return (

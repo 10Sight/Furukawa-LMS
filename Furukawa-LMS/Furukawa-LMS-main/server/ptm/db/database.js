@@ -77,6 +77,18 @@ export function initDatabase() {
       email_addresses TEXT NOT NULL,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS ptm_templates (
+      id TEXT PRIMARY KEY,
+      phase_key TEXT NOT NULL,
+      phase_label TEXT NOT NULL,
+      template_name TEXT NOT NULL,
+      template_date TEXT NOT NULL,
+      rows_data TEXT NOT NULL DEFAULT '[]',
+      created_by TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   seedInitialData();

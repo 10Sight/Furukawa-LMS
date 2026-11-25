@@ -411,6 +411,7 @@ export const PAGE_REGISTRY = [
     { key: "cms-ptm", label: "PTM", layout: "cms", link: "/cms/ptm", icon: "IconClipboardList" },
     { key: "cms-pdca", label: "PDCA", layout: "cms", link: "/cms/pdca", icon: "IconRepeat" },
     { key: "cms-process-audit", label: "Process Audit", layout: "cms", link: "/cms/process-audit", icon: "IconCircleCheck" },
+    { key: "cms-p-documents", label: "P-Documents", layout: "cms", link: "/cms/p-documents", icon: "IconFileText" },
     { key: "cms-lpa", label: "LPA", layout: "cms", link: "/cms/lpa", icon: "IconTable" },
     { key: "cms-suggestion-checksheet", label: "Suggestion Checksheet", labelKey: "nav.suggestionChecksheet", layout: "cms", link: "/cms/suggestion-checksheet", icon: "IconClipboardCheck" },
     { key: "cms-calibration", label: "Calibration", labelKey: "nav.calibration", layout: "cms", link: "/cms/calibration", icon: "IconGauge" },

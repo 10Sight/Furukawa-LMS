@@ -16,6 +16,7 @@ const Login = lazy(() => import("../pages/login/Login.jsx"));
 const LandingPage = lazy(() => import("../pages/home/LandingPage.jsx"));
 const DashboardLayout = lazy(() => import("../components/layout/DashboardLayout.jsx"));
 const FmeDashboardPage = lazy(() => import("../pages/cms/FmeDashboardPage.jsx"));
+const PDocumentsPage = lazy(() => import("../pages/cms/PDocumentsPage.jsx"));
 const LpaPage = lazy(() => import("../pages/lpa/LpaPage.jsx"));
 const SuggestionChecksheetPage = lazy(() => import("../pages/suggestion-checksheet/SuggestionChecksheetPage.jsx"));
 const CalibrationPage = lazy(() => import("../pages/calibration/CalibrationPage.jsx"));
@@ -476,6 +477,7 @@ const AppRoutes = () => {
             } />
             <Route path="process-audit" element={<FmeDashboardPage key="process-audit" page="process-audit" />} />
             <Route path="process-audit/:sheetTopic" element={<FmeDashboardPage key="process-audit" page="process-audit" />} />
+            <Route path="p-documents" element={<PDocumentsPage />} />
             <Route path="lpa" element={
               <RequireAccess allow="lpa:read">
                 <LpaPage />

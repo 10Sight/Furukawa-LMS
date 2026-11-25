@@ -1315,6 +1315,12 @@ export default function PDCASheet({
   // body (native chaining already does that).
   const bodyScrollRef = useRef(null);
   const [sheetScrollEl, setSheetScrollEl] = useState(null);
+  const stickyXScrollRef = useRef(null);
+  const sheetTableRef = useRef(null);
+  const isSyncingHorizontalScrollRef = useRef(false);
+  const [sheetScrollMetrics, setSheetScrollMetrics] = useState({ scrollWidth: 0, clientWidth: 0 });
+  const hasHorizontalOverflow = sheetScrollMetrics.scrollWidth > sheetScrollMetrics.clientWidth + 1;
+
   useEffect(() => {
     if (!sheetScrollEl) return undefined;
     const handleWheel = (e) => {
@@ -1342,6 +1348,72 @@ export default function PDCASheet({
     sheetScrollEl.addEventListener('wheel', handleWheel, { passive: false });
     return () => sheetScrollEl.removeEventListener('wheel', handleWheel);
   }, [sheetScrollEl]);
+
+  // Measure horizontal overflow of the sheet table so the sticky horizontal scrollbar stays accurate
+  useEffect(() => {
+    if (!sheetScrollEl) return undefined;
+    const updateMetrics = () => {
+      const nextScrollWidth = sheetScrollEl.scrollWidth;
+      const nextClientWidth = sheetScrollEl.clientWidth;
+      setSheetScrollMetrics((prev) => (
+        prev.scrollWidth === nextScrollWidth && prev.clientWidth === nextClientWidth
+          ? prev
+          : { scrollWidth: nextScrollWidth, clientWidth: nextClientWidth }
+      ));
+    };
+
+    updateMetrics();
+    let resizeObserver;
+    if (typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(updateMetrics);
+      resizeObserver.observe(sheetScrollEl);
+      if (sheetTableRef.current) {
+        resizeObserver.observe(sheetTableRef.current);
+      }
+    }
+    window.addEventListener('resize', updateMetrics);
+    return () => {
+      if (resizeObserver) resizeObserver.disconnect();
+      window.removeEventListener('resize', updateMetrics);
+    };
+  }, [sheetScrollEl]);
+
+  // Keep horizontal scroll position synchronized between the sheet table and sticky bottom scrollbar
+  useEffect(() => {
+    const stickyBar = stickyXScrollRef.current;
+    if (!sheetScrollEl || !stickyBar || !hasHorizontalOverflow) return undefined;
+
+    if (Math.abs(stickyBar.scrollLeft - sheetScrollEl.scrollLeft) >= 1) {
+      stickyBar.scrollLeft = sheetScrollEl.scrollLeft;
+    }
+
+    const handleSheetScroll = () => {
+      if (isSyncingHorizontalScrollRef.current) return;
+      if (Math.abs(stickyBar.scrollLeft - sheetScrollEl.scrollLeft) < 1) return;
+      isSyncingHorizontalScrollRef.current = true;
+      stickyBar.scrollLeft = sheetScrollEl.scrollLeft;
+      requestAnimationFrame(() => {
+        isSyncingHorizontalScrollRef.current = false;
+      });
+    };
+
+    const handleStickyBarScroll = () => {
+      if (isSyncingHorizontalScrollRef.current) return;
+      if (Math.abs(sheetScrollEl.scrollLeft - stickyBar.scrollLeft) < 1) return;
+      isSyncingHorizontalScrollRef.current = true;
+      sheetScrollEl.scrollLeft = stickyBar.scrollLeft;
+      requestAnimationFrame(() => {
+        isSyncingHorizontalScrollRef.current = false;
+      });
+    };
+
+    sheetScrollEl.addEventListener('scroll', handleSheetScroll, { passive: true });
+    stickyBar.addEventListener('scroll', handleStickyBarScroll, { passive: true });
+    return () => {
+      sheetScrollEl.removeEventListener('scroll', handleSheetScroll);
+      stickyBar.removeEventListener('scroll', handleStickyBarScroll);
+    };
+  }, [sheetScrollEl, hasHorizontalOverflow]);
 
   // Baseline snapshot ref to detect unsaved edits during the current editing session
   const initialSnapshotRef = useRef(serializeSheet(initialRows, initialHeaderInfo));
@@ -5632,8 +5704,9 @@ export default function PDCASheet({
       )}
 
       {/* Spreadsheet Matrix Table Grid */}
+      <div className="w-full min-w-0 flex-auto shrink-0 flex flex-col">
       <div ref={setSheetScrollEl} className="pdca-sheet-scroll-container w-full min-w-0 flex-auto shrink-0 min-h-[320px] bg-white border border-[#B0BEC5] shadow-xs overflow-auto max-h-[calc(100vh-62px)]">
-        <table className="w-full min-w-max text-left table-fixed border-separate border-spacing-0 border-t border-l border-[#B0BEC5] text-[11px]">
+        <table ref={sheetTableRef} className="w-full min-w-max text-left table-fixed border-separate border-spacing-0 border-t border-l border-[#B0BEC5] text-[11px]">
           <colgroup>
             <col style={{ width: `${dateColWidth}px`, minWidth: `${dateColWidth}px` }} />
             <col style={{ width: '38px', minWidth: '34px' }} />
@@ -7889,6 +7962,17 @@ export default function PDCASheet({
             </button>
           )}
         </div>
+      </div>
+      {hasHorizontalOverflow && (
+        <div
+          ref={stickyXScrollRef}
+          aria-label="Horizontal sheet scrollbar"
+          className="pdca-sheet-sticky-x-scroll sticky bottom-0 z-30 w-full min-w-0 overflow-x-auto overflow-y-hidden bg-slate-100/95 border-x border-b border-[#B0BEC5] shrink-0"
+          style={{ height: '16px' }}
+        >
+          <div style={{ width: `${sheetScrollMetrics.scrollWidth}px`, height: '1px' }} />
+        </div>
+      )}
       </div>
       </div>
 

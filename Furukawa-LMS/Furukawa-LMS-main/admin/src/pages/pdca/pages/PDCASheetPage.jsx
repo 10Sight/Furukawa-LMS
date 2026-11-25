@@ -67,28 +67,37 @@ export default function PDCASheetPage() {
     <div className="pdca-page-sheet-root fixed inset-0 z-40 h-dvh w-full bg-white text-slate-800 flex flex-col overflow-hidden p-1.5 sm:p-2 pb-0.5 sm:pb-1">
       <style>{`
         .pdca-page-sheet-root .pdca-sheet-scroll-container,
-        .pdca-page-sheet-root .pdca-body-scroll-container {
+        .pdca-page-sheet-root .pdca-body-scroll-container,
+        .pdca-page-sheet-root .pdca-sheet-sticky-x-scroll {
           scrollbar-width: auto;
           scrollbar-color: #334155 #cbd5e1;
         }
         .pdca-page-sheet-root .pdca-sheet-scroll-container::-webkit-scrollbar,
-        .pdca-page-sheet-root .pdca-body-scroll-container::-webkit-scrollbar {
+        .pdca-page-sheet-root .pdca-body-scroll-container::-webkit-scrollbar,
+        .pdca-page-sheet-root .pdca-sheet-sticky-x-scroll::-webkit-scrollbar {
           width: 14px !important;
           height: 14px !important;
         }
+        .pdca-page-sheet-root .pdca-sheet-scroll-container::-webkit-scrollbar:horizontal {
+          height: 0 !important;
+          display: none !important;
+        }
         .pdca-page-sheet-root .pdca-sheet-scroll-container::-webkit-scrollbar-track,
-        .pdca-page-sheet-root .pdca-body-scroll-container::-webkit-scrollbar-track {
+        .pdca-page-sheet-root .pdca-body-scroll-container::-webkit-scrollbar-track,
+        .pdca-page-sheet-root .pdca-sheet-sticky-x-scroll::-webkit-scrollbar-track {
           background: #cbd5e1 !important;
           border-radius: 6px;
         }
         .pdca-page-sheet-root .pdca-sheet-scroll-container::-webkit-scrollbar-thumb,
-        .pdca-page-sheet-root .pdca-body-scroll-container::-webkit-scrollbar-thumb {
+        .pdca-page-sheet-root .pdca-body-scroll-container::-webkit-scrollbar-thumb,
+        .pdca-page-sheet-root .pdca-sheet-sticky-x-scroll::-webkit-scrollbar-thumb {
           background: #334155 !important;
           border-radius: 6px;
           border: 2px solid #cbd5e1;
         }
         .pdca-page-sheet-root .pdca-sheet-scroll-container::-webkit-scrollbar-thumb:hover,
-        .pdca-page-sheet-root .pdca-body-scroll-container::-webkit-scrollbar-thumb:hover {
+        .pdca-page-sheet-root .pdca-body-scroll-container::-webkit-scrollbar-thumb:hover,
+        .pdca-page-sheet-root .pdca-sheet-sticky-x-scroll::-webkit-scrollbar-thumb:hover {
           background: #1e293b !important;
         }
         .pdca-page-sheet-root .pdca-sheet-scroll-container::-webkit-scrollbar-corner,

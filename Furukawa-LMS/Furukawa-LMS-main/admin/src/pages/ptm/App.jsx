@@ -442,6 +442,67 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
   const historyRef = useRef({ undo: [], redo: [] });
   const [, refreshHistory] = useState(0);
   const [isSendMailOpen, setIsSendMailOpen] = useState(false);
+  const sheetScrollRef = useRef(null);
+  const stickyScrollbarRef = useRef(null);
+  const zoomSurfaceRef = useRef(null);
+  const isSyncingSheetScrollRef = useRef(false);
+  const [sheetScrollWidth, setSheetScrollWidth] = useState(3200);
+  const [hasSheetHorizontalOverflow, setHasSheetHorizontalOverflow] = useState(true);
+
+  useEffect(() => {
+    if (currentView !== 'form') return undefined;
+    const sheetEl = sheetScrollRef.current;
+    const stickyEl = stickyScrollbarRef.current;
+    const zoomEl = zoomSurfaceRef.current;
+    if (!sheetEl || !stickyEl) return undefined;
+
+    const updateMetrics = () => {
+      const nextWidth = Math.max(sheetEl.scrollWidth || 0, zoomEl?.scrollWidth || 0, 3200);
+      setSheetScrollWidth(nextWidth);
+      setHasSheetHorizontalOverflow(sheetEl.scrollWidth > sheetEl.clientWidth + 1);
+      if (Math.abs(stickyEl.scrollLeft - sheetEl.scrollLeft) > 1) {
+        stickyEl.scrollLeft = sheetEl.scrollLeft;
+      }
+    };
+
+    const syncFromSheet = () => {
+      if (isSyncingSheetScrollRef.current) return;
+      isSyncingSheetScrollRef.current = true;
+      stickyEl.scrollLeft = sheetEl.scrollLeft;
+      requestAnimationFrame(() => {
+        isSyncingSheetScrollRef.current = false;
+      });
+    };
+
+    const syncFromSticky = () => {
+      if (isSyncingSheetScrollRef.current) return;
+      isSyncingSheetScrollRef.current = true;
+      sheetEl.scrollLeft = stickyEl.scrollLeft;
+      requestAnimationFrame(() => {
+        isSyncingSheetScrollRef.current = false;
+      });
+    };
+
+    updateMetrics();
+    sheetEl.addEventListener('scroll', syncFromSheet, { passive: true });
+    stickyEl.addEventListener('scroll', syncFromSticky, { passive: true });
+
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(() => updateMetrics())
+      : null;
+    if (resizeObserver) {
+      resizeObserver.observe(sheetEl);
+      if (zoomEl) resizeObserver.observe(zoomEl);
+    }
+    window.addEventListener('resize', updateMetrics);
+
+    return () => {
+      sheetEl.removeEventListener('scroll', syncFromSheet);
+      stickyEl.removeEventListener('scroll', syncFromSticky);
+      if (resizeObserver) resizeObserver.disconnect();
+      window.removeEventListener('resize', updateMetrics);
+    };
+  }, [currentView, ptmRows.length]);
 
   const updateFormState = (key, setter, update) => {
     const current = formStateRef.current;
@@ -1288,9 +1349,9 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
               />
 
               {/* MERGED PTM FORM + MATRIX TABLE AS A SINGLE UNIFIED DOCUMENT */}
-              <div className="relative z-0 w-full min-w-0 shrink-0 bg-white rounded-xl border border-slate-300 shadow-sm overflow-hidden">
-                <div className="ptm-sheet-scroll-container min-w-0 overflow-x-auto">
-                  <div className="min-w-[3200px] w-full ptm-zoom-surface">
+              <div className="relative z-0 w-full min-w-0 shrink-0 bg-white rounded-xl border border-slate-300 shadow-sm overflow-x-clip">
+                <div ref={sheetScrollRef} className="ptm-sheet-scroll-container min-w-0 overflow-x-auto">
+                  <div ref={zoomSurfaceRef} className="min-w-[3200px] w-full ptm-zoom-surface">
                     <PTMHeader
                       headerInfo={headerInfo}
                       setHeaderInfo={updateHeaderInfo}
@@ -1325,6 +1386,13 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
                       selectedHeaderRank={headerInfo?.rank || ''}
                     />
                   </div>
+                </div>
+                <div
+                  ref={stickyScrollbarRef}
+                  className={`ptm-sticky-h-scrollbar sticky bottom-0 z-30 w-full overflow-x-auto overflow-y-hidden bg-slate-100/95 border-t border-slate-300 rounded-b-xl ${hasSheetHorizontalOverflow ? '' : 'hidden'}`}
+                  aria-label="PTM sheet horizontal scrollbar"
+                >
+                  <div style={{ width: `${sheetScrollWidth}px`, height: '1px' }} />
                 </div>
               </div>
             </div>

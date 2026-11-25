@@ -251,13 +251,12 @@ function EndDatePlanCell({ row, onSelectDate, disabled = false, rowIndex }) {
   const pickerIsoValue = latestDate ? normalizeDateToYMD(latestDate) : '';
 
   const [isOpen, setIsOpen] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [coords, setCoords] = useState({ top: 0, left: 0 });
   const [viewYear, setViewYear] = useState(() => new Date().getFullYear());
   const [viewMonth, setViewMonth] = useState(() => new Date().getMonth());
 
-  const openCalendar = (e) => {
-    e.stopPropagation();
-    if (disabled) return;
+  const openCalendarPopover = () => {
     const baseIso = pickerIsoValue || getTodayYMD();
     const parts = baseIso.split('-').map(Number);
     if (parts.length === 3 && !Number.isNaN(parts[0]) && !Number.isNaN(parts[1])) {
@@ -279,6 +278,16 @@ function EndDatePlanCell({ row, onSelectDate, disabled = false, rowIndex }) {
       setCoords({ top, left });
     }
     setIsOpen(true);
+  };
+
+  const openCalendar = (e) => {
+    e.stopPropagation();
+    if (disabled) return;
+    if (history.length > 0) {
+      setShowConfirmModal(true);
+      return;
+    }
+    openCalendarPopover();
   };
 
   useEffect(() => {
@@ -487,6 +496,51 @@ function EndDatePlanCell({ row, onSelectDate, disabled = false, rowIndex }) {
         </div>,
         document.body
       )}
+
+      {showConfirmModal && createPortal(
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/40 p-4"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowConfirmModal(false);
+          }}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Confirm End Date (Plan) re-selection"
+        >
+          <div
+            className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-sm font-bold text-slate-900">
+              End Date (Plan)
+            </h3>
+            <p className="mt-2 text-sm text-slate-600">
+              Sure want to select again the End Date (Plan)?
+            </p>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowConfirmModal(false)}
+                className="rounded-lg border border-slate-300 bg-white px-4 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+              >
+                No
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowConfirmModal(false);
+                  openCalendarPopover();
+                }}
+                className="rounded-lg bg-blue-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 cursor-pointer"
+              >
+                Yes
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
@@ -583,7 +637,7 @@ export default function PTMTable({
     tokens.forEach((t) => {
       if (t === 'A') keys.add('rankA');
       else if (t === 'B') keys.add('rankB');
-      else if (t === 'C1' || t === 'C2') keys.add('rankC');
+      else if (t === 'C1 & C2' || t === 'C1' || t === 'C2') keys.add('rankC');
       else if (t === 'S') keys.add('rankS');
     });
     return keys;
@@ -1778,7 +1832,14 @@ export default function PTMTable({
       return;
     }
     const deletedRowId = rows[rowIndex]?.id;
-    const newRows = rows.filter((_, idx) => idx !== rowIndex);
+    let nextParentSerial = 0;
+    const newRows = rows
+      .filter((_, idx) => idx !== rowIndex)
+      .map((row) => {
+        if (!isParentRow(row)) return row;
+        nextParentSerial += 1;
+        return { ...row, parentSerialNo: nextParentSerial };
+      });
     setRows(newRows);
     if (deletedRowId) {
       setRowHeights((currentHeights) => {
@@ -2103,25 +2164,25 @@ export default function PTMTable({
                 </th>
 
                 {/* Group 2 Columns (Pale Yellow tint) - compact */}
-                <th rowSpan={2} className={`py-2 px-1 w-9 min-w-[34px] max-w-[38px] bg-[#FFF9E6] text-[#975A16] whitespace-normal leading-tight text-center transition-all ${!isRankColumnActive('rankA') ? 'opacity-35 blur-[1px] bg-slate-100/80 pointer-events-none select-none' : ''}`}>
+                <th rowSpan={2} className={`py-2 px-1 w-9 min-w-[34px] max-w-[38px] bg-[#FFF9E6] text-[#975A16] whitespace-normal leading-tight text-center transition-all ${!isRankColumnActive('rankA') ? 'opacity-75 blur-[0.4px] bg-slate-100/50 pointer-events-none select-none' : ''}`}>
                   <div className="flex flex-col items-center gap-0.5">
                     <span>Rank A</span>
                     {renderHeaderFilterButton('rankA', 'Rank A')}
                   </div>
                 </th>
-                <th rowSpan={2} className={`py-2 px-1 w-9 min-w-[34px] max-w-[38px] bg-[#FFF9E6] text-[#975A16] whitespace-normal leading-tight text-center transition-all ${!isRankColumnActive('rankB') ? 'opacity-35 blur-[1px] bg-slate-100/80 pointer-events-none select-none' : ''}`}>
+                <th rowSpan={2} className={`py-2 px-1 w-9 min-w-[34px] max-w-[38px] bg-[#FFF9E6] text-[#975A16] whitespace-normal leading-tight text-center transition-all ${!isRankColumnActive('rankB') ? 'opacity-75 blur-[0.4px] bg-slate-100/50 pointer-events-none select-none' : ''}`}>
                   <div className="flex flex-col items-center gap-0.5">
                     <span>Rank B</span>
                     {renderHeaderFilterButton('rankB', 'Rank B')}
                   </div>
                 </th>
-                <th rowSpan={2} className={`py-2 px-1 w-11 min-w-[42px] max-w-[48px] bg-[#FFF9E6] text-[#975A16] whitespace-normal leading-tight text-center transition-all ${!isRankColumnActive('rankC') ? 'opacity-35 blur-[1px] bg-slate-100/80 pointer-events-none select-none' : ''}`}>
+                <th rowSpan={2} className={`py-2 px-1 w-11 min-w-[42px] max-w-[48px] bg-[#FFF9E6] text-[#975A16] whitespace-normal leading-tight text-center transition-all ${!isRankColumnActive('rankC') ? 'opacity-75 blur-[0.4px] bg-slate-100/50 pointer-events-none select-none' : ''}`}>
                   <div className="flex flex-col items-center gap-0.5">
                     <span>Rank C1 & C2</span>
                     {renderHeaderFilterButton('rankC', 'Rank C1 & C2')}
                   </div>
                 </th>
-                <th rowSpan={2} className={`py-2 px-1 w-9 min-w-[34px] max-w-[38px] bg-[#FFF9E6] text-[#975A16] whitespace-normal leading-tight text-center transition-all ${!isRankColumnActive('rankS') ? 'opacity-35 blur-[1px] bg-slate-100/80 pointer-events-none select-none' : ''}`}>
+                <th rowSpan={2} className={`py-2 px-1 w-9 min-w-[34px] max-w-[38px] bg-[#FFF9E6] text-[#975A16] whitespace-normal leading-tight text-center transition-all ${!isRankColumnActive('rankS') ? 'opacity-75 blur-[0.4px] bg-slate-100/50 pointer-events-none select-none' : ''}`}>
                   <div className="flex flex-col items-center gap-0.5">
                     <span>Rank S</span>
                     {renderHeaderFilterButton('rankS', 'Rank S')}
@@ -2558,7 +2619,7 @@ export default function PTMTable({
                           onClick={() => cycleRank(originalIndex, 'rankA')}
                           className={`py-1 px-1 text-center transition-all select-none ${
                             !isRankColumnActive('rankA')
-                              ? 'opacity-35 blur-[1px] bg-slate-100/80 pointer-events-none'
+                              ? 'opacity-75 blur-[0.4px] bg-slate-100/50 pointer-events-none'
                               : !canEditCell(row, 'rankA')
                                 ? 'pointer-events-none opacity-75'
                                 : 'cursor-pointer hover:bg-amber-50/50'
@@ -2581,7 +2642,7 @@ export default function PTMTable({
                           onClick={() => cycleRank(originalIndex, 'rankB')}
                           className={`py-1 px-1 text-center transition-all select-none ${
                             !isRankColumnActive('rankB')
-                              ? 'opacity-35 blur-[1px] bg-slate-100/80 pointer-events-none'
+                              ? 'opacity-75 blur-[0.4px] bg-slate-100/50 pointer-events-none'
                               : !canEditCell(row, 'rankB')
                                 ? 'pointer-events-none opacity-75'
                                 : 'cursor-pointer hover:bg-amber-50/50'
@@ -2604,7 +2665,7 @@ export default function PTMTable({
                           onClick={() => cycleRank(originalIndex, 'rankC')}
                           className={`py-1 px-1 text-center transition-all select-none ${
                             !isRankColumnActive('rankC')
-                              ? 'opacity-35 blur-[1px] bg-slate-100/80 pointer-events-none'
+                              ? 'opacity-75 blur-[0.4px] bg-slate-100/50 pointer-events-none'
                               : !canEditCell(row, 'rankC')
                                 ? 'pointer-events-none opacity-75'
                                 : 'cursor-pointer hover:bg-amber-50/50'
@@ -2627,7 +2688,7 @@ export default function PTMTable({
                           onClick={() => cycleRank(originalIndex, 'rankS')}
                           className={`py-1 px-1 text-center transition-all select-none ${
                             !isRankColumnActive('rankS')
-                              ? 'opacity-35 blur-[1px] bg-slate-100/80 pointer-events-none'
+                              ? 'opacity-75 blur-[0.4px] bg-slate-100/50 pointer-events-none'
                               : !canEditCell(row, 'rankS')
                                 ? 'pointer-events-none opacity-75'
                                 : 'cursor-pointer hover:bg-amber-50/50'

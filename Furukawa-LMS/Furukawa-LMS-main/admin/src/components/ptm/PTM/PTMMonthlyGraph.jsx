@@ -859,7 +859,7 @@ export default function PTMMonthlyGraph({
                 <div ref={scrollContainerRef} className="w-full overflow-x-auto pb-3.5 pt-1 flex-1 flex flex-col justify-end">
                   <div
                     style={isCompactChart ? { width: `${svgWidth}px` } : { minWidth: `${Math.max(680, svgWidth)}px` }}
-                    className={`flex flex-col mb-1.5 ${isCompactChart ? 'mx-auto shrink-0' : 'flex-1'}`}
+                    className={`flex flex-col mb-1.5 ${isCompactChart ? 'shrink-0' : 'flex-1'}`}
                   >
                     <svg
                       viewBox={`0 0 ${svgWidth} ${svgHeight}`}
@@ -953,33 +953,21 @@ export default function PTMMonthlyGraph({
                         let colStroke = 'none';
                         let colDash = 'none';
                         if (isHovered) colFill = 'rgba(59, 130, 246, 0.12)';
-                        else if (item.isCurrentDate) colFill = 'rgba(59, 130, 246, 0.06)';
-                        else if (item.isYesterday) colFill = 'rgba(245, 158, 11, 0.08)';
                         else if (item.cumulKind === 'prev') colFill = 'rgba(148, 163, 184, 0.12)';
                         else if (item.cumulKind === 'live') colFill = 'rgba(99, 102, 241, 0.08)';
-                        if (item.isCurrentDate) {
-                          colStroke = 'rgba(59, 130, 246, 0.35)';
-                          colDash = '3 2';
-                        } else if (item.isYesterday) {
-                          colStroke = 'rgba(245, 158, 11, 0.35)';
-                          colDash = '3 2';
-                        } else if (item.cumulKind === 'prev') {
+                        if (item.cumulKind === 'prev') {
                           colStroke = 'rgba(100, 116, 139, 0.35)';
                           colDash = '3 3';
                         } else if (item.cumulKind === 'live') {
                           colStroke = 'rgba(99, 102, 241, 0.35)';
                         }
 
-                        const labelClass = item.isCurrentDate
-                          ? 'fill-blue-700 font-black'
-                          : item.cumulKind === 'prev'
+                        const labelClass = item.cumulKind === 'prev'
                           ? 'fill-slate-600 font-extrabold'
                           : item.cumulKind === 'live'
                           ? 'fill-indigo-700 font-extrabold'
                           : isHovered
                           ? 'fill-blue-600 font-bold'
-                          : item.isYesterday
-                          ? 'fill-amber-800 font-bold'
                           : item.total > 0
                           ? 'fill-slate-700 font-bold'
                           : 'fill-slate-400 font-semibold';
@@ -1043,20 +1031,6 @@ export default function PTMMonthlyGraph({
                               );
                             })}
 
-                            {/* Current date badge (behind label) */}
-                            {item.isCurrentDate && (
-                              <rect
-                                x={xCenter - 34}
-                                y={graphBottom + 8}
-                                width="68"
-                                height="24"
-                                rx="5"
-                                fill="#EFF6FF"
-                                stroke="#3B82F6"
-                                strokeWidth="1.5"
-                              />
-                            )}
-
                             {/* X-axis label */}
                             <text
                               x={xCenter}
@@ -1067,38 +1041,14 @@ export default function PTMMonthlyGraph({
                               {item.label}
                             </text>
 
-                            {/* Yesterday pill */}
-                            {item.isYesterday && !item.isCurrentDate && (
-                              <g>
-                                <rect
-                                  x={xCenter - 36}
-                                  y={graphBottom + 35}
-                                  width="72"
-                                  height="19"
-                                  rx="9.5"
-                                  fill="#FFFBEB"
-                                  stroke="#FCD34D"
-                                  strokeWidth="1"
-                                />
-                                <text
-                                  x={xCenter}
-                                  y={graphBottom + 48.5}
-                                  textAnchor="middle"
-                                  className="text-[11px] font-bold fill-amber-800"
-                                >
-                                  Yesterday
-                                </text>
-                              </g>
-                            )}
-
                             {/* Dot indicator if slot has data */}
-                            {item.total > 0 && !item.isYesterday && (
+                            {item.total > 0 && (
                               <circle
                                 cx={xCenter}
                                 cy={svgHeight - 10}
                                 r="2.5"
                                 fill={
-                                  item.isCurrentDate || isHovered
+                                  isHovered
                                     ? '#2563EB'
                                     : item.cumulKind === 'live'
                                     ? '#6366F1'
@@ -1128,7 +1078,6 @@ export default function PTMMonthlyGraph({
                           ? Math.max(padding.left, colX - tipW - 8)
                           : rightX;
                         const tipY = padding.top + 4;
-                        const suffix = item.isCurrentDate ? ' (Today)' : item.isYesterday ? ' (Yesterday)' : '';
 
                         return (
                           <g pointerEvents="none">
@@ -1144,9 +1093,6 @@ export default function PTMMonthlyGraph({
                             />
                             <text x={tipX + 12} y={tipY + 24} className="text-[15px] font-bold fill-slate-800">
                               {getItemTitle(item)}
-                              {suffix && (
-                                <tspan className={item.isCurrentDate ? 'fill-blue-700' : 'fill-amber-700'}>{suffix}</tspan>
-                              )}
                             </text>
                             {lines.map((l, i) => (
                               <g key={l.label}>

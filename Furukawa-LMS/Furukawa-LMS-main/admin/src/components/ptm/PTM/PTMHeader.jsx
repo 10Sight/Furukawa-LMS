@@ -3,7 +3,7 @@ import { CalendarDays, ChevronDown } from 'lucide-react';
 import CalendarDateInput from './CalendarDateInput';
 import SearchableLeaderInput from './SearchableLeaderInput';
 
-const RANK_OPTIONS = ['A', 'B', 'C1', 'C2', 'S'].map((r) => ({ value: r, label: r }));
+const RANK_OPTIONS = ['A', 'B', 'C1 & C2', 'S', 'Not - Applicable'].map((r) => ({ value: r, label: r }));
 
 const HEADER_PHASE_OPTIONS = [
   '1: Plan & Define',
@@ -11,6 +11,7 @@ const HEADER_PHASE_OPTIONS = [
   '3: Process & Development',
   '4: Product & Process Validation',
   '5: Feedback & Corrective Action',
+  'Not - Applicable',
   'Other',
 ];
 
@@ -20,7 +21,7 @@ const mapHeaderRanksToKeys = (ranks) => {
     const val = String(r || '').trim().toUpperCase();
     if (val === 'A') keys.add('rankA');
     else if (val === 'B') keys.add('rankB');
-    else if (val === 'C1' || val === 'C2') keys.add('rankC');
+    else if (val === 'C1 & C2' || val === 'C1' || val === 'C2') keys.add('rankC');
     else if (val === 'S') keys.add('rankS');
   });
   return Array.from(keys);
@@ -322,9 +323,15 @@ export default function PTMHeader({
                           .map((s) => s.trim())
                           .filter(Boolean);
                     const toggleRank = (val) => {
-                      const next = selectedRanks.includes(val)
-                        ? selectedRanks.filter((r) => r !== val)
-                        : [...selectedRanks, val];
+                      let next;
+                      if (val === 'Not - Applicable') {
+                        next = selectedRanks.includes(val) ? [] : ['Not - Applicable'];
+                      } else {
+                        const filtered = selectedRanks.filter((r) => r !== 'Not - Applicable');
+                        next = filtered.includes(val)
+                          ? filtered.filter((r) => r !== val)
+                          : [...filtered, val];
+                      }
                       handleChange('rank', next.join(', '));
                     };
                     const applyRankSymbol = (symbolVal) => {

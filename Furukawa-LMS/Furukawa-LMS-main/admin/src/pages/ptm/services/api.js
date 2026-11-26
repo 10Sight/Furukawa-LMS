@@ -35,7 +35,7 @@ function getAuthHeaders() {
       headers['x-user-name'] = u.userName || u.username || u.name || '';
       headers['x-user-id'] = String(u.id || u._id || '');
     }
-  } catch {}
+  } catch { }
   return headers;
 }
 
@@ -67,7 +67,7 @@ export const authApi = {
         body: JSON.stringify({ username, password }),
       });
       if (res && res.success) return res;
-    } catch {}
+    } catch { }
     return request('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
@@ -78,13 +78,13 @@ export const authApi = {
     try {
       const res = await request(`/ptm/auth/me${query}`);
       if (res && res.success) return res;
-    } catch {}
+    } catch { }
     return request(`/auth/me${query}`);
   },
   logout: async () => {
     try {
       await request('/ptm/auth/logout', { method: 'POST' });
-    } catch {}
+    } catch { }
     return { success: true };
   },
 };
@@ -143,12 +143,12 @@ export const employeeApi = {
       const res = await request(`/v1/pdca/employees${query}`);
       const list = res?.data || res;
       if (Array.isArray(list)) return list;
-    } catch {}
+    } catch { }
     try {
       const metaRes = await request('/v1/pdca/metadata');
       const meta = metaRes?.data || metaRes;
       if (Array.isArray(meta?.employees)) return meta.employees;
-    } catch {}
+    } catch { }
     return [];
   },
 };
@@ -207,6 +207,21 @@ export const ptmTemplateApi = {
   delete: async (id) => {
     return request(`/ptm/templates/${encodeURIComponent(id)}`, {
       method: 'DELETE',
+    });
+  },
+  getPhases: async () => {
+    return request('/ptm/templates/phases');
+  },
+  createPhase: async (payload) => {
+    return request('/ptm/templates/phases', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  updatePhase: async (key, payload) => {
+    return request(`/ptm/templates/phases/${encodeURIComponent(key)}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
     });
   },
 };

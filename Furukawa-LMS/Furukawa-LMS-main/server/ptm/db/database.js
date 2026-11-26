@@ -89,6 +89,16 @@ export function initDatabase() {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS ptm_phases (
+      key TEXT PRIMARY KEY,
+      page_name TEXT NOT NULL,
+      phase_no TEXT NOT NULL,
+      label TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   seedInitialData();
@@ -203,6 +213,25 @@ function seedInitialData() {
   const insertApqp = db.prepare('INSERT OR IGNORE INTO apqp_suggestions (value) VALUES (?)');
   for (const item of defaultApqp) {
     insertApqp.run(item);
+  }
+
+  // 3. Seed Default PTM Phases (only when table is empty so user edits persist)
+  const phaseCount = db.prepare('SELECT COUNT(*) AS count FROM ptm_phases').get()?.count || 0;
+  if (phaseCount === 0) {
+    const defaultPhases = [
+      { key: 'Phase 1', pageName: 'Phase 1', phaseNo: '1', label: '1: Plan & Define', sortOrder: 1 },
+      { key: 'Phase 2', pageName: 'Phase 2', phaseNo: '2', label: '2: Product & Process Design', sortOrder: 2 },
+      { key: 'Phase 3', pageName: 'Phase 3', phaseNo: '3', label: '3: Process & Development', sortOrder: 3 },
+      { key: 'Phase 4', pageName: 'Phase 4', phaseNo: '4', label: '4: Product & Process Validation', sortOrder: 4 },
+      { key: 'Phase 5', pageName: 'Phase 5', phaseNo: '5', label: '5: Feedback & Corrective Action', sortOrder: 5 },
+    ];
+    const insertPhase = db.prepare(`
+      INSERT OR IGNORE INTO ptm_phases (key, page_name, phase_no, label, sort_order)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    for (const p of defaultPhases) {
+      insertPhase.run(p.key, p.pageName, p.phaseNo, p.label, p.sortOrder);
+    }
   }
 }
 

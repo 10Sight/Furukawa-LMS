@@ -30,12 +30,24 @@ const getTodayISO = () => new Date().toISOString().slice(0, 10);
 export default function PTMTemplateManager({
   isAdmin = false,
   currentUser = null,
-  showToast = () => {},
+  showToast = () => { },
   onTemplateOpenChange,
 }) {
+  const [phases, setPhases] = useState(PTM_TEMPLATE_PHASES);
   const [selectedPhaseKey, setSelectedPhaseKey] = useState(PTM_TEMPLATE_PHASES[0].key);
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  // Add Phase Modal state
+  const [isAddPhaseModalOpen, setIsAddPhaseModalOpen] = useState(false);
+  const [newPhasePageName, setNewPhasePageName] = useState('');
+  const [newPhaseLabel, setNewPhaseLabel] = useState('');
+  const [phaseSaving, setPhaseSaving] = useState(false);
+
+  // Edit Phase Popup state (right-click on phase button)
+  const [editingPhase, setEditingPhase] = useState(null);
+  const [editPhasePageName, setEditPhasePageName] = useState('');
+  const [editPhaseLabel, setEditPhaseLabel] = useState('');
 
   // Add Template Modal state
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -54,7 +66,22 @@ export default function PTMTemplateManager({
   const [saving, setSaving] = useState(false);
 
   const selectedPhaseMeta =
-    PTM_TEMPLATE_PHASES.find((p) => p.key === selectedPhaseKey) || PTM_TEMPLATE_PHASES[0];
+    phases.find((p) => p.key === selectedPhaseKey) || phases[0] || PTM_TEMPLATE_PHASES[0];
+
+  const loadPhases = async () => {
+    try {
+      const res = await ptmTemplateApi.getPhases();
+      if (res?.success && Array.isArray(res.data) && res.data.length > 0) {
+        setPhases(res.data);
+      }
+    } catch (err) {
+      console.warn('Failed to load phases:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadPhases();
+  }, []);
 
   const loadTemplates = async (phaseKey = selectedPhaseKey) => {
     setLoading(true);
@@ -81,6 +108,89 @@ export default function PTMTemplateManager({
     onTemplateOpenChange?.(Boolean(activeTemplate && editorMode));
     return () => onTemplateOpenChange?.(false);
   }, [activeTemplate, editorMode, onTemplateOpenChange]);
+
+  const handleOpenAddPhaseModal = () => {
+    if (!isAdmin) {
+      showToast('❌ Only Admin can add phases');
+      return;
+    }
+    setNewPhasePageName('');
+    setNewPhaseLabel('');
+    setIsAddPhaseModalOpen(true);
+  };
+
+  const handleCreatePhase = async (e) => {
+    e.preventDefault();
+    const trimmedPageName = newPhasePageName.trim();
+    const trimmedLabel = newPhaseLabel.trim();
+    if (!trimmedPageName || !trimmedLabel) {
+      showToast('⚠️ Please enter both Phase Button Name and Phase Title');
+      return;
+    }
+    try {
+      setPhaseSaving(true);
+      const res = await ptmTemplateApi.createPhase({
+        pageName: trimmedPageName,
+        label: trimmedLabel,
+      });
+      if (!res?.success || !res?.data) {
+        showToast(res?.message || '❌ Failed to create phase');
+        return;
+      }
+      setIsAddPhaseModalOpen(false);
+      await loadPhases();
+      setSelectedPhaseKey(res.data.key);
+      showToast(`✓ Phase "${res.data.pageName}" created`);
+    } catch {
+      showToast('❌ Could not create phase');
+    } finally {
+      setPhaseSaving(false);
+    }
+  };
+
+  const handlePhaseContextMenu = (e, phase) => {
+    e.preventDefault();
+    if (!isAdmin) {
+      showToast('❌ Only Admin can edit phases');
+      return;
+    }
+    setEditingPhase(phase);
+    setEditPhasePageName(phase.pageName || '');
+    setEditPhaseLabel(phase.label || '');
+  };
+
+  const handleUpdatePhase = async (e) => {
+    e.preventDefault();
+    if (!editingPhase || !isAdmin) return;
+    const trimmedPageName = editPhasePageName.trim();
+    const trimmedLabel = editPhaseLabel.trim();
+    if (!trimmedPageName || !trimmedLabel) {
+      showToast('⚠️ Phase Button Name and Phase Title cannot be empty');
+      return;
+    }
+    try {
+      setPhaseSaving(true);
+      const res = await ptmTemplateApi.updatePhase(editingPhase.key, {
+        pageName: trimmedPageName,
+        label: trimmedLabel,
+      });
+      if (!res?.success || !res?.data) {
+        showToast(res?.message || '❌ Failed to update phase');
+        return;
+      }
+      const updatedKey = editingPhase.key;
+      setEditingPhase(null);
+      await loadPhases();
+      if (selectedPhaseKey === updatedKey) {
+        await loadTemplates(updatedKey);
+      }
+      showToast(`✓ Phase "${res.data.pageName}" updated`);
+    } catch {
+      showToast('❌ Could not update phase');
+    } finally {
+      setPhaseSaving(false);
+    }
+  };
 
   const handleOpenAddModal = () => {
     if (!isAdmin) {
@@ -322,22 +432,22 @@ export default function PTMTemplateManager({
   // ── Phase Selector + Template List View ──
   return (
     <div className="space-y-4">
-      {/* 5 Phase Pages Navigation */}
+      {/* Phase Pages Navigation */}
       <div className="bg-white rounded-2xl p-2.5 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-[#ECEFF3] flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          {PTM_TEMPLATE_PHASES.map((phase) => {
+          {phases.map((phase) => {
             const isActive = selectedPhaseKey === phase.key;
             return (
               <button
                 key={phase.key}
                 type="button"
-                title={phase.label}
+                title={isAdmin ? `${phase.label} (Right-click to edit)` : phase.label}
                 onClick={() => setSelectedPhaseKey(phase.key)}
-                className={`px-5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap ${
-                  isActive
-                    ? 'bg-[#2563EB] text-white shadow-sm'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                }`}
+                onContextMenu={(e) => handlePhaseContextMenu(e, phase)}
+                className={`px-5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap ${isActive
+                  ? 'bg-[#2563EB] text-white shadow-sm'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
               >
                 {phase.pageName}
               </button>
@@ -348,27 +458,39 @@ export default function PTMTemplateManager({
         {isAdmin && (
           <button
             type="button"
-            onClick={handleOpenAddModal}
+            onClick={handleOpenAddPhaseModal}
             className="flex items-center gap-1.5 rounded-xl bg-[#2563EB] px-4 py-2 text-sm font-bold text-white hover:bg-blue-700 shadow-sm cursor-pointer shrink-0"
           >
             <Plus className="w-4 h-4" />
-            <span>Add Template</span>
+            <span>Add Phase</span>
           </button>
         )}
       </div>
 
       {/* Templates Table for Selected Phase */}
       <div className="bg-white rounded-2xl border border-[#ECEFF3] shadow-sm overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
+        <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <FileSpreadsheet className="w-5 h-5 text-blue-600" />
             <h2 className="text-base font-bold text-slate-900">
               {selectedPhaseMeta.pageName} — {selectedPhaseMeta.label}
             </h2>
           </div>
-          <span className="text-xs font-semibold text-slate-500">
-            {templates.length} {templates.length === 1 ? 'template' : 'templates'}
-          </span>
+          <div className="flex items-center gap-3 shrink-0">
+            <span className="text-xs font-semibold text-slate-500">
+              {templates.length} {templates.length === 1 ? 'template' : 'templates'}
+            </span>
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={handleOpenAddModal}
+                className="flex items-center gap-1.5 rounded-xl bg-[#2563EB] px-3.5 py-1.5 text-xs sm:text-sm font-bold text-white hover:bg-blue-700 shadow-sm cursor-pointer shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add Template</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {loading ? (
@@ -549,6 +671,138 @@ export default function PTMTemplateManager({
                     {saving ? 'Creating...' : 'Create Template'}
                   </button>
                 </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Phase Modal */}
+      {isAddPhaseModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="px-5 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <h3 className="text-sm font-extrabold text-slate-800">Add New Phase</h3>
+              <button
+                type="button"
+                onClick={() => setIsAddPhaseModalOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreatePhase} className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                  Phase Button Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newPhasePageName}
+                  onChange={(e) => setNewPhasePageName(e.target.value)}
+                  placeholder="e.g. Phase 6"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                  Phase Title / Label <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newPhaseLabel}
+                  onChange={(e) => setNewPhaseLabel(e.target.value)}
+                  placeholder="e.g. 6: Custom Phase"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddPhaseModalOpen(false)}
+                  className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={phaseSaving}
+                  className="rounded-xl bg-[#2563EB] px-4 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-60 cursor-pointer"
+                >
+                  {phaseSaving ? 'Creating...' : 'Create Phase'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Phase Popup (Right-Click) */}
+      {editingPhase && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="px-5 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <h3 className="text-sm font-extrabold text-slate-800">Edit Phase</h3>
+              <button
+                type="button"
+                onClick={() => setEditingPhase(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdatePhase} className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                  Phase Button Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editPhasePageName}
+                  onChange={(e) => setEditPhasePageName(e.target.value)}
+                  placeholder="e.g. Phase 1"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                  Phase Title / Label <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editPhaseLabel}
+                  onChange={(e) => setEditPhaseLabel(e.target.value)}
+                  placeholder="e.g. 1: Plan & Define"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingPhase(null)}
+                  className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={phaseSaving}
+                  className="rounded-xl bg-[#2563EB] px-4 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-60 cursor-pointer"
+                >
+                  {phaseSaving ? 'Saving...' : 'Save Phase'}
+                </button>
               </div>
             </form>
           </div>

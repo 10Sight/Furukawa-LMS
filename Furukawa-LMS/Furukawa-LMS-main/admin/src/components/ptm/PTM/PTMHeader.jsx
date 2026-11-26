@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { CalendarDays, ChevronDown, Check, Layers, FileText, Paperclip } from 'lucide-react';
+import { CalendarDays, ChevronDown, Check, Layers, FileText, Paperclip, X } from 'lucide-react';
 import CalendarDateInput from './CalendarDateInput';
 import SearchableLeaderInput from './SearchableLeaderInput';
 import { ptmTemplateApi } from '../../../pages/ptm/services/api';
@@ -482,22 +482,30 @@ export default function PTMHeader({
                 <td className="px-2 py-1.5 align-middle bg-white relative">
                   {(() => {
                     const currentPhase = String(headerInfo.phase || '').trim();
+                    const activePhases = Array.isArray(headerInfo.phases) && headerInfo.phases.length > 0
+                      ? headerInfo.phases.map((p) => String(p || '').trim()).filter(Boolean)
+                      : (currentPhase
+                          ? currentPhase.split(',').map((s) => s.trim()).filter(Boolean)
+                          : []);
                     const templatePhaseLabels = templatePhases.map((p) => p.label);
                     const phaseOptions = [...templatePhaseLabels, 'Not - Applicable', 'Other'];
                     const isPreset = phaseOptions.slice(0, -1).includes(currentPhase);
                     const isTemplateCapablePhase = templatePhaseLabels.includes(currentPhase);
+                    const isHeaderPhaseFrozen = !isCustomPhaseMode && activePhases.length > 0 && !phaseDropdownOpen;
                     const displayPhase = isCustomPhaseMode
                       ? 'Other (Manual Input)'
-                      : (isPreset ? currentPhase : 'Select Phase...');
+                      : (activePhases.length === 1
+                          ? activePhases[0]
+                          : (isPreset ? currentPhase : 'Select Phase...'));
 
                     const handleSelectPhaseOption = (opt) => {
                       if (opt === 'Other') {
                         setIsCustomPhaseMode(true);
-                        handleChange('phase', '');
+                        setHeaderInfo((prev) => ({ ...prev, phase: '', phases: [] }));
                         setPhaseDropdownOpen(false);
                       } else {
                         setIsCustomPhaseMode(false);
-                        handleChange('phase', opt);
+                        setHeaderInfo((prev) => ({ ...prev, phase: opt, phases: [opt] }));
                         if (onBulkFillPhase && opt) {
                           onBulkFillPhase(opt);
                         }
@@ -507,25 +515,86 @@ export default function PTMHeader({
                       }
                     };
 
+                    const handleRemoveHeaderPhase = (phaseToRemove) => {
+                      if (readOnly) return;
+                      const nextPhases = activePhases.filter((p) => p !== phaseToRemove);
+                      setIsCustomPhaseMode(false);
+                      setPhaseDropdownOpen(false);
+                      setHeaderInfo((prev) => ({
+                        ...prev,
+                        phases: nextPhases,
+                        phase: nextPhases.join(', '),
+                      }));
+                    };
+
                     return (
                       <div ref={phaseDropdownRef} className="relative flex flex-col gap-1 w-full">
-                        <button
-                          type="button"
-                          disabled={readOnly}
-                          aria-label="Phase"
-                          aria-haspopup="listbox"
-                          aria-expanded={phaseDropdownOpen}
-                          onClick={() => setPhaseDropdownOpen((prev) => !prev)}
-                          title={currentPhase || 'Select Phase'}
-                          className={`w-full flex items-center justify-between gap-1.5 cursor-pointer font-bold outline-none text-xs px-1.5 py-1 rounded-md transition-colors ${
-                            phaseDropdownOpen
-                              ? 'bg-blue-50/80 ring-1 ring-blue-400 !text-blue-800'
-                              : 'bg-transparent hover:bg-slate-50 text-slate-900 focus:bg-white focus:ring-1 focus:ring-blue-400'
-                          }`}
-                        >
-                          <span className="truncate">{displayPhase}</span>
-                          <ChevronDown className={`h-3.5 w-3.5 shrink-0 !text-slate-500 transition-transform duration-200 ${phaseDropdownOpen ? 'rotate-180 !text-blue-600' : ''}`} />
-                        </button>
+                        {isHeaderPhaseFrozen ? (
+                          <div className="w-full flex items-center justify-between gap-1 px-1.5 py-1 rounded-md bg-slate-50/80 border border-slate-200/80">
+                            {activePhases.length === 1 ? (
+                              <>
+                                <span
+                                  title={activePhases[0]}
+                                  className="truncate font-bold text-xs text-slate-900 select-none"
+                                >
+                                  {activePhases[0]}
+                                </span>
+                                {!readOnly && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveHeaderPhase(activePhases[0])}
+                                    title={`Remove ${activePhases[0]}`}
+                                    aria-label={`Remove ${activePhases[0]}`}
+                                    className="p-0.5 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer shrink-0 transition-colors"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </>
+                            ) : (
+                              <div className="flex flex-wrap items-center gap-1 w-full">
+                                {activePhases.map((ph) => (
+                                  <span
+                                    key={ph}
+                                    title={ph}
+                                    className="inline-flex items-center gap-1 rounded bg-white border border-slate-200 px-1.5 py-0.5 text-[11px] font-bold text-slate-800 max-w-full"
+                                  >
+                                    <span className="truncate max-w-[140px]">{ph}</span>
+                                    {!readOnly && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveHeaderPhase(ph)}
+                                        title={`Remove ${ph}`}
+                                        aria-label={`Remove ${ph}`}
+                                        className="text-slate-400 hover:text-rose-600 cursor-pointer shrink-0 leading-none"
+                                      >
+                                        <X className="w-3 h-3" />
+                                      </button>
+                                    )}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={readOnly}
+                            aria-label="Phase"
+                            aria-haspopup="listbox"
+                            aria-expanded={phaseDropdownOpen}
+                            onClick={() => setPhaseDropdownOpen((prev) => !prev)}
+                            title={currentPhase || 'Select Phase'}
+                            className={`w-full flex items-center justify-between gap-1.5 cursor-pointer font-bold outline-none text-xs px-1.5 py-1 rounded-md transition-colors ${
+                              phaseDropdownOpen
+                                ? 'bg-blue-50/80 ring-1 ring-blue-400 !text-blue-800'
+                                : 'bg-transparent hover:bg-slate-50 text-slate-900 focus:bg-white focus:ring-1 focus:ring-blue-400'
+                            }`}
+                          >
+                            <span className="truncate">{displayPhase}</span>
+                            <ChevronDown className={`h-3.5 w-3.5 shrink-0 !text-slate-500 transition-transform duration-200 ${phaseDropdownOpen ? 'rotate-180 !text-blue-600' : ''}`} />
+                          </button>
+                        )}
 
                         {phaseDropdownOpen && (
                           <div className="absolute right-0 top-full mt-1.5 z-[120] w-72 rounded-xl border border-slate-200/90 bg-white shadow-[0_14px_34px_rgba(15,23,42,0.14)] overflow-hidden text-left">

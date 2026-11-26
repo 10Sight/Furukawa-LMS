@@ -671,13 +671,12 @@ function CompactDateCell({ value, onChange, readOnly = false, smallText = false 
                   key={cellIso}
                   type="button"
                   onClick={(e) => selectDay(dayNum, e)}
-                  className={`rounded-md py-1 text-center text-[11.5px] transition-colors cursor-pointer font-medium ${
-                    isSelected
-                      ? 'bg-blue-600 font-bold text-white shadow-xs'
-                      : isToday
-                        ? 'border border-blue-400 text-blue-700 font-semibold hover:bg-blue-50'
-                        : 'text-slate-700 hover:bg-blue-50 hover:text-blue-700'
-                  }`}
+                  className={`rounded-md py-1 text-center text-[11.5px] transition-colors cursor-pointer font-medium ${isSelected
+                    ? 'bg-blue-600 font-bold text-white shadow-xs'
+                    : isToday
+                      ? 'border border-blue-400 text-blue-700 font-semibold hover:bg-blue-50'
+                      : 'text-slate-700 hover:bg-blue-50 hover:text-blue-700'
+                    }`}
                 >
                   {dayNum}
                 </button>
@@ -770,8 +769,8 @@ function DurationMinCell({ value, readOnly, onChange, cellRef, requiredActionAll
         tabIndex={requiredActionAllowed ? 0 : undefined}
         onClick={handleOpenWatch}
         className={`group/watch w-full py-1 px-1 flex items-center justify-center gap-1.5 text-[14px] font-semibold rounded transition-all cursor-pointer select-none whitespace-nowrap ${requiredActionAllowed
-            ? 'border border-red-500 bg-red-50 text-red-700'
-            : 'text-slate-800 hover:bg-blue-50/70'
+          ? 'border border-red-500 bg-red-50 text-red-700'
+          : 'text-slate-800 hover:bg-blue-50/70'
           }`}
         title="Click to select duration via watch (HH:MM)"
       >
@@ -835,7 +834,7 @@ export default function PDCASheet({
   useEffect(() => {
     fetchPdcaSections().then((data) => {
       if (Array.isArray(data) && data.length) setDbSections(data);
-    }).catch(() => {});
+    }).catch(() => { });
   }, []);
   const effectiveUser = currentUser || userContext?.user;
   const lpaDefaultUnit = isLpaObservationSheet
@@ -1317,6 +1316,7 @@ export default function PDCASheet({
   const [sheetScrollEl, setSheetScrollEl] = useState(null);
   const stickyXScrollRef = useRef(null);
   const sheetTableRef = useRef(null);
+  const sheetTheadRef = useRef(null);
   const isSyncingHorizontalScrollRef = useRef(false);
   const [sheetScrollMetrics, setSheetScrollMetrics] = useState({ scrollWidth: 0, clientWidth: 0 });
   const hasHorizontalOverflow = sheetScrollMetrics.scrollWidth > sheetScrollMetrics.clientWidth + 1;
@@ -1414,6 +1414,49 @@ export default function PDCASheet({
       stickyBar.removeEventListener('scroll', handleStickyBarScroll);
     };
   }, [sheetScrollEl, hasHorizontalOverflow]);
+
+  // Keep table column headings pinned at the top of the vertical scroll container
+  useEffect(() => {
+    const bodyEl = bodyScrollRef.current;
+    const tableEl = sheetTableRef.current;
+    const theadEl = sheetTheadRef.current;
+    if (!bodyEl || !tableEl || !theadEl) return undefined;
+
+    let rafId = 0;
+    const updateStickyHeader = () => {
+      rafId = 0;
+      const containerTop = bodyEl.getBoundingClientRect().top;
+      const tableTop = tableEl.getBoundingClientRect().top;
+      const maxOffset = Math.max(0, tableEl.offsetHeight - theadEl.offsetHeight);
+      const offset = Math.min(maxOffset, Math.max(0, containerTop - tableTop));
+      theadEl.style.transform = offset > 0.5 ? `translate3d(0, ${offset}px, 0)` : '';
+    };
+
+    const scheduleUpdate = () => {
+      if (!rafId) {
+        rafId = requestAnimationFrame(updateStickyHeader);
+      }
+    };
+
+    updateStickyHeader();
+    bodyEl.addEventListener('scroll', scheduleUpdate, { passive: true });
+    window.addEventListener('resize', scheduleUpdate, { passive: true });
+
+    let resizeObserver;
+    if (typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(scheduleUpdate);
+      resizeObserver.observe(bodyEl);
+      resizeObserver.observe(tableEl);
+    }
+
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      bodyEl.removeEventListener('scroll', scheduleUpdate);
+      window.removeEventListener('resize', scheduleUpdate);
+      if (resizeObserver) resizeObserver.disconnect();
+      theadEl.style.transform = '';
+    };
+  }, [sheetScrollEl]);
 
   // Baseline snapshot ref to detect unsaved edits during the current editing session
   const initialSnapshotRef = useRef(serializeSheet(initialRows, initialHeaderInfo));
@@ -2085,7 +2128,7 @@ export default function PDCASheet({
               headerInfo: finalHeader
             }));
           }
-        } catch {}
+        } catch { }
       } else if (!localHasContent && Array.isArray(savedSheet.rows) && savedSheet.rows.length > 0) {
         finalRows = savedSheet.rows.map(normalizeRow);
         setRows(finalRows);
@@ -2249,148 +2292,148 @@ export default function PDCASheet({
     }
     if (false) {
       const missing = [];
-    for (let i = 0; i < rows.length; i++) {
-      const r = rows[i];
-      if (!r.date?.trim() && !r.observation?.trim()) {
-        continue;
-      }
-      const notConfirmed = ['Not - Confirmed', 'Not-Confirmed'].includes((r.confirmation || '').trim()) && getMissingConfirmationMandatoryFields(r).length === 0;
-      if (notConfirmed && !r.instruction?.trim()) {
-        const reasonInput = responsibleConfirmationReasonRefs.current[i];
-        reasonInput?.focus();
-        reasonInput?.reportValidity();
-        showToast(`Row ${i + 1}: Please enter the required Responsible Person Confirmation reason.`);
-        return false;
-      }
-      if (r.responseDate?.trim() && !hasValidStdDuration(r.stdDurationMin ?? r.stdDuration)) {
-        durationCellRefs.current[i]?.focus();
-        showToast(`Row ${i + 1}: Enter a valid Std. Duration in min when Response Date is filled.`);
-        return false;
-      }
-      if (Array.isArray(r.revisedDates)) {
-        for (let revisionIndex = 0; revisionIndex < r.revisedDates.length; revisionIndex++) {
-          const revision = r.revisedDates[revisionIndex];
-          const reason = typeof revision === 'object' && revision !== null ? (revision.reason || '') : '';
-          if (!reason.trim()) {
-            const reasonInput = revisionReasonRefs.current[`${i}:${revisionIndex}`];
-            reasonInput?.focus();
-            reasonInput?.reportValidity();
-            showToast(`Row ${i + 1}: Please enter a reason for revision ${revisionIndex + 1}.`);
-            return false;
-          }
-        }
-      }
-      if (Array.isArray(r.revisedDates) && r.revisedDates.length > 0 && !r.responseDate?.trim()) {
-        showToast(`Row ${i + 1}: Response Date is required when revisions exist.`);
-        return false;
-      }
-
-      // Default unit/date if row has an observation so draft can be safely saved
-      if (r.observation?.trim()) {
-        if (!isRowStartedForSave(r, { defaultUnit: lpaDefaultUnit, defaultDepartment: lpaDefaultDepartment })) {
-        continue;
-      }
-      const rowForCheck = r.date?.trim() && !r.status?.trim() ? { ...r, status: 'Not-Started' } : r;
-      const missingSave = getMissingSaveMandatoryFields(rowForCheck);
-      if (missingSave.length > 0) {
-        setAlertModal({
-          isOpen: true,
-          type: 'send-mail-warning',
-          title: 'Cannot Send Email',
-          rowNumber: i + 1,
-          missingFields: missingSave,
-          message: `Cannot send mail because Row ${i + 1} has mandatory column(s) required to save the sheet that are not filled: ${missingSave.join(', ')}.`,
-          confirmText: 'Understood'
-        });
-        showToast(`Row ${i + 1}: Mandatory columns (${missingSave.join(', ')}) required before sending mail.`);
-        return;
-      }
-      const hasConfirmationSelected = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((r.confirmation || '').trim());
-      if (false && hasConfirmationSelected) {
-        const missingForConf = getMissingConfirmationMandatoryFields(rowForCheck);
-        if (missingForConf.length > 0) {
-          setAlertModal({
-            isOpen: true,
-            type: 'mandatory',
-            title: 'Mandatory Columns Required for Confirmation',
-            rowNumber: i + 1,
-            missingFields: missingForConf,
-            message: `Row ${i + 1} has Confirmation selected but is missing mandatory columns: ${missingForConf.join(', ')}.`,
-            confirmText: "I'll fill them"
-          });
-          showToast(`Row ${i + 1}: Mandatory column${missingForConf.length > 1 ? 's' : ''} (${missingForConf.join(', ')}) required for Confirmation.`);
-          return;
-        }
-      }
-    }
-    if (false) {
       for (let i = 0; i < rows.length; i++) {
         const r = rows[i];
-        const isCompletedInner = false;
-        if (!r.date?.trim()) {
-          r.date = formDate || new Date().toISOString().split('T')[0];
+        if (!r.date?.trim() && !r.observation?.trim()) {
+          continue;
         }
-        if (!r.unit?.trim()) {
-          r.unit = topic?.plant || 'Bawal';
-        }
-      }
-
-      // Only enforce strict completion requirements when row is marked 'Done' or 'Confirmed'
-      const isCompleted = r.status === 'Done' || r.confirmation === 'Confirmed';
-      if (false) {
-        const missing = [];
-        if (!r.date?.trim()) missing.push('Date');
-        if (!r.shift?.trim()) missing.push('Shift');
-        const unitVal = (r.unit || (Array.isArray(r.units) && r.units[0]) || '').trim();
-        if (!unitVal) missing.push('Unit');
-        const deptVal = (r.department || (Array.isArray(r.departments) && r.departments[0]) || '').trim();
-        if (!deptVal) missing.push('Department');
-        if (!r.observation?.trim()) missing.push('Observation');
-        const staffVal = (r.staffName || r.staffEmployee || (Array.isArray(r.staffEmployees) && (r.staffEmployees[0]?.name || r.staffEmployees[0]?.fullName)) || '').trim();
-        if (!staffVal) missing.push('Staff name');
-      }
-      const hasConfirmationSelected = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((r.confirmation || '').trim());
-      if (false && hasConfirmationSelected) {
-        const missingForConf = getMissingConfirmationMandatoryFields(r);
-        if (missingForConf.length > 0) {
-          setAlertModal({
-            isOpen: true,
-            type: 'mandatory',
-            title: 'Mandatory Columns Required for Confirmation',
-            rowNumber: i + 1,
-            missingFields: missingForConf,
-            message: `Row ${i + 1} has Confirmation selected but is missing mandatory columns: ${missingForConf.join(', ')}.`,
-            confirmText: "I'll fill them"
-          });
-          showToast(`Row ${i + 1}: Mandatory column${missingForConf.length > 1 ? 's' : ''} (${missingForConf.join(', ')}) required for Confirmation.`);
+        const notConfirmed = ['Not - Confirmed', 'Not-Confirmed'].includes((r.confirmation || '').trim()) && getMissingConfirmationMandatoryFields(r).length === 0;
+        if (notConfirmed && !r.instruction?.trim()) {
+          const reasonInput = responsibleConfirmationReasonRefs.current[i];
+          reasonInput?.focus();
+          reasonInput?.reportValidity();
+          showToast(`Row ${i + 1}: Please enter the required Responsible Person Confirmation reason.`);
           return false;
         }
-      }
-      if (false) {
-        const missing = [];
-        if (!r.date?.trim()) missing.push('Date');
-        if (!r.shift?.trim()) missing.push('Shift');
-        const unitVal = (r.unit || (Array.isArray(r.units) && r.units[0]) || '').trim();
-        if (!unitVal) missing.push('Unit');
-        const deptVal = (r.department || (Array.isArray(r.departments) && r.departments[0]) || '').trim();
-        if (!deptVal) missing.push('Department');
-        if (!r.observation?.trim()) missing.push('Observation');
-        const staffVal = (r.staffName || r.staffEmployee || (Array.isArray(r.staffEmployees) && (r.staffEmployees[0]?.name || r.staffEmployees[0]?.fullName)) || '').trim();
-        if (!staffVal) missing.push('Staff name');
-
-        if (missing.length > 0) {
-          setAlertModal({
-            isOpen: true,
-            type: 'mandatory',
-            title: 'Mandatory Columns Required for Completed Row',
-            rowNumber: i + 1,
-            missingFields: missing,
-            message: `Row ${i + 1} is marked as completed but has missing mandatory columns: ${missing.join(', ')}.`,
-            confirmText: "I'll fill them"
-          });
-          showToast(`Row ${i + 1}: Mandatory column${missing.length > 1 ? 's' : ''} (${missing.join(', ')}) required to complete.`);
+        if (r.responseDate?.trim() && !hasValidStdDuration(r.stdDurationMin ?? r.stdDuration)) {
+          durationCellRefs.current[i]?.focus();
+          showToast(`Row ${i + 1}: Enter a valid Std. Duration in min when Response Date is filled.`);
+          return false;
         }
-      }
+        if (Array.isArray(r.revisedDates)) {
+          for (let revisionIndex = 0; revisionIndex < r.revisedDates.length; revisionIndex++) {
+            const revision = r.revisedDates[revisionIndex];
+            const reason = typeof revision === 'object' && revision !== null ? (revision.reason || '') : '';
+            if (!reason.trim()) {
+              const reasonInput = revisionReasonRefs.current[`${i}:${revisionIndex}`];
+              reasonInput?.focus();
+              reasonInput?.reportValidity();
+              showToast(`Row ${i + 1}: Please enter a reason for revision ${revisionIndex + 1}.`);
+              return false;
+            }
+          }
+        }
+        if (Array.isArray(r.revisedDates) && r.revisedDates.length > 0 && !r.responseDate?.trim()) {
+          showToast(`Row ${i + 1}: Response Date is required when revisions exist.`);
+          return false;
+        }
+
+        // Default unit/date if row has an observation so draft can be safely saved
+        if (r.observation?.trim()) {
+          if (!isRowStartedForSave(r, { defaultUnit: lpaDefaultUnit, defaultDepartment: lpaDefaultDepartment })) {
+            continue;
+          }
+          const rowForCheck = r.date?.trim() && !r.status?.trim() ? { ...r, status: 'Not-Started' } : r;
+          const missingSave = getMissingSaveMandatoryFields(rowForCheck);
+          if (missingSave.length > 0) {
+            setAlertModal({
+              isOpen: true,
+              type: 'send-mail-warning',
+              title: 'Cannot Send Email',
+              rowNumber: i + 1,
+              missingFields: missingSave,
+              message: `Cannot send mail because Row ${i + 1} has mandatory column(s) required to save the sheet that are not filled: ${missingSave.join(', ')}.`,
+              confirmText: 'Understood'
+            });
+            showToast(`Row ${i + 1}: Mandatory columns (${missingSave.join(', ')}) required before sending mail.`);
+            return;
+          }
+          const hasConfirmationSelected = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((r.confirmation || '').trim());
+          if (false && hasConfirmationSelected) {
+            const missingForConf = getMissingConfirmationMandatoryFields(rowForCheck);
+            if (missingForConf.length > 0) {
+              setAlertModal({
+                isOpen: true,
+                type: 'mandatory',
+                title: 'Mandatory Columns Required for Confirmation',
+                rowNumber: i + 1,
+                missingFields: missingForConf,
+                message: `Row ${i + 1} has Confirmation selected but is missing mandatory columns: ${missingForConf.join(', ')}.`,
+                confirmText: "I'll fill them"
+              });
+              showToast(`Row ${i + 1}: Mandatory column${missingForConf.length > 1 ? 's' : ''} (${missingForConf.join(', ')}) required for Confirmation.`);
+              return;
+            }
+          }
+        }
+        if (false) {
+          for (let i = 0; i < rows.length; i++) {
+            const r = rows[i];
+            const isCompletedInner = false;
+            if (!r.date?.trim()) {
+              r.date = formDate || new Date().toISOString().split('T')[0];
+            }
+            if (!r.unit?.trim()) {
+              r.unit = topic?.plant || 'Bawal';
+            }
+          }
+
+          // Only enforce strict completion requirements when row is marked 'Done' or 'Confirmed'
+          const isCompleted = r.status === 'Done' || r.confirmation === 'Confirmed';
+          if (false) {
+            const missing = [];
+            if (!r.date?.trim()) missing.push('Date');
+            if (!r.shift?.trim()) missing.push('Shift');
+            const unitVal = (r.unit || (Array.isArray(r.units) && r.units[0]) || '').trim();
+            if (!unitVal) missing.push('Unit');
+            const deptVal = (r.department || (Array.isArray(r.departments) && r.departments[0]) || '').trim();
+            if (!deptVal) missing.push('Department');
+            if (!r.observation?.trim()) missing.push('Observation');
+            const staffVal = (r.staffName || r.staffEmployee || (Array.isArray(r.staffEmployees) && (r.staffEmployees[0]?.name || r.staffEmployees[0]?.fullName)) || '').trim();
+            if (!staffVal) missing.push('Staff name');
+          }
+          const hasConfirmationSelected = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((r.confirmation || '').trim());
+          if (false && hasConfirmationSelected) {
+            const missingForConf = getMissingConfirmationMandatoryFields(r);
+            if (missingForConf.length > 0) {
+              setAlertModal({
+                isOpen: true,
+                type: 'mandatory',
+                title: 'Mandatory Columns Required for Confirmation',
+                rowNumber: i + 1,
+                missingFields: missingForConf,
+                message: `Row ${i + 1} has Confirmation selected but is missing mandatory columns: ${missingForConf.join(', ')}.`,
+                confirmText: "I'll fill them"
+              });
+              showToast(`Row ${i + 1}: Mandatory column${missingForConf.length > 1 ? 's' : ''} (${missingForConf.join(', ')}) required for Confirmation.`);
+              return false;
+            }
+          }
+          if (false) {
+            const missing = [];
+            if (!r.date?.trim()) missing.push('Date');
+            if (!r.shift?.trim()) missing.push('Shift');
+            const unitVal = (r.unit || (Array.isArray(r.units) && r.units[0]) || '').trim();
+            if (!unitVal) missing.push('Unit');
+            const deptVal = (r.department || (Array.isArray(r.departments) && r.departments[0]) || '').trim();
+            if (!deptVal) missing.push('Department');
+            if (!r.observation?.trim()) missing.push('Observation');
+            const staffVal = (r.staffName || r.staffEmployee || (Array.isArray(r.staffEmployees) && (r.staffEmployees[0]?.name || r.staffEmployees[0]?.fullName)) || '').trim();
+            if (!staffVal) missing.push('Staff name');
+
+            if (missing.length > 0) {
+              setAlertModal({
+                isOpen: true,
+                type: 'mandatory',
+                title: 'Mandatory Columns Required for Completed Row',
+                rowNumber: i + 1,
+                missingFields: missing,
+                message: `Row ${i + 1} is marked as completed but has missing mandatory columns: ${missing.join(', ')}.`,
+                confirmText: "I'll fill them"
+              });
+              showToast(`Row ${i + 1}: Mandatory column${missing.length > 1 ? 's' : ''} (${missing.join(', ')}) required to complete.`);
+            }
+          }
           return false;
         }
       }
@@ -2616,91 +2659,91 @@ export default function PDCASheet({
         const r = rows[i];
         const isCompletedInner = false;
         if (!r.date?.trim()) {
-        continue;
-      }
-      const hasContent = Boolean(
-        r.date?.trim() ||
-        r.shift?.trim() ||
-        r.lineArea?.trim() ||
-        (Array.isArray(r.lineAreas) && r.lineAreas.some(l => l?.lineArea?.trim())) ||
-        r.observation?.trim() ||
-        r.imageBefore ||
-        (Array.isArray(r.imagesBefore) && r.imagesBefore.length > 0) ||
-        r.rootCause?.trim() ||
-        r.actionTaken?.trim() ||
-        r.counterMeasure?.trim() ||
-        r.imageAfter ||
-        (Array.isArray(r.imagesAfter) && r.imagesAfter.length > 0) ||
-        r.responseDate?.trim() ||
-        r.unit?.trim() ||
-        (r.respUnit || r.responsiblePersonUnit || '').trim() ||
-        r.department?.trim() ||
-        (Array.isArray(r.departments) && r.departments.some(d => d?.trim())) ||
-        (Array.isArray(r.sections) && r.sections.some(s => s?.section?.trim())) ||
-        r.staffEmployee?.trim() ||
-        r.staffName?.trim() ||
-        r.cftTopic?.trim() ||
-        r.responsiblePersonConfirmation?.trim()
-      );
-      if (hasContent) {
-        const missing = [];
-        if (!r.date?.trim()) missing.push('Date');
-        if (!r.shift?.trim()) missing.push('Shift');
-        if (!r.status?.trim()) missing.push('Status');
-        const unitVal = (r.unit || (Array.isArray(r.units) && r.units[0]) || '').trim();
-        if (!unitVal) missing.push('Unit');
-        const deptVal = (r.department || (Array.isArray(r.departments) && r.departments[0]) || '').trim();
-        if (!deptVal) missing.push('Department');
-        if (!r.observation?.trim()) missing.push('Observation');
-        const staffVal = (r.staffName || r.staffEmployee || (Array.isArray(r.staffEmployees) && (r.staffEmployees[0]?.name || r.staffEmployees[0]?.fullName)) || '').trim();
-        if (!staffVal) missing.push('Staff name');
-      }
-      const hasConfirmationSelected = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((r.confirmation || '').trim());
-      if (false && hasConfirmationSelected) {
-        const missingForConf = getMissingConfirmationMandatoryFields(r);
-        if (missingForConf.length > 0) {
-          setAlertModal({
-            isOpen: true,
-            type: 'mandatory',
-            title: 'Mandatory Columns Required for Confirmation',
-            rowNumber: i + 1,
-            missingFields: missingForConf,
-            message: `Row ${i + 1} has Confirmation selected but is missing mandatory columns: ${missingForConf.join(', ')}.`,
-            confirmText: "I'll fill them"
-          });
-          showToast(`Row ${i + 1}: Mandatory column${missingForConf.length > 1 ? 's' : ''} (${missingForConf.join(', ')}) required for Confirmation.`);
-          return false;
+          continue;
         }
-      }
-      if (false) {
-        const missing = [];
-        if (!r.date?.trim()) missing.push('Date');
-        if (!r.shift?.trim()) missing.push('Shift');
-        const unitVal = (r.unit || (Array.isArray(r.units) && r.units[0]) || '').trim();
-        if (!unitVal) missing.push('Unit');
-        const deptVal = (r.department || (Array.isArray(r.departments) && r.departments[0]) || '').trim();
-        if (!deptVal) missing.push('Department');
-        if (!r.observation?.trim()) missing.push('Observation');
-        const staffVal = (r.staffName || r.staffEmployee || (Array.isArray(r.staffEmployees) && (r.staffEmployees[0]?.name || r.staffEmployees[0]?.fullName)) || '').trim();
-        if (!staffVal) missing.push('Staff name');
+        const hasContent = Boolean(
+          r.date?.trim() ||
+          r.shift?.trim() ||
+          r.lineArea?.trim() ||
+          (Array.isArray(r.lineAreas) && r.lineAreas.some(l => l?.lineArea?.trim())) ||
+          r.observation?.trim() ||
+          r.imageBefore ||
+          (Array.isArray(r.imagesBefore) && r.imagesBefore.length > 0) ||
+          r.rootCause?.trim() ||
+          r.actionTaken?.trim() ||
+          r.counterMeasure?.trim() ||
+          r.imageAfter ||
+          (Array.isArray(r.imagesAfter) && r.imagesAfter.length > 0) ||
+          r.responseDate?.trim() ||
+          r.unit?.trim() ||
+          (r.respUnit || r.responsiblePersonUnit || '').trim() ||
+          r.department?.trim() ||
+          (Array.isArray(r.departments) && r.departments.some(d => d?.trim())) ||
+          (Array.isArray(r.sections) && r.sections.some(s => s?.section?.trim())) ||
+          r.staffEmployee?.trim() ||
+          r.staffName?.trim() ||
+          r.cftTopic?.trim() ||
+          r.responsiblePersonConfirmation?.trim()
+        );
+        if (hasContent) {
+          const missing = [];
+          if (!r.date?.trim()) missing.push('Date');
+          if (!r.shift?.trim()) missing.push('Shift');
+          if (!r.status?.trim()) missing.push('Status');
+          const unitVal = (r.unit || (Array.isArray(r.units) && r.units[0]) || '').trim();
+          if (!unitVal) missing.push('Unit');
+          const deptVal = (r.department || (Array.isArray(r.departments) && r.departments[0]) || '').trim();
+          if (!deptVal) missing.push('Department');
+          if (!r.observation?.trim()) missing.push('Observation');
+          const staffVal = (r.staffName || r.staffEmployee || (Array.isArray(r.staffEmployees) && (r.staffEmployees[0]?.name || r.staffEmployees[0]?.fullName)) || '').trim();
+          if (!staffVal) missing.push('Staff name');
+        }
+        const hasConfirmationSelected = ['Confirmed', 'Confirm', 'Not - Confirmed', 'Not-Confirmed', 'Not-Confirm'].includes((r.confirmation || '').trim());
+        if (false && hasConfirmationSelected) {
+          const missingForConf = getMissingConfirmationMandatoryFields(r);
+          if (missingForConf.length > 0) {
+            setAlertModal({
+              isOpen: true,
+              type: 'mandatory',
+              title: 'Mandatory Columns Required for Confirmation',
+              rowNumber: i + 1,
+              missingFields: missingForConf,
+              message: `Row ${i + 1} has Confirmation selected but is missing mandatory columns: ${missingForConf.join(', ')}.`,
+              confirmText: "I'll fill them"
+            });
+            showToast(`Row ${i + 1}: Mandatory column${missingForConf.length > 1 ? 's' : ''} (${missingForConf.join(', ')}) required for Confirmation.`);
+            return false;
+          }
+        }
+        if (false) {
+          const missing = [];
+          if (!r.date?.trim()) missing.push('Date');
+          if (!r.shift?.trim()) missing.push('Shift');
+          const unitVal = (r.unit || (Array.isArray(r.units) && r.units[0]) || '').trim();
+          if (!unitVal) missing.push('Unit');
+          const deptVal = (r.department || (Array.isArray(r.departments) && r.departments[0]) || '').trim();
+          if (!deptVal) missing.push('Department');
+          if (!r.observation?.trim()) missing.push('Observation');
+          const staffVal = (r.staffName || r.staffEmployee || (Array.isArray(r.staffEmployees) && (r.staffEmployees[0]?.name || r.staffEmployees[0]?.fullName)) || '').trim();
+          if (!staffVal) missing.push('Staff name');
 
-        if (missing.length > 0) {
-          setAlertModal({
-            isOpen: true,
-            type: 'send-mail-warning',
-            title: 'Cannot Send Email',
-            rowNumber: i + 1,
-            missingFields: missing,
-            message: `Cannot send mail because Row ${i + 1} has mandatory column(s) that are not filled. Please fill all mandatory columns and save before sending email.`,
-            confirmText: 'Understood'
-          });
-          showToast(`Row ${i + 1}: Mandatory columns (${missing.join(', ')}) required before sending mail.`);
-          return;
+          if (missing.length > 0) {
+            setAlertModal({
+              isOpen: true,
+              type: 'send-mail-warning',
+              title: 'Cannot Send Email',
+              rowNumber: i + 1,
+              missingFields: missing,
+              message: `Cannot send mail because Row ${i + 1} has mandatory column(s) that are not filled. Please fill all mandatory columns and save before sending email.`,
+              confirmText: 'Understood'
+            });
+            showToast(`Row ${i + 1}: Mandatory columns (${missing.join(', ')}) required before sending mail.`);
+            return;
+          }
         }
       }
     }
-      }
-      setIsSendMailOpen(true);
+    setIsSendMailOpen(true);
   };
 
   // Discard all unsaved edits made during the session and navigate back immediately
@@ -4473,8 +4516,8 @@ export default function PDCASheet({
     const removedLatestRevision = dateIndex === revisions.length - 1;
     const latestDate = removedLatestRevision
       ? (remaining.length > 0
-          ? (remaining[remaining.length - 1]?.responseDate || remaining[remaining.length - 1]?.date || priorDate)
-          : (priorDate || curr.initialResponseDate || curr.responseDate || ''))
+        ? (remaining[remaining.length - 1]?.responseDate || remaining[remaining.length - 1]?.date || priorDate)
+        : (priorDate || curr.initialResponseDate || curr.responseDate || ''))
       : (curr.responseDate || revisions[revisions.length - 1]?.date || curr.initialResponseDate || '');
     const tempRow = {
       ...curr,
@@ -5688,1579 +5731,1547 @@ export default function PDCASheet({
 
       {/* Scrollable body: graph + sheet scroll under the fixed toolbar */}
       <div ref={bodyScrollRef} className="pdca-body-scroll-container w-full min-w-0 flex-1 min-h-0 flex flex-col gap-2 overflow-x-hidden overflow-y-auto">
-      {/* Monthly PDCA Status Analytics Graph */}
-      <PDCAGraphSection
-        rows={rows}
-        currentDate={formDate}
-        topic={topic}
-      />
+        {/* Monthly PDCA Status Analytics Graph */}
+        <PDCAGraphSection
+          rows={rows}
+          currentDate={formDate}
+          topic={topic}
+        />
 
-      {/* Self PDCA Notice Banner */}
-      {isSelfView && (
-        <div className="w-full px-4 py-2 bg-blue-50 border border-blue-200 rounded-xl text-blue-800 text-xs font-semibold flex items-center justify-between shadow-2xs">
-          <span>Self PDCA View: Displaying only points assigned to <strong>{effectiveUser?.name || 'you'}</strong></span>
-          <span className="text-[11px] bg-blue-100/80 text-blue-900 px-2 py-0.5 rounded-md font-bold">Personal Work Queue</span>
-        </div>
-      )}
+        {/* Self PDCA Notice Banner */}
+        {isSelfView && (
+          <div className="w-full px-4 py-2 bg-blue-50 border border-blue-200 rounded-xl text-blue-800 text-xs font-semibold flex items-center justify-between shadow-2xs">
+            <span>Self PDCA View: Displaying only points assigned to <strong>{effectiveUser?.name || 'you'}</strong></span>
+            <span className="text-[11px] bg-blue-100/80 text-blue-900 px-2 py-0.5 rounded-md font-bold">Personal Work Queue</span>
+          </div>
+        )}
 
-      {/* Spreadsheet Matrix Table Grid */}
-      <div className="w-full min-w-0 flex-auto shrink-0 flex flex-col">
-      <div ref={setSheetScrollEl} className="pdca-sheet-scroll-container w-full min-w-0 flex-auto shrink-0 min-h-[320px] bg-white border border-[#B0BEC5] shadow-xs overflow-auto max-h-[calc(100vh-62px)]">
-        <table ref={sheetTableRef} className="w-full min-w-max text-left table-fixed border-separate border-spacing-0 border-t border-l border-[#B0BEC5] text-[11px]">
-          <colgroup>
-            <col style={{ width: `${dateColWidth}px`, minWidth: `${dateColWidth}px` }} />
-            <col style={{ width: '38px', minWidth: '34px' }} />
-            <col style={{ width: '34px', minWidth: '30px' }} />
-            <col style={{ width: '124px', minWidth: '118px' }} />
-            <col style={{ width: '115px', minWidth: '100px' }} />
-            <col style={{ width: `${departmentColWidth}px`, minWidth: `${departmentColWidth}px` }} />
-            <col style={{ width: `${sectionColWidth}px`, minWidth: `${sectionColWidth}px` }} />
-            <col style={{ width: `${lineAreaColWidth}px`, minWidth: `${lineAreaColWidth}px` }} />
-            <col style={{ width: `${observationWidth}px`, minWidth: `${observationWidth}px` }} />
-            <col style={{ width: `${imageBeforeColWidth}px`, minWidth: `${imageBeforeColWidth}px` }} />
-            <col style={{ width: `${rootCauseWidth}px`, minWidth: `${rootCauseWidth}px` }} />
-            <col style={{ width: `${actionTakenWidth}px`, minWidth: `${actionTakenWidth}px` }} />
-            <col style={{ width: `${counterMeasureWidth}px`, minWidth: `${counterMeasureWidth}px` }} />
-            <col style={{ width: `${imageAfterColWidth}px`, minWidth: `${imageAfterColWidth}px` }} />
-            <col style={{ width: '115px', minWidth: '105px' }} />
-            <col style={{ width: '105px', minWidth: '95px' }} />
-            <col style={{ width: `${revisedColWidth}px`, minWidth: `${revisedColWidth}px`, maxWidth: `${revisedColWidth}px` }} />
-            <col style={{ width: '110px', minWidth: '100px' }} />
-            <col style={{ width: '145px', minWidth: '135px' }} />
-            <col style={{ width: '160px', minWidth: '150px' }} />
-            <col style={{ width: '120px', minWidth: '110px' }} />
-            <col style={{ width: '150px', minWidth: '140px' }} />
-            {canShowRowActions && <col style={{ width: '55px', minWidth: '45px' }} />}
-          </colgroup>
+        {/* Spreadsheet Matrix Table Grid */}
+        <style>{`
+        .pdca-sheet-scroll-container {
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+        }
+        .pdca-sheet-scroll-container::-webkit-scrollbar {
+          display: none !important;
+          width: 0 !important;
+          height: 0 !important;
+        }
+      `}</style>
+        <div className="w-full min-w-0 flex-auto shrink-0 flex flex-col">
+          <div ref={setSheetScrollEl} className="pdca-sheet-scroll-container w-full min-w-0 flex-auto shrink-0 min-h-[320px] bg-white border border-[#B0BEC5] shadow-xs overflow-x-auto overflow-y-visible">
+            <table ref={sheetTableRef} className="w-full min-w-max text-left table-fixed border-separate border-spacing-0 border-t border-l border-[#B0BEC5] text-[11px]">
+              <colgroup>
+                <col style={{ width: `${dateColWidth}px`, minWidth: `${dateColWidth}px` }} />
+                <col style={{ width: '38px', minWidth: '34px' }} />
+                <col style={{ width: '34px', minWidth: '30px' }} />
+                <col style={{ width: '124px', minWidth: '118px' }} />
+                <col style={{ width: '115px', minWidth: '100px' }} />
+                <col style={{ width: `${departmentColWidth}px`, minWidth: `${departmentColWidth}px` }} />
+                <col style={{ width: `${sectionColWidth}px`, minWidth: `${sectionColWidth}px` }} />
+                <col style={{ width: `${lineAreaColWidth}px`, minWidth: `${lineAreaColWidth}px` }} />
+                <col style={{ width: `${observationWidth}px`, minWidth: `${observationWidth}px` }} />
+                <col style={{ width: `${imageBeforeColWidth}px`, minWidth: `${imageBeforeColWidth}px` }} />
+                <col style={{ width: `${rootCauseWidth}px`, minWidth: `${rootCauseWidth}px` }} />
+                <col style={{ width: `${actionTakenWidth}px`, minWidth: `${actionTakenWidth}px` }} />
+                <col style={{ width: `${counterMeasureWidth}px`, minWidth: `${counterMeasureWidth}px` }} />
+                <col style={{ width: `${imageAfterColWidth}px`, minWidth: `${imageAfterColWidth}px` }} />
+                <col style={{ width: '115px', minWidth: '105px' }} />
+                <col style={{ width: '105px', minWidth: '95px' }} />
+                <col style={{ width: `${revisedColWidth}px`, minWidth: `${revisedColWidth}px`, maxWidth: `${revisedColWidth}px` }} />
+                <col style={{ width: '110px', minWidth: '100px' }} />
+                <col style={{ width: '145px', minWidth: '135px' }} />
+                <col style={{ width: '160px', minWidth: '150px' }} />
+                <col style={{ width: '120px', minWidth: '110px' }} />
+                <col style={{ width: '150px', minWidth: '140px' }} />
+                {canShowRowActions && <col style={{ width: '55px', minWidth: '45px' }} />}
+              </colgroup>
 
-          {/* Table Column Headers - Frozen on vertical scroll */}
-          <thead className="sticky top-0 z-20 bg-white shadow-xs">
-            {/* Row 1: 会議名 (Meeting Name) [Left] & 作成者 : (Prepared By) [Right] */}
-            <tr className="bg-white text-[15px]">
-              <th
-                colSpan={2}
-                className="text-slate-900 font-bold text-center border-r border-b border-[#94A3B8] py-1.5 px-2 select-none whitespace-nowrap text-[16px] tracking-wider"
-                style={{ backgroundColor: '#FFFF99' }}
-                title="Meeting Name (会議名)"
-              >
-                会議名
-              </th>
-              <th
-                colSpan={11}
-                className="bg-white border-r border-b border-[#94A3B8] p-0 font-normal align-middle"
-              >
-                <input
-                  type="text"
-                  value={headerInfo.topicName}
-                  readOnly={!canEditEntireSheet}
-                  disabled={!canEditEntireSheet}
-                  onChange={(e) => setHeaderInfo({ ...headerInfo, topicName: e.target.value })}
-                  className={`w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-900 font-semibold text-base ${!canEditEntireSheet ? 'cursor-default' : 'focus:bg-blue-50/20'}`}
-                />
-              </th>
-              <th
-                colSpan={2}
-                className="text-slate-900 font-bold text-center border-r border-b border-[#94A3B8] py-1.5 px-2 select-none whitespace-nowrap text-[16px] tracking-wider"
-                style={{ backgroundColor: '#FFFF99' }}
-                title="Prepared By (作成者 :)"
-              >
-                作成者 :
-              </th>
-              <th
-                colSpan={totalCols - 15}
-                className="bg-white border-r border-b border-[#94A3B8] p-0 font-normal align-middle"
-              >
-                <input
-                  type="text"
-                  value={stripEmployeeId(headerInfo.preparedBy)}
-                  readOnly={!canEditEntireSheet}
-                  disabled={!canEditEntireSheet}
-                  onChange={(e) => setHeaderInfo({ ...headerInfo, preparedBy: stripEmployeeId(e.target.value) })}
-                  className={`w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-900 font-medium text-base ${!canEditEntireSheet ? 'cursor-default' : 'focus:bg-blue-50/20'}`}
-                />
-              </th>
-            </tr>
-
-            {/* Row 2: 出席者 (Attendees) [Left] & 議事録No (Minutes / Audit No) [Right] */}
-            <tr className="bg-white text-[15px]">
-              <th
-                colSpan={2}
-                className="text-slate-900 font-bold text-center border-r border-b border-[#94A3B8] py-1.5 px-2 select-none whitespace-nowrap text-[16px] tracking-wider"
-                style={{ backgroundColor: '#FFFF99' }}
-                title="Attendees (出席者)"
-              >
-                出席者
-              </th>
-              <th
-                colSpan={11}
-                className="bg-white border-r border-b border-[#94A3B8] p-0 font-normal align-middle"
-              >
-                <input
-                  type="text"
-                  value={headerInfo.attendees}
-                  readOnly={!canEditEntireSheet}
-                  disabled={!canEditEntireSheet}
-                  onChange={(e) => setHeaderInfo({ ...headerInfo, attendees: e.target.value })}
-                  className={`w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-800 font-normal text-xs ${!canEditEntireSheet ? 'cursor-default' : 'focus:bg-blue-50/20'}`}
-                />
-              </th>
-              <th
-                colSpan={2}
-                className="text-slate-900 font-bold text-center border-r border-b border-[#94A3B8] py-1.5 px-2 select-none whitespace-nowrap text-[12px] tracking-wider"
-                style={{ backgroundColor: '#FFFF99' }}
-                title="Audit / Minutes No (議事録No)"
-              >
-                議事録No
-              </th>
-              <th
-                colSpan={totalCols - 15}
-                className="bg-white border-r border-b border-[#94A3B8] p-0 font-normal align-middle"
-              >
-                <input
-                  type="text"
-                  value={headerInfo.auditNo}
-                  readOnly={!canEditEntireSheet}
-                  disabled={!canEditEntireSheet}
-                  onChange={(e) => setHeaderInfo({ ...headerInfo, auditNo: e.target.value })}
-                  className={`w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-900 font-medium text-xs ${!canEditEntireSheet ? 'cursor-default' : 'focus:bg-blue-50/20'}`}
-                />
-              </th>
-            </tr>
-
-            {/* Row 3: P D C A Phase Labels Row */}
-            <tr className="bg-white text-center select-none text-xs">
-              {/* Empty cell above Date, Shift, S.No */}
-              <th
-                colSpan={3}
-                className="bg-white border-r border-b-2 border-[#475569] py-1 px-1"
-              />
-
-              {/* P: Plan */}
-              <th
-                colSpan={8}
-                className="bg-white text-slate-900 font-bold border-r border-b-2 border-slate-700 py-1 px-2 text-center text-xs tracking-widest"
-                title="Plan (P)"
-              >
-                P
-              </th>
-
-              {/* D: Do */}
-              <th
-                colSpan={6}
-                className="bg-white text-slate-900 font-bold border-r border-b-2 border-slate-700 py-1 px-2 text-center text-xs tracking-widest"
-                title="Do (D)"
-              >
-                D
-              </th>
-
-              {/* C: Check */}
-              <th
-                colSpan={4}
-                className="bg-white text-slate-900 font-bold border-r border-b-2 border-slate-700 py-1 px-2 text-center text-xs tracking-widest"
-                title="Check (C)"
-              >
-                C
-              </th>
-
-              {/* A: Act */}
-              <th
-                colSpan={totalCols - 21}
-                className="bg-white text-slate-900 font-bold border-r border-b-2 border-slate-700 py-1 px-2 text-center text-xs tracking-widest"
-                title="Act (A)"
-              >
-                A
-              </th>
-            </tr>
-
-            <tr className="bg-[#ECEFF1] text-slate-800 text-[15px] font-semibold select-none text-center">
-              <th
-                rowSpan={2}
-                style={{ width: `${dateColWidth}px`, minWidth: `${dateColWidth}px` }}
-                className="relative py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] select-none transition-[width] duration-150"
-              >
-                <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-1">
-                  <span>Date</span> <span className="text-red-500 font-bold">*</span>
-                </div>
-                <span
-                  role="separator"
-                  aria-label="Resize Date column width"
-                  aria-orientation="vertical"
-                  aria-valuemin={MIN_DATE_WIDTH}
-                  aria-valuemax={MAX_DATE_WIDTH}
-                  aria-valuenow={dateColWidth}
-                  tabIndex={0}
-                  title={`Drag horizontally or use arrow keys to adjust Date column width (${dateColWidth}px)`}
-                  onPointerDown={startDateResize}
-                  onPointerMove={continueDateResize}
-                  onPointerUp={finishDateResize}
-                  onPointerCancel={finishDateResize}
-                  onLostPointerCapture={finishDateResize}
-                  onKeyDown={handleDateResizeKeyDown}
-                  className="group absolute inset-y-0 right-0 z-20 flex w-3 cursor-col-resize touch-none items-center justify-center hover:bg-blue-100/70 active:bg-blue-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500 transition-colors"
-                >
-                  <span className="h-4 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 transition-opacity" />
-                </span>
-              </th>
-              <th rowSpan={2} className="py-1.5 px-0.5 w-[38px] min-w-[34px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[11px]">
-                <span>Shift</span> <span className="text-red-500 font-bold">*</span>
-              </th>
-              <th rowSpan={2} className="py-1.5 px-0.5 w-[34px] min-w-[30px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[11px]">
-                S.No
-              </th>
-              <th
-                rowSpan={2}
-                ref={statusFilterRef}
-                className="relative py-1.5 px-1 w-[124px] min-w-[118px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] select-none"
-              >
-                <div className="flex items-center justify-center gap-1 font-bold text-slate-800">
-                  <span>Status</span>
-                  <span className="text-red-500 font-bold">*</span>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsStatusFilterOpen((prev) => !prev);
-                    }}
-                    title={statusFilters.length > 0 ? `Filtered by: ${statusFilters.join(', ')}` : 'Filter by Status'}
-                    className={`ml-0.5 p-0.5 rounded transition-colors cursor-pointer flex items-center justify-center ${
-                      statusFilters.length > 0
-                        ? 'bg-blue-600 text-white shadow-xs'
-                        : 'text-slate-500 hover:text-blue-600 hover:bg-slate-200/70'
-                    }`}
+              {/* Table Column Headers - Frozen on vertical scroll */}
+              <thead ref={sheetTheadRef} className="relative z-30 bg-white shadow-xs">
+                {/* Row 1: 会議名 (Meeting Name) [Left] & 作成者 : (Prepared By) [Right] */}
+                <tr className="bg-white text-[15px]">
+                  <th
+                    colSpan={2}
+                    className="text-slate-900 font-bold text-center border-r border-b border-[#94A3B8] py-1.5 px-2 select-none whitespace-nowrap text-[16px] tracking-wider"
+                    style={{ backgroundColor: '#FFFF99' }}
+                    title="Meeting Name (会議名)"
                   >
-                    <Filter className="w-3.5 h-3.5 stroke-[2.5]" />
-                  </button>
-                  {statusFilters.length > 0 && (
-                    <span className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold text-white bg-blue-600 rounded-full">
-                      {statusFilters.length}
+                    会議名
+                  </th>
+                  <th
+                    colSpan={11}
+                    className="bg-white border-r border-b border-[#94A3B8] p-0 font-normal align-middle"
+                  >
+                    <input
+                      type="text"
+                      value={headerInfo.topicName}
+                      readOnly={!canEditEntireSheet}
+                      disabled={!canEditEntireSheet}
+                      onChange={(e) => setHeaderInfo({ ...headerInfo, topicName: e.target.value })}
+                      className={`w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-900 font-semibold text-base ${!canEditEntireSheet ? 'cursor-default' : 'focus:bg-blue-50/20'}`}
+                    />
+                  </th>
+                  <th
+                    colSpan={2}
+                    className="text-slate-900 font-bold text-center border-r border-b border-[#94A3B8] py-1.5 px-2 select-none whitespace-nowrap text-[16px] tracking-wider"
+                    style={{ backgroundColor: '#FFFF99' }}
+                    title="Prepared By (作成者 :)"
+                  >
+                    作成者 :
+                  </th>
+                  <th
+                    colSpan={totalCols - 15}
+                    className="bg-white border-r border-b border-[#94A3B8] p-0 font-normal align-middle"
+                  >
+                    <input
+                      type="text"
+                      value={stripEmployeeId(headerInfo.preparedBy)}
+                      readOnly={!canEditEntireSheet}
+                      disabled={!canEditEntireSheet}
+                      onChange={(e) => setHeaderInfo({ ...headerInfo, preparedBy: stripEmployeeId(e.target.value) })}
+                      className={`w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-900 font-medium text-base ${!canEditEntireSheet ? 'cursor-default' : 'focus:bg-blue-50/20'}`}
+                    />
+                  </th>
+                </tr>
+
+                {/* Row 2: 出席者 (Attendees) [Left] & 議事録No (Minutes / Audit No) [Right] */}
+                <tr className="bg-white text-[15px]">
+                  <th
+                    colSpan={2}
+                    className="text-slate-900 font-bold text-center border-r border-b border-[#94A3B8] py-1.5 px-2 select-none whitespace-nowrap text-[16px] tracking-wider"
+                    style={{ backgroundColor: '#FFFF99' }}
+                    title="Attendees (出席者)"
+                  >
+                    出席者
+                  </th>
+                  <th
+                    colSpan={11}
+                    className="bg-white border-r border-b border-[#94A3B8] p-0 font-normal align-middle"
+                  >
+                    <input
+                      type="text"
+                      value={headerInfo.attendees}
+                      readOnly={!canEditEntireSheet}
+                      disabled={!canEditEntireSheet}
+                      onChange={(e) => setHeaderInfo({ ...headerInfo, attendees: e.target.value })}
+                      className={`w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-800 font-normal text-xs ${!canEditEntireSheet ? 'cursor-default' : 'focus:bg-blue-50/20'}`}
+                    />
+                  </th>
+                  <th
+                    colSpan={2}
+                    className="text-slate-900 font-bold text-center border-r border-b border-[#94A3B8] py-1.5 px-2 select-none whitespace-nowrap text-[12px] tracking-wider"
+                    style={{ backgroundColor: '#FFFF99' }}
+                    title="Audit / Minutes No (議事録No)"
+                  >
+                    議事録No
+                  </th>
+                  <th
+                    colSpan={totalCols - 15}
+                    className="bg-white border-r border-b border-[#94A3B8] p-0 font-normal align-middle"
+                  >
+                    <input
+                      type="text"
+                      value={headerInfo.auditNo}
+                      readOnly={!canEditEntireSheet}
+                      disabled={!canEditEntireSheet}
+                      onChange={(e) => setHeaderInfo({ ...headerInfo, auditNo: e.target.value })}
+                      className={`w-full h-full px-3 py-1.5 bg-transparent border-0 outline-none text-slate-900 font-medium text-xs ${!canEditEntireSheet ? 'cursor-default' : 'focus:bg-blue-50/20'}`}
+                    />
+                  </th>
+                </tr>
+
+                {/* Row 3: P D C A Phase Labels Row */}
+                <tr className="bg-white text-center select-none text-xs">
+                  {/* Empty cell above Date, Shift, S.No */}
+                  <th
+                    colSpan={3}
+                    className="bg-white border-r border-b-2 border-[#475569] py-1 px-1"
+                  />
+
+                  {/* P: Plan */}
+                  <th
+                    colSpan={8}
+                    className="bg-white text-slate-900 font-bold border-r border-b-2 border-slate-700 py-1 px-2 text-center text-xs tracking-widest"
+                    title="Plan (P)"
+                  >
+                    P
+                  </th>
+
+                  {/* D: Do */}
+                  <th
+                    colSpan={6}
+                    className="bg-white text-slate-900 font-bold border-r border-b-2 border-slate-700 py-1 px-2 text-center text-xs tracking-widest"
+                    title="Do (D)"
+                  >
+                    D
+                  </th>
+
+                  {/* C: Check */}
+                  <th
+                    colSpan={4}
+                    className="bg-white text-slate-900 font-bold border-r border-b-2 border-slate-700 py-1 px-2 text-center text-xs tracking-widest"
+                    title="Check (C)"
+                  >
+                    C
+                  </th>
+
+                  {/* A: Act */}
+                  <th
+                    colSpan={totalCols - 21}
+                    className="bg-white text-slate-900 font-bold border-r border-b-2 border-slate-700 py-1 px-2 text-center text-xs tracking-widest"
+                    title="Act (A)"
+                  >
+                    A
+                  </th>
+                </tr>
+
+                <tr className="bg-[#ECEFF1] text-slate-800 text-[15px] font-semibold select-none text-center">
+                  <th
+                    rowSpan={2}
+                    style={{ width: `${dateColWidth}px`, minWidth: `${dateColWidth}px` }}
+                    className="relative py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] select-none transition-[width] duration-150"
+                  >
+                    <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-1">
+                      <span>Date</span> <span className="text-red-500 font-bold">*</span>
+                    </div>
+                    <span
+                      role="separator"
+                      aria-label="Resize Date column width"
+                      aria-orientation="vertical"
+                      aria-valuemin={MIN_DATE_WIDTH}
+                      aria-valuemax={MAX_DATE_WIDTH}
+                      aria-valuenow={dateColWidth}
+                      tabIndex={0}
+                      title={`Drag horizontally or use arrow keys to adjust Date column width (${dateColWidth}px)`}
+                      onPointerDown={startDateResize}
+                      onPointerMove={continueDateResize}
+                      onPointerUp={finishDateResize}
+                      onPointerCancel={finishDateResize}
+                      onLostPointerCapture={finishDateResize}
+                      onKeyDown={handleDateResizeKeyDown}
+                      className="group absolute inset-y-0 right-0 z-20 flex w-3 cursor-col-resize touch-none items-center justify-center hover:bg-blue-100/70 active:bg-blue-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500 transition-colors"
+                    >
+                      <span className="h-4 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 transition-opacity" />
                     </span>
-                  )}
-                </div>
-
-                {/* Status Multi-select Filter Popover */}
-                {isStatusFilterOpen && (
-                  <div
-                    onClick={(e) => e.stopPropagation()}
-                    className="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-50 w-52 bg-white rounded-xl shadow-xl border border-slate-200 p-2.5 text-left text-xs font-normal"
-                    style={{ minWidth: '190px' }}
+                  </th>
+                  <th rowSpan={2} className="py-1.5 px-0.5 w-[38px] min-w-[34px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[11px]">
+                    <span>Shift</span> <span className="text-red-500 font-bold">*</span>
+                  </th>
+                  <th rowSpan={2} className="py-1.5 px-0.5 w-[34px] min-w-[30px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[11px]">
+                    S.No
+                  </th>
+                  <th
+                    rowSpan={2}
+                    ref={statusFilterRef}
+                    className="relative py-1.5 px-1 w-[124px] min-w-[118px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] select-none"
                   >
-                    <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-slate-100">
-                      <span className="font-bold text-slate-800 text-[12px] flex items-center gap-1">
-                        <Filter className="w-3 h-3 text-blue-600" /> Filter Status
-                      </span>
+                    <div className="flex items-center justify-center gap-1 font-bold text-slate-800">
+                      <span>Status</span>
+                      <span className="text-red-500 font-bold">*</span>
                       <button
                         type="button"
-                        onClick={() => setIsStatusFilterOpen(false)}
-                        className="text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsStatusFilterOpen((prev) => !prev);
+                        }}
+                        title={statusFilters.length > 0 ? `Filtered by: ${statusFilters.join(', ')}` : 'Filter by Status'}
+                        className={`ml-0.5 p-0.5 rounded transition-colors cursor-pointer flex items-center justify-center ${statusFilters.length > 0
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : 'text-slate-500 hover:text-blue-600 hover:bg-slate-200/70'
+                          }`}
                       >
-                        <X className="w-3.5 h-3.5" />
+                        <Filter className="w-3.5 h-3.5 stroke-[2.5]" />
                       </button>
-                    </div>
-
-                    <div className="space-y-1.5 py-1">
-                      {STATUS_FILTER_OPTIONS.map((opt) => {
-                        const isChecked = statusFilters.includes(opt);
-                        const badgeColor =
-                          opt === 'Done' ? 'bg-[#dcfce7] text-[#14532d] border-[#86efac]' :
-                          opt === 'In-Progress' ? 'bg-[#fef3c7] text-[#78350f] border-[#fcd34d]' :
-                          opt === 'Delay' ? 'bg-[#fee2e2] text-[#991b1b] border-[#fca5a5]' :
-                          'bg-[#dbeafe] text-[#1e40af] border-[#93c5fd]';
-                        return (
-                          <label
-                            key={opt}
-                            className="flex items-center gap-2 px-1.5 py-1 rounded-md hover:bg-slate-50 cursor-pointer select-none"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => {
-                                setStatusFilters((prev) =>
-                                  prev.includes(opt) ? prev.filter((s) => s !== opt) : [...prev, opt]
-                                );
-                              }}
-                              className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                            />
-                            <span className={`px-2 py-0.5 rounded text-[11px] font-semibold border ${badgeColor}`}>
-                              {opt}
-                            </span>
-                          </label>
-                        );
-                      })}
-                    </div>
-
-                    <div className="flex items-center justify-between pt-2 mt-1 border-t border-slate-100 text-[11px]">
-                      <button
-                        type="button"
-                        onClick={() => setStatusFilters([...STATUS_FILTER_OPTIONS])}
-                        className="text-blue-600 hover:text-blue-800 font-semibold cursor-pointer"
-                      >
-                        Select All
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setStatusFilters([])}
-                        className="text-slate-500 hover:text-slate-800 font-semibold cursor-pointer"
-                      >
-                        Clear
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </th>
-              <th rowSpan={2} className="py-1.5 px-1 w-[115px] min-w-[100px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px]">
-                <span>Unit</span> <span className="text-red-500 font-bold">*</span>
-              </th>
-              <th
-                rowSpan={2}
-                style={{ width: `${departmentColWidth}px`, minWidth: `${departmentColWidth}px` }}
-                className="relative py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] select-none transition-[width] duration-150"
-              >
-                <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-1">
-                  <span>Department</span> <span className="text-red-500 font-bold">*</span>
-                </div>
-                <span
-                  role="separator"
-                  aria-label="Resize Department column width"
-                  aria-orientation="vertical"
-                  aria-valuemin={MIN_DEPARTMENT_WIDTH}
-                  aria-valuemax={MAX_DEPARTMENT_WIDTH}
-                  aria-valuenow={departmentColWidth}
-                  tabIndex={0}
-                  title={`Drag horizontally or use arrow keys to adjust Department column width (${departmentColWidth}px)`}
-                  onPointerDown={startDeptResize}
-                  onPointerMove={continueDeptResize}
-                  onPointerUp={finishDeptResize}
-                  onPointerCancel={finishDeptResize}
-                  onLostPointerCapture={finishDeptResize}
-                  onKeyDown={handleDeptResizeKeyDown}
-                  className="group absolute inset-y-0 right-0 z-20 flex w-3 cursor-col-resize touch-none items-center justify-center hover:bg-blue-100/70 active:bg-blue-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500 transition-colors"
-                >
-                  <span className="h-4 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 transition-opacity" />
-                </span>
-              </th>
-              <th
-                rowSpan={2}
-                style={{
-                  width: `${sectionColWidth}px`,
-                  minWidth: `${sectionColWidth}px`
-                }}
-                className="relative py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] select-none whitespace-nowrap transition-[width] duration-150"
-              >
-                <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-1">
-                  <span>Section</span>
-                </div>
-                <span
-                  role="separator"
-                  aria-label="Resize Section column width"
-                  aria-orientation="vertical"
-                  aria-valuemin={MIN_SECTION_WIDTH}
-                  aria-valuemax={MAX_SECTION_WIDTH}
-                  aria-valuenow={sectionColWidth}
-                  tabIndex={0}
-                  title={`Drag horizontally or use arrow keys to adjust Section column width (${sectionColWidth}px)`}
-                  onPointerDown={startSectionResize}
-                  onPointerMove={continueSectionResize}
-                  onPointerUp={finishSectionResize}
-                  onPointerCancel={finishSectionResize}
-                  onLostPointerCapture={finishSectionResize}
-                  onKeyDown={handleSectionResizeKeyDown}
-                  className="group absolute inset-y-0 right-0 z-20 flex w-3 cursor-col-resize touch-none items-center justify-center hover:bg-blue-100/70 active:bg-blue-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500 transition-colors"
-                >
-                  <span className="h-4 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 transition-opacity" />
-                </span>
-              </th>
-              <th
-                rowSpan={2}
-                style={{
-                  width: `${lineAreaColWidth}px`,
-                  minWidth: `${lineAreaColWidth}px`
-                }}
-                className="relative py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] select-none whitespace-nowrap transition-[width] duration-150"
-              >
-                <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-1">
-                  <span>Line/Area</span>
-                </div>
-                <span
-                  role="separator"
-                  aria-label="Resize Line/Area column width"
-                  aria-orientation="vertical"
-                  aria-valuemin={MIN_LINE_AREA_WIDTH}
-                  aria-valuemax={MAX_LINE_AREA_WIDTH}
-                  aria-valuenow={lineAreaColWidth}
-                  tabIndex={0}
-                  title={`Drag horizontally or use arrow keys to adjust Line/Area column width (${lineAreaColWidth}px)`}
-                  onPointerDown={startLineAreaResize}
-                  onPointerMove={continueLineAreaResize}
-                  onPointerUp={finishLineAreaResize}
-                  onPointerCancel={finishLineAreaResize}
-                  onLostPointerCapture={finishLineAreaResize}
-                  onKeyDown={handleLineAreaResizeKeyDown}
-                  className="group absolute inset-y-0 right-0 z-20 flex w-3 cursor-col-resize touch-none items-center justify-center hover:bg-blue-100/70 active:bg-blue-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500 transition-colors"
-                >
-                  <span className="h-4 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 transition-opacity" />
-                </span>
-              </th>
-              <th
-                rowSpan={2}
-                style={{
-                  width: `${observationWidth}px`,
-                  minWidth: `${observationWidth}px`,
-                  maxWidth: `${observationWidth}px`
-                }}
-                className="relative py-1.5 px-2 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] select-none"
-              >
-                <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-2">
-                  <span>Observation</span> <span className="text-red-500 font-bold">*</span>
-                </div>
-
-                {/* Draggable Resize Handle */}
-                <span
-                  role="separator"
-                  aria-label="Resize Observation column width"
-                  aria-orientation="vertical"
-                  aria-valuemin={MIN_OBSERVATION_WIDTH}
-                  aria-valuemax={MAX_OBSERVATION_WIDTH}
-                  aria-valuenow={observationWidth}
-                  tabIndex={0}
-                  title={`Drag horizontally or use arrow keys to adjust Observation column width (${observationWidth}px)`}
-                  onPointerDown={startColResize}
-                  onPointerMove={continueColResize}
-                  onPointerUp={finishColResize}
-                  onPointerCancel={finishColResize}
-                  onLostPointerCapture={finishColResize}
-                  onKeyDown={handleResizeKeyDown}
-                  className="group absolute inset-y-0 right-0 z-20 flex w-3 cursor-col-resize touch-none items-center justify-center hover:bg-blue-100/70 active:bg-blue-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500 transition-colors"
-                >
-                  <span className="h-4 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 transition-opacity" />
-                </span>
-              </th>
-              <th
-                rowSpan={2}
-                style={{
-                  width: `${imageBeforeColWidth}px`,
-                  minWidth: `${imageBeforeColWidth}px`
-                }}
-                className="py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] select-none transition-[width] duration-150"
-              >
-                Image Before
-              </th>
-              <th
-                rowSpan={2}
-                style={{
-                  width: `${rootCauseWidth}px`,
-                  minWidth: `${rootCauseWidth}px`,
-                  maxWidth: `${rootCauseWidth}px`
-                }}
-                className="relative py-1.5 px-2 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] select-none"
-              >
-                <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-2">
-                  <span>Root Cause</span>
-                </div>
-
-                {/* Draggable Resize Handle */}
-                <span
-                  role="separator"
-                  aria-label="Resize Root Cause column width"
-                  aria-orientation="vertical"
-                  aria-valuemin={MIN_ROOT_CAUSE_WIDTH}
-                  aria-valuemax={MAX_ROOT_CAUSE_WIDTH}
-                  aria-valuenow={rootCauseWidth}
-                  tabIndex={0}
-                  title={`Drag horizontally or use arrow keys to adjust Root Cause column width (${rootCauseWidth}px)`}
-                  onPointerDown={startRootCauseResize}
-                  onPointerMove={continueRootCauseResize}
-                  onPointerUp={finishRootCauseResize}
-                  onPointerCancel={finishRootCauseResize}
-                  onLostPointerCapture={finishRootCauseResize}
-                  onKeyDown={handleRootCauseResizeKeyDown}
-                  className="group absolute inset-y-0 right-0 z-20 flex w-3 cursor-col-resize touch-none items-center justify-center hover:bg-blue-100/70 active:bg-blue-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500 transition-colors"
-                >
-                  <span className="h-4 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 transition-opacity" />
-                </span>
-              </th>
-
-              <th
-                rowSpan={2}
-                style={{
-                  width: `${actionTakenWidth}px`,
-                  minWidth: `${actionTakenWidth}px`,
-                  maxWidth: `${actionTakenWidth}px`
-                }}
-                className="relative py-1.5 px-2 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] select-none"
-              >
-                <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-2">
-                  <span>Corrective Action</span>
-                </div>
-
-                {/* Draggable Resize Handle */}
-                <span
-                  role="separator"
-                  aria-label="Resize Corrective Action column width"
-                  aria-orientation="vertical"
-                  aria-valuemin={MIN_ACTION_TAKEN_WIDTH}
-                  aria-valuemax={MAX_ACTION_TAKEN_WIDTH}
-                  aria-valuenow={actionTakenWidth}
-                  tabIndex={0}
-                  title={`Drag horizontally or use arrow keys to adjust Corrective Action column width (${actionTakenWidth}px)`}
-                  onPointerDown={startActionTakenResize}
-                  onPointerMove={continueActionTakenResize}
-                  onPointerUp={finishActionTakenResize}
-                  onPointerCancel={finishActionTakenResize}
-                  onLostPointerCapture={finishActionTakenResize}
-                  onKeyDown={handleActionTakenResizeKeyDown}
-                  className="group absolute inset-y-0 right-0 z-20 flex w-3 cursor-col-resize touch-none items-center justify-center hover:bg-blue-100/70 active:bg-blue-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500 transition-colors"
-                >
-                  <span className="h-4 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 transition-opacity" />
-                </span>
-              </th>
-
-              <th
-                rowSpan={2}
-                style={{
-                  width: `${counterMeasureWidth}px`,
-                  minWidth: `${counterMeasureWidth}px`,
-                  maxWidth: `${counterMeasureWidth}px`
-                }}
-                className="relative py-1.5 px-2 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] leading-tight text-[14px] select-none"
-              >
-                <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-2">
-                  <span>Counter Measure</span>
-                </div>
-
-                {/* Draggable Resize Handle */}
-                <span
-                  role="separator"
-                  aria-label="Resize Counter Measure column width"
-                  aria-orientation="vertical"
-                  aria-valuemin={MIN_COUNTER_MEASURE_WIDTH}
-                  aria-valuemax={MAX_COUNTER_MEASURE_WIDTH}
-                  aria-valuenow={counterMeasureWidth}
-                  tabIndex={0}
-                  title={`Drag horizontally or use arrow keys to adjust Counter Measure column width (${counterMeasureWidth}px)`}
-                  onPointerDown={startCounterMeasureResize}
-                  onPointerMove={continueCounterMeasureResize}
-                  onPointerUp={finishCounterMeasureResize}
-                  onPointerCancel={finishCounterMeasureResize}
-                  onLostPointerCapture={finishCounterMeasureResize}
-                  onKeyDown={handleCounterMeasureResizeKeyDown}
-                  className="group absolute inset-y-0 right-0 z-20 flex w-3 cursor-col-resize touch-none items-center justify-center hover:bg-blue-100/70 active:bg-blue-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500 transition-colors"
-                >
-                  <span className="h-4 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 transition-opacity" />
-                </span>
-              </th>
-              <th
-                rowSpan={2}
-                style={{
-                  width: `${imageAfterColWidth}px`,
-                  minWidth: `${imageAfterColWidth}px`
-                }}
-                className="py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] select-none transition-[width] duration-150"
-              >
-                Image After
-              </th>
-              <th rowSpan={2} className="py-1.5 px-1.5 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 leading-tight select-none">
-                <div>Std. Duration</div>
-                <div className="text-[12px] font-semibold text-slate-600">in min</div>
-              </th>
-              <th rowSpan={2} className="py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 leading-tight select-none">
-                <div>Response</div>
-                <div>Date</div>
-              </th>
-              <th
-                rowSpan={2}
-                style={{ width: `${revisedColWidth}px`, minWidth: `${revisedColWidth}px`, maxWidth: `${revisedColWidth}px` }}
-                className="py-1.5 px-2 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 leading-tight select-none"
-                title="Past revisions of Response Date. Only administrators have permission to delete revised dates."
-              >
-                <div>No. of time</div>
-                <div className="flex items-center justify-center gap-1">
-                  <span>Revised</span>
-                  {isAdmin && (
-                    <span className="text-[10px] font-bold text-amber-800 bg-amber-100/90 px-1.5 py-0.5 rounded border border-amber-300" title="Administrator access: you can delete revised dates">
-                      Admin
-                    </span>
-                  )}
-                </div>
-              </th>
-              <th colSpan={4} className="py-1.5 px-1 border-r border-b border-[#475569] bg-[#ECEFF1] text-center select-none">
-                <div className="text-center font-bold text-[14px] text-slate-800 px-1 tracking-wide">
-                  Responsible Person
-                </div>
-              </th>
-              <th rowSpan={2} className="py-1.5 px-1.5 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 leading-tight select-none">
-                <div className="flex items-center justify-center gap-1.5 text-[14px] font-bold text-slate-800 leading-tight">
-                  <Lock className="w-3.5 h-3.5 text-slate-700 flex-shrink-0" />
-                  <span>Confirmation</span>
-                </div>
-              </th>
-              {canShowRowActions && (
-                <th rowSpan={2} className="py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 select-none">
-                  Actions
-                </th>
-              )}
-            </tr>
-
-            <tr className="bg-[#ECEFF1] text-slate-800 font-bold text-[14px] select-none text-center">
-              <th className="py-1 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 w-[110px] min-w-[100px]">
-                Unit
-              </th>
-              <th
-                ref={respDeptFilterRef}
-                className="relative py-1 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 w-[145px] min-w-[135px] select-none"
-              >
-                <div className="flex items-center justify-center gap-1 font-bold text-slate-800">
-                  <span>Dept</span>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsRespDeptFilterOpen((prev) => !prev);
-                    }}
-                    title={respDeptFilters.length > 0 ? `Filtered by: ${respDeptFilters.join(', ')}` : 'Filter by Department'}
-                    className={`ml-0.5 p-0.5 rounded transition-colors cursor-pointer flex items-center justify-center ${
-                      respDeptFilters.length > 0
-                        ? 'bg-blue-600 text-white shadow-xs'
-                        : 'text-slate-500 hover:text-blue-600 hover:bg-slate-200/70'
-                    }`}
-                  >
-                    <Filter className="w-3.5 h-3.5 stroke-[2.5]" />
-                  </button>
-                  {respDeptFilters.length > 0 && (
-                    <span className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold text-white bg-blue-600 rounded-full">
-                      {respDeptFilters.length}
-                    </span>
-                  )}
-                </div>
-
-                {/* Responsible Person Department Multi-select Filter Popover */}
-                {isRespDeptFilterOpen && (
-                  <div
-                    onClick={(e) => e.stopPropagation()}
-                    className="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-50 w-56 bg-white rounded-xl shadow-xl border border-slate-200 p-2.5 text-left text-xs font-normal"
-                    style={{ minWidth: '220px' }}
-                  >
-                    <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-slate-100">
-                      <span className="font-bold text-slate-800 text-[12px] flex items-center gap-1">
-                        <Filter className="w-3 h-3 text-blue-600" /> Filter Department
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setIsRespDeptFilterOpen(false)}
-                        className="text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    {/* Department search */}
-                    <div className="relative mb-2">
-                      <Search className="w-3 h-3 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2" />
-                      <input
-                        type="text"
-                        value={deptFilterSearch}
-                        onChange={(e) => setDeptFilterSearch(e.target.value)}
-                        placeholder="Search department..."
-                        className="w-full bg-slate-50 border border-slate-200 rounded-md pl-6 pr-2 py-1 text-[11px] text-slate-700 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500"
-                      />
-                    </div>
-
-                    {/* Department Checkboxes List */}
-                    <div className="space-y-1 py-1 max-h-48 overflow-y-auto pr-0.5">
-                      {filteredDeptOptions.map((dept) => {
-                        const isChecked = respDeptFilters.includes(dept);
-                        return (
-                          <label
-                            key={dept}
-                            className={`flex items-center gap-2 px-1.5 py-1 rounded-md cursor-pointer select-none transition-colors ${
-                              isChecked ? 'bg-blue-50 text-blue-800 font-semibold' : 'text-slate-700 hover:bg-slate-50'
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => {
-                                setRespDeptFilters((prev) =>
-                                  prev.includes(dept) ? prev.filter((d) => d !== dept) : [...prev, dept]
-                                );
-                              }}
-                              className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                            />
-                            <span className="text-[12px] truncate">{dept}</span>
-                          </label>
-                        );
-                      })}
-                      {filteredDeptOptions.length === 0 && (
-                        <div className="py-2 text-center text-slate-400 text-[11px]">No departments found</div>
+                      {statusFilters.length > 0 && (
+                        <span className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold text-white bg-blue-600 rounded-full">
+                          {statusFilters.length}
+                        </span>
                       )}
                     </div>
 
-                    <div className="flex items-center justify-between pt-2 mt-1 border-t border-slate-100 text-[11px]">
-                      <button
-                        type="button"
-                        onClick={() => setRespDeptFilters([...allDepartmentOptions])}
-                        className="text-blue-600 hover:text-blue-800 font-semibold cursor-pointer"
+                    {/* Status Multi-select Filter Popover */}
+                    {isStatusFilterOpen && (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-50 w-52 bg-white rounded-xl shadow-xl border border-slate-200 p-2.5 text-left text-xs font-normal"
+                        style={{ minWidth: '190px' }}
                       >
-                        Select All
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setRespDeptFilters([])}
-                        className="text-slate-500 hover:text-slate-800 font-semibold cursor-pointer"
-                      >
-                        Clear
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </th>
-              <th className="py-1 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 w-[160px] min-w-[150px]">
-                <span>Staff Name</span> <span className="text-red-500 font-bold">*</span>
-              </th>
-              <th className="py-1 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 w-[120px] min-w-[110px]">
-                CFT
-              </th>
-            </tr>
-          </thead>
-
-          {/* Table Rows with thin bordered cells matching reference style */}
-          <tbody className="bg-white">
-            {(() => {
-              const renderedRows = rows.map((row, idx) => {
-                const isDone = normalizePDCAStatus(row.status) === 'Done';
-                if (!showDoneRows && isDone) return null;
-
-                // Self PDCA visibility rule: display ONLY points relevant to the logged-in employee
-                if (isSelfView) {
-                  const isAssigned = isUserResponsibleForRow(row, effectiveUser);
-                  const isCreatorUnassigned = isCreatorOrAdmin && (topic?.scope === 'Self PDCA' || topic?.isSelf) && !row.staffName && !row.staffEmployee;
-                  if (!isAssigned && !isCreatorUnassigned) return null;
-                }
-
-                // Department visibility rule: display ONLY points belonging to my department
-                if (isDepartmentView && effectiveDept) {
-                  const belongs = doesRowBelongToDepartment(row, effectiveDept, dbEmployees);
-                  if (!belongs) return null;
-                }
-
-                // Status Filter rule: display ONLY points matching selected statuses
-                if (statusFilters.length > 0) {
-                  const rowStatus = getRowStatusForFilter(row);
-                  if (!statusFilters.includes(rowStatus)) return null;
-                }
-
-                // Department Filter rule (Responsible Person Dept): display ONLY points matching selected departments
-                if (respDeptFilters.length > 0) {
-                  const rowDepts = getRowResponsibleDepartments(row);
-                  const matches = rowDepts.some((d) => respDeptFilters.includes(d));
-                  if (!matches) return null;
-                }
-
-                const sNo = idx + 1;
-                const isResponsiblePerson = isUserResponsibleForRow(row, effectiveUser);
-                const isDeptMember = isUserInResponsibleDepartment(row, effectiveUser);
-                const isRowResponsible = isResponsiblePerson || (isDeptMember && !isAssignedStaffAnywhere);
-                // Responsible Person (assigned from Staff Name) can ONLY edit the 6 action columns of THEIR OWN assigned row:
-                // Root cause, Corrective Action, Counter Measure, Image After, Std. Duration in Min, response Date.
-                // They CANNOT edit any other rows, the entire row/sheet, or Confirmation.
-                const canEditEntireRow = Boolean(!readOnly && (isAdmin || isCreator || (isSameDepartmentAsSheet && !isAssignedStaffAnywhere && !isResponsiblePerson)));
-                const unitSelected = usesCheckboxMultiSelects
-                  ? (row.units || (row.unit ? [row.unit] : [])).some(unit => PDCA_UNITS.includes(unit))
-                  : ['Bawal', 'Gujrat'].includes(row.unit);
-                const responsibleUnitSelected = usesCheckboxMultiSelects
-                  ? (row.respUnits || (row.respUnit || row.responsiblePersonUnit ? [row.respUnit || row.responsiblePersonUnit] : [])).some(unit => PDCA_UNITS.includes(unit))
-                  : ['Bawal', 'Gujrat'].includes(row.respUnit || row.responsiblePersonUnit);
-                const canEditActionCols = Boolean(!readOnly && (isAdmin || isCreator || (isSameDepartmentAsSheet && !isAssignedStaffAnywhere) || isRowResponsible));
-                const canConfirmThisRow = Boolean(!readOnly && (isAdmin || isCreator || (isSameDepartmentAsSheet && !isAssignedStaffAnywhere)) && !isResponsiblePerson);
-
-                return (
-                  <tr
-                    key={idx}
-                    className="group/row transition-colors"
-                  >
-                    {/* 1. Date (Stacked: Format on top, Calendar icon below) */}
-                    <td style={{ width: `${dateColWidth}px`, minWidth: `${dateColWidth}px` }} className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150">
-                      <div className="w-full flex items-center justify-center">
-                        <CompactDateCell
-                          value={row.date}
-                          readOnly={!canEditEntireRow}
-                          onChange={(val) => handleCellChange(idx, 'date', val)}
-                        />
-                      </div>
-                    </td>
-
-                    {/* 2. Shift (Single letter A/B/C/G, centered in cell) */}
-                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[38px] min-w-[34px] focus-within:bg-blue-50/30">
-                      <div className="relative w-full flex items-center justify-center">
-                        <select
-                          disabled={!canEditEntireRow}
-                          value={row.shift === 'General' ? 'G' : (row.shift || '')}
-                          onChange={(e) => handleCellChange(idx, 'shift', e.target.value)}
-                          className={`w-full bg-transparent border-0 outline-none px-1 py-1 text-[14px] text-slate-800 font-semibold text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${!canEditEntireRow ? 'cursor-default appearance-none' : 'cursor-pointer'} transition-colors appearance-none`}
-                        >
-                          <option value="">-</option>
-                          <option value="A">A</option>
-                          <option value="B">B</option>
-                          <option value="C">C</option>
-                          <option value="G">G</option>
-                        </select>
-                        {canEditEntireRow && (
-                          <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                        )}
-                      </div>
-                    </td>
-
-                    {/* 3. S.No (Clean uneditable number, centered) */}
-                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] font-semibold text-slate-600 bg-[#FAFAFA] group-hover/row:bg-[#F1F5F9] select-none w-[34px] min-w-[30px] text-[14px]">
-                      {sNo}
-                    </td>
-
-                    {/* 4. Status (Frozen - clearly visible, vivid & darker colors without browser fade) */}
-                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[124px] min-w-[118px]">
-                      {(() => {
-                        const hasDate = Boolean(row.date?.trim());
-                        const norm = normalizePDCAStatus(row.status);
-                        const rowStatus = hasDate
-                          ? (norm || 'Not-Started')
-                          : (norm && norm !== 'Not-Started' ? norm : '');
-                        return (
-                          <div className="w-full flex items-center justify-center">
-                            <div
-                              tabIndex={-1}
-                              aria-label={`Status for row ${sNo}`}
-                              className={`w-full min-w-full rounded-md border px-2 py-1 text-[13px] font-bold outline-none whitespace-nowrap select-none flex items-center justify-between cursor-default shadow-xs ${
-                                rowStatus === 'Done' ? 'bg-[#dcfce7] text-[#14532d] border-[#86efac]' :
-                                rowStatus === 'In- Progress' ? 'bg-[#fef3c7] text-[#78350f] border-[#fcd34d]' :
-                                rowStatus === 'Delay' ? 'bg-[#fee2e2] text-[#991b1b] border-[#fca5a5]' :
-                                rowStatus === 'Not-Started' ? 'bg-[#dbeafe] text-[#1e40af] border-[#93c5fd]' :
-                                'bg-slate-50 text-slate-500 border-slate-200'
-                              }`}
-                              style={{
-                                color: rowStatus === 'Done' ? '#14532d' :
-                                  rowStatus === 'In- Progress' ? '#78350f' :
-                                  rowStatus === 'Delay' ? '#991b1b' :
-                                  rowStatus === 'Not-Started' ? '#1e40af' : '#64748b',
-                                backgroundColor: rowStatus === 'Done' ? '#dcfce7' :
-                                  rowStatus === 'In- Progress' ? '#fef3c7' :
-                                  rowStatus === 'Delay' ? '#fee2e2' :
-                                  rowStatus === 'Not-Started' ? '#dbeafe' : '#f8fafc',
-                                borderColor: rowStatus === 'Done' ? '#86efac' :
-                                  rowStatus === 'In- Progress' ? '#fcd34d' :
-                                  rowStatus === 'Delay' ? '#fca5a5' :
-                                  rowStatus === 'Not-Started' ? '#93c5fd' : '#cbd5e1'
-                              }}
-                            >
-                              <span className="flex-1 text-center font-bold tracking-wide">
-                                {rowStatus || 'Select'}
-                              </span>
-                              <ChevronDown className="w-3.5 h-3.5 opacity-70 flex-shrink-0" />
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </td>
-
-                    {/* 5. Unit (Section P) - Immediately before Department */}
-                    <td className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[115px] min-w-[100px] focus-within:bg-blue-50/30">
-                      {usesCheckboxMultiSelects ? <CheckboxMultiSelect
-                        disabled={!canEditEntireRow}
-                        value={row.units || (row.unit ? [row.unit] : [])}
-                        options={PDCA_UNITS.map(unit => ({ value: unit, label: unit }))}
-                        placeholder="Unit..."
-                        onChange={values => setRows(prev => prev.map((item, rowIndex) => rowIndex === idx ? { ...item, units: values, unit: values[0] || '' } : item))}
-                      /> : <div className="relative w-full flex items-center justify-center">
-                        <select disabled={!canEditEntireRow} value={row.unit || ''} onChange={event => handleCellChange(idx, 'unit', event.target.value)} className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1 text-[14px] text-slate-800 text-center font-medium focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate`} title={row.unit || 'Select Unit'}>
-                          <option value="">Unit...</option><option value="Bawal">Bawal</option><option value="Gujrat">Gujrat</option>
-                        </select>
-                        {canEditEntireRow && <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />}
-                      </div>}
-                    </td>
-
-                    {/* 6. Department */}
-                    <td style={{ width: `${departmentColWidth}px`, minWidth: `${departmentColWidth}px` }} className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150">
-                      {usesCheckboxMultiSelects ? <CheckboxMultiSelect
-                        disabled={!canEditEntireRow || !unitSelected}
-                        value={row.departments || (row.department ? [row.department] : [])}
-                        options={getDepartmentsForUnit(row.unit).map(department => ({ value: department, label: department }))}
-                        placeholder="Dept..."
-                        onChange={values => setRows(prev => prev.map((item, rowIndex) => {
-                          if (rowIndex !== idx) return item;
-                          const prevDepts = item.departments || (item.department ? [item.department] : []);
-                          const deptsChanged = prevDepts.join(',') !== values.join(',');
-
-                          // Rule: If Department changes, reset Section and Line/Area
-                          if (deptsChanged) {
-                            return {
-                              ...item,
-                              departments: values,
-                              department: values[0] || '',
-                              sections: [],
-                              section: '',
-                              sectionId: null,
-                              sectionCode: '',
-                              lineAreas: [],
-                              lineArea: '',
-                              lineAreaId: null,
-                              lineAreaCode: '',
-                              lineAreaSectionId: null
-                            };
-                          }
-                          return { ...item, departments: values, department: values[0] || '' };
-                        }))}
-                      /> : <div className="flex flex-col h-full justify-between">
-                        <div className="flex flex-col divide-y divide-[#CBD5E1]">
-                          {((row.departments?.length ? row.departments : (row.department ? [row.department] : ['']))).map((department, deptIndex, all) => <div key={deptIndex} className="relative min-h-[30px] p-0.5">
-                            <select disabled={!canEditEntireRow || !unitSelected} value={department || ''} onChange={event => handleUpdateDepartment(idx, deptIndex, event.target.value)} className="w-full bg-transparent px-1 py-1 text-center text-[14px]">
-                              <option value="">Dept...</option>{getDepartmentsForUnit(row.unit).map(value => <option key={value} value={value}>{value}</option>)}
-                            </select>
-                            {all.length > 1 && canEditEntireRow && <button type="button" onClick={() => handleRemoveDepartment(idx, deptIndex)} className="absolute right-0 top-1 text-slate-400 hover:text-rose-600" title="Remove Department"><X className="h-2.5 w-2.5" /></button>}
-                          </div>)}
+                        <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-slate-100">
+                          <span className="font-bold text-slate-800 text-[12px] flex items-center gap-1">
+                            <Filter className="w-3 h-3 text-blue-600" /> Filter Status
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setIsStatusFilterOpen(false)}
+                            className="text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
                         </div>
-                        {canEditEntireRow && <button type="button" disabled={!unitSelected} onClick={() => handleAddDepartment(idx)} className="border-t border-slate-100 bg-slate-50/50 px-1 py-0.5 text-[9px] text-blue-600 disabled:opacity-40"><Plus className="inline h-2.5 w-2.5" /> Add</button>}
-                      </div>}
-                    </td>
 
-                    {/* 7. Section */}
-                    <td style={{ width: `${sectionColWidth}px`, minWidth: `${sectionColWidth}px` }} className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150">
-                      {usesCheckboxMultiSelects ? <CheckboxMultiSelect
-                        disabled={!canEditEntireRow || !(row.departments?.length || row.department)}
-                        value={row.sections?.length ? row.sections.map(section => section.sectionId ?? section.section) : (row.sectionId || row.section ? [row.sectionId || row.section] : [])}
-                        options={getSectionsForDepartment(row.departments || row.department, dbSections).map(section => ({ value: section.id, label: section.name }))}
-                        placeholder="Section..."
-                        onChange={values => setRows(prev => prev.map((item, rowIndex) => {
-                          if (rowIndex !== idx) return item;
-                          const prevSecVals = (item.sections?.length ? item.sections.map(s => s.sectionId ?? s.section) : (item.sectionId || item.section ? [item.sectionId || item.section] : [])).map(String);
-                          const newSecVals = values.map(String);
-                          const secChanged = prevSecVals.join(',') !== newSecVals.join(',');
-
-                          const sections = values.map(value => {
-                            const match = (dbSections.length ? dbSections : VERIFIED_SECTIONS_WITH_LINES).find(section => String(section.id) === String(value) || section.name === value);
-                            const existing = item.sections?.find(section => String(section.sectionId) === String(value) || section.section === value);
-                            return match ? { section: match.name, sectionId: match.id, sectionCode: match.uniCode || '' } : existing;
-                          }).filter(Boolean);
-                          const first = sections[0] || {};
-                          
-                          // Rule: If Section changes, reset Line/Area
-                          const lineAreas = secChanged ? [] : (item.lineAreas || []);
-                          const firstLine = lineAreas[0] || {};
-
-                          return {
-                            ...item,
-                            sections,
-                            section: first.section || '',
-                            sectionId: first.sectionId ?? null,
-                            sectionCode: first.sectionCode || '',
-                            lineAreas,
-                            lineArea: firstLine.lineArea || '',
-                            lineAreaId: firstLine.lineAreaId ?? null,
-                            lineAreaCode: firstLine.lineAreaCode || '',
-                            lineAreaSectionId: firstLine.sectionId ?? (first.sectionId ?? null)
-                          };
-                        }))}
-                      /> : <div className="flex flex-col h-full justify-between">
-                        {((row.sections?.length ? row.sections : (row.section ? [{ section: row.section, sectionId: row.sectionId, sectionCode: row.sectionCode }] : [{ section: '', sectionId: null, sectionCode: '' }]))).map((section, sectionIndex, all) => <div key={sectionIndex} className="relative min-h-[30px] p-0.5">
-                          <SearchableSectionSelect disabled={!canEditEntireRow} value={section.section} sectionId={section.sectionId} sectionCode={section.sectionCode} department={row.departments?.[sectionIndex] || row.departments?.[0] || row.department} onChange={(name, meta) => handleUpdateSection(idx, sectionIndex, name, meta)} placeholder="Section..." />
-                          {all.length > 1 && canEditEntireRow && <button type="button" onClick={() => handleRemoveSection(idx, sectionIndex)} className="absolute right-0 top-1 text-slate-400 hover:text-rose-600" title="Remove Section"><X className="h-2.5 w-2.5" /></button>}
-                        </div>)}
-                        {canEditEntireRow && <button type="button" onClick={() => handleAddSection(idx)} className="border-t border-slate-100 bg-slate-50/50 px-1 py-0.5 text-[9px] text-blue-600"><Plus className="inline h-2.5 w-2.5" /> Add</button>}
-                      </div>}
-                    </td>
-
-                    {/* 8. Line/Area */}
-                    <td style={{ width: `${lineAreaColWidth}px`, minWidth: `${lineAreaColWidth}px` }} className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150">
-                      {usesCheckboxMultiSelects ? <CheckboxMultiSelect
-                        disabled={!canEditEntireRow || !(row.sections?.length || row.section || row.sectionId)}
-                        value={row.lineAreas?.length ? row.lineAreas.map(line => line.lineArea) : (row.lineArea ? [row.lineArea] : [])}
-                        options={(() => {
-                          const activeSecs = (row.sections?.length ? row.sections : (row.section || row.sectionId ? [{ section: row.section, sectionId: row.sectionId }] : []));
-                          if (!activeSecs.length) return [];
-                          const lines = activeSecs.flatMap(s => getLineAreasForSection(s.sectionId ?? s.section, dbSections));
-                          const seen = new Set();
-                          const res = [];
-                          for (const l of lines) {
-                            const name = l.name || l;
-                            if (name && !seen.has(name)) {
-                              seen.add(name);
-                              res.push({ value: name, label: name });
-                            }
-                          }
-                          return res;
-                        })()}
-                        placeholder="Line/Area..."
-                        onChange={values => setRows(prev => prev.map((item, rowIndex) => {
-                          if (rowIndex !== idx) return item;
-                          const activeSecs = (item.sections?.length ? item.sections : [{ section: item.section, sectionId: item.sectionId }]).filter(s => s.section || s.sectionId);
-                          const lineAreas = values.map(lineArea => {
-                            const existing = item.lineAreas?.find(l => l.lineArea === lineArea);
-                            let matchedLine = null;
-                            let ownerSec = null;
-                            for (const sec of activeSecs) {
-                              const sLines = getLineAreasForSection(sec.sectionId ?? sec.section, dbSections);
-                              const found = sLines.find(l => (l.name || l) === lineArea);
-                              if (found) {
-                                matchedLine = found;
-                                ownerSec = sec;
-                                break;
-                              }
-                            }
-                            return existing || {
-                              lineArea,
-                              lineAreaId: matchedLine?.id ?? null,
-                              lineAreaCode: matchedLine?.uniCode || '',
-                              sectionId: ownerSec?.sectionId ?? item.sectionId ?? null
-                            };
-                          });
-                          const first = lineAreas[0] || {};
-                          return {
-                            ...item,
-                            lineAreas,
-                            lineArea: first.lineArea || '',
-                            lineAreaId: first.lineAreaId ?? null,
-                            lineAreaCode: first.lineAreaCode || '',
-                            lineAreaSectionId: first.sectionId ?? null
-                          };
-                        }))}
-                      /> : <div className="flex flex-col h-full justify-between">
-                        {((row.lineAreas?.length ? row.lineAreas : (row.lineArea ? [{ lineArea: row.lineArea, lineAreaId: row.lineAreaId, lineAreaCode: row.lineAreaCode, sectionId: row.lineAreaSectionId }] : [{ lineArea: '', lineAreaId: null, lineAreaCode: '', sectionId: null }]))).map((line, lineIndex, all) => <div key={lineIndex} className="relative min-h-[30px] p-0.5">
-                          <SearchableLineAreaSelect
-                            disabled={!canEditEntireRow || !(row.sections?.[lineIndex]?.sectionId ?? row.sections?.[lineIndex]?.section ?? row.sectionId ?? row.section)}
-                            value={line.lineArea}
-                            sectionId={line.sectionId ?? row.sections?.[lineIndex]?.sectionId ?? row.sectionId}
-                            section={row.sections?.[lineIndex]?.section ?? row.section}
-                            department={row.departments?.[lineIndex] || row.departments?.[0] || row.department}
-                            lineId={line.lineAreaId}
-                            onChange={(value, meta) => handleUpdateLineArea(idx, lineIndex, value, meta)}
-                          />
-                          {all.length > 1 && canEditEntireRow && <button type="button" onClick={() => handleRemoveLineArea(idx, lineIndex)} className="absolute right-0 top-1 text-slate-400 hover:text-rose-600" title="Remove Line/Area"><X className="h-2.5 w-2.5" /></button>}
-                        </div>)}
-                        {canEditEntireRow && <button type="button" onClick={() => handleAddLineArea(idx)} className="border-t border-slate-100 bg-slate-50/50 px-1 py-0.5 text-[9px] text-blue-600"><Plus className="inline h-2.5 w-2.5" /> Add</button>}
-                      </div>}
-                    </td>
-
-                    {/* 6. Observation (Auto-expanding, resizable width, wrapped multiline text) */}
-                    <td
-                      style={{
-                        width: `${observationWidth}px`,
-                        minWidth: `${observationWidth}px`,
-                        maxWidth: `${observationWidth}px`
-                      }}
-                      className="p-1 align-top border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-left overflow-hidden"
-                    >
-                      <AutoResizeTextarea
-                        inputRef={(el) => registerRef(idx, 'observation', el)}
-                        value={row.observation}
-                        readOnly={!canEditEntireRow}
-                        onChange={(e) => handleCellChange(idx, 'observation', e.target.value)}
-                        onKeyDown={(e) => handleKeyDown(e, idx, 'observation')}
-                        placeholder="Observation details..."
-                        className="w-full bg-transparent border-0 outline-none p-1.5 text-[14px] text-slate-800 text-left leading-relaxed focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 whitespace-pre-wrap break-words"
-                      />
-                    </td>
-
-                    {/* 7. Image (Before) - Auto-adjusts width/height, shows image in whole cell, hover reveals View and count */}
-                    {(() => {
-                      const isDoc = row.fileTypeBefore && ['pdf', 'excel', 'ppt', 'document', 'video'].includes(row.fileTypeBefore);
-                      const beforeImages = Array.isArray(row.imagesBefore)
-                        ? row.imagesBefore
-                        : (row.imageBefore && (!row.fileTypeBefore || row.fileTypeBefore === 'image')
-                          ? [{ id: 'legacy-before-0', url: row.imageBefore, name: row.imageBeforeName || 'Before Image', type: 'image' }]
-                          : []);
-                      const hasImages = !isDoc && beforeImages.length > 0;
-
-                      return (
-                        <td
-                          style={{
-                            width: `${imageBeforeColWidth}px`,
-                            minWidth: `${imageBeforeColWidth}px`
-                          }}
-                          className={`align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] text-center transition-all ${
-                            hasImages ? 'p-0 overflow-hidden' : 'p-1'
-                          }`}
-                        >
-                          {(() => {
-                            if (isDoc && row.imageBefore) {
-                              return (
-                                <div className="flex items-center justify-center w-full py-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => setSelectedImageAction({
-                                      rowIndex: idx,
-                                      field: 'imageBefore',
-                                      nameField: 'imageBeforeName',
-                                      typeField: 'fileTypeBefore',
-                                      title: 'Image (Before)',
-                                      imageSrc: row.imageBefore,
-                                      imageName: row.imageBeforeName || 'Document',
-                                      fileType: row.fileTypeBefore
-                                    })}
-                                    className="group relative inline-flex flex-col items-center justify-center p-2 rounded-xl border border-slate-300 hover:border-blue-500 hover:ring-2 hover:ring-blue-100 transition-all cursor-pointer bg-slate-50/80 shadow-2xs overflow-hidden w-full"
-                                    title={`Click to view, download, edit, or replace ${row.imageBeforeName || 'file'}`}
-                                  >
-                                    <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-white shadow-2xs border border-slate-200 mb-1">
-                                      {row.fileTypeBefore === 'pdf' ? (
-                                        <FileText className="w-5 h-5 text-rose-600" />
-                                      ) : row.fileTypeBefore === 'excel' ? (
-                                        <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
-                                      ) : row.fileTypeBefore === 'ppt' ? (
-                                        <Presentation className="w-5 h-5 text-amber-600" />
-                                      ) : row.fileTypeBefore === 'video' ? (
-                                        <Video className="w-5 h-5 text-purple-600" />
-                                      ) : (
-                                        <File className="w-5 h-5 text-blue-600" />
-                                      )}
-                                    </div>
-                                    <span className="text-[10px] font-semibold text-slate-700 truncate max-w-[120px] block">
-                                      {row.imageBeforeName || row.fileTypeBefore?.toUpperCase()}
-                                    </span>
-                                    <span className="text-[9px] uppercase font-bold text-slate-400 mt-0.5">
-                                      {row.fileTypeBefore}
-                                    </span>
-                                  </button>
-                                </div>
-                              );
-                            }
-
-                            if (hasImages) {
-                              const count = beforeImages.length;
-                              const countText = `${count} ${count === 1 ? 'Photo' : 'Photos'}`;
-
-                              return (
-                                <div className="relative w-full h-full min-h-[90px] flex items-center justify-center p-1.5 m-0 overflow-hidden group/imgcell">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenEvidenceViewer(idx, 'imageBefore')}
-                                    className="relative w-full h-full min-h-[85px] flex items-center justify-center p-0 m-0 border-0 rounded-md bg-transparent cursor-pointer overflow-hidden block"
-                                    title={`View evidence: ${countText}`}
-                                  >
-                                    <img
-                                      src={getMediaUrl(beforeImages[0].url)}
-                                      alt={beforeImages[0].name || `Row ${sNo} Before`}
-                                      onLoad={(e) => handleImageLoad(beforeImages[0].url, e)}
-                                      className="w-full h-full object-cover block m-0 p-0 rounded-md transition-transform duration-200 group-hover/imgcell:scale-105"
-                                      style={{
-                                        minHeight: '85px',
-                                        maxHeight: '260px',
-                                        aspectRatio: imageDimensions[beforeImages[0].url]
-                                          ? `${imageDimensions[beforeImages[0].url].width} / ${imageDimensions[beforeImages[0].url].height}`
-                                          : 'auto'
-                                      }}
-                                    />
-                                    <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover/imgcell:opacity-100 flex items-center justify-center transition-opacity duration-150 pointer-events-none rounded-md">
-                                      <span className="flex items-center gap-1.5 bg-black/75 backdrop-blur-xs px-2.5 py-1 rounded-md text-[11px] font-semibold text-white shadow-md">
-                                        <Eye className="w-3.5 h-3.5" />
-                                        <span>View</span>
-                                        <span className="text-white/60">•</span>
-                                        <span>{countText}</span>
-                                      </span>
-                                    </div>
-                                  </button>
-                                </div>
-                              );
-                            }
-
-                            if (!canEditEntireRow) {
-                              return (
-                                <div className="flex items-center justify-center w-full py-1 text-slate-300 text-xs select-none">
-                                  -
-                                </div>
-                              );
-                            }
-
-                            // Compact default icon button when empty - opens 4-box upload selection modal
+                        <div className="space-y-1.5 py-1">
+                          {STATUS_FILTER_OPTIONS.map((opt) => {
+                            const isChecked = statusFilters.includes(opt);
+                            const badgeColor =
+                              opt === 'Done' ? 'bg-[#dcfce7] text-[#14532d] border-[#86efac]' :
+                                opt === 'In-Progress' ? 'bg-[#fef3c7] text-[#78350f] border-[#fcd34d]' :
+                                  opt === 'Delay' ? 'bg-[#fee2e2] text-[#991b1b] border-[#fca5a5]' :
+                                    'bg-[#dbeafe] text-[#1e40af] border-[#93c5fd]';
                             return (
-                              <div className="flex items-center justify-center w-full py-1">
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenUploadModal(idx, 'imageBefore', 'imageBeforeName', 'fileTypeBefore', 'Image (Before)')}
-                                  className="group flex items-center justify-center w-9 h-9 rounded-lg border border-dashed border-slate-300 hover:border-blue-500 bg-slate-50/80 hover:bg-blue-50/50 transition-all cursor-pointer shadow-2xs hover:scale-105"
-                                  title="Click to choose upload type"
-                                >
-                                  <ImageIcon className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors" />
-                                </button>
-                              </div>
-                            );
-                          })()}
-                        </td>
-                      );
-                    })()}
-
-                    {/* 8. Root Cause (Auto-expanding, resizable width, vertically and horizontally centered) */}
-                    <td
-                      style={{
-                        width: `${rootCauseWidth}px`,
-                        minWidth: `${rootCauseWidth}px`,
-                        maxWidth: `${rootCauseWidth}px`
-                      }}
-                      className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-left overflow-hidden"
-                    >
-                      <div className="w-full flex items-center justify-start">
-                        <AutoResizeTextarea
-                          inputRef={(el) => registerRef(idx, 'rootCause', el)}
-                          value={row.rootCause}
-                          readOnly={!canEditActionCols}
-                          onChange={(e) => handleCellChange(idx, 'rootCause', e.target.value)}
-                          onKeyDown={(e) => handleKeyDown(e, idx, 'rootCause')}
-                          placeholder="Root cause..."
-                          className="w-full bg-transparent border-0 outline-none p-1.5 text-[14px] text-slate-800 text-left leading-snug whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-left"
-                        />
-                      </div>
-                    </td>
-
-                    {/* 8b. Action taken (Auto-expanding, resizable width, vertically and horizontally centered) */}
-                    <td
-                      style={{
-                        width: `${actionTakenWidth}px`,
-                        minWidth: `${actionTakenWidth}px`,
-                        maxWidth: `${actionTakenWidth}px`
-                      }}
-                      className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-left overflow-hidden"
-                    >
-                      <div className="w-full flex items-center justify-start">
-                        <AutoResizeTextarea
-                          inputRef={(el) => registerRef(idx, 'actionTaken', el)}
-                          value={row.actionTaken || ''}
-                          readOnly={!canEditActionCols}
-                          onChange={(e) => handleCellChange(idx, 'actionTaken', e.target.value)}
-                          onKeyDown={(e) => handleKeyDown(e, idx, 'actionTaken')}
-                          placeholder={canEditActionCols ? "Corrective action..." : ""}
-                          className="w-full bg-transparent border-0 outline-none p-1.5 text-[14px] text-slate-800 text-left leading-snug whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-left"
-                        />
-                      </div>
-                    </td>
-
-                    {/* 9. Counter Measure (Auto-expanding, resizable width, vertically and horizontally centered) */}
-                    <td
-                      style={{
-                        width: `${counterMeasureWidth}px`,
-                        minWidth: `${counterMeasureWidth}px`,
-                        maxWidth: `${counterMeasureWidth}px`
-                      }}
-                      className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-left overflow-hidden"
-                    >
-                      <div className="w-full flex items-center justify-start">
-                        <AutoResizeTextarea
-                          inputRef={(el) => registerRef(idx, 'counterMeasure', el)}
-                          value={row.counterMeasure}
-                          readOnly={!canEditActionCols}
-                          onChange={(e) => handleCellChange(idx, 'counterMeasure', e.target.value)}
-                          onKeyDown={(e) => handleKeyDown(e, idx, 'counterMeasure')}
-                          placeholder="Counter measure..."
-                          className="w-full bg-transparent border-0 outline-none p-1.5 text-[14px] text-slate-800 text-left leading-snug whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-left"
-                        />
-                      </div>
-                    </td>
-
-                    {/* 10. Image After - Auto-adjusts width/height, shows image in whole cell, hover reveals View and count */}
-                    {(() => {
-                      const isDoc = row.fileTypeAfter && ['pdf', 'excel', 'ppt', 'document', 'video'].includes(row.fileTypeAfter);
-                      const afterImages = Array.isArray(row.imagesAfter)
-                        ? row.imagesAfter
-                        : (row.imageAfter && (!row.fileTypeAfter || row.fileTypeAfter === 'image')
-                          ? [{ id: 'legacy-after-0', url: row.imageAfter, name: row.imageAfterName || 'After Image', type: 'image' }]
-                          : []);
-                      const hasImages = !isDoc && afterImages.length > 0;
-
-                      return (
-                        <td
-                          style={{
-                            width: `${imageAfterColWidth}px`,
-                            minWidth: `${imageAfterColWidth}px`
-                          }}
-                          className={`align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] text-center transition-all ${
-                            hasImages ? 'p-0 overflow-hidden' : 'p-1'
-                          }`}
-                        >
-                          {(() => {
-                            if (isDoc && row.imageAfter) {
-                              return (
-                                <div className="flex items-center justify-center w-full py-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => setSelectedImageAction({
-                                      rowIndex: idx,
-                                      field: 'imageAfter',
-                                      nameField: 'imageAfterName',
-                                      typeField: 'fileTypeAfter',
-                                      title: 'Image (After)',
-                                      imageSrc: row.imageAfter,
-                                      imageName: row.imageAfterName || 'Document',
-                                      fileType: row.fileTypeAfter
-                                    })}
-                                    className="group relative inline-flex flex-col items-center justify-center p-2 rounded-xl border border-slate-300 hover:border-blue-500 hover:ring-2 hover:ring-blue-100 transition-all cursor-pointer bg-slate-50/80 shadow-2xs overflow-hidden w-full"
-                                    title={`Click to view, download, edit, or replace ${row.imageAfterName || 'file'}`}
-                                  >
-                                    <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-white shadow-2xs border border-slate-200 mb-1">
-                                      {row.fileTypeAfter === 'pdf' ? (
-                                        <FileText className="w-5 h-5 text-rose-600" />
-                                      ) : row.fileTypeAfter === 'excel' ? (
-                                        <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
-                                      ) : row.fileTypeAfter === 'ppt' ? (
-                                        <Presentation className="w-5 h-5 text-amber-600" />
-                                      ) : row.fileTypeAfter === 'video' ? (
-                                        <Video className="w-5 h-5 text-purple-600" />
-                                      ) : (
-                                        <File className="w-5 h-5 text-blue-600" />
-                                      )}
-                                    </div>
-                                    <span className="text-[10px] font-semibold text-slate-700 truncate max-w-[120px] block">
-                                      {row.imageAfterName || row.fileTypeAfter?.toUpperCase()}
-                                    </span>
-                                    <span className="text-[9px] uppercase font-bold text-slate-400 mt-0.5">
-                                      {row.fileTypeAfter}
-                                    </span>
-                                  </button>
-                                </div>
-                              );
-                            }
-
-                            if (hasImages) {
-                              const count = afterImages.length;
-                              const countText = `${count} ${count === 1 ? 'Photo' : 'Photos'}`;
-
-                              return (
-                                <div className="relative w-full h-full min-h-[90px] flex items-center justify-center p-1.5 m-0 overflow-hidden group/imgcell">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenEvidenceViewer(idx, 'imageAfter')}
-                                    className="relative w-full h-full min-h-[85px] flex items-center justify-center p-0 m-0 border-0 rounded-md bg-transparent cursor-pointer overflow-hidden block"
-                                    title={`View evidence: ${countText}`}
-                                  >
-                                    <img
-                                      src={getMediaUrl(afterImages[0].url)}
-                                      alt={afterImages[0].name || `Row ${sNo} After`}
-                                      onLoad={(e) => handleImageLoad(afterImages[0].url, e)}
-                                      className="w-full h-full object-cover block m-0 p-0 rounded-md transition-transform duration-200 group-hover/imgcell:scale-105"
-                                      style={{
-                                        minHeight: '85px',
-                                        maxHeight: '260px',
-                                        aspectRatio: imageDimensions[afterImages[0].url]
-                                          ? `${imageDimensions[afterImages[0].url].width} / ${imageDimensions[afterImages[0].url].height}`
-                                          : 'auto'
-                                      }}
-                                    />
-                                    <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover/imgcell:opacity-100 flex items-center justify-center transition-opacity duration-150 pointer-events-none rounded-md">
-                                      <span className="flex items-center gap-1.5 bg-black/75 backdrop-blur-xs px-2.5 py-1 rounded-md text-[11px] font-semibold text-white shadow-md">
-                                        <Eye className="w-3.5 h-3.5" />
-                                        <span>View</span>
-                                        <span className="text-white/60">•</span>
-                                        <span>{countText}</span>
-                                      </span>
-                                    </div>
-                                  </button>
-                                </div>
-                              );
-                            }
-
-                            if (!canEditActionCols) {
-                              return (
-                                <div className="flex items-center justify-center w-full py-1 text-slate-300 text-xs select-none">
-                                  -
-                                </div>
-                              );
-                            }
-
-                            // Compact default icon button when empty - opens 4-box upload selection modal
-                            return (
-                              <div className="flex items-center justify-center w-full py-1">
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenUploadModal(idx, 'imageAfter', 'imageAfterName', 'fileTypeAfter', 'Image (After)')}
-                                  className="group flex items-center justify-center w-9 h-9 rounded-lg border border-dashed border-slate-300 hover:border-blue-500 bg-slate-50/80 hover:bg-blue-50/50 transition-all cursor-pointer shadow-2xs hover:scale-105"
-                                  title="Click to choose upload type"
-                                >
-                                  <ImageIcon className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors" />
-                                </button>
-                              </div>
-                            );
-                          })()}
-                        </td>
-                      );
-                    })()}
-
-                    {/* Std. Duration in min - Automatically formats with 'min' suffix */}
-                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[80px] min-w-[75px] focus-within:bg-blue-50/30">
-                      <div className="w-full flex items-center justify-center">
-                        <DurationMinCell
-                          value={row.stdDurationMin}
-                          readOnly={!canEditActionCols}
-                          hasResponseDate={Boolean(row.responseDate?.trim())}
-                          onDisabledClick={() => {
-                            showToast(`Row ${idx + 1}: Select Response Date first before entering Std. Duration.`);
-                          }}
-                          cellRef={(element) => {
-                            if (element) durationCellRefs.current[idx] = element;
-                            else delete durationCellRefs.current[idx];
-                          }}
-                          requiredActionAllowed={Boolean(row.responseDate?.trim() && !hasValidStdDuration(row.stdDurationMin ?? row.stdDuration))}
-                          onChange={(val) => handleCellChange(idx, 'stdDurationMin', val)}
-                        />
-                      </div>
-                    </td>
-
-                    {/* Response Date (Stacked: Format on top, Calendar icon below, centered) */}
-                    <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[82px] min-w-[78px]">
-                      <div className="w-full flex items-center justify-center">
-                        <CompactDateCell
-                          value={row.responseDate}
-                          readOnly={!canEditActionCols}
-                          smallText
-                          onChange={(val) => handleResponseDateChange(idx, val)}
-                        />
-                      </div>
-                    </td>
-
-                    {/* No. of time Revised - Stacked past and current response dates */}
-                    <td
-                      style={{ width: `${revisedColWidth}px`, minWidth: `${revisedColWidth}px`, maxWidth: `${revisedColWidth}px` }}
-                      className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC]"
-                    >
-                      {Array.isArray(row.revisedDates) && row.revisedDates.length > 0 ? (
-                        <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
-                          {row.revisedDates.map((rItem, rIdx) => {
-                            const revDate = typeof rItem === 'object' && rItem !== null ? rItem.date : rItem;
-                            const revReason = typeof rItem === 'object' && rItem !== null ? (rItem.reason || '') : '';
-                            return (
-                              <div
-                                key={rIdx}
-                                className="group/rev w-full min-w-0 py-1.5 px-1.5 flex flex-col items-center justify-center text-center gap-1.5 hover:bg-slate-50 transition-colors"
+                              <label
+                                key={opt}
+                                className="flex items-center gap-2 px-1.5 py-1 rounded-md hover:bg-slate-50 cursor-pointer select-none"
                               >
-                                <div className="w-full flex items-center justify-between gap-1">
-                                  <span className="flex-1 text-[14px] font-semibold text-slate-800 whitespace-nowrap text-center">
-                                    {rIdx + 1}) {formatDisplayDate(revDate)}
-                                  </span>
-                                  {(isAdmin || isCreatorOrAdmin) && (
-                                    <button
-                                      type="button"
-                                      ref={(element) => {
-                                        const key = `${idx}:${rIdx}`;
-                                        if (element) revisionDeleteRefs.current[key] = element;
-                                        else delete revisionDeleteRefs.current[key];
-                                      }}
-                                      data-required-action-allowed="true"
-                                      onPointerDown={(e) => {
-                                        e.stopPropagation();
-                                      }}
-                                      onMouseDown={(e) => {
-                                        e.stopPropagation();
-                                      }}
-                                      onClick={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        handleDeleteRevisedDate(idx, rIdx);
-                                      }}
-                                      title={`Delete Revision ${rIdx + 1} (${formatDisplayDate(revDate)})`}
-                                      className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-0.5 rounded transition-colors cursor-pointer shrink-0 opacity-80 hover:opacity-100 group-hover/rev:opacity-100"
-                                    >
-                                      <X className="w-3.5 h-3.5 stroke-[2.5]" />
-                                    </button>
-                                  )}
-                                </div>
-                                <AutoWidthInput
-                                  value={revReason}
-                                  readOnly={!canEditActionCols}
-                                  inputRef={(element) => {
-                                    const key = `${idx}:${rIdx}`;
-                                    if (element) revisionReasonRefs.current[key] = element;
-                                    else delete revisionReasonRefs.current[key];
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => {
+                                    setStatusFilters((prev) =>
+                                      prev.includes(opt) ? prev.filter((s) => s !== opt) : [...prev, opt]
+                                    );
                                   }}
-                                  required
-                                  dataRequiredActionAllowed={!revReason.trim()}
-                                  onChange={(e) => handleRevisionReasonChange(idx, rIdx, e.target.value)}
-                                  placeholder="Why revised..."
-                                  className="w-full min-w-0 max-w-full text-[14px] font-medium text-slate-800 bg-white border border-slate-300 focus:border-blue-500 rounded px-2 py-1 text-left shadow-2xs focus:outline-none"
+                                  className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                                 />
-                              </div>
+                                <span className={`px-2 py-0.5 rounded text-[11px] font-semibold border ${badgeColor}`}>
+                                  {opt}
+                                </span>
+                              </label>
                             );
                           })}
                         </div>
-                      ) : (
-                        <div className="w-full py-1 flex items-center justify-center text-slate-300 text-xs select-none">
-                          -
-                        </div>
-                      )}
-                    </td>
 
-                    {/* Responsible Person: When both units chosen, parent cell with single dividing line */}
-                    {(() => {
-                      const { units, deptsByUnit } = getResponsiblePersonStructure(row);
-                      if (units.length > 1) {
-                        return (
-                          <td
-                            colSpan={4}
-                            className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC]"
+                        <div className="flex items-center justify-between pt-2 mt-1 border-t border-slate-100 text-[11px]">
+                          <button
+                            type="button"
+                            onClick={() => setStatusFilters([...STATUS_FILTER_OPTIONS])}
+                            className="text-blue-600 hover:text-blue-800 font-semibold cursor-pointer"
                           >
-                            <div className="flex flex-col w-full h-full divide-y divide-[#CBD5E1]">
-                              {units.map((unitName) => {
-                                const unitDepts = deptsByUnit[unitName] || [];
-                                const unitOptions = getDepartmentsForUnit(unitName).map((d) => ({ value: d, label: d }));
-                                const flexGrow = Math.max(1, unitDepts.length);
-                                const unitCft = (row.cftByUnit && row.cftByUnit[unitName]) ||
-                                  (unitName === units[0] ? {
-                                    cftTopic: row.cftTopic,
-                                    cftTopicId: row.cftTopicId,
-                                    cftSelectedType: row.cftSelectedType,
-                                    cftSelectedName: row.cftSelectedName,
-                                    cftSelectedCode: row.cftSelectedCode
-                                  } : { cftTopic: '', cftTopicId: '', cftSelectedType: '', cftSelectedName: '', cftSelectedCode: '' });
-                                const hasTopic = Boolean(unitCft.cftTopic);
+                            Select All
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setStatusFilters([])}
+                            className="text-slate-500 hover:text-slate-800 font-semibold cursor-pointer"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </th>
+                  <th rowSpan={2} className="py-1.5 px-1 w-[115px] min-w-[100px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px]">
+                    <span>Unit</span> <span className="text-red-500 font-bold">*</span>
+                  </th>
+                  <th
+                    rowSpan={2}
+                    style={{ width: `${departmentColWidth}px`, minWidth: `${departmentColWidth}px` }}
+                    className="relative py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] select-none transition-[width] duration-150"
+                  >
+                    <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-1">
+                      <span>Department</span> <span className="text-red-500 font-bold">*</span>
+                    </div>
+                    <span
+                      role="separator"
+                      aria-label="Resize Department column width"
+                      aria-orientation="vertical"
+                      aria-valuemin={MIN_DEPARTMENT_WIDTH}
+                      aria-valuemax={MAX_DEPARTMENT_WIDTH}
+                      aria-valuenow={departmentColWidth}
+                      tabIndex={0}
+                      title={`Drag horizontally or use arrow keys to adjust Department column width (${departmentColWidth}px)`}
+                      onPointerDown={startDeptResize}
+                      onPointerMove={continueDeptResize}
+                      onPointerUp={finishDeptResize}
+                      onPointerCancel={finishDeptResize}
+                      onLostPointerCapture={finishDeptResize}
+                      onKeyDown={handleDeptResizeKeyDown}
+                      className="group absolute inset-y-0 right-0 z-20 flex w-3 cursor-col-resize touch-none items-center justify-center hover:bg-blue-100/70 active:bg-blue-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500 transition-colors"
+                    >
+                      <span className="h-4 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 transition-opacity" />
+                    </span>
+                  </th>
+                  <th
+                    rowSpan={2}
+                    style={{
+                      width: `${sectionColWidth}px`,
+                      minWidth: `${sectionColWidth}px`
+                    }}
+                    className="relative py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] select-none whitespace-nowrap transition-[width] duration-150"
+                  >
+                    <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-1">
+                      <span>Section</span>
+                    </div>
+                    <span
+                      role="separator"
+                      aria-label="Resize Section column width"
+                      aria-orientation="vertical"
+                      aria-valuemin={MIN_SECTION_WIDTH}
+                      aria-valuemax={MAX_SECTION_WIDTH}
+                      aria-valuenow={sectionColWidth}
+                      tabIndex={0}
+                      title={`Drag horizontally or use arrow keys to adjust Section column width (${sectionColWidth}px)`}
+                      onPointerDown={startSectionResize}
+                      onPointerMove={continueSectionResize}
+                      onPointerUp={finishSectionResize}
+                      onPointerCancel={finishSectionResize}
+                      onLostPointerCapture={finishSectionResize}
+                      onKeyDown={handleSectionResizeKeyDown}
+                      className="group absolute inset-y-0 right-0 z-20 flex w-3 cursor-col-resize touch-none items-center justify-center hover:bg-blue-100/70 active:bg-blue-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500 transition-colors"
+                    >
+                      <span className="h-4 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 transition-opacity" />
+                    </span>
+                  </th>
+                  <th
+                    rowSpan={2}
+                    style={{
+                      width: `${lineAreaColWidth}px`,
+                      minWidth: `${lineAreaColWidth}px`
+                    }}
+                    className="relative py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] select-none whitespace-nowrap transition-[width] duration-150"
+                  >
+                    <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-1">
+                      <span>Line/Area</span>
+                    </div>
+                    <span
+                      role="separator"
+                      aria-label="Resize Line/Area column width"
+                      aria-orientation="vertical"
+                      aria-valuemin={MIN_LINE_AREA_WIDTH}
+                      aria-valuemax={MAX_LINE_AREA_WIDTH}
+                      aria-valuenow={lineAreaColWidth}
+                      tabIndex={0}
+                      title={`Drag horizontally or use arrow keys to adjust Line/Area column width (${lineAreaColWidth}px)`}
+                      onPointerDown={startLineAreaResize}
+                      onPointerMove={continueLineAreaResize}
+                      onPointerUp={finishLineAreaResize}
+                      onPointerCancel={finishLineAreaResize}
+                      onLostPointerCapture={finishLineAreaResize}
+                      onKeyDown={handleLineAreaResizeKeyDown}
+                      className="group absolute inset-y-0 right-0 z-20 flex w-3 cursor-col-resize touch-none items-center justify-center hover:bg-blue-100/70 active:bg-blue-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500 transition-colors"
+                    >
+                      <span className="h-4 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 transition-opacity" />
+                    </span>
+                  </th>
+                  <th
+                    rowSpan={2}
+                    style={{
+                      width: `${observationWidth}px`,
+                      minWidth: `${observationWidth}px`,
+                      maxWidth: `${observationWidth}px`
+                    }}
+                    className="relative py-1.5 px-2 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] select-none"
+                  >
+                    <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-2">
+                      <span>Observation</span> <span className="text-red-500 font-bold">*</span>
+                    </div>
 
+                    {/* Draggable Resize Handle */}
+                    <span
+                      role="separator"
+                      aria-label="Resize Observation column width"
+                      aria-orientation="vertical"
+                      aria-valuemin={MIN_OBSERVATION_WIDTH}
+                      aria-valuemax={MAX_OBSERVATION_WIDTH}
+                      aria-valuenow={observationWidth}
+                      tabIndex={0}
+                      title={`Drag horizontally or use arrow keys to adjust Observation column width (${observationWidth}px)`}
+                      onPointerDown={startColResize}
+                      onPointerMove={continueColResize}
+                      onPointerUp={finishColResize}
+                      onPointerCancel={finishColResize}
+                      onLostPointerCapture={finishColResize}
+                      onKeyDown={handleResizeKeyDown}
+                      className="group absolute inset-y-0 right-0 z-20 flex w-3 cursor-col-resize touch-none items-center justify-center hover:bg-blue-100/70 active:bg-blue-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500 transition-colors"
+                    >
+                      <span className="h-4 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 transition-opacity" />
+                    </span>
+                  </th>
+                  <th
+                    rowSpan={2}
+                    style={{
+                      width: `${imageBeforeColWidth}px`,
+                      minWidth: `${imageBeforeColWidth}px`
+                    }}
+                    className="py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] select-none transition-[width] duration-150"
+                  >
+                    Image Before
+                  </th>
+                  <th
+                    rowSpan={2}
+                    style={{
+                      width: `${rootCauseWidth}px`,
+                      minWidth: `${rootCauseWidth}px`,
+                      maxWidth: `${rootCauseWidth}px`
+                    }}
+                    className="relative py-1.5 px-2 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] select-none"
+                  >
+                    <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-2">
+                      <span>Root Cause</span>
+                    </div>
+
+                    {/* Draggable Resize Handle */}
+                    <span
+                      role="separator"
+                      aria-label="Resize Root Cause column width"
+                      aria-orientation="vertical"
+                      aria-valuemin={MIN_ROOT_CAUSE_WIDTH}
+                      aria-valuemax={MAX_ROOT_CAUSE_WIDTH}
+                      aria-valuenow={rootCauseWidth}
+                      tabIndex={0}
+                      title={`Drag horizontally or use arrow keys to adjust Root Cause column width (${rootCauseWidth}px)`}
+                      onPointerDown={startRootCauseResize}
+                      onPointerMove={continueRootCauseResize}
+                      onPointerUp={finishRootCauseResize}
+                      onPointerCancel={finishRootCauseResize}
+                      onLostPointerCapture={finishRootCauseResize}
+                      onKeyDown={handleRootCauseResizeKeyDown}
+                      className="group absolute inset-y-0 right-0 z-20 flex w-3 cursor-col-resize touch-none items-center justify-center hover:bg-blue-100/70 active:bg-blue-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500 transition-colors"
+                    >
+                      <span className="h-4 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 transition-opacity" />
+                    </span>
+                  </th>
+
+                  <th
+                    rowSpan={2}
+                    style={{
+                      width: `${actionTakenWidth}px`,
+                      minWidth: `${actionTakenWidth}px`,
+                      maxWidth: `${actionTakenWidth}px`
+                    }}
+                    className="relative py-1.5 px-2 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] select-none"
+                  >
+                    <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-2">
+                      <span>Corrective Action</span>
+                    </div>
+
+                    {/* Draggable Resize Handle */}
+                    <span
+                      role="separator"
+                      aria-label="Resize Corrective Action column width"
+                      aria-orientation="vertical"
+                      aria-valuemin={MIN_ACTION_TAKEN_WIDTH}
+                      aria-valuemax={MAX_ACTION_TAKEN_WIDTH}
+                      aria-valuenow={actionTakenWidth}
+                      tabIndex={0}
+                      title={`Drag horizontally or use arrow keys to adjust Corrective Action column width (${actionTakenWidth}px)`}
+                      onPointerDown={startActionTakenResize}
+                      onPointerMove={continueActionTakenResize}
+                      onPointerUp={finishActionTakenResize}
+                      onPointerCancel={finishActionTakenResize}
+                      onLostPointerCapture={finishActionTakenResize}
+                      onKeyDown={handleActionTakenResizeKeyDown}
+                      className="group absolute inset-y-0 right-0 z-20 flex w-3 cursor-col-resize touch-none items-center justify-center hover:bg-blue-100/70 active:bg-blue-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500 transition-colors"
+                    >
+                      <span className="h-4 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 transition-opacity" />
+                    </span>
+                  </th>
+
+                  <th
+                    rowSpan={2}
+                    style={{
+                      width: `${counterMeasureWidth}px`,
+                      minWidth: `${counterMeasureWidth}px`,
+                      maxWidth: `${counterMeasureWidth}px`
+                    }}
+                    className="relative py-1.5 px-2 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] leading-tight text-[14px] select-none"
+                  >
+                    <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-2">
+                      <span>Counter Measure</span>
+                    </div>
+
+                    {/* Draggable Resize Handle */}
+                    <span
+                      role="separator"
+                      aria-label="Resize Counter Measure column width"
+                      aria-orientation="vertical"
+                      aria-valuemin={MIN_COUNTER_MEASURE_WIDTH}
+                      aria-valuemax={MAX_COUNTER_MEASURE_WIDTH}
+                      aria-valuenow={counterMeasureWidth}
+                      tabIndex={0}
+                      title={`Drag horizontally or use arrow keys to adjust Counter Measure column width (${counterMeasureWidth}px)`}
+                      onPointerDown={startCounterMeasureResize}
+                      onPointerMove={continueCounterMeasureResize}
+                      onPointerUp={finishCounterMeasureResize}
+                      onPointerCancel={finishCounterMeasureResize}
+                      onLostPointerCapture={finishCounterMeasureResize}
+                      onKeyDown={handleCounterMeasureResizeKeyDown}
+                      className="group absolute inset-y-0 right-0 z-20 flex w-3 cursor-col-resize touch-none items-center justify-center hover:bg-blue-100/70 active:bg-blue-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-500 transition-colors"
+                    >
+                      <span className="h-4 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 transition-opacity" />
+                    </span>
+                  </th>
+                  <th
+                    rowSpan={2}
+                    style={{
+                      width: `${imageAfterColWidth}px`,
+                      minWidth: `${imageAfterColWidth}px`
+                    }}
+                    className="py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] select-none transition-[width] duration-150"
+                  >
+                    Image After
+                  </th>
+                  <th rowSpan={2} className="py-1.5 px-1.5 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 leading-tight select-none">
+                    <div>Std. Duration</div>
+                    <div className="text-[12px] font-semibold text-slate-600">in min</div>
+                  </th>
+                  <th rowSpan={2} className="py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 leading-tight select-none">
+                    <div>Response</div>
+                    <div>Date</div>
+                  </th>
+                  <th
+                    rowSpan={2}
+                    style={{ width: `${revisedColWidth}px`, minWidth: `${revisedColWidth}px`, maxWidth: `${revisedColWidth}px` }}
+                    className="py-1.5 px-2 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 leading-tight select-none"
+                    title="Past revisions of Response Date. Only administrators have permission to delete revised dates."
+                  >
+                    <div>No. of time</div>
+                    <div className="flex items-center justify-center gap-1">
+                      <span>Revised</span>
+                      {isAdmin && (
+                        <span className="text-[10px] font-bold text-amber-800 bg-amber-100/90 px-1.5 py-0.5 rounded border border-amber-300" title="Administrator access: you can delete revised dates">
+                          Admin
+                        </span>
+                      )}
+                    </div>
+                  </th>
+                  <th colSpan={4} className="py-1.5 px-1 border-r border-b border-[#475569] bg-[#ECEFF1] text-center select-none">
+                    <div className="text-center font-bold text-[14px] text-slate-800 px-1 tracking-wide">
+                      Responsible Person
+                    </div>
+                  </th>
+                  <th rowSpan={2} className="py-1.5 px-1.5 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 leading-tight select-none">
+                    <div className="flex items-center justify-center gap-1.5 text-[14px] font-bold text-slate-800 leading-tight">
+                      <Lock className="w-3.5 h-3.5 text-slate-700 flex-shrink-0" />
+                      <span>Confirmation</span>
+                    </div>
+                  </th>
+                  {canShowRowActions && (
+                    <th rowSpan={2} className="py-1.5 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 select-none">
+                      Actions
+                    </th>
+                  )}
+                </tr>
+
+                <tr className="bg-[#ECEFF1] text-slate-800 font-bold text-[14px] select-none text-center">
+                  <th className="py-1 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 w-[110px] min-w-[100px]">
+                    Unit
+                  </th>
+                  <th
+                    ref={respDeptFilterRef}
+                    className="relative py-1 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 w-[145px] min-w-[135px] select-none"
+                  >
+                    <div className="flex items-center justify-center gap-1 font-bold text-slate-800">
+                      <span>Dept</span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsRespDeptFilterOpen((prev) => !prev);
+                        }}
+                        title={respDeptFilters.length > 0 ? `Filtered by: ${respDeptFilters.join(', ')}` : 'Filter by Department'}
+                        className={`ml-0.5 p-0.5 rounded transition-colors cursor-pointer flex items-center justify-center ${respDeptFilters.length > 0
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : 'text-slate-500 hover:text-blue-600 hover:bg-slate-200/70'
+                          }`}
+                      >
+                        <Filter className="w-3.5 h-3.5 stroke-[2.5]" />
+                      </button>
+                      {respDeptFilters.length > 0 && (
+                        <span className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold text-white bg-blue-600 rounded-full">
+                          {respDeptFilters.length}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Responsible Person Department Multi-select Filter Popover */}
+                    {isRespDeptFilterOpen && (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-50 w-56 bg-white rounded-xl shadow-xl border border-slate-200 p-2.5 text-left text-xs font-normal"
+                        style={{ minWidth: '220px' }}
+                      >
+                        <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-slate-100">
+                          <span className="font-bold text-slate-800 text-[12px] flex items-center gap-1">
+                            <Filter className="w-3 h-3 text-blue-600" /> Filter Department
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setIsRespDeptFilterOpen(false)}
+                            className="text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        {/* Department search */}
+                        <div className="relative mb-2">
+                          <Search className="w-3 h-3 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="text"
+                            value={deptFilterSearch}
+                            onChange={(e) => setDeptFilterSearch(e.target.value)}
+                            placeholder="Search department..."
+                            className="w-full bg-slate-50 border border-slate-200 rounded-md pl-6 pr-2 py-1 text-[11px] text-slate-700 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500"
+                          />
+                        </div>
+
+                        {/* Department Checkboxes List */}
+                        <div className="space-y-1 py-1 max-h-48 overflow-y-auto pr-0.5">
+                          {filteredDeptOptions.map((dept) => {
+                            const isChecked = respDeptFilters.includes(dept);
+                            return (
+                              <label
+                                key={dept}
+                                className={`flex items-center gap-2 px-1.5 py-1 rounded-md cursor-pointer select-none transition-colors ${isChecked ? 'bg-blue-50 text-blue-800 font-semibold' : 'text-slate-700 hover:bg-slate-50'
+                                  }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => {
+                                    setRespDeptFilters((prev) =>
+                                      prev.includes(dept) ? prev.filter((d) => d !== dept) : [...prev, dept]
+                                    );
+                                  }}
+                                  className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                />
+                                <span className="text-[12px] truncate">{dept}</span>
+                              </label>
+                            );
+                          })}
+                          {filteredDeptOptions.length === 0 && (
+                            <div className="py-2 text-center text-slate-400 text-[11px]">No departments found</div>
+                          )}
+                        </div>
+
+                        <div className="flex items-center justify-between pt-2 mt-1 border-t border-slate-100 text-[11px]">
+                          <button
+                            type="button"
+                            onClick={() => setRespDeptFilters([...allDepartmentOptions])}
+                            className="text-blue-600 hover:text-blue-800 font-semibold cursor-pointer"
+                          >
+                            Select All
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setRespDeptFilters([])}
+                            className="text-slate-500 hover:text-slate-800 font-semibold cursor-pointer"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </th>
+                  <th className="py-1 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 w-[160px] min-w-[150px]">
+                    <span>Staff Name</span> <span className="text-red-500 font-bold">*</span>
+                  </th>
+                  <th className="py-1 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 w-[120px] min-w-[110px]">
+                    CFT
+                  </th>
+                </tr>
+              </thead>
+
+              {/* Table Rows with thin bordered cells matching reference style */}
+              <tbody className="bg-white">
+                {(() => {
+                  const renderedRows = rows.map((row, idx) => {
+                    const isDone = normalizePDCAStatus(row.status) === 'Done';
+                    if (!showDoneRows && isDone) return null;
+
+                    // Self PDCA visibility rule: display ONLY points relevant to the logged-in employee
+                    if (isSelfView) {
+                      const isAssigned = isUserResponsibleForRow(row, effectiveUser);
+                      const isCreatorUnassigned = isCreatorOrAdmin && (topic?.scope === 'Self PDCA' || topic?.isSelf) && !row.staffName && !row.staffEmployee;
+                      if (!isAssigned && !isCreatorUnassigned) return null;
+                    }
+
+                    // Department visibility rule: display ONLY points belonging to my department
+                    if (isDepartmentView && effectiveDept) {
+                      const belongs = doesRowBelongToDepartment(row, effectiveDept, dbEmployees);
+                      if (!belongs) return null;
+                    }
+
+                    // Status Filter rule: display ONLY points matching selected statuses
+                    if (statusFilters.length > 0) {
+                      const rowStatus = getRowStatusForFilter(row);
+                      if (!statusFilters.includes(rowStatus)) return null;
+                    }
+
+                    // Department Filter rule (Responsible Person Dept): display ONLY points matching selected departments
+                    if (respDeptFilters.length > 0) {
+                      const rowDepts = getRowResponsibleDepartments(row);
+                      const matches = rowDepts.some((d) => respDeptFilters.includes(d));
+                      if (!matches) return null;
+                    }
+
+                    const sNo = idx + 1;
+                    const isResponsiblePerson = isUserResponsibleForRow(row, effectiveUser);
+                    const isDeptMember = isUserInResponsibleDepartment(row, effectiveUser);
+                    const isRowResponsible = isResponsiblePerson || (isDeptMember && !isAssignedStaffAnywhere);
+                    // Responsible Person (assigned from Staff Name) can ONLY edit the 6 action columns of THEIR OWN assigned row:
+                    // Root cause, Corrective Action, Counter Measure, Image After, Std. Duration in Min, response Date.
+                    // They CANNOT edit any other rows, the entire row/sheet, or Confirmation.
+                    const canEditEntireRow = Boolean(!readOnly && (isAdmin || isCreator || (isSameDepartmentAsSheet && !isAssignedStaffAnywhere && !isResponsiblePerson)));
+                    const unitSelected = usesCheckboxMultiSelects
+                      ? (row.units || (row.unit ? [row.unit] : [])).some(unit => PDCA_UNITS.includes(unit))
+                      : ['Bawal', 'Gujrat'].includes(row.unit);
+                    const responsibleUnitSelected = usesCheckboxMultiSelects
+                      ? (row.respUnits || (row.respUnit || row.responsiblePersonUnit ? [row.respUnit || row.responsiblePersonUnit] : [])).some(unit => PDCA_UNITS.includes(unit))
+                      : ['Bawal', 'Gujrat'].includes(row.respUnit || row.responsiblePersonUnit);
+                    const canEditActionCols = Boolean(!readOnly && (isAdmin || isCreator || (isSameDepartmentAsSheet && !isAssignedStaffAnywhere) || isRowResponsible));
+                    const canConfirmThisRow = Boolean(!readOnly && (isAdmin || isCreator || (isSameDepartmentAsSheet && !isAssignedStaffAnywhere)) && !isResponsiblePerson);
+
+                    return (
+                      <tr
+                        key={idx}
+                        className="group/row transition-colors"
+                      >
+                        {/* 1. Date (Stacked: Format on top, Calendar icon below) */}
+                        <td style={{ width: `${dateColWidth}px`, minWidth: `${dateColWidth}px` }} className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150">
+                          <div className="w-full flex items-center justify-center">
+                            <CompactDateCell
+                              value={row.date}
+                              readOnly={!canEditEntireRow}
+                              onChange={(val) => handleCellChange(idx, 'date', val)}
+                            />
+                          </div>
+                        </td>
+
+                        {/* 2. Shift (Single letter A/B/C/G, centered in cell) */}
+                        <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[38px] min-w-[34px] focus-within:bg-blue-50/30">
+                          <div className="relative w-full flex items-center justify-center">
+                            <select
+                              disabled={!canEditEntireRow}
+                              value={row.shift === 'General' ? 'G' : (row.shift || '')}
+                              onChange={(e) => handleCellChange(idx, 'shift', e.target.value)}
+                              className={`w-full bg-transparent border-0 outline-none px-1 py-1 text-[14px] text-slate-800 font-semibold text-center focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${!canEditEntireRow ? 'cursor-default appearance-none' : 'cursor-pointer'} transition-colors appearance-none`}
+                            >
+                              <option value="">-</option>
+                              <option value="A">A</option>
+                              <option value="B">B</option>
+                              <option value="C">C</option>
+                              <option value="G">G</option>
+                            </select>
+                            {canEditEntireRow && (
+                              <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            )}
+                          </div>
+                        </td>
+
+                        {/* 3. S.No (Clean uneditable number, centered) */}
+                        <td className="p-1 align-middle text-center border-r border-b border-[#64748B] font-semibold text-slate-600 bg-[#FAFAFA] group-hover/row:bg-[#F1F5F9] select-none w-[34px] min-w-[30px] text-[14px]">
+                          {sNo}
+                        </td>
+
+                        {/* 4. Status (Frozen - clearly visible, vivid & darker colors without browser fade) */}
+                        <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[124px] min-w-[118px]">
+                          {(() => {
+                            const hasDate = Boolean(row.date?.trim());
+                            const norm = normalizePDCAStatus(row.status);
+                            const rowStatus = hasDate
+                              ? (norm || 'Not-Started')
+                              : (norm && norm !== 'Not-Started' ? norm : '');
+                            return (
+                              <div className="w-full flex items-center justify-center">
+                                <div
+                                  tabIndex={-1}
+                                  aria-label={`Status for row ${sNo}`}
+                                  className={`w-full min-w-full rounded-md border px-2 py-1 text-[13px] font-bold outline-none whitespace-nowrap select-none flex items-center justify-between cursor-default shadow-xs ${rowStatus === 'Done' ? 'bg-[#dcfce7] text-[#14532d] border-[#86efac]' :
+                                    rowStatus === 'In- Progress' ? 'bg-[#fef3c7] text-[#78350f] border-[#fcd34d]' :
+                                      rowStatus === 'Delay' ? 'bg-[#fee2e2] text-[#991b1b] border-[#fca5a5]' :
+                                        rowStatus === 'Not-Started' ? 'bg-[#dbeafe] text-[#1e40af] border-[#93c5fd]' :
+                                          'bg-slate-50 text-slate-500 border-slate-200'
+                                    }`}
+                                  style={{
+                                    color: rowStatus === 'Done' ? '#14532d' :
+                                      rowStatus === 'In- Progress' ? '#78350f' :
+                                        rowStatus === 'Delay' ? '#991b1b' :
+                                          rowStatus === 'Not-Started' ? '#1e40af' : '#64748b',
+                                    backgroundColor: rowStatus === 'Done' ? '#dcfce7' :
+                                      rowStatus === 'In- Progress' ? '#fef3c7' :
+                                        rowStatus === 'Delay' ? '#fee2e2' :
+                                          rowStatus === 'Not-Started' ? '#dbeafe' : '#f8fafc',
+                                    borderColor: rowStatus === 'Done' ? '#86efac' :
+                                      rowStatus === 'In- Progress' ? '#fcd34d' :
+                                        rowStatus === 'Delay' ? '#fca5a5' :
+                                          rowStatus === 'Not-Started' ? '#93c5fd' : '#cbd5e1'
+                                  }}
+                                >
+                                  <span className="flex-1 text-center font-bold tracking-wide">
+                                    {rowStatus || 'Select'}
+                                  </span>
+                                  <ChevronDown className="w-3.5 h-3.5 opacity-70 flex-shrink-0" />
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </td>
+
+                        {/* 5. Unit (Section P) - Immediately before Department */}
+                        <td className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[115px] min-w-[100px] focus-within:bg-blue-50/30">
+                          {usesCheckboxMultiSelects ? <CheckboxMultiSelect
+                            disabled={!canEditEntireRow}
+                            value={row.units || (row.unit ? [row.unit] : [])}
+                            options={PDCA_UNITS.map(unit => ({ value: unit, label: unit }))}
+                            placeholder="Unit..."
+                            onChange={values => setRows(prev => prev.map((item, rowIndex) => rowIndex === idx ? { ...item, units: values, unit: values[0] || '' } : item))}
+                          /> : <div className="relative w-full flex items-center justify-center">
+                            <select disabled={!canEditEntireRow} value={row.unit || ''} onChange={event => handleCellChange(idx, 'unit', event.target.value)} className={`w-full bg-transparent border-0 outline-none pl-1 pr-3 py-1 text-[14px] text-slate-800 text-center font-medium focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 ${!canEditEntireRow ? 'cursor-default' : 'cursor-pointer'} appearance-none truncate`} title={row.unit || 'Select Unit'}>
+                              <option value="">Unit...</option><option value="Bawal">Bawal</option><option value="Gujrat">Gujrat</option>
+                            </select>
+                            {canEditEntireRow && <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-0.5 top-1/2 -translate-y-1/2 pointer-events-none" />}
+                          </div>}
+                        </td>
+
+                        {/* 6. Department */}
+                        <td style={{ width: `${departmentColWidth}px`, minWidth: `${departmentColWidth}px` }} className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150">
+                          {usesCheckboxMultiSelects ? <CheckboxMultiSelect
+                            disabled={!canEditEntireRow || !unitSelected}
+                            value={row.departments || (row.department ? [row.department] : [])}
+                            options={getDepartmentsForUnit(row.unit).map(department => ({ value: department, label: department }))}
+                            placeholder="Dept..."
+                            onChange={values => setRows(prev => prev.map((item, rowIndex) => {
+                              if (rowIndex !== idx) return item;
+                              const prevDepts = item.departments || (item.department ? [item.department] : []);
+                              const deptsChanged = prevDepts.join(',') !== values.join(',');
+
+                              // Rule: If Department changes, reset Section and Line/Area
+                              if (deptsChanged) {
+                                return {
+                                  ...item,
+                                  departments: values,
+                                  department: values[0] || '',
+                                  sections: [],
+                                  section: '',
+                                  sectionId: null,
+                                  sectionCode: '',
+                                  lineAreas: [],
+                                  lineArea: '',
+                                  lineAreaId: null,
+                                  lineAreaCode: '',
+                                  lineAreaSectionId: null
+                                };
+                              }
+                              return { ...item, departments: values, department: values[0] || '' };
+                            }))}
+                          /> : <div className="flex flex-col h-full justify-between">
+                            <div className="flex flex-col divide-y divide-[#CBD5E1]">
+                              {((row.departments?.length ? row.departments : (row.department ? [row.department] : ['']))).map((department, deptIndex, all) => <div key={deptIndex} className="relative min-h-[30px] p-0.5">
+                                <select disabled={!canEditEntireRow || !unitSelected} value={department || ''} onChange={event => handleUpdateDepartment(idx, deptIndex, event.target.value)} className="w-full bg-transparent px-1 py-1 text-center text-[14px]">
+                                  <option value="">Dept...</option>{getDepartmentsForUnit(row.unit).map(value => <option key={value} value={value}>{value}</option>)}
+                                </select>
+                                {all.length > 1 && canEditEntireRow && <button type="button" onClick={() => handleRemoveDepartment(idx, deptIndex)} className="absolute right-0 top-1 text-slate-400 hover:text-rose-600" title="Remove Department"><X className="h-2.5 w-2.5" /></button>}
+                              </div>)}
+                            </div>
+                            {canEditEntireRow && <button type="button" disabled={!unitSelected} onClick={() => handleAddDepartment(idx)} className="border-t border-slate-100 bg-slate-50/50 px-1 py-0.5 text-[9px] text-blue-600 disabled:opacity-40"><Plus className="inline h-2.5 w-2.5" /> Add</button>}
+                          </div>}
+                        </td>
+
+                        {/* 7. Section */}
+                        <td style={{ width: `${sectionColWidth}px`, minWidth: `${sectionColWidth}px` }} className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150">
+                          {usesCheckboxMultiSelects ? <CheckboxMultiSelect
+                            disabled={!canEditEntireRow || !(row.departments?.length || row.department)}
+                            value={row.sections?.length ? row.sections.map(section => section.sectionId ?? section.section) : (row.sectionId || row.section ? [row.sectionId || row.section] : [])}
+                            options={getSectionsForDepartment(row.departments || row.department, dbSections).map(section => ({ value: section.id, label: section.name }))}
+                            placeholder="Section..."
+                            onChange={values => setRows(prev => prev.map((item, rowIndex) => {
+                              if (rowIndex !== idx) return item;
+                              const prevSecVals = (item.sections?.length ? item.sections.map(s => s.sectionId ?? s.section) : (item.sectionId || item.section ? [item.sectionId || item.section] : [])).map(String);
+                              const newSecVals = values.map(String);
+                              const secChanged = prevSecVals.join(',') !== newSecVals.join(',');
+
+                              const sections = values.map(value => {
+                                const match = (dbSections.length ? dbSections : VERIFIED_SECTIONS_WITH_LINES).find(section => String(section.id) === String(value) || section.name === value);
+                                const existing = item.sections?.find(section => String(section.sectionId) === String(value) || section.section === value);
+                                return match ? { section: match.name, sectionId: match.id, sectionCode: match.uniCode || '' } : existing;
+                              }).filter(Boolean);
+                              const first = sections[0] || {};
+
+                              // Rule: If Section changes, reset Line/Area
+                              const lineAreas = secChanged ? [] : (item.lineAreas || []);
+                              const firstLine = lineAreas[0] || {};
+
+                              return {
+                                ...item,
+                                sections,
+                                section: first.section || '',
+                                sectionId: first.sectionId ?? null,
+                                sectionCode: first.sectionCode || '',
+                                lineAreas,
+                                lineArea: firstLine.lineArea || '',
+                                lineAreaId: firstLine.lineAreaId ?? null,
+                                lineAreaCode: firstLine.lineAreaCode || '',
+                                lineAreaSectionId: firstLine.sectionId ?? (first.sectionId ?? null)
+                              };
+                            }))}
+                          /> : <div className="flex flex-col h-full justify-between">
+                            {((row.sections?.length ? row.sections : (row.section ? [{ section: row.section, sectionId: row.sectionId, sectionCode: row.sectionCode }] : [{ section: '', sectionId: null, sectionCode: '' }]))).map((section, sectionIndex, all) => <div key={sectionIndex} className="relative min-h-[30px] p-0.5">
+                              <SearchableSectionSelect disabled={!canEditEntireRow} value={section.section} sectionId={section.sectionId} sectionCode={section.sectionCode} department={row.departments?.[sectionIndex] || row.departments?.[0] || row.department} onChange={(name, meta) => handleUpdateSection(idx, sectionIndex, name, meta)} placeholder="Section..." />
+                              {all.length > 1 && canEditEntireRow && <button type="button" onClick={() => handleRemoveSection(idx, sectionIndex)} className="absolute right-0 top-1 text-slate-400 hover:text-rose-600" title="Remove Section"><X className="h-2.5 w-2.5" /></button>}
+                            </div>)}
+                            {canEditEntireRow && <button type="button" onClick={() => handleAddSection(idx)} className="border-t border-slate-100 bg-slate-50/50 px-1 py-0.5 text-[9px] text-blue-600"><Plus className="inline h-2.5 w-2.5" /> Add</button>}
+                          </div>}
+                        </td>
+
+                        {/* 8. Line/Area */}
+                        <td style={{ width: `${lineAreaColWidth}px`, minWidth: `${lineAreaColWidth}px` }} className="p-0.5 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] transition-[width] duration-150">
+                          {usesCheckboxMultiSelects ? <CheckboxMultiSelect
+                            disabled={!canEditEntireRow || !(row.sections?.length || row.section || row.sectionId)}
+                            value={row.lineAreas?.length ? row.lineAreas.map(line => line.lineArea) : (row.lineArea ? [row.lineArea] : [])}
+                            options={(() => {
+                              const activeSecs = (row.sections?.length ? row.sections : (row.section || row.sectionId ? [{ section: row.section, sectionId: row.sectionId }] : []));
+                              if (!activeSecs.length) return [];
+                              const lines = activeSecs.flatMap(s => getLineAreasForSection(s.sectionId ?? s.section, dbSections));
+                              const seen = new Set();
+                              const res = [];
+                              for (const l of lines) {
+                                const name = l.name || l;
+                                if (name && !seen.has(name)) {
+                                  seen.add(name);
+                                  res.push({ value: name, label: name });
+                                }
+                              }
+                              return res;
+                            })()}
+                            placeholder="Line/Area..."
+                            onChange={values => setRows(prev => prev.map((item, rowIndex) => {
+                              if (rowIndex !== idx) return item;
+                              const activeSecs = (item.sections?.length ? item.sections : [{ section: item.section, sectionId: item.sectionId }]).filter(s => s.section || s.sectionId);
+                              const lineAreas = values.map(lineArea => {
+                                const existing = item.lineAreas?.find(l => l.lineArea === lineArea);
+                                let matchedLine = null;
+                                let ownerSec = null;
+                                for (const sec of activeSecs) {
+                                  const sLines = getLineAreasForSection(sec.sectionId ?? sec.section, dbSections);
+                                  const found = sLines.find(l => (l.name || l) === lineArea);
+                                  if (found) {
+                                    matchedLine = found;
+                                    ownerSec = sec;
+                                    break;
+                                  }
+                                }
+                                return existing || {
+                                  lineArea,
+                                  lineAreaId: matchedLine?.id ?? null,
+                                  lineAreaCode: matchedLine?.uniCode || '',
+                                  sectionId: ownerSec?.sectionId ?? item.sectionId ?? null
+                                };
+                              });
+                              const first = lineAreas[0] || {};
+                              return {
+                                ...item,
+                                lineAreas,
+                                lineArea: first.lineArea || '',
+                                lineAreaId: first.lineAreaId ?? null,
+                                lineAreaCode: first.lineAreaCode || '',
+                                lineAreaSectionId: first.sectionId ?? null
+                              };
+                            }))}
+                          /> : <div className="flex flex-col h-full justify-between">
+                            {((row.lineAreas?.length ? row.lineAreas : (row.lineArea ? [{ lineArea: row.lineArea, lineAreaId: row.lineAreaId, lineAreaCode: row.lineAreaCode, sectionId: row.lineAreaSectionId }] : [{ lineArea: '', lineAreaId: null, lineAreaCode: '', sectionId: null }]))).map((line, lineIndex, all) => <div key={lineIndex} className="relative min-h-[30px] p-0.5">
+                              <SearchableLineAreaSelect
+                                disabled={!canEditEntireRow || !(row.sections?.[lineIndex]?.sectionId ?? row.sections?.[lineIndex]?.section ?? row.sectionId ?? row.section)}
+                                value={line.lineArea}
+                                sectionId={line.sectionId ?? row.sections?.[lineIndex]?.sectionId ?? row.sectionId}
+                                section={row.sections?.[lineIndex]?.section ?? row.section}
+                                department={row.departments?.[lineIndex] || row.departments?.[0] || row.department}
+                                lineId={line.lineAreaId}
+                                onChange={(value, meta) => handleUpdateLineArea(idx, lineIndex, value, meta)}
+                              />
+                              {all.length > 1 && canEditEntireRow && <button type="button" onClick={() => handleRemoveLineArea(idx, lineIndex)} className="absolute right-0 top-1 text-slate-400 hover:text-rose-600" title="Remove Line/Area"><X className="h-2.5 w-2.5" /></button>}
+                            </div>)}
+                            {canEditEntireRow && <button type="button" onClick={() => handleAddLineArea(idx)} className="border-t border-slate-100 bg-slate-50/50 px-1 py-0.5 text-[9px] text-blue-600"><Plus className="inline h-2.5 w-2.5" /> Add</button>}
+                          </div>}
+                        </td>
+
+                        {/* 6. Observation (Auto-expanding, resizable width, wrapped multiline text) */}
+                        <td
+                          style={{
+                            width: `${observationWidth}px`,
+                            minWidth: `${observationWidth}px`,
+                            maxWidth: `${observationWidth}px`
+                          }}
+                          className="p-1 align-top border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-left overflow-hidden"
+                        >
+                          <AutoResizeTextarea
+                            inputRef={(el) => registerRef(idx, 'observation', el)}
+                            value={row.observation}
+                            readOnly={!canEditEntireRow}
+                            onChange={(e) => handleCellChange(idx, 'observation', e.target.value)}
+                            onKeyDown={(e) => handleKeyDown(e, idx, 'observation')}
+                            placeholder="Observation details..."
+                            className="w-full bg-transparent border-0 outline-none p-1.5 text-[14px] text-slate-800 text-left leading-relaxed focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 whitespace-pre-wrap break-words"
+                          />
+                        </td>
+
+                        {/* 7. Image (Before) - Auto-adjusts width/height, shows image in whole cell, hover reveals View and count */}
+                        {(() => {
+                          const isDoc = row.fileTypeBefore && ['pdf', 'excel', 'ppt', 'document', 'video'].includes(row.fileTypeBefore);
+                          const beforeImages = Array.isArray(row.imagesBefore)
+                            ? row.imagesBefore
+                            : (row.imageBefore && (!row.fileTypeBefore || row.fileTypeBefore === 'image')
+                              ? [{ id: 'legacy-before-0', url: row.imageBefore, name: row.imageBeforeName || 'Before Image', type: 'image' }]
+                              : []);
+                          const hasImages = !isDoc && beforeImages.length > 0;
+
+                          return (
+                            <td
+                              style={{
+                                width: `${imageBeforeColWidth}px`,
+                                minWidth: `${imageBeforeColWidth}px`
+                              }}
+                              className={`align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] text-center transition-all ${hasImages ? 'p-0 overflow-hidden' : 'p-1'
+                                }`}
+                            >
+                              {(() => {
+                                if (isDoc && row.imageBefore) {
+                                  return (
+                                    <div className="flex items-center justify-center w-full py-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => setSelectedImageAction({
+                                          rowIndex: idx,
+                                          field: 'imageBefore',
+                                          nameField: 'imageBeforeName',
+                                          typeField: 'fileTypeBefore',
+                                          title: 'Image (Before)',
+                                          imageSrc: row.imageBefore,
+                                          imageName: row.imageBeforeName || 'Document',
+                                          fileType: row.fileTypeBefore
+                                        })}
+                                        className="group relative inline-flex flex-col items-center justify-center p-2 rounded-xl border border-slate-300 hover:border-blue-500 hover:ring-2 hover:ring-blue-100 transition-all cursor-pointer bg-slate-50/80 shadow-2xs overflow-hidden w-full"
+                                        title={`Click to view, download, edit, or replace ${row.imageBeforeName || 'file'}`}
+                                      >
+                                        <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-white shadow-2xs border border-slate-200 mb-1">
+                                          {row.fileTypeBefore === 'pdf' ? (
+                                            <FileText className="w-5 h-5 text-rose-600" />
+                                          ) : row.fileTypeBefore === 'excel' ? (
+                                            <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
+                                          ) : row.fileTypeBefore === 'ppt' ? (
+                                            <Presentation className="w-5 h-5 text-amber-600" />
+                                          ) : row.fileTypeBefore === 'video' ? (
+                                            <Video className="w-5 h-5 text-purple-600" />
+                                          ) : (
+                                            <File className="w-5 h-5 text-blue-600" />
+                                          )}
+                                        </div>
+                                        <span className="text-[10px] font-semibold text-slate-700 truncate max-w-[120px] block">
+                                          {row.imageBeforeName || row.fileTypeBefore?.toUpperCase()}
+                                        </span>
+                                        <span className="text-[9px] uppercase font-bold text-slate-400 mt-0.5">
+                                          {row.fileTypeBefore}
+                                        </span>
+                                      </button>
+                                    </div>
+                                  );
+                                }
+
+                                if (hasImages) {
+                                  const count = beforeImages.length;
+                                  const countText = `${count} ${count === 1 ? 'Photo' : 'Photos'}`;
+
+                                  return (
+                                    <div className="relative w-full h-full min-h-[90px] flex items-center justify-center p-1.5 m-0 overflow-hidden group/imgcell">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenEvidenceViewer(idx, 'imageBefore')}
+                                        className="relative w-full h-full min-h-[85px] flex items-center justify-center p-0 m-0 border-0 rounded-md bg-transparent cursor-pointer overflow-hidden block"
+                                        title={`View evidence: ${countText}`}
+                                      >
+                                        <img
+                                          src={getMediaUrl(beforeImages[0].url)}
+                                          alt={beforeImages[0].name || `Row ${sNo} Before`}
+                                          onLoad={(e) => handleImageLoad(beforeImages[0].url, e)}
+                                          className="w-full h-full object-cover block m-0 p-0 rounded-md transition-transform duration-200 group-hover/imgcell:scale-105"
+                                          style={{
+                                            minHeight: '85px',
+                                            maxHeight: '260px',
+                                            aspectRatio: imageDimensions[beforeImages[0].url]
+                                              ? `${imageDimensions[beforeImages[0].url].width} / ${imageDimensions[beforeImages[0].url].height}`
+                                              : 'auto'
+                                          }}
+                                        />
+                                        <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover/imgcell:opacity-100 flex items-center justify-center transition-opacity duration-150 pointer-events-none rounded-md">
+                                          <span className="flex items-center gap-1.5 bg-black/75 backdrop-blur-xs px-2.5 py-1 rounded-md text-[11px] font-semibold text-white shadow-md">
+                                            <Eye className="w-3.5 h-3.5" />
+                                            <span>View</span>
+                                            <span className="text-white/60">•</span>
+                                            <span>{countText}</span>
+                                          </span>
+                                        </div>
+                                      </button>
+                                    </div>
+                                  );
+                                }
+
+                                if (!canEditEntireRow) {
+                                  return (
+                                    <div className="flex items-center justify-center w-full py-1 text-slate-300 text-xs select-none">
+                                      -
+                                    </div>
+                                  );
+                                }
+
+                                // Compact default icon button when empty - opens 4-box upload selection modal
+                                return (
+                                  <div className="flex items-center justify-center w-full py-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenUploadModal(idx, 'imageBefore', 'imageBeforeName', 'fileTypeBefore', 'Image (Before)')}
+                                      className="group flex items-center justify-center w-9 h-9 rounded-lg border border-dashed border-slate-300 hover:border-blue-500 bg-slate-50/80 hover:bg-blue-50/50 transition-all cursor-pointer shadow-2xs hover:scale-105"
+                                      title="Click to choose upload type"
+                                    >
+                                      <ImageIcon className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors" />
+                                    </button>
+                                  </div>
+                                );
+                              })()}
+                            </td>
+                          );
+                        })()}
+
+                        {/* 8. Root Cause (Auto-expanding, resizable width, vertically and horizontally centered) */}
+                        <td
+                          style={{
+                            width: `${rootCauseWidth}px`,
+                            minWidth: `${rootCauseWidth}px`,
+                            maxWidth: `${rootCauseWidth}px`
+                          }}
+                          className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-left overflow-hidden"
+                        >
+                          <div className="w-full flex items-center justify-start">
+                            <AutoResizeTextarea
+                              inputRef={(el) => registerRef(idx, 'rootCause', el)}
+                              value={row.rootCause}
+                              readOnly={!canEditActionCols}
+                              onChange={(e) => handleCellChange(idx, 'rootCause', e.target.value)}
+                              onKeyDown={(e) => handleKeyDown(e, idx, 'rootCause')}
+                              placeholder="Root cause..."
+                              className="w-full bg-transparent border-0 outline-none p-1.5 text-[14px] text-slate-800 text-left leading-snug whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-left"
+                            />
+                          </div>
+                        </td>
+
+                        {/* 8b. Action taken (Auto-expanding, resizable width, vertically and horizontally centered) */}
+                        <td
+                          style={{
+                            width: `${actionTakenWidth}px`,
+                            minWidth: `${actionTakenWidth}px`,
+                            maxWidth: `${actionTakenWidth}px`
+                          }}
+                          className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-left overflow-hidden"
+                        >
+                          <div className="w-full flex items-center justify-start">
+                            <AutoResizeTextarea
+                              inputRef={(el) => registerRef(idx, 'actionTaken', el)}
+                              value={row.actionTaken || ''}
+                              readOnly={!canEditActionCols}
+                              onChange={(e) => handleCellChange(idx, 'actionTaken', e.target.value)}
+                              onKeyDown={(e) => handleKeyDown(e, idx, 'actionTaken')}
+                              placeholder={canEditActionCols ? "Corrective action..." : ""}
+                              className="w-full bg-transparent border-0 outline-none p-1.5 text-[14px] text-slate-800 text-left leading-snug whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-left"
+                            />
+                          </div>
+                        </td>
+
+                        {/* 9. Counter Measure (Auto-expanding, resizable width, vertically and horizontally centered) */}
+                        <td
+                          style={{
+                            width: `${counterMeasureWidth}px`,
+                            minWidth: `${counterMeasureWidth}px`,
+                            maxWidth: `${counterMeasureWidth}px`
+                          }}
+                          className="p-1 align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-left overflow-hidden"
+                        >
+                          <div className="w-full flex items-center justify-start">
+                            <AutoResizeTextarea
+                              inputRef={(el) => registerRef(idx, 'counterMeasure', el)}
+                              value={row.counterMeasure}
+                              readOnly={!canEditActionCols}
+                              onChange={(e) => handleCellChange(idx, 'counterMeasure', e.target.value)}
+                              onKeyDown={(e) => handleKeyDown(e, idx, 'counterMeasure')}
+                              placeholder="Counter measure..."
+                              className="w-full bg-transparent border-0 outline-none p-1.5 text-[14px] text-slate-800 text-left leading-snug whitespace-pre-wrap break-words [overflow-wrap:anywhere] focus:bg-white focus:ring-1 focus:ring-inset focus:ring-blue-600 transition-colors block placeholder:text-slate-400 placeholder:text-left"
+                            />
+                          </div>
+                        </td>
+
+                        {/* 10. Image After - Auto-adjusts width/height, shows image in whole cell, hover reveals View and count */}
+                        {(() => {
+                          const isDoc = row.fileTypeAfter && ['pdf', 'excel', 'ppt', 'document', 'video'].includes(row.fileTypeAfter);
+                          const afterImages = Array.isArray(row.imagesAfter)
+                            ? row.imagesAfter
+                            : (row.imageAfter && (!row.fileTypeAfter || row.fileTypeAfter === 'image')
+                              ? [{ id: 'legacy-after-0', url: row.imageAfter, name: row.imageAfterName || 'After Image', type: 'image' }]
+                              : []);
+                          const hasImages = !isDoc && afterImages.length > 0;
+
+                          return (
+                            <td
+                              style={{
+                                width: `${imageAfterColWidth}px`,
+                                minWidth: `${imageAfterColWidth}px`
+                              }}
+                              className={`align-middle border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] text-center transition-all ${hasImages ? 'p-0 overflow-hidden' : 'p-1'
+                                }`}
+                            >
+                              {(() => {
+                                if (isDoc && row.imageAfter) {
+                                  return (
+                                    <div className="flex items-center justify-center w-full py-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => setSelectedImageAction({
+                                          rowIndex: idx,
+                                          field: 'imageAfter',
+                                          nameField: 'imageAfterName',
+                                          typeField: 'fileTypeAfter',
+                                          title: 'Image (After)',
+                                          imageSrc: row.imageAfter,
+                                          imageName: row.imageAfterName || 'Document',
+                                          fileType: row.fileTypeAfter
+                                        })}
+                                        className="group relative inline-flex flex-col items-center justify-center p-2 rounded-xl border border-slate-300 hover:border-blue-500 hover:ring-2 hover:ring-blue-100 transition-all cursor-pointer bg-slate-50/80 shadow-2xs overflow-hidden w-full"
+                                        title={`Click to view, download, edit, or replace ${row.imageAfterName || 'file'}`}
+                                      >
+                                        <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-white shadow-2xs border border-slate-200 mb-1">
+                                          {row.fileTypeAfter === 'pdf' ? (
+                                            <FileText className="w-5 h-5 text-rose-600" />
+                                          ) : row.fileTypeAfter === 'excel' ? (
+                                            <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
+                                          ) : row.fileTypeAfter === 'ppt' ? (
+                                            <Presentation className="w-5 h-5 text-amber-600" />
+                                          ) : row.fileTypeAfter === 'video' ? (
+                                            <Video className="w-5 h-5 text-purple-600" />
+                                          ) : (
+                                            <File className="w-5 h-5 text-blue-600" />
+                                          )}
+                                        </div>
+                                        <span className="text-[10px] font-semibold text-slate-700 truncate max-w-[120px] block">
+                                          {row.imageAfterName || row.fileTypeAfter?.toUpperCase()}
+                                        </span>
+                                        <span className="text-[9px] uppercase font-bold text-slate-400 mt-0.5">
+                                          {row.fileTypeAfter}
+                                        </span>
+                                      </button>
+                                    </div>
+                                  );
+                                }
+
+                                if (hasImages) {
+                                  const count = afterImages.length;
+                                  const countText = `${count} ${count === 1 ? 'Photo' : 'Photos'}`;
+
+                                  return (
+                                    <div className="relative w-full h-full min-h-[90px] flex items-center justify-center p-1.5 m-0 overflow-hidden group/imgcell">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenEvidenceViewer(idx, 'imageAfter')}
+                                        className="relative w-full h-full min-h-[85px] flex items-center justify-center p-0 m-0 border-0 rounded-md bg-transparent cursor-pointer overflow-hidden block"
+                                        title={`View evidence: ${countText}`}
+                                      >
+                                        <img
+                                          src={getMediaUrl(afterImages[0].url)}
+                                          alt={afterImages[0].name || `Row ${sNo} After`}
+                                          onLoad={(e) => handleImageLoad(afterImages[0].url, e)}
+                                          className="w-full h-full object-cover block m-0 p-0 rounded-md transition-transform duration-200 group-hover/imgcell:scale-105"
+                                          style={{
+                                            minHeight: '85px',
+                                            maxHeight: '260px',
+                                            aspectRatio: imageDimensions[afterImages[0].url]
+                                              ? `${imageDimensions[afterImages[0].url].width} / ${imageDimensions[afterImages[0].url].height}`
+                                              : 'auto'
+                                          }}
+                                        />
+                                        <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover/imgcell:opacity-100 flex items-center justify-center transition-opacity duration-150 pointer-events-none rounded-md">
+                                          <span className="flex items-center gap-1.5 bg-black/75 backdrop-blur-xs px-2.5 py-1 rounded-md text-[11px] font-semibold text-white shadow-md">
+                                            <Eye className="w-3.5 h-3.5" />
+                                            <span>View</span>
+                                            <span className="text-white/60">•</span>
+                                            <span>{countText}</span>
+                                          </span>
+                                        </div>
+                                      </button>
+                                    </div>
+                                  );
+                                }
+
+                                if (!canEditActionCols) {
+                                  return (
+                                    <div className="flex items-center justify-center w-full py-1 text-slate-300 text-xs select-none">
+                                      -
+                                    </div>
+                                  );
+                                }
+
+                                // Compact default icon button when empty - opens 4-box upload selection modal
+                                return (
+                                  <div className="flex items-center justify-center w-full py-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenUploadModal(idx, 'imageAfter', 'imageAfterName', 'fileTypeAfter', 'Image (After)')}
+                                      className="group flex items-center justify-center w-9 h-9 rounded-lg border border-dashed border-slate-300 hover:border-blue-500 bg-slate-50/80 hover:bg-blue-50/50 transition-all cursor-pointer shadow-2xs hover:scale-105"
+                                      title="Click to choose upload type"
+                                    >
+                                      <ImageIcon className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors" />
+                                    </button>
+                                  </div>
+                                );
+                              })()}
+                            </td>
+                          );
+                        })()}
+
+                        {/* Std. Duration in min - Automatically formats with 'min' suffix */}
+                        <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[80px] min-w-[75px] focus-within:bg-blue-50/30">
+                          <div className="w-full flex items-center justify-center">
+                            <DurationMinCell
+                              value={row.stdDurationMin}
+                              readOnly={!canEditActionCols}
+                              hasResponseDate={Boolean(row.responseDate?.trim())}
+                              onDisabledClick={() => {
+                                showToast(`Row ${idx + 1}: Select Response Date first before entering Std. Duration.`);
+                              }}
+                              cellRef={(element) => {
+                                if (element) durationCellRefs.current[idx] = element;
+                                else delete durationCellRefs.current[idx];
+                              }}
+                              requiredActionAllowed={Boolean(row.responseDate?.trim() && !hasValidStdDuration(row.stdDurationMin ?? row.stdDuration))}
+                              onChange={(val) => handleCellChange(idx, 'stdDurationMin', val)}
+                            />
+                          </div>
+                        </td>
+
+                        {/* Response Date (Stacked: Format on top, Calendar icon below, centered) */}
+                        <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[82px] min-w-[78px]">
+                          <div className="w-full flex items-center justify-center">
+                            <CompactDateCell
+                              value={row.responseDate}
+                              readOnly={!canEditActionCols}
+                              smallText
+                              onChange={(val) => handleResponseDateChange(idx, val)}
+                            />
+                          </div>
+                        </td>
+
+                        {/* No. of time Revised - Stacked past and current response dates */}
+                        <td
+                          style={{ width: `${revisedColWidth}px`, minWidth: `${revisedColWidth}px`, maxWidth: `${revisedColWidth}px` }}
+                          className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC]"
+                        >
+                          {Array.isArray(row.revisedDates) && row.revisedDates.length > 0 ? (
+                            <div className="flex flex-col h-full divide-y divide-[#CBD5E1] justify-center">
+                              {row.revisedDates.map((rItem, rIdx) => {
+                                const revDate = typeof rItem === 'object' && rItem !== null ? rItem.date : rItem;
+                                const revReason = typeof rItem === 'object' && rItem !== null ? (rItem.reason || '') : '';
                                 return (
                                   <div
-                                    key={unitName}
-                                    style={{ flex: flexGrow }}
-                                    className="flex w-full items-stretch divide-x divide-[#CBD5E1]"
+                                    key={rIdx}
+                                    className="group/rev w-full min-w-0 py-1.5 px-1.5 flex flex-col items-center justify-center text-center gap-1.5 hover:bg-slate-50 transition-colors"
                                   >
-                                    {/* 1. Unit Child */}
-                                    <div className="w-[110px] min-w-[100px] shrink-0 relative min-h-[30px] flex items-center justify-between px-2 py-1 bg-white hover:bg-slate-50 transition-colors">
-                                      <span className="text-[14px] font-bold text-slate-800">{unitName}</span>
-                                      {canEditEntireRow && (
-                                        <CheckboxMultiSelect
-                                          value={units}
-                                          options={PDCA_UNITS.map((u) => ({ value: u, label: u }))}
-                                          onChange={(newUnits) => handleResponsibleUnitsChange(idx, newUnits)}
-                                          renderTrigger={({ open, setOpen, buttonRef }) => (
-                                            <button
-                                              ref={buttonRef}
-                                              type="button"
-                                              onClick={() => setOpen(!open)}
-                                              className="text-slate-400 hover:text-blue-600 p-0.5 rounded cursor-pointer"
-                                              title={`Change units (currently: ${units.join(', ')})`}
-                                            >
-                                              <ChevronDown className="w-2.5 h-2.5" />
-                                            </button>
-                                          )}
-                                        />
+                                    <div className="w-full flex items-center justify-between gap-1">
+                                      <span className="flex-1 text-[14px] font-semibold text-slate-800 whitespace-nowrap text-center">
+                                        {rIdx + 1}) {formatDisplayDate(revDate)}
+                                      </span>
+                                      {(isAdmin || isCreatorOrAdmin) && (
+                                        <button
+                                          type="button"
+                                          ref={(element) => {
+                                            const key = `${idx}:${rIdx}`;
+                                            if (element) revisionDeleteRefs.current[key] = element;
+                                            else delete revisionDeleteRefs.current[key];
+                                          }}
+                                          data-required-action-allowed="true"
+                                          onPointerDown={(e) => {
+                                            e.stopPropagation();
+                                          }}
+                                          onMouseDown={(e) => {
+                                            e.stopPropagation();
+                                          }}
+                                          onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            handleDeleteRevisedDate(idx, rIdx);
+                                          }}
+                                          title={`Delete Revision ${rIdx + 1} (${formatDisplayDate(revDate)})`}
+                                          className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-0.5 rounded transition-colors cursor-pointer shrink-0 opacity-80 hover:opacity-100 group-hover/rev:opacity-100"
+                                        >
+                                          <X className="w-3.5 h-3.5 stroke-[2.5]" />
+                                        </button>
                                       )}
                                     </div>
+                                    <AutoWidthInput
+                                      value={revReason}
+                                      readOnly={!canEditActionCols}
+                                      inputRef={(element) => {
+                                        const key = `${idx}:${rIdx}`;
+                                        if (element) revisionReasonRefs.current[key] = element;
+                                        else delete revisionReasonRefs.current[key];
+                                      }}
+                                      required
+                                      dataRequiredActionAllowed={!revReason.trim()}
+                                      onChange={(e) => handleRevisionReasonChange(idx, rIdx, e.target.value)}
+                                      placeholder="Why revised..."
+                                      className="w-full min-w-0 max-w-full text-[14px] font-medium text-slate-800 bg-white border border-slate-300 focus:border-blue-500 rounded px-2 py-1 text-left shadow-2xs focus:outline-none"
+                                    />
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="w-full py-1 flex items-center justify-center text-slate-300 text-xs select-none">
+                              -
+                            </div>
+                          )}
+                        </td>
 
-                                    {/* 2. Dept Child */}
-                                    <div className="w-[145px] min-w-[135px] shrink-0 flex items-center justify-center">
-                                      {unitDepts.length === 0 ? (
-                                        <div className="w-full p-1 min-h-[30px] flex items-center justify-center">
-                                          <CheckboxMultiSelect
-                                            disabled={!canEditEntireRow}
-                                            value={[]}
-                                            options={unitOptions}
-                                            placeholder="Dept..."
-                                            onChange={(newDepts) => handleUnitDepartmentsChange(idx, unitName, newDepts)}
-                                          />
-                                        </div>
-                                      ) : unitDepts.length === 1 ? (
-                                        <div className="flex-1 w-full min-h-[30px] flex items-center justify-between px-2 py-1 gap-1 hover:bg-blue-50/40 transition-colors">
-                                          <span className="text-[14px] font-semibold text-slate-800 whitespace-nowrap text-left" title={unitDepts[0]}>
-                                            {unitDepts[0]}
-                                          </span>
+                        {/* Responsible Person: When both units chosen, parent cell with single dividing line */}
+                        {(() => {
+                          const { units, deptsByUnit } = getResponsiblePersonStructure(row);
+                          if (units.length > 1) {
+                            return (
+                              <td
+                                colSpan={4}
+                                className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC]"
+                              >
+                                <div className="flex flex-col w-full h-full divide-y divide-[#CBD5E1]">
+                                  {units.map((unitName) => {
+                                    const unitDepts = deptsByUnit[unitName] || [];
+                                    const unitOptions = getDepartmentsForUnit(unitName).map((d) => ({ value: d, label: d }));
+                                    const flexGrow = Math.max(1, unitDepts.length);
+                                    const unitCft = (row.cftByUnit && row.cftByUnit[unitName]) ||
+                                      (unitName === units[0] ? {
+                                        cftTopic: row.cftTopic,
+                                        cftTopicId: row.cftTopicId,
+                                        cftSelectedType: row.cftSelectedType,
+                                        cftSelectedName: row.cftSelectedName,
+                                        cftSelectedCode: row.cftSelectedCode
+                                      } : { cftTopic: '', cftTopicId: '', cftSelectedType: '', cftSelectedName: '', cftSelectedCode: '' });
+                                    const hasTopic = Boolean(unitCft.cftTopic);
+
+                                    return (
+                                      <div
+                                        key={unitName}
+                                        style={{ flex: flexGrow }}
+                                        className="flex w-full items-stretch divide-x divide-[#CBD5E1]"
+                                      >
+                                        {/* 1. Unit Child */}
+                                        <div className="w-[110px] min-w-[100px] shrink-0 relative min-h-[30px] flex items-center justify-between px-2 py-1 bg-white hover:bg-slate-50 transition-colors">
+                                          <span className="text-[14px] font-bold text-slate-800">{unitName}</span>
                                           {canEditEntireRow && (
                                             <CheckboxMultiSelect
-                                              value={unitDepts}
-                                              options={unitOptions}
-                                              onChange={(newDepts) => handleUnitDepartmentsChange(idx, unitName, newDepts)}
+                                              value={units}
+                                              options={PDCA_UNITS.map((u) => ({ value: u, label: u }))}
+                                              onChange={(newUnits) => handleResponsibleUnitsChange(idx, newUnits)}
                                               renderTrigger={({ open, setOpen, buttonRef }) => (
                                                 <button
                                                   ref={buttonRef}
                                                   type="button"
                                                   onClick={() => setOpen(!open)}
-                                                  className="text-slate-400 hover:text-blue-600 p-0.5 cursor-pointer ml-1 shrink-0"
-                                                  title={`Edit ${unitName} departments`}
+                                                  className="text-slate-400 hover:text-blue-600 p-0.5 rounded cursor-pointer"
+                                                  title={`Change units (currently: ${units.join(', ')})`}
                                                 >
                                                   <ChevronDown className="w-2.5 h-2.5" />
                                                 </button>
@@ -7268,15 +7279,23 @@ export default function PDCASheet({
                                             />
                                           )}
                                         </div>
-                                      ) : (
-                                        <div className="flex flex-col h-full w-full divide-y divide-[#CBD5E1] justify-center">
-                                          {unitDepts.map((deptName) => (
-                                            <div
-                                              key={deptName}
-                                              className="flex-1 min-h-[30px] flex items-center justify-between px-2 py-1 gap-1 hover:bg-blue-50/40 transition-colors"
-                                            >
-                                              <span className="text-[14px] font-semibold text-slate-800 whitespace-nowrap text-left" title={deptName}>
-                                                {deptName}
+
+                                        {/* 2. Dept Child */}
+                                        <div className="w-[145px] min-w-[135px] shrink-0 flex items-center justify-center">
+                                          {unitDepts.length === 0 ? (
+                                            <div className="w-full p-1 min-h-[30px] flex items-center justify-center">
+                                              <CheckboxMultiSelect
+                                                disabled={!canEditEntireRow}
+                                                value={[]}
+                                                options={unitOptions}
+                                                placeholder="Dept..."
+                                                onChange={(newDepts) => handleUnitDepartmentsChange(idx, unitName, newDepts)}
+                                              />
+                                            </div>
+                                          ) : unitDepts.length === 1 ? (
+                                            <div className="flex-1 w-full min-h-[30px] flex items-center justify-between px-2 py-1 gap-1 hover:bg-blue-50/40 transition-colors">
+                                              <span className="text-[14px] font-semibold text-slate-800 whitespace-nowrap text-left" title={unitDepts[0]}>
+                                                {unitDepts[0]}
                                               </span>
                                               {canEditEntireRow && (
                                                 <CheckboxMultiSelect
@@ -7297,683 +7316,710 @@ export default function PDCASheet({
                                                 />
                                               )}
                                             </div>
-                                          ))}
-                                        </div>
-                                      )}
-                                    </div>
-
-                                    {/* 3. Staff Name Child */}
-                                    <div className="w-[160px] min-w-[150px] shrink-0 flex items-center justify-center">
-                                      {unitDepts.length === 0 ? (
-                                        (() => {
-                                          const assignedEmps = (row.staffEmployees || []).filter(
-                                            (e) => e.unit === unitName || (!e.unit && units.length === 1)
-                                          );
-                                          const legacyDisplay = units.length === 1 && !assignedEmps.length ? (row.staffEmployee ? stripEmployeeId(row.staffEmployee) : '') : '';
-
-                                          if (assignedEmps.length || legacyDisplay) {
-                                            return (
-                                              <div className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors justify-center">
-                                                {(assignedEmps.length ? assignedEmps : [{ name: legacyDisplay, legacy: true }]).map((employee, employeeIndex) => (
-                                                  <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
-                                                    <button type="button" disabled={!canEditEntireRow} onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, '', e)} className={`min-w-0 flex-1 truncate text-left text-[14px] font-semibold text-slate-800 ${canEditEntireRow ? 'cursor-pointer hover:text-blue-600' : 'cursor-default'}`} title={`${unitName}: ${employee.name}`}>
-                                                      {stripEmployeeId(employee.name || employee.label || '')}
-                                                    </button>
-                                                    {canEditEntireRow && <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(idx, unitName, '', null) : handleRemoveDepartmentEmployee(idx, unitName, '', employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>}
-                                                  </div>
-                                                ))}
-                                                {canEditEntireRow && <button type="button" onClick={() => handleOpenAddStaffModal(idx, unitName, '')} className="flex items-center justify-center gap-1 rounded py-0.5 text-[13px] font-semibold text-blue-600 hover:bg-blue-50 cursor-pointer"><Plus className="h-3 w-3" /> Add Employee</button>}
-                                              </div>
-                                            );
-                                          }
-
-                                          if (!canEditEntireRow) {
-                                            return (
-                                              <div className="w-full py-1.5 flex items-center justify-center text-slate-300 text-[14px] select-none">
-                                                -
-                                              </div>
-                                            );
-                                          }
-
-                                          return (
-                                            <div className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1">
-                                              <button
-                                                type="button"
-                                                onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, '', e)}
-                                                className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer"
-                                                title={`Select staff for ${unitName} (Department will auto-fetch)`}
-                                              >
-                                                <div className="flex items-center gap-1 text-[14px]">
-                                                  <Search className="h-3.5 w-3.5" />
-                                                  <span>Staff...</span>
-                                                  <ChevronDown className="h-3 w-3" />
-                                                </div>
-                                              </button>
-                                            </div>
-                                          );
-                                        })()
-                                      ) : (
-                                        <div className="flex flex-col h-full w-full divide-y divide-[#CBD5E1] justify-center">
-                                          {unitDepts.map((deptName) => {
-                                            const assignedEmps = (row.staffEmployees || []).filter(
-                                              (e) => e.department === deptName && (e.unit === unitName || (!e.unit && units.length === 1))
-                                            );
-                                            const legacyDisplay = units.length === 1 && unitDepts.length === 1 && !(row.staffEmployees || []).length ? row.staffEmployee : '';
-
-                                            if (assignedEmps.length || legacyDisplay) {
-                                              return (
+                                          ) : (
+                                            <div className="flex flex-col h-full w-full divide-y divide-[#CBD5E1] justify-center">
+                                              {unitDepts.map((deptName) => (
                                                 <div
                                                   key={deptName}
-                                                  className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors justify-center"
+                                                  className="flex-1 min-h-[30px] flex items-center justify-between px-2 py-1 gap-1 hover:bg-blue-50/40 transition-colors"
                                                 >
-                                                  {(assignedEmps.length ? assignedEmps : (legacyDisplay ? [{ name: legacyDisplay, department: deptName, unit: unitName, legacy: true }] : [])).map((employee, employeeIndex) => (
-                                                    <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
-                                                      <button type="button" disabled={!canEditEntireRow} onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, deptName, e)} className={`min-w-0 flex-1 truncate text-left text-[14px] font-semibold text-slate-800 ${canEditEntireRow ? 'cursor-pointer hover:text-blue-600' : 'cursor-default'}`} title={`${unitName} - ${deptName}: ${employee.name}`}>
-                                                        {stripEmployeeId(employee.name || employee.label || '')}
-                                                      </button>
-                                                      {canEditEntireRow && <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(idx, unitName, deptName, null) : handleRemoveDepartmentEmployee(idx, unitName, deptName, employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>}
-                                                    </div>
-                                                  ))}
-                                                  {canEditEntireRow && <button type="button" onClick={() => handleOpenAddStaffModal(idx, unitName, deptName)} className="flex items-center justify-center gap-1 rounded py-0.5 text-[13px] font-semibold text-blue-600 hover:bg-blue-50 cursor-pointer"><Plus className="h-3 w-3" /> Add Employee</button>}
+                                                  <span className="text-[14px] font-semibold text-slate-800 whitespace-nowrap text-left" title={deptName}>
+                                                    {deptName}
+                                                  </span>
+                                                  {canEditEntireRow && (
+                                                    <CheckboxMultiSelect
+                                                      value={unitDepts}
+                                                      options={unitOptions}
+                                                      onChange={(newDepts) => handleUnitDepartmentsChange(idx, unitName, newDepts)}
+                                                      renderTrigger={({ open, setOpen, buttonRef }) => (
+                                                        <button
+                                                          ref={buttonRef}
+                                                          type="button"
+                                                          onClick={() => setOpen(!open)}
+                                                          className="text-slate-400 hover:text-blue-600 p-0.5 cursor-pointer ml-1 shrink-0"
+                                                          title={`Edit ${unitName} departments`}
+                                                        >
+                                                          <ChevronDown className="w-2.5 h-2.5" />
+                                                        </button>
+                                                      )}
+                                                    />
+                                                  )}
                                                 </div>
-                                              );
-                                            }
-
-                                            if (!canEditEntireRow) {
-                                              return (
-                                                <div
-                                                  key={deptName}
-                                                  className="flex-1 w-full min-h-[30px] flex items-center justify-center text-slate-300 text-[14px] select-none"
-                                                >
-                                                  -
-                                                </div>
-                                              );
-                                            }
-
-                                            return (
-                                              <div
-                                                key={deptName}
-                                                className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1"
-                                              >
-                                                <div className="flex w-full flex-col items-center">
-                                                  <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, deptName, e)} className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer" title={`Select staff for ${unitName} - ${deptName}`}><div className="flex items-center gap-1 text-[14px]"><Search className="h-3.5 w-3.5" /><span>Staff...</span><ChevronDown className="h-3 w-3" /></div></button>
-                                                  {canEditEntireRow && <button type="button" onClick={() => handleOpenAddStaffModal(idx, unitName, deptName)} className="flex items-center gap-1 py-0.5 text-[13px] font-semibold text-blue-600 hover:bg-blue-50 rounded cursor-pointer"><Plus className="h-3 w-3" /> Add Employee</button>}
-                                                </div>
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      )}
-                                    </div>
-
-                                    {/* 4. CFT Child */}
-                                    <div className="w-[120px] min-w-[110px] shrink-0 relative flex items-center justify-center p-0.5">
-                                      {hasTopic ? (
-                                        <div className="w-full px-1 py-0.5 flex items-center justify-between gap-0.5 group/cft-cell">
-                                          <button
-                                            type="button"
-                                            onClick={canEditEntireRow ? (e) => handleToggleCFTDropdown(idx, e, 'members', unitName) : undefined}
-                                            className={`cft-trigger-btn flex-1 min-w-0 text-left ${canEditEntireRow ? 'cursor-pointer hover:opacity-85' : 'cursor-default'} flex flex-col justify-center py-0.5 transition-opacity`}
-                                            title={`${unitName} CFT Topic: ${unitCft.cftTopic} (Click to view members)`}
-                                          >
-                                            <span
-                                              className="text-[14px] font-semibold truncate max-w-[85px] leading-tight text-blue-900 hover:text-blue-700 transition-colors"
-                                              title={unitCft.cftTopic}
-                                            >
-                                              {unitCft.cftTopic}
-                                            </span>
-                                            {unitCft.cftSelectedName && (
-                                              <div className="flex items-center gap-0.5 mt-0.5">
-                                                <span
-                                                  className={`text-[13px] font-medium truncate max-w-[80px] px-0.5 py-0.2 rounded leading-tight ${
-                                                    unitCft.cftSelectedType === 'member'
-                                                      ? 'text-blue-700 bg-blue-50 border border-blue-200'
-                                                      : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
-                                                  }`}
-                                                  title={unitCft.cftSelectedName}
-                                                >
-                                                  {unitCft.cftSelectedName}
-                                                </span>
-                                              </div>
-                                            )}
-                                          </button>
-                                          {canEditEntireRow && (
-                                            <div className="flex items-center gap-0.5 shrink-0 opacity-80 group-hover/cft-cell:opacity-100 transition-opacity">
-                                              <button
-                                                type="button"
-                                                onClick={(e) => handleEditCFTTopic(idx, e, unitName)}
-                                                className="p-0.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
-                                                title={`Change ${unitName} CFT Topic`}
-                                              >
-                                                <Edit3 className="w-2.5 h-2.5" />
-                                              </button>
-                                              <button
-                                                type="button"
-                                                onClick={(e) => handleDeleteCFT(idx, e, unitName)}
-                                                className="p-0.5 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                                                title={`Delete ${unitName} CFT Topic`}
-                                              >
-                                                <Trash2 className="w-2.5 h-2.5" />
-                                              </button>
+                                              ))}
                                             </div>
                                           )}
                                         </div>
-                                      ) : (
-                                        <button
-                                          type="button"
-                                          onClick={canEditEntireRow ? (e) => handleToggleCFTDropdown(idx, e, 'topics', unitName) : undefined}
-                                          className={`cft-trigger-btn w-full h-full min-h-[30px] flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/40 transition-colors ${canEditEntireRow ? 'cursor-pointer' : 'cursor-default'}`}
-                                          title={canEditEntireRow ? `Click to select CFT Topic for ${unitName}` : undefined}
-                                        >
-                                          <span className="text-[14px] font-medium">-</span>
-                                        </button>
-                                      )}
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </td>
-                        );
-                      }
 
-                      // units.length <= 1: Render 4 individual cells
-                      return (
-                        <>
-                          {/* Unit in Responsible Person */}
-                          <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[110px] min-w-[100px]">
-                            <div className="p-1 w-full">
-                              <CheckboxMultiSelect
-                                disabled={!canEditEntireRow}
-                                value={units}
-                                options={PDCA_UNITS.map((u) => ({ value: u, label: u }))}
-                                placeholder="Unit..."
-                                onChange={(newUnits) => handleResponsibleUnitsChange(idx, newUnits)}
-                              />
-                            </div>
-                          </td>
+                                        {/* 3. Staff Name Child */}
+                                        <div className="w-[160px] min-w-[150px] shrink-0 flex items-center justify-center">
+                                          {unitDepts.length === 0 ? (
+                                            (() => {
+                                              const assignedEmps = (row.staffEmployees || []).filter(
+                                                (e) => e.unit === unitName || (!e.unit && units.length === 1)
+                                              );
+                                              const legacyDisplay = units.length === 1 && !assignedEmps.length ? (row.staffEmployee ? stripEmployeeId(row.staffEmployee) : '') : '';
 
-                          {/* Department Dropdown in Responsible Person */}
-                          <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[145px] min-w-[135px]">
-                            {units.length === 0 ? (
-                              <div className="w-full py-1 text-center text-slate-300 text-[14px] select-none" title="Select Staff Name to auto-fetch Department">
-                                -
-                              </div>
-                            ) : (() => {
-                              const unitName = units[0];
-                              const unitDepts = deptsByUnit[unitName] || [];
-                              const unitOptions = getDepartmentsForUnit(unitName).map((d) => ({ value: d, label: d }));
+                                              if (assignedEmps.length || legacyDisplay) {
+                                                return (
+                                                  <div className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors justify-center">
+                                                    {(assignedEmps.length ? assignedEmps : [{ name: legacyDisplay, legacy: true }]).map((employee, employeeIndex) => (
+                                                      <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
+                                                        <button type="button" disabled={!canEditEntireRow} onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, '', e)} className={`min-w-0 flex-1 truncate text-left text-[14px] font-semibold text-slate-800 ${canEditEntireRow ? 'cursor-pointer hover:text-blue-600' : 'cursor-default'}`} title={`${unitName}: ${employee.name}`}>
+                                                          {stripEmployeeId(employee.name || employee.label || '')}
+                                                        </button>
+                                                        {canEditEntireRow && <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(idx, unitName, '', null) : handleRemoveDepartmentEmployee(idx, unitName, '', employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>}
+                                                      </div>
+                                                    ))}
+                                                    {canEditEntireRow && <button type="button" onClick={() => handleOpenAddStaffModal(idx, unitName, '')} className="flex items-center justify-center gap-1 rounded py-0.5 text-[13px] font-semibold text-blue-600 hover:bg-blue-50 cursor-pointer"><Plus className="h-3 w-3" /> Add Employee</button>}
+                                                  </div>
+                                                );
+                                              }
 
-                              if (unitDepts.length === 0) {
-                                return (
-                                  <div className="p-1 min-h-[30px] flex items-center justify-center">
-                                    <CheckboxMultiSelect
-                                      disabled={!canEditEntireRow}
-                                      value={[]}
-                                      options={unitOptions}
-                                      placeholder="Dept..."
-                                      onChange={(newDepts) => handleUnitDepartmentsChange(idx, unitName, newDepts)}
-                                    />
-                                  </div>
-                                );
-                              }
+                                              if (!canEditEntireRow) {
+                                                return (
+                                                  <div className="w-full py-1.5 flex items-center justify-center text-slate-300 text-[14px] select-none">
+                                                    -
+                                                  </div>
+                                                );
+                                              }
 
-                              if (unitDepts.length === 1) {
-                                return (
-                                  <div className="flex-1 min-h-[30px] flex items-center justify-between px-2 py-1 gap-1 hover:bg-blue-50/40 transition-colors">
-                                    <span className="text-[14px] font-semibold text-slate-800 whitespace-nowrap text-left" title={unitDepts[0]}>
-                                      {unitDepts[0]}
-                                    </span>
-                                    {canEditEntireRow && (
-                                      <CheckboxMultiSelect
-                                        value={unitDepts}
-                                        options={unitOptions}
-                                        onChange={(newDepts) => handleUnitDepartmentsChange(idx, unitName, newDepts)}
-                                        renderTrigger={({ open, setOpen, buttonRef }) => (
-                                          <button
-                                            ref={buttonRef}
-                                            type="button"
-                                            onClick={() => setOpen(!open)}
-                                            className="text-slate-400 hover:text-blue-600 p-0.5 cursor-pointer ml-1 shrink-0"
-                                            title={`Edit ${unitName} departments`}
-                                          >
-                                            <ChevronDown className="w-2.5 h-2.5" />
-                                          </button>
-                                        )}
-                                      />
-                                    )}
-                                  </div>
-                                );
-                              }
+                                              return (
+                                                <div className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1">
+                                                  <button
+                                                    type="button"
+                                                    onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, '', e)}
+                                                    className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer"
+                                                    title={`Select staff for ${unitName} (Department will auto-fetch)`}
+                                                  >
+                                                    <div className="flex items-center gap-1 text-[14px]">
+                                                      <Search className="h-3.5 w-3.5" />
+                                                      <span>Staff...</span>
+                                                      <ChevronDown className="h-3 w-3" />
+                                                    </div>
+                                                  </button>
+                                                </div>
+                                              );
+                                            })()
+                                          ) : (
+                                            <div className="flex flex-col h-full w-full divide-y divide-[#CBD5E1] justify-center">
+                                              {unitDepts.map((deptName) => {
+                                                const assignedEmps = (row.staffEmployees || []).filter(
+                                                  (e) => e.department === deptName && (e.unit === unitName || (!e.unit && units.length === 1))
+                                                );
+                                                const legacyDisplay = units.length === 1 && unitDepts.length === 1 && !(row.staffEmployees || []).length ? row.staffEmployee : '';
 
-                              return (
-                                <div className="flex flex-col h-full w-full divide-y divide-[#CBD5E1] justify-center">
-                                  {unitDepts.map((deptName) => (
-                                    <div
-                                      key={deptName}
-                                      className="flex-1 min-h-[30px] flex items-center justify-between px-2 py-1 gap-1 hover:bg-blue-50/40 transition-colors"
-                                    >
-                                      <span className="text-[14px] font-semibold text-slate-800 whitespace-nowrap text-left" title={deptName}>
-                                        {deptName}
-                                      </span>
-                                      {canEditEntireRow && (
-                                        <CheckboxMultiSelect
-                                          value={unitDepts}
-                                          options={unitOptions}
-                                          onChange={(newDepts) => handleUnitDepartmentsChange(idx, unitName, newDepts)}
-                                          renderTrigger={({ open, setOpen, buttonRef }) => (
+                                                if (assignedEmps.length || legacyDisplay) {
+                                                  return (
+                                                    <div
+                                                      key={deptName}
+                                                      className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors justify-center"
+                                                    >
+                                                      {(assignedEmps.length ? assignedEmps : (legacyDisplay ? [{ name: legacyDisplay, department: deptName, unit: unitName, legacy: true }] : [])).map((employee, employeeIndex) => (
+                                                        <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
+                                                          <button type="button" disabled={!canEditEntireRow} onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, deptName, e)} className={`min-w-0 flex-1 truncate text-left text-[14px] font-semibold text-slate-800 ${canEditEntireRow ? 'cursor-pointer hover:text-blue-600' : 'cursor-default'}`} title={`${unitName} - ${deptName}: ${employee.name}`}>
+                                                            {stripEmployeeId(employee.name || employee.label || '')}
+                                                          </button>
+                                                          {canEditEntireRow && <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(idx, unitName, deptName, null) : handleRemoveDepartmentEmployee(idx, unitName, deptName, employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>}
+                                                        </div>
+                                                      ))}
+                                                      {canEditEntireRow && <button type="button" onClick={() => handleOpenAddStaffModal(idx, unitName, deptName)} className="flex items-center justify-center gap-1 rounded py-0.5 text-[13px] font-semibold text-blue-600 hover:bg-blue-50 cursor-pointer"><Plus className="h-3 w-3" /> Add Employee</button>}
+                                                    </div>
+                                                  );
+                                                }
+
+                                                if (!canEditEntireRow) {
+                                                  return (
+                                                    <div
+                                                      key={deptName}
+                                                      className="flex-1 w-full min-h-[30px] flex items-center justify-center text-slate-300 text-[14px] select-none"
+                                                    >
+                                                      -
+                                                    </div>
+                                                  );
+                                                }
+
+                                                return (
+                                                  <div
+                                                    key={deptName}
+                                                    className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1"
+                                                  >
+                                                    <div className="flex w-full flex-col items-center">
+                                                      <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, deptName, e)} className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer" title={`Select staff for ${unitName} - ${deptName}`}><div className="flex items-center gap-1 text-[14px]"><Search className="h-3.5 w-3.5" /><span>Staff...</span><ChevronDown className="h-3 w-3" /></div></button>
+                                                      {canEditEntireRow && <button type="button" onClick={() => handleOpenAddStaffModal(idx, unitName, deptName)} className="flex items-center gap-1 py-0.5 text-[13px] font-semibold text-blue-600 hover:bg-blue-50 rounded cursor-pointer"><Plus className="h-3 w-3" /> Add Employee</button>}
+                                                    </div>
+                                                  </div>
+                                                );
+                                              })}
+                                            </div>
+                                          )}
+                                        </div>
+
+                                        {/* 4. CFT Child */}
+                                        <div className="w-[120px] min-w-[110px] shrink-0 relative flex items-center justify-center p-0.5">
+                                          {hasTopic ? (
+                                            <div className="w-full px-1 py-0.5 flex items-center justify-between gap-0.5 group/cft-cell">
+                                              <button
+                                                type="button"
+                                                onClick={canEditEntireRow ? (e) => handleToggleCFTDropdown(idx, e, 'members', unitName) : undefined}
+                                                className={`cft-trigger-btn flex-1 min-w-0 text-left ${canEditEntireRow ? 'cursor-pointer hover:opacity-85' : 'cursor-default'} flex flex-col justify-center py-0.5 transition-opacity`}
+                                                title={`${unitName} CFT Topic: ${unitCft.cftTopic} (Click to view members)`}
+                                              >
+                                                <span
+                                                  className="text-[14px] font-semibold truncate max-w-[85px] leading-tight text-blue-900 hover:text-blue-700 transition-colors"
+                                                  title={unitCft.cftTopic}
+                                                >
+                                                  {unitCft.cftTopic}
+                                                </span>
+                                                {unitCft.cftSelectedName && (
+                                                  <div className="flex items-center gap-0.5 mt-0.5">
+                                                    <span
+                                                      className={`text-[13px] font-medium truncate max-w-[80px] px-0.5 py-0.2 rounded leading-tight ${unitCft.cftSelectedType === 'member'
+                                                        ? 'text-blue-700 bg-blue-50 border border-blue-200'
+                                                        : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                                                        }`}
+                                                      title={unitCft.cftSelectedName}
+                                                    >
+                                                      {unitCft.cftSelectedName}
+                                                    </span>
+                                                  </div>
+                                                )}
+                                              </button>
+                                              {canEditEntireRow && (
+                                                <div className="flex items-center gap-0.5 shrink-0 opacity-80 group-hover/cft-cell:opacity-100 transition-opacity">
+                                                  <button
+                                                    type="button"
+                                                    onClick={(e) => handleEditCFTTopic(idx, e, unitName)}
+                                                    className="p-0.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                                                    title={`Change ${unitName} CFT Topic`}
+                                                  >
+                                                    <Edit3 className="w-2.5 h-2.5" />
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    onClick={(e) => handleDeleteCFT(idx, e, unitName)}
+                                                    className="p-0.5 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                                    title={`Delete ${unitName} CFT Topic`}
+                                                  >
+                                                    <Trash2 className="w-2.5 h-2.5" />
+                                                  </button>
+                                                </div>
+                                              )}
+                                            </div>
+                                          ) : (
                                             <button
-                                              ref={buttonRef}
                                               type="button"
-                                              onClick={() => setOpen(!open)}
-                                              className="text-slate-400 hover:text-blue-600 p-0.5 cursor-pointer ml-1 shrink-0"
-                                              title={`Edit ${unitName} departments`}
+                                              onClick={canEditEntireRow ? (e) => handleToggleCFTDropdown(idx, e, 'topics', unitName) : undefined}
+                                              className={`cft-trigger-btn w-full h-full min-h-[30px] flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/40 transition-colors ${canEditEntireRow ? 'cursor-pointer' : 'cursor-default'}`}
+                                              title={canEditEntireRow ? `Click to select CFT Topic for ${unitName}` : undefined}
                                             >
-                                              <ChevronDown className="w-2.5 h-2.5" />
+                                              <span className="text-[14px] font-medium">-</span>
                                             </button>
                                           )}
-                                        />
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-                              );
-                            })()}
-                          </td>
-
-                          {/* 13. Staff Name in Responsible Person */}
-                          <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[160px] min-w-[150px]">
-                            {units.length === 0 ? (
-                              (() => {
-                                const assignedEmps = row.staffEmployees || [];
-                                const legacyDisplay = !assignedEmps.length ? (row.staffEmployee ? stripEmployeeId(row.staffEmployee) : '') : '';
-                                if (assignedEmps.length || legacyDisplay) {
-                                  return (
-                                    <div className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors">
-                                      {(assignedEmps.length ? assignedEmps : [{ name: legacyDisplay, legacy: true }]).map((employee, employeeIndex) => (
-                                        <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
-                                          <button type="button" disabled={!canEditEntireRow} onClick={(e) => handleToggleStaffDropdown(idx, e)} className={`min-w-0 flex-1 truncate text-left text-[14px] font-semibold text-slate-800 ${canEditEntireRow ? 'cursor-pointer hover:text-blue-600' : 'cursor-default'}`} title={`Staff: ${employee.name}`}>
-                                            {stripEmployeeId(employee.name || employee.label || '')}
-                                          </button>
-                                          {canEditEntireRow && <button type="button" onClick={() => handleSelectStaffMember(idx, '')} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>}
                                         </div>
-                                      ))}
-                                    </div>
-                                  );
-                                }
-                                if (!canEditEntireRow) {
-                                  return (
-                                    <div className="w-full py-1 text-center text-slate-300 text-[14px] select-none">
-                                      -
-                                    </div>
-                                  );
-                                }
-                                return (
-                                  <div className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1">
-                                    <button
-                                      type="button"
-                                      onClick={(e) => handleToggleStaffDropdown(idx, e)}
-                                      className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer"
-                                      title="Select staff name (Department will auto-fetch)"
-                                    >
-                                      <div className="flex items-center gap-1 text-[14px]">
-                                        <Search className="h-3.5 w-3.5" />
-                                        <span>Staff...</span>
-                                        <ChevronDown className="h-3 w-3" />
                                       </div>
-                                    </button>
-                                  </div>
-                                );
-                              })()
-                            ) : (() => {
-                              const unitName = units[0];
-                              const unitDepts = deptsByUnit[unitName] || [];
-
-                              if (unitDepts.length === 0) {
-                                const assignedEmps = (row.staffEmployees || []).filter(
-                                  (e) => e.unit === unitName || (!e.unit && units.length === 1)
-                                );
-                                const legacyDisplay = units.length === 1 && !assignedEmps.length ? (row.staffEmployee ? stripEmployeeId(row.staffEmployee) : '') : '';
-
-                                if (assignedEmps.length || legacyDisplay) {
-                                  return (
-                                    <div className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors">
-                                      {(assignedEmps.length ? assignedEmps : [{ name: legacyDisplay, legacy: true }]).map((employee, employeeIndex) => (
-                                        <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
-                                          <button type="button" disabled={!canEditEntireRow} onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, '', e)} className={`min-w-0 flex-1 truncate text-left text-[14px] font-semibold text-slate-800 ${canEditEntireRow ? 'cursor-pointer hover:text-blue-600' : 'cursor-default'}`} title={`${unitName}: ${employee.name}`}>
-                                            {stripEmployeeId(employee.name || employee.label || '')}
-                                          </button>
-                                          {canEditEntireRow && <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(idx, unitName, '', null) : handleRemoveDepartmentEmployee(idx, unitName, '', employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>}
-                                        </div>
-                                      ))}
-                                    </div>
-                                  );
-                                }
-
-                                if (!canEditEntireRow) {
-                                  return (
-                                    <div className="w-full py-1.5 flex items-center justify-center text-slate-300 text-[14px] select-none">
-                                      -
-                                    </div>
-                                  );
-                                }
-
-                                return (
-                                  <div className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1">
-                                    <button
-                                      type="button"
-                                      onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, '', e)}
-                                      className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer"
-                                      title={`Select staff for ${unitName} (Department will auto-fetch)`}
-                                    >
-                                      <div className="flex items-center gap-1 text-[14px]">
-                                        <Search className="h-3.5 w-3.5" />
-                                        <span>Staff...</span>
-                                        <ChevronDown className="h-3 w-3" />
-                                      </div>
-                                    </button>
-                                  </div>
-                                );
-                              }
-
-                              return (
-                                <div className="flex flex-col h-full w-full divide-y divide-[#CBD5E1] justify-center">
-                                  {unitDepts.map((deptName) => {
-                                    const assignedEmps = (row.staffEmployees || []).filter(
-                                      (e) => e.department === deptName && (e.unit === unitName || (!e.unit && units.length === 1))
                                     );
-                                    const legacyDisplay = units.length === 1 && unitDepts.length === 1 && !(row.staffEmployees || []).length ? row.staffEmployee : '';
+                                  })}
+                                </div>
+                              </td>
+                            );
+                          }
+
+                          // units.length <= 1: Render 4 individual cells
+                          return (
+                            <>
+                              {/* Unit in Responsible Person */}
+                              <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[110px] min-w-[100px]">
+                                <div className="p-1 w-full">
+                                  <CheckboxMultiSelect
+                                    disabled={!canEditEntireRow}
+                                    value={units}
+                                    options={PDCA_UNITS.map((u) => ({ value: u, label: u }))}
+                                    placeholder="Unit..."
+                                    onChange={(newUnits) => handleResponsibleUnitsChange(idx, newUnits)}
+                                  />
+                                </div>
+                              </td>
+
+                              {/* Department Dropdown in Responsible Person */}
+                              <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[145px] min-w-[135px]">
+                                {units.length === 0 ? (
+                                  <div className="w-full py-1 text-center text-slate-300 text-[14px] select-none" title="Select Staff Name to auto-fetch Department">
+                                    -
+                                  </div>
+                                ) : (() => {
+                                  const unitName = units[0];
+                                  const unitDepts = deptsByUnit[unitName] || [];
+                                  const unitOptions = getDepartmentsForUnit(unitName).map((d) => ({ value: d, label: d }));
+
+                                  if (unitDepts.length === 0) {
+                                    return (
+                                      <div className="p-1 min-h-[30px] flex items-center justify-center">
+                                        <CheckboxMultiSelect
+                                          disabled={!canEditEntireRow}
+                                          value={[]}
+                                          options={unitOptions}
+                                          placeholder="Dept..."
+                                          onChange={(newDepts) => handleUnitDepartmentsChange(idx, unitName, newDepts)}
+                                        />
+                                      </div>
+                                    );
+                                  }
+
+                                  if (unitDepts.length === 1) {
+                                    return (
+                                      <div className="flex-1 min-h-[30px] flex items-center justify-between px-2 py-1 gap-1 hover:bg-blue-50/40 transition-colors">
+                                        <span className="text-[14px] font-semibold text-slate-800 whitespace-nowrap text-left" title={unitDepts[0]}>
+                                          {unitDepts[0]}
+                                        </span>
+                                        {canEditEntireRow && (
+                                          <CheckboxMultiSelect
+                                            value={unitDepts}
+                                            options={unitOptions}
+                                            onChange={(newDepts) => handleUnitDepartmentsChange(idx, unitName, newDepts)}
+                                            renderTrigger={({ open, setOpen, buttonRef }) => (
+                                              <button
+                                                ref={buttonRef}
+                                                type="button"
+                                                onClick={() => setOpen(!open)}
+                                                className="text-slate-400 hover:text-blue-600 p-0.5 cursor-pointer ml-1 shrink-0"
+                                                title={`Edit ${unitName} departments`}
+                                              >
+                                                <ChevronDown className="w-2.5 h-2.5" />
+                                              </button>
+                                            )}
+                                          />
+                                        )}
+                                      </div>
+                                    );
+                                  }
+
+                                  return (
+                                    <div className="flex flex-col h-full w-full divide-y divide-[#CBD5E1] justify-center">
+                                      {unitDepts.map((deptName) => (
+                                        <div
+                                          key={deptName}
+                                          className="flex-1 min-h-[30px] flex items-center justify-between px-2 py-1 gap-1 hover:bg-blue-50/40 transition-colors"
+                                        >
+                                          <span className="text-[14px] font-semibold text-slate-800 whitespace-nowrap text-left" title={deptName}>
+                                            {deptName}
+                                          </span>
+                                          {canEditEntireRow && (
+                                            <CheckboxMultiSelect
+                                              value={unitDepts}
+                                              options={unitOptions}
+                                              onChange={(newDepts) => handleUnitDepartmentsChange(idx, unitName, newDepts)}
+                                              renderTrigger={({ open, setOpen, buttonRef }) => (
+                                                <button
+                                                  ref={buttonRef}
+                                                  type="button"
+                                                  onClick={() => setOpen(!open)}
+                                                  className="text-slate-400 hover:text-blue-600 p-0.5 cursor-pointer ml-1 shrink-0"
+                                                  title={`Edit ${unitName} departments`}
+                                                >
+                                                  <ChevronDown className="w-2.5 h-2.5" />
+                                                </button>
+                                              )}
+                                            />
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  );
+                                })()}
+                              </td>
+
+                              {/* 13. Staff Name in Responsible Person */}
+                              <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[160px] min-w-[150px]">
+                                {units.length === 0 ? (
+                                  (() => {
+                                    const assignedEmps = row.staffEmployees || [];
+                                    const legacyDisplay = !assignedEmps.length ? (row.staffEmployee ? stripEmployeeId(row.staffEmployee) : '') : '';
+                                    if (assignedEmps.length || legacyDisplay) {
+                                      return (
+                                        <div className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors">
+                                          {(assignedEmps.length ? assignedEmps : [{ name: legacyDisplay, legacy: true }]).map((employee, employeeIndex) => (
+                                            <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
+                                              <button type="button" disabled={!canEditEntireRow} onClick={(e) => handleToggleStaffDropdown(idx, e)} className={`min-w-0 flex-1 truncate text-left text-[14px] font-semibold text-slate-800 ${canEditEntireRow ? 'cursor-pointer hover:text-blue-600' : 'cursor-default'}`} title={`Staff: ${employee.name}`}>
+                                                {stripEmployeeId(employee.name || employee.label || '')}
+                                              </button>
+                                              {canEditEntireRow && <button type="button" onClick={() => handleSelectStaffMember(idx, '')} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      );
+                                    }
+                                    if (!canEditEntireRow) {
+                                      return (
+                                        <div className="w-full py-1 text-center text-slate-300 text-[14px] select-none">
+                                          -
+                                        </div>
+                                      );
+                                    }
+                                    return (
+                                      <div className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => handleToggleStaffDropdown(idx, e)}
+                                          className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer"
+                                          title="Select staff name (Department will auto-fetch)"
+                                        >
+                                          <div className="flex items-center gap-1 text-[14px]">
+                                            <Search className="h-3.5 w-3.5" />
+                                            <span>Staff...</span>
+                                            <ChevronDown className="h-3 w-3" />
+                                          </div>
+                                        </button>
+                                      </div>
+                                    );
+                                  })()
+                                ) : (() => {
+                                  const unitName = units[0];
+                                  const unitDepts = deptsByUnit[unitName] || [];
+
+                                  if (unitDepts.length === 0) {
+                                    const assignedEmps = (row.staffEmployees || []).filter(
+                                      (e) => e.unit === unitName || (!e.unit && units.length === 1)
+                                    );
+                                    const legacyDisplay = units.length === 1 && !assignedEmps.length ? (row.staffEmployee ? stripEmployeeId(row.staffEmployee) : '') : '';
 
                                     if (assignedEmps.length || legacyDisplay) {
                                       return (
-                                        <div
-                                          key={deptName}
-                                          className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors"
-                                        >
-                                          {(assignedEmps.length ? assignedEmps : (legacyDisplay ? [{ name: legacyDisplay, department: deptName, unit: unitName, legacy: true }] : [])).map((employee, employeeIndex) => (
+                                        <div className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors">
+                                          {(assignedEmps.length ? assignedEmps : [{ name: legacyDisplay, legacy: true }]).map((employee, employeeIndex) => (
                                             <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
-                                              <button type="button" disabled={!canEditEntireRow} onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, deptName, e)} className={`min-w-0 flex-1 truncate text-left text-[14px] font-semibold text-slate-800 ${canEditEntireRow ? 'cursor-pointer hover:text-blue-600' : 'cursor-default'}`} title={`${unitName} - ${deptName}: ${employee.name}`}>
+                                              <button type="button" disabled={!canEditEntireRow} onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, '', e)} className={`min-w-0 flex-1 truncate text-left text-[14px] font-semibold text-slate-800 ${canEditEntireRow ? 'cursor-pointer hover:text-blue-600' : 'cursor-default'}`} title={`${unitName}: ${employee.name}`}>
                                                 {stripEmployeeId(employee.name || employee.label || '')}
                                               </button>
-                                              {canEditEntireRow && <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(idx, unitName, deptName, null) : handleRemoveDepartmentEmployee(idx, unitName, deptName, employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>}
+                                              {canEditEntireRow && <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(idx, unitName, '', null) : handleRemoveDepartmentEmployee(idx, unitName, '', employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>}
                                             </div>
                                           ))}
-                                          {canEditEntireRow && <button type="button" onClick={() => handleOpenAddStaffModal(idx, unitName, deptName)} className="flex items-center justify-center gap-1 rounded py-0.5 text-[13px] font-semibold text-blue-600 hover:bg-blue-50 cursor-pointer"><Plus className="h-3 w-3" /> Add Employee</button>}
                                         </div>
                                       );
                                     }
 
                                     if (!canEditEntireRow) {
                                       return (
-                                        <div
-                                          key={deptName}
-                                          className="flex-1 w-full min-h-[30px] flex items-center justify-center text-slate-300 text-[14px] select-none"
-                                        >
+                                        <div className="w-full py-1.5 flex items-center justify-center text-slate-300 text-[14px] select-none">
                                           -
                                         </div>
                                       );
                                     }
 
                                     return (
-                                      <div
-                                        key={deptName}
-                                        className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1"
-                                      >
-                                        <div className="flex w-full flex-col items-center">
-                                          <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, deptName, e)} className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer" title={`Select staff for ${unitName} - ${deptName}`}><div className="flex items-center gap-1 text-[14px]"><Search className="h-3.5 w-3.5" /><span>Staff...</span><ChevronDown className="h-3 w-3" /></div></button>
-                                          {canEditEntireRow && <button type="button" onClick={() => handleOpenAddStaffModal(idx, unitName, deptName)} className="flex items-center gap-1 py-0.5 text-[13px] font-semibold text-blue-600 hover:bg-blue-50 rounded cursor-pointer"><Plus className="h-3 w-3" /> Add Employee</button>}
-                                        </div>
+                                      <div className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, '', e)}
+                                          className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer"
+                                          title={`Select staff for ${unitName} (Department will auto-fetch)`}
+                                        >
+                                          <div className="flex items-center gap-1 text-[14px]">
+                                            <Search className="h-3.5 w-3.5" />
+                                            <span>Staff...</span>
+                                            <ChevronDown className="h-3 w-3" />
+                                          </div>
+                                        </button>
                                       </div>
                                     );
-                                  })}
-                                </div>
-                              );
-                            })()}
-                          </td>
+                                  }
 
-                          {/* 14. CFT in Responsible Person */}
-                          <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[120px] min-w-[110px]">
-                            <div className="relative w-full h-full p-1 flex items-center justify-center">
-                              {row.cftTopic ? (
-                                <div className="w-full px-1 py-0.5 flex items-center justify-between gap-0.5 group/cft-cell">
-                                  <button
-                                    type="button"
-                                    onClick={canEditEntireRow ? (e) => handleToggleCFTDropdown(idx, e, 'members') : undefined}
-                                    className={`cft-trigger-btn flex-1 min-w-0 text-left ${canEditEntireRow ? 'cursor-pointer hover:opacity-85' : 'cursor-default'} flex flex-col justify-center py-0.5 transition-opacity`}
-                                    title={`CFT Topic: ${row.cftTopic} (Click to view members)`}
-                                  >
-                                    <span
-                                      className="text-[14px] font-semibold truncate max-w-[85px] leading-tight text-blue-900 hover:text-blue-700 transition-colors"
-                                      title={row.cftTopic}
-                                    >
-                                      {row.cftTopic}
-                                    </span>
-                                    {row.cftSelectedName && (
-                                      <div className="flex items-center gap-0.5 mt-0.5">
-                                        <span
-                                          className={`text-[13px] font-medium truncate max-w-[80px] px-0.5 py-0.2 rounded leading-tight ${
-                                            row.cftSelectedType === 'member'
-                                              ? 'text-blue-700 bg-blue-50 border border-blue-200'
-                                              : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
-                                          }`}
-                                          title={row.cftSelectedName}
-                                        >
-                                          {row.cftSelectedName}
-                                        </span>
-                                      </div>
-                                    )}
-                                  </button>
-                                  {canEditEntireRow && (
-                                    <div className="flex items-center gap-0.5 shrink-0 opacity-80 group-hover/cft-cell:opacity-100 transition-opacity">
-                                      <button
-                                        type="button"
-                                        onClick={(e) => handleEditCFTTopic(idx, e)}
-                                        className="p-0.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
-                                        title="Change CFT Topic"
-                                      >
-                                        <Edit3 className="w-2.5 h-2.5" />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => handleDeleteCFT(idx, e)}
-                                        className="p-0.5 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                                        title="Delete CFT Topic & Member"
-                                      >
-                                        <Trash2 className="w-2.5 h-2.5" />
-                                      </button>
+                                  return (
+                                    <div className="flex flex-col h-full w-full divide-y divide-[#CBD5E1] justify-center">
+                                      {unitDepts.map((deptName) => {
+                                        const assignedEmps = (row.staffEmployees || []).filter(
+                                          (e) => e.department === deptName && (e.unit === unitName || (!e.unit && units.length === 1))
+                                        );
+                                        const legacyDisplay = units.length === 1 && unitDepts.length === 1 && !(row.staffEmployees || []).length ? row.staffEmployee : '';
+
+                                        if (assignedEmps.length || legacyDisplay) {
+                                          return (
+                                            <div
+                                              key={deptName}
+                                              className="relative flex-1 w-full min-h-[30px] px-1 py-1 flex flex-col gap-1 group/emp hover:bg-slate-50 transition-colors"
+                                            >
+                                              {(assignedEmps.length ? assignedEmps : (legacyDisplay ? [{ name: legacyDisplay, department: deptName, unit: unitName, legacy: true }] : [])).map((employee, employeeIndex) => (
+                                                <div key={`${employee.code || employee.name}-${employeeIndex}`} className="flex w-full items-center gap-1">
+                                                  <button type="button" disabled={!canEditEntireRow} onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, deptName, e)} className={`min-w-0 flex-1 truncate text-left text-[14px] font-semibold text-slate-800 ${canEditEntireRow ? 'cursor-pointer hover:text-blue-600' : 'cursor-default'}`} title={`${unitName} - ${deptName}: ${employee.name}`}>
+                                                    {stripEmployeeId(employee.name || employee.label || '')}
+                                                  </button>
+                                                  {canEditEntireRow && <button type="button" onClick={() => employee.legacy ? handleSelectStaffForUnitDept(idx, unitName, deptName, null) : handleRemoveDepartmentEmployee(idx, unitName, deptName, employee)} className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer" title="Remove employee"><X className="h-3 w-3 stroke-[2.5]" /></button>}
+                                                </div>
+                                              ))}
+                                              {canEditEntireRow && <button type="button" onClick={() => handleOpenAddStaffModal(idx, unitName, deptName)} className="flex items-center justify-center gap-1 rounded py-0.5 text-[13px] font-semibold text-blue-600 hover:bg-blue-50 cursor-pointer"><Plus className="h-3 w-3" /> Add Employee</button>}
+                                            </div>
+                                          );
+                                        }
+
+                                        if (!canEditEntireRow) {
+                                          return (
+                                            <div
+                                              key={deptName}
+                                              className="flex-1 w-full min-h-[30px] flex items-center justify-center text-slate-300 text-[14px] select-none"
+                                            >
+                                              -
+                                            </div>
+                                          );
+                                        }
+
+                                        return (
+                                          <div
+                                            key={deptName}
+                                            className="flex-1 w-full min-h-[30px] flex items-center justify-center px-1"
+                                          >
+                                            <div className="flex w-full flex-col items-center">
+                                              <button type="button" onClick={(e) => handleToggleStaffDropdownForDept(idx, unitName, deptName, e)} className="w-full py-1 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/50 rounded group cursor-pointer" title={`Select staff for ${unitName} - ${deptName}`}><div className="flex items-center gap-1 text-[14px]"><Search className="h-3.5 w-3.5" /><span>Staff...</span><ChevronDown className="h-3 w-3" /></div></button>
+                                              {canEditEntireRow && <button type="button" onClick={() => handleOpenAddStaffModal(idx, unitName, deptName)} className="flex items-center gap-1 py-0.5 text-[13px] font-semibold text-blue-600 hover:bg-blue-50 rounded cursor-pointer"><Plus className="h-3 w-3" /> Add Employee</button>}
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
                                     </div>
+                                  );
+                                })()}
+                              </td>
+
+                              {/* 14. CFT in Responsible Person */}
+                              <td className="p-0 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[120px] min-w-[110px]">
+                                <div className="relative w-full h-full p-1 flex items-center justify-center">
+                                  {row.cftTopic ? (
+                                    <div className="w-full px-1 py-0.5 flex items-center justify-between gap-0.5 group/cft-cell">
+                                      <button
+                                        type="button"
+                                        onClick={canEditEntireRow ? (e) => handleToggleCFTDropdown(idx, e, 'members') : undefined}
+                                        className={`cft-trigger-btn flex-1 min-w-0 text-left ${canEditEntireRow ? 'cursor-pointer hover:opacity-85' : 'cursor-default'} flex flex-col justify-center py-0.5 transition-opacity`}
+                                        title={`CFT Topic: ${row.cftTopic} (Click to view members)`}
+                                      >
+                                        <span
+                                          className="text-[14px] font-semibold truncate max-w-[85px] leading-tight text-blue-900 hover:text-blue-700 transition-colors"
+                                          title={row.cftTopic}
+                                        >
+                                          {row.cftTopic}
+                                        </span>
+                                        {row.cftSelectedName && (
+                                          <div className="flex items-center gap-0.5 mt-0.5">
+                                            <span
+                                              className={`text-[13px] font-medium truncate max-w-[80px] px-0.5 py-0.2 rounded leading-tight ${row.cftSelectedType === 'member'
+                                                ? 'text-blue-700 bg-blue-50 border border-blue-200'
+                                                : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                                                }`}
+                                              title={row.cftSelectedName}
+                                            >
+                                              {row.cftSelectedName}
+                                            </span>
+                                          </div>
+                                        )}
+                                      </button>
+                                      {canEditEntireRow && (
+                                        <div className="flex items-center gap-0.5 shrink-0 opacity-80 group-hover/cft-cell:opacity-100 transition-opacity">
+                                          <button
+                                            type="button"
+                                            onClick={(e) => handleEditCFTTopic(idx, e)}
+                                            className="p-0.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                                            title="Change CFT Topic"
+                                          >
+                                            <Edit3 className="w-2.5 h-2.5" />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => handleDeleteCFT(idx, e)}
+                                            className="p-0.5 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                            title="Delete CFT Topic & Member"
+                                          >
+                                            <Trash2 className="w-2.5 h-2.5" />
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={canEditEntireRow ? (e) => handleToggleCFTDropdown(idx, e, 'topics') : undefined}
+                                      className={`cft-trigger-btn w-full h-full min-h-[30px] flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/40 transition-colors ${canEditEntireRow ? 'cursor-pointer' : 'cursor-default'}`}
+                                      title={canEditEntireRow ? 'Click to select CFT Topic' : undefined}
+                                    >
+                                      <span className="text-[14px] font-medium">-</span>
+                                    </button>
                                   )}
                                 </div>
-                              ) : (
+                              </td>
+                            </>
+                          );
+                        })()}
+                        {/* 15. Responsible Person Instruction, etc. Column: Upside Name, Middle Confirmed/Not-Confirmed dropdown, Downside Mandatory Input */}
+                        <td className="p-1.5 align-top border-r border-b border-[#64748B] w-[185px] min-w-[175px] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-left">
+                          <div className="w-full flex flex-col items-start justify-start">
+                            <ResponsiblePersonInstructionCell
+                              row={row}
+                              rowIndex={idx}
+                              reasonRef={(element) => {
+                                if (element) responsibleConfirmationReasonRefs.current[idx] = element;
+                                else delete responsibleConfirmationReasonRefs.current[idx];
+                              }}
+                              confirmationRef={(element) => {
+                                if (element) responsibleConfirmationSelectRefs.current[idx] = element;
+                                else delete responsibleConfirmationSelectRefs.current[idx];
+                              }}
+                              reasonRequired={missingRequiredInputs.some((item) => item.type === 'confirmation' && item.rowIndex === idx)}
+                              currentUser={effectiveUser}
+                              creatorName={headerInfo?.preparedBy || topic?.createdBy?.name || topic?.createdBy || topic?.topicCreatedBy || effectiveUser?.name}
+                              readOnly={!canConfirmThisRow}
+                              missingMandatoryFields={getMissingConfirmationMandatoryFields(row)}
+                              onConfirmationChange={(val, uName) => handleConfirmationChange(idx, val, uName)}
+                              onInstructionChange={(text) => handleInstructionChange(idx, text)}
+                              sNo={sNo}
+                            />
+                          </div>
+                        </td>
+
+                        {/* 16. Actions Column (Insert Row Above / Delete Row) */}
+                        {canShowRowActions && (
+                          <td className="p-1 align-middle text-center border-r border-b border-[#64748B] w-[44px] min-w-[40px] bg-white group-hover/row:bg-[#F8FAFC]">
+                            <div className="flex flex-col items-center justify-center gap-1">
+                              {canShowRowActions && (
                                 <button
                                   type="button"
-                                  onClick={canEditEntireRow ? (e) => handleToggleCFTDropdown(idx, e, 'topics') : undefined}
-                                  className={`cft-trigger-btn w-full h-full min-h-[30px] flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50/40 transition-colors ${canEditEntireRow ? 'cursor-pointer' : 'cursor-default'}`}
-                                  title={canEditEntireRow ? 'Click to select CFT Topic' : undefined}
+                                  onClick={() => handleInsertRowAbove(idx)}
+                                  className={`flex items-center justify-center w-5 h-5 shrink-0 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-all shadow-2xs cursor-pointer ${!canAddRow ? 'hidden' : ''}`}
+                                  title="Insert row above"
                                 >
-                                  <span className="text-[14px] font-medium">-</span>
+                                  <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                                </button>
+                              )}
+                              {canDeleteRow && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteRow(idx)}
+                                  className="flex items-center justify-center w-5 h-5 shrink-0 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-400 hover:bg-rose-50 transition-all shadow-2xs cursor-pointer"
+                                  title="Delete this row"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5 stroke-[2]" />
                                 </button>
                               )}
                             </div>
                           </td>
-                        </>
-                      );
-                    })()}
-                    {/* 15. Responsible Person Instruction, etc. Column: Upside Name, Middle Confirmed/Not-Confirmed dropdown, Downside Mandatory Input */}
-                    <td className="p-1.5 align-top border-r border-b border-[#64748B] w-[185px] min-w-[175px] bg-white group-hover/row:bg-[#F8FAFC] focus-within:bg-blue-50/30 text-left">
-                      <div className="w-full flex flex-col items-start justify-start">
-                        <ResponsiblePersonInstructionCell
-                          row={row}
-                          rowIndex={idx}
-                          reasonRef={(element) => {
-                            if (element) responsibleConfirmationReasonRefs.current[idx] = element;
-                            else delete responsibleConfirmationReasonRefs.current[idx];
-                          }}
-                          confirmationRef={(element) => {
-                            if (element) responsibleConfirmationSelectRefs.current[idx] = element;
-                            else delete responsibleConfirmationSelectRefs.current[idx];
-                          }}
-                          reasonRequired={missingRequiredInputs.some((item) => item.type === 'confirmation' && item.rowIndex === idx)}
-                          currentUser={effectiveUser}
-                          creatorName={headerInfo?.preparedBy || topic?.createdBy?.name || topic?.createdBy || topic?.topicCreatedBy || effectiveUser?.name}
-                          readOnly={!canConfirmThisRow}
-                          missingMandatoryFields={getMissingConfirmationMandatoryFields(row)}
-                          onConfirmationChange={(val, uName) => handleConfirmationChange(idx, val, uName)}
-                          onInstructionChange={(text) => handleInstructionChange(idx, text)}
-                          sNo={sNo}
-                        />
-                      </div>
-                    </td>
+                        )}
 
-                    {/* 16. Actions Column (Insert Row Above / Delete Row) */}
-                    {canShowRowActions && (
-                      <td className="p-1 align-middle text-center border-r border-b border-[#64748B] w-[44px] min-w-[40px] bg-white group-hover/row:bg-[#F8FAFC]">
-                        <div className="flex flex-col items-center justify-center gap-1">
-                          {canShowRowActions && (
-                          <button
-                            type="button"
-                            onClick={() => handleInsertRowAbove(idx)}
-                            className={`flex items-center justify-center w-5 h-5 shrink-0 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-all shadow-2xs cursor-pointer ${!canAddRow ? 'hidden' : ''}`}
-                            title="Insert row above"
-                          >
-                            <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-                          </button>
-                          )}
-                          {canDeleteRow && (
+                      </tr>
+                    );
+                  });
+
+                  const activeRendered = renderedRows.filter(Boolean);
+                  if (activeRendered.length === 0) {
+                    let candidateRows = rows;
+                    if (isSelfView) {
+                      candidateRows = rows.filter(r => isUserResponsibleForRow(r, effectiveUser) || (isCreatorOrAdmin && (topic?.scope === 'Self PDCA' || topic?.isSelf) && !r.staffName && !r.staffEmployee));
+                    } else if (isDepartmentView && effectiveDept) {
+                      candidateRows = rows.filter(r => doesRowBelongToDepartment(r, effectiveDept, dbEmployees));
+                    }
+
+                    if (statusFilters.length > 0 && candidateRows.length > 0) {
+                      return (
+                        <tr>
+                          <td colSpan={totalCols} className="py-8 text-center text-slate-500 bg-slate-50/50">
+                            <div className="flex flex-col items-center justify-center gap-2">
+                              <Filter className="w-8 h-8 text-blue-500" />
+                              <span className="font-semibold text-slate-700">No PDCA points match the selected status filter ({statusFilters.join(', ')}).</span>
+                              <button
+                                type="button"
+                                onClick={() => setStatusFilters([])}
+                                className="mt-1 px-3 py-1 text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 cursor-pointer"
+                              >
+                                Clear Status Filter
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    if (respDeptFilters.length > 0 && candidateRows.length > 0) {
+                      return (
+                        <tr>
+                          <td colSpan={totalCols} className="py-8 text-center text-slate-500 bg-slate-50/50">
+                            <div className="flex flex-col items-center justify-center gap-2">
+                              <Filter className="w-8 h-8 text-blue-500" />
+                              <span className="font-semibold text-slate-700">No PDCA points match the selected department filter ({respDeptFilters.join(', ')}).</span>
+                              <button
+                                type="button"
+                                onClick={() => setRespDeptFilters([])}
+                                className="mt-1 px-3 py-1 text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 cursor-pointer"
+                              >
+                                Clear Department Filter
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    if (candidateRows.length === 0) {
+                      const message = isSelfView
+                        ? `No assigned PDCA points for ${effectiveUser?.name || 'this user'} in this sheet.`
+                        : (isDepartmentView ? `No points assigned to ${effectiveDept || 'your department'} in this sheet.` : 'No PDCA points found in this sheet.');
+                      return (
+                        <tr>
+                          <td colSpan={totalCols} className="py-10 text-center text-xs text-slate-500 font-medium bg-slate-50/50">
+                            {message}
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    const doneCount = candidateRows.filter(r => normalizePDCAStatus(r.status) === 'Done').length;
+                    return (
+                      <tr>
+                        <td colSpan={totalCols} className="py-8 text-center text-slate-500 bg-slate-50/50">
+                          <div className="flex flex-col items-center justify-center gap-2">
+                            <Check className="w-8 h-8 text-emerald-600" />
+                            <span className="font-semibold text-slate-700">All points are marked as Done and currently hidden from sheet view.</span>
+                            <span className="text-xs text-slate-500">Done status records are fully preserved in graph calculations and Excel exports.</span>
                             <button
                               type="button"
-                              onClick={() => handleDeleteRow(idx)}
-                              className="flex items-center justify-center w-5 h-5 shrink-0 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-400 hover:bg-rose-50 transition-all shadow-2xs cursor-pointer"
-                              title="Delete this row"
+                              onClick={() => setShowDoneRows(true)}
+                              className="mt-1 px-3 py-1 text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 cursor-pointer"
                             >
-                              <Trash2 className="w-3.5 h-3.5 stroke-[2]" />
+                              Show Hidden Done Rows ({doneCount})
                             </button>
-                          )}
-                        </div>
-                      </td>
-                    )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }
+                  return renderedRows;
+                })()}
+              </tbody>
+            </table>
 
-                  </tr>
-                );
-              });
+            {/* Compact bottom strip */}
+            <div className="bg-[#F8FAFC] border-t border-[#CBD5E1] px-3 py-1 flex items-center justify-between text-[11px] text-slate-500 shrink-0">
+              <div className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                <span>{rows.length} rows</span>
+              </div>
 
-              const activeRendered = renderedRows.filter(Boolean);
-              if (activeRendered.length === 0) {
-                let candidateRows = rows;
-                if (isSelfView) {
-                  candidateRows = rows.filter(r => isUserResponsibleForRow(r, effectiveUser) || (isCreatorOrAdmin && (topic?.scope === 'Self PDCA' || topic?.isSelf) && !r.staffName && !r.staffEmployee));
-                } else if (isDepartmentView && effectiveDept) {
-                  candidateRows = rows.filter(r => doesRowBelongToDepartment(r, effectiveDept, dbEmployees));
-                }
-
-                if (statusFilters.length > 0 && candidateRows.length > 0) {
-                  return (
-                    <tr>
-                      <td colSpan={totalCols} className="py-8 text-center text-slate-500 bg-slate-50/50">
-                        <div className="flex flex-col items-center justify-center gap-2">
-                          <Filter className="w-8 h-8 text-blue-500" />
-                          <span className="font-semibold text-slate-700">No PDCA points match the selected status filter ({statusFilters.join(', ')}).</span>
-                          <button
-                            type="button"
-                            onClick={() => setStatusFilters([])}
-                            className="mt-1 px-3 py-1 text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 cursor-pointer"
-                          >
-                            Clear Status Filter
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                }
-
-                if (respDeptFilters.length > 0 && candidateRows.length > 0) {
-                  return (
-                    <tr>
-                      <td colSpan={totalCols} className="py-8 text-center text-slate-500 bg-slate-50/50">
-                        <div className="flex flex-col items-center justify-center gap-2">
-                          <Filter className="w-8 h-8 text-blue-500" />
-                          <span className="font-semibold text-slate-700">No PDCA points match the selected department filter ({respDeptFilters.join(', ')}).</span>
-                          <button
-                            type="button"
-                            onClick={() => setRespDeptFilters([])}
-                            className="mt-1 px-3 py-1 text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 cursor-pointer"
-                          >
-                            Clear Department Filter
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                }
-
-                if (candidateRows.length === 0) {
-                  const message = isSelfView
-                    ? `No assigned PDCA points for ${effectiveUser?.name || 'this user'} in this sheet.`
-                    : (isDepartmentView ? `No points assigned to ${effectiveDept || 'your department'} in this sheet.` : 'No PDCA points found in this sheet.');
-                  return (
-                    <tr>
-                      <td colSpan={totalCols} className="py-10 text-center text-xs text-slate-500 font-medium bg-slate-50/50">
-                        {message}
-                      </td>
-                    </tr>
-                  );
-                }
-
-                const doneCount = candidateRows.filter(r => normalizePDCAStatus(r.status) === 'Done').length;
-                return (
-                  <tr>
-                    <td colSpan={totalCols} className="py-8 text-center text-slate-500 bg-slate-50/50">
-                      <div className="flex flex-col items-center justify-center gap-2">
-                        <Check className="w-8 h-8 text-emerald-600" />
-                        <span className="font-semibold text-slate-700">All points are marked as Done and currently hidden from sheet view.</span>
-                        <span className="text-xs text-slate-500">Done status records are fully preserved in graph calculations and Excel exports.</span>
-                        <button
-                          type="button"
-                          onClick={() => setShowDoneRows(true)}
-                          className="mt-1 px-3 py-1 text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 cursor-pointer"
-                        >
-                          Show Hidden Done Rows ({doneCount})
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              }
-              return renderedRows;
-            })()}
-          </tbody>
-        </table>
-
-        {/* Compact bottom strip */}
-        <div className="bg-[#F8FAFC] border-t border-[#CBD5E1] px-3 py-1 flex items-center justify-between text-[11px] text-slate-500 shrink-0">
-          <div className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-            <span>{rows.length} rows</span>
+              {canAddRow && (
+                <button
+                  type="button"
+                  onClick={handleAddRow}
+                  className="flex items-center gap-1 px-2 py-0.5 bg-white hover:bg-slate-100 text-slate-700 font-medium border border-slate-300 rounded shadow-2xs cursor-pointer text-[11px]"
+                >
+                  <Plus className="w-3 h-3 text-blue-600" />
+                  <span>Add Row</span>
+                </button>
+              )}
+            </div>
           </div>
-
-          {canAddRow && (
-            <button
-              type="button"
-              onClick={handleAddRow}
-              className="flex items-center gap-1 px-2 py-0.5 bg-white hover:bg-slate-100 text-slate-700 font-medium border border-slate-300 rounded shadow-2xs cursor-pointer text-[11px]"
+          {hasHorizontalOverflow && (
+            <div
+              ref={stickyXScrollRef}
+              aria-label="Horizontal sheet scrollbar"
+              className="pdca-sheet-sticky-x-scroll sticky bottom-0 z-30 w-full min-w-0 overflow-x-auto overflow-y-hidden bg-slate-100/95 border-x border-b border-[#B0BEC5] shrink-0"
+              style={{ height: '16px' }}
             >
-              <Plus className="w-3 h-3 text-blue-600" />
-              <span>Add Row</span>
-            </button>
+              <div style={{ width: `${sheetScrollMetrics.scrollWidth}px`, height: '1px' }} />
+            </div>
           )}
         </div>
-      </div>
-      {hasHorizontalOverflow && (
-        <div
-          ref={stickyXScrollRef}
-          aria-label="Horizontal sheet scrollbar"
-          className="pdca-sheet-sticky-x-scroll sticky bottom-0 z-30 w-full min-w-0 overflow-x-auto overflow-y-hidden bg-slate-100/95 border-x border-b border-[#B0BEC5] shrink-0"
-          style={{ height: '16px' }}
-        >
-          <div style={{ width: `${sheetScrollMetrics.scrollWidth}px`, height: '1px' }} />
-        </div>
-      )}
-      </div>
       </div>
 
       {/* Image Preview Lightbox Modal */}

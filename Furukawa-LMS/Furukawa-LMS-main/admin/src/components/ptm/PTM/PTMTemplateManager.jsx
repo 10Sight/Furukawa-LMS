@@ -30,6 +30,7 @@ const getTodayISO = () => new Date().toISOString().slice(0, 10);
 export default function PTMTemplateManager({
   isAdmin = false,
   currentUser = null,
+  dbEmployees = [],
   showToast = () => { },
   onTemplateOpenChange,
 }) {
@@ -455,7 +456,10 @@ export default function PTMTemplateManager({
           onChangeRows={setDraftRows}
           readOnly={isReadOnly}
           onAddRow={handleAddEditorRow}
-          onDeleteRow={handleDeleteEditorRow}
+          isAdmin={isAdmin}
+          currentUser={currentUser}
+          dbEmployees={dbEmployees}
+          showToast={showToast}
         />
       </div>
     );

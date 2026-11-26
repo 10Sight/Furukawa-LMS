@@ -14,6 +14,7 @@ import FormZoomControls from '../../components/shared/FormZoomControls';
 import PTMTabNavigation from '../../components/ptm/PTM/PTMTabNavigation';
 import PTMTemplateManager from '../../components/ptm/PTM/PTMTemplateManager';
 import PTMTemplatePickerModal from '../../components/ptm/PTM/PTMTemplatePickerModal';
+import PTMAddPhaseModal from '../../components/ptm/PTM/PTMAddPhaseModal';
 import {
   PTM_VALID_UNITS,
   getPTMVisibleSheets,
@@ -301,6 +302,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
   const [isTemplateSheetOpen, setIsTemplateSheetOpen] = useState(false);
   const [selectedTopicItem, setSelectedTopicItem] = useState(null);
   const [phaseAttachmentModalPhase, setPhaseAttachmentModalPhase] = useState('');
+  const [addPhaseModalRowIndex, setAddPhaseModalRowIndex] = useState(null);
 
   useEffect(() => {
     if (activeSection === 'process-audit') setCurrentView('process-audit');
@@ -559,24 +561,23 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
     );
   };
 
-  const handleApplyTemplateToSheet = (template) => {
-    if (!template || !Array.isArray(template.rows)) return;
-    const unitForRow = selectedUnit && selectedUnit !== 'All Units' ? selectedUnit : 'Both';
-    const mappedRows = template.rows.map((tplRow, idx) => {
+  const mapTemplateRowsToPtmRows = (templateRows, unitForRow, fallbackPhaseLabel = '', fallbackPhaseNo = '') => {
+    const idMap = new Map();
+    const mapped = (templateRows || []).map((tplRow, idx) => {
       const base = createBlankRow(idx, unitForRow);
+      if (tplRow?.id) {
+        idMap.set(tplRow.id, base.id);
+      }
       return {
         ...base,
-        phaseNo: tplRow.phaseNo || '',
-        phaseName: tplRow.phaseName || template.phaseLabel || '',
-        reqNo: tplRow.reqNo || '',
-        reqName: tplRow.reqName || '',
-        customerEvent: tplRow.customerEvent || '',
-        rankA: tplRow.rankA || '',
-        rankB: tplRow.rankB || '',
-        rankC: tplRow.rankC || '',
-        rankS: tplRow.rankS || '',
-        critical: Boolean(tplRow.critical),
-        activity: tplRow.activity || '',
+        ...tplRow,
+        id: base.id,
+        rowType: tplRow?.rowType === 'child' ? 'child' : 'parent',
+        parentRowId: tplRow?.rowType === 'child' && tplRow?.parentRowId
+          ? (idMap.get(tplRow.parentRowId) || tplRow.parentRowId)
+          : undefined,
+        phaseNo: tplRow.phaseNo || fallbackPhaseNo,
+        phaseName: tplRow.phaseName || fallbackPhaseLabel,
         departments: {
           ...base.departments,
           ...(tplRow.departments || {}),
@@ -585,10 +586,113 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
         deliverable: tplRow.deliverable || '',
       };
     });
+    return renumberParentSerials(mapped);
+  };
+
+  const handleApplyTemplateToSheet = (template) => {
+    if (!template || !Array.isArray(template.rows)) return;
+    const unitForRow = selectedUnit && selectedUnit !== 'All Units' ? selectedUnit : 'Both';
+    const mappedRows = mapTemplateRowsToPtmRows(template.rows, unitForRow, template.phaseLabel || '');
 
     updatePtmRows(mappedRows.length > 0 ? mappedRows : createDefaultBlankRows(10, unitForRow));
     setPhaseAttachmentModalPhase('');
     showToast(`✓ Loaded template "${template.templateName}" into PTM Sheet`);
+  };
+
+  const appendPhaseToHeader = (phaseLabel) => {
+    const clean = String(phaseLabel || '').trim();
+    if (!clean) return;
+    updateHeaderInfo((prev) => {
+      const existingList = Array.isArray(prev?.phases) && prev.phases.length > 0
+        ? prev.phases.map((p) => String(p || '').trim()).filter(Boolean)
+        : (String(prev?.phase || '').trim()
+            ? String(prev.phase).split(',').map((s) => s.trim()).filter(Boolean)
+            : []);
+      const nextPhases = existingList.includes(clean) ? existingList : [...existingList, clean];
+      return {
+        ...prev,
+        phases: nextPhases,
+        phase: nextPhases.join(', '),
+      };
+    });
+  };
+
+  const computeInsertIndexAfterRow = (allRows, rowIdx) => {
+    if (rowIdx === null || rowIdx === undefined || rowIdx < 0 || rowIdx >= allRows.length) {
+      return allRows.length;
+    }
+    const anchor = allRows[rowIdx];
+    const parentId = anchor?.rowType === 'child' ? anchor.parentRowId : anchor?.id;
+    let insertAt = rowIdx + 1;
+    if (parentId) {
+      while (insertAt < allRows.length && allRows[insertAt]?.rowType === 'child' && allRows[insertAt]?.parentRowId === parentId) {
+        insertAt += 1;
+      }
+    }
+    return insertAt;
+  };
+
+  const renumberParentSerials = (allRows) => {
+    let serial = 0;
+    return allRows.map((r) => {
+      if (r?.rowType === 'child') return r;
+      serial += 1;
+      return { ...r, parentSerialNo: serial };
+    });
+  };
+
+  const handleInsertBlankPhaseAtRow = (phaseLabel) => {
+    const cleanPhase = String(phaseLabel || '').trim();
+    if (!cleanPhase) return;
+    const unitForRow = selectedUnit && selectedUnit !== 'All Units' ? selectedUnit : 'Both';
+    const numMatch = cleanPhase.match(/^(\d+)\s*:/);
+    const phaseNo = numMatch ? numMatch[1] : '';
+
+    updatePtmRows((prev) => {
+      const insertAt = computeInsertIndexAfterRow(prev, addPhaseModalRowIndex);
+      const blankRow = {
+        ...createBlankRow(insertAt, unitForRow),
+        phaseNo,
+        phaseName: cleanPhase,
+      };
+      const next = [...prev];
+      next.splice(insertAt, 0, blankRow);
+      return renumberParentSerials(next);
+    });
+
+    appendPhaseToHeader(cleanPhase);
+    setAddPhaseModalRowIndex(null);
+    showToast(`✓ Added blank phase "${cleanPhase}"`);
+  };
+
+  const handleInsertTemplatePhaseAtRow = (phaseLabel, template) => {
+    if (!template || !Array.isArray(template.rows)) return;
+    const cleanPhase = String(phaseLabel || template.phaseLabel || '').trim();
+    const unitForRow = selectedUnit && selectedUnit !== 'All Units' ? selectedUnit : 'Both';
+    const numMatch = cleanPhase.match(/^(\d+)\s*:/);
+    const fallbackPhaseNo = numMatch ? numMatch[1] : '';
+
+    const mappedRows = mapTemplateRowsToPtmRows(
+      template.rows,
+      unitForRow,
+      template.phaseLabel || cleanPhase,
+      fallbackPhaseNo
+    );
+
+    const rowsToInsert = mappedRows.length > 0
+      ? mappedRows
+      : [{ ...createBlankRow(0, unitForRow), phaseNo: fallbackPhaseNo, phaseName: cleanPhase }];
+
+    updatePtmRows((prev) => {
+      const insertAt = computeInsertIndexAfterRow(prev, addPhaseModalRowIndex);
+      const next = [...prev];
+      next.splice(insertAt, 0, ...rowsToInsert);
+      return renumberParentSerials(next);
+    });
+
+    appendPhaseToHeader(cleanPhase);
+    setAddPhaseModalRowIndex(null);
+    showToast(`✓ Added phase "${cleanPhase}" from template "${template.templateName}"`);
   };
 
   const undoFormChange = () => {
@@ -1201,6 +1305,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
               <PTMTemplateManager
                 isAdmin={isAdmin}
                 currentUser={currentUser}
+                dbEmployees={dbEmployees}
                 showToast={showToast}
                 onTemplateOpenChange={setIsTemplateSheetOpen}
               />
@@ -1438,6 +1543,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
                       savedColumnSuggestions={headerInfo.savedColumnSuggestions}
                       isHeaderComplete={isHeaderComplete}
                       selectedHeaderRank={headerInfo?.rank || ''}
+                      onRequestAddPhaseAtRow={(rowIdx) => setAddPhaseModalRowIndex(rowIdx)}
                     />
                   </div>
                 </div>
@@ -1477,6 +1583,14 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
             selectedPhase={phaseAttachmentModalPhase}
             onClose={() => setPhaseAttachmentModalPhase('')}
             onApplyTemplate={handleApplyTemplateToSheet}
+          />
+        )}
+        {currentView === 'form' && (
+          <PTMAddPhaseModal
+            isOpen={addPhaseModalRowIndex !== null}
+            onClose={() => setAddPhaseModalRowIndex(null)}
+            onAddBlankPhase={handleInsertBlankPhaseAtRow}
+            onAddTemplatePhase={handleInsertTemplatePhaseAtRow}
           />
         )}
       </div>

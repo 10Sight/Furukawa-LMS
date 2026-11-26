@@ -587,6 +587,8 @@ export default function PTMTable({
   savedColumnSuggestions = null,
   isHeaderComplete = true,
   selectedHeaderRank = '',
+  onRequestAddPhaseAtRow,
+  templateMode = false,
 }) {
   const tableRef = useRef(null);
   const activeResizeRef = useRef(null);
@@ -2441,6 +2443,8 @@ export default function PTMTable({
                     <span className="h-4 w-0.5 rounded-full bg-slate-300 group-hover:bg-blue-500" />
                   </span>
                 </th>
+                {!templateMode && (
+                  <>
                 <th rowSpan={2} className="py-2 px-1.5 w-20 min-w-[76px] bg-[#F1F5F9] text-[#2D3748] whitespace-normal leading-tight text-center">
                   Std. Duration in Hours
                 </th>
@@ -2546,9 +2550,12 @@ export default function PTMTable({
                     <span className="h-4 w-0.5 rounded-full bg-slate-300 group-hover:bg-blue-500" />
                   </span>
                 </th>
+                  </>
+                )}
               </tr>
 
               {/* Row 2: Sub-columns for Responsible Person */}
+              {!templateMode && (
               <tr className="divide-x divide-[#64748B] text-xs sm:text-[12.5px] font-bold text-center border-b-2 border-slate-400 bg-[#ECEFF1] text-slate-800">
                 <th className="py-1 px-1 text-center w-[110px] min-w-[100px] border-l border-[#64748B]">
                   <div className="flex items-center justify-center gap-1">
@@ -2569,6 +2576,7 @@ export default function PTMTable({
                   </div>
                 </th>
               </tr>
+              )}
             </thead>
 
             {/* ══════════════════════════════════════════════════════════════════
@@ -2578,7 +2586,7 @@ export default function PTMTable({
               {filteredRows.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={26 + DEPARTMENTS.length}
+                    colSpan={(templateMode ? 11 : 26) + DEPARTMENTS.length}
                     className="py-12 text-center text-slate-400 font-medium"
                   >
                     No matching rows found.
@@ -2598,6 +2606,11 @@ export default function PTMTable({
                   return (
                     <React.Fragment key={row.id}>
                       <tr
+                        onContextMenu={(e) => {
+                          if (!hasFullSheetAccess || !onRequestAddPhaseAtRow) return;
+                          e.preventDefault();
+                          onRequestAddPhaseAtRow(originalIndex);
+                        }}
                         className={`divide-x divide-[#64748B] hover:bg-[#F8FAFC] transition-colors group ${isChildRow(row) ? 'bg-slate-50/60' : ''}`}
                         style={Math.max(rowHeights[row.id] || 0, row.manualRowHeight || 0) > 0
                           ? { height: `${Math.max(rowHeights[row.id] || 0, row.manualRowHeight || 0)}px` }
@@ -3060,6 +3073,8 @@ export default function PTMTable({
                           </div>
                         </td>
 
+                        {!templateMode && (
+                          <>
                         {/* 20. Std. Duration in Hours — Watch popup modal trigger matching screenshot */}
                         <td
                           className={`p-0 text-center cursor-pointer hover:bg-blue-50/50 transition-colors group/duration ${!canEditCell(row, 'duration') ? 'pointer-events-none opacity-75' : ''}`}
@@ -3853,6 +3868,8 @@ export default function PTMTable({
                             className="w-full py-2 px-2 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm"
                           />
                         </td>
+                          </>
+                        )}
                       </tr>
                     </React.Fragment>
                   );

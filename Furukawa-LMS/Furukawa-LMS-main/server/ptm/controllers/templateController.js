@@ -287,3 +287,25 @@ export function updatePhase(req, res) {
     return res.status(500).json({ success: false, message: 'Failed to update PTM phase' });
   }
 }
+
+export function deletePhase(req, res) {
+  try {
+    if (!isUserAdmin(req)) {
+      return res.status(403).json({ success: false, message: 'Forbidden: Only administrators can delete phases.' });
+    }
+
+    const { key } = req.params;
+    const existing = db.prepare('SELECT * FROM ptm_phases WHERE key = ?').get(key);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Phase not found' });
+    }
+
+    db.prepare('DELETE FROM ptm_templates WHERE phase_key = ?').run(key);
+    db.prepare('DELETE FROM ptm_phases WHERE key = ?').run(key);
+
+    return res.json({ success: true, message: 'Phase deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting PTM phase:', error);
+    return res.status(500).json({ success: false, message: 'Failed to delete PTM phase' });
+  }
+}

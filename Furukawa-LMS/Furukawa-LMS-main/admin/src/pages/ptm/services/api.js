@@ -224,6 +224,11 @@ export const ptmTemplateApi = {
       body: JSON.stringify(payload),
     });
   },
+  deletePhase: async (key) => {
+    return request(`/ptm/templates/phases/${encodeURIComponent(key)}`, {
+      method: 'DELETE',
+    });
+  },
 };
 
 export default {

@@ -48,6 +48,7 @@ export default function PTMTemplateManager({
   const [editingPhase, setEditingPhase] = useState(null);
   const [editPhasePageName, setEditPhasePageName] = useState('');
   const [editPhaseLabel, setEditPhaseLabel] = useState('');
+  const [confirmDeletePhase, setConfirmDeletePhase] = useState(null);
 
   // Add Template Modal state
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -187,6 +188,37 @@ export default function PTMTemplateManager({
       showToast(`✓ Phase "${res.data.pageName}" updated`);
     } catch {
       showToast('❌ Could not update phase');
+    } finally {
+      setPhaseSaving(false);
+    }
+  };
+
+  const handleConfirmDeletePhase = async () => {
+    if (!confirmDeletePhase || !isAdmin) return;
+    const deletedKey = confirmDeletePhase.key;
+    const deletedName = confirmDeletePhase.pageName || confirmDeletePhase.label;
+    try {
+      setPhaseSaving(true);
+      const res = await ptmTemplateApi.deletePhase(deletedKey);
+      if (!res?.success) {
+        showToast(res?.message || '❌ Failed to remove phase');
+        return;
+      }
+
+      const remaining = phases.filter((p) => p.key !== deletedKey);
+      setPhases(remaining);
+      if (selectedPhaseKey === deletedKey) {
+        setSelectedPhaseKey(remaining[0]?.key || '');
+        if (!remaining[0]?.key) {
+          setTemplates([]);
+        }
+      }
+      setConfirmDeletePhase(null);
+      setEditingPhase(null);
+      await loadPhases();
+      showToast(`✓ Phase "${deletedName}" removed`);
+    } catch {
+      showToast('❌ Could not remove phase');
     } finally {
       setPhaseSaving(false);
     }
@@ -788,23 +820,81 @@ export default function PTMTemplateManager({
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2">
+              <div className="flex items-center justify-between gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setEditingPhase(null)}
-                  className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
+                  onClick={() => setConfirmDeletePhase(editingPhase)}
                   disabled={phaseSaving}
-                  className="rounded-xl bg-[#2563EB] px-4 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-60 cursor-pointer"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2 text-sm font-bold text-rose-700 hover:bg-rose-100 disabled:opacity-60 cursor-pointer"
                 >
-                  {phaseSaving ? 'Saving...' : 'Save Phase'}
+                  <Trash2 className="w-4 h-4" />
+                  <span>Remove Phase</span>
                 </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingPhase(null)}
+                    className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={phaseSaving}
+                    className="rounded-xl bg-[#2563EB] px-4 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-60 cursor-pointer"
+                  >
+                    {phaseSaving ? 'Saving...' : 'Save Phase'}
+                  </button>
+                </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Centered Confirm Delete Phase Alert */}
+      {confirmDeletePhase && (
+        <div
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/55 backdrop-blur-xs p-4"
+          role="alertdialog"
+          aria-modal="true"
+          aria-label="Confirm phase deletion"
+        >
+          <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl border border-slate-200 p-5 text-center space-y-4">
+            <div className="mx-auto w-11 h-11 rounded-full bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600">
+              <Trash2 className="w-5 h-5" />
+            </div>
+            <div className="space-y-1.5">
+              <h3 className="text-base font-extrabold text-slate-900">
+                Delete Phase
+              </h3>
+              <p className="text-sm text-slate-600">
+                Sure want to delete the Phase{' '}
+                <strong className="text-slate-900">
+                  {confirmDeletePhase.pageName} ({confirmDeletePhase.label})
+                </strong>
+                ? Please confirm.
+              </p>
+            </div>
+            <div className="flex items-center justify-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setConfirmDeletePhase(null)}
+                disabled={phaseSaving}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeletePhase}
+                disabled={phaseSaving}
+                className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-60 cursor-pointer"
+              >
+                {phaseSaving ? 'Deleting...' : 'Confirm Delete'}
+              </button>
+            </div>
           </div>
         </div>
       )}

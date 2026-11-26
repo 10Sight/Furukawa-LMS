@@ -8,6 +8,7 @@ import {
   getPhases,
   createPhase,
   updatePhase,
+  deletePhase,
 } from '../controllers/templateController.js';
 
 const router = express.Router();
@@ -15,6 +16,7 @@ const router = express.Router();
 router.get('/phases', getPhases);
 router.post('/phases', createPhase);
 router.put('/phases/:key', updatePhase);
+router.delete('/phases/:key', deletePhase);
 
 router.get('/', getTemplates);
 router.get('/:id', getTemplateById);

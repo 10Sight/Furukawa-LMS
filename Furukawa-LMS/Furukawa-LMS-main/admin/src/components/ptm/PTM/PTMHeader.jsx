@@ -2,6 +2,8 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CalendarDays, ChevronDown, Check, Layers, FileText, Paperclip } from 'lucide-react';
 import CalendarDateInput from './CalendarDateInput';
 import SearchableLeaderInput from './SearchableLeaderInput';
+import { ptmTemplateApi } from '../../../pages/ptm/services/api';
+import { PTM_TEMPLATE_PHASES } from '../../../pages/ptm/data/ptmTemplates';
 
 const RANK_OPTIONS = ['A', 'B', 'C1 & C2', 'S', 'Not - Applicable'].map((r) => ({ value: r, label: r }));
 
@@ -231,10 +233,35 @@ export default function PTMHeader({
   const rankDropdownRef = useRef(null);
   const [phaseDropdownOpen, setPhaseDropdownOpen] = useState(false);
   const phaseDropdownRef = useRef(null);
+  const [templatePhases, setTemplatePhases] = useState(PTM_TEMPLATE_PHASES);
   const [isCustomPhaseMode, setIsCustomPhaseMode] = useState(() => {
     const p = String(headerInfo?.phase || '').trim();
     return Boolean(p && !HEADER_PHASE_OPTIONS.slice(0, -1).includes(p));
   });
+
+  useEffect(() => {
+    let cancelled = false;
+    ptmTemplateApi
+      .getPhases()
+      .then((res) => {
+        if (!cancelled && res?.success && Array.isArray(res.data) && res.data.length > 0) {
+          setTemplatePhases(res.data);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [phaseDropdownOpen]);
+
+  useEffect(() => {
+    const p = String(headerInfo?.phase || '').trim();
+    if (!p) return;
+    const presetLabels = [...templatePhases.map((item) => item.label), 'Not - Applicable'];
+    if (presetLabels.includes(p)) {
+      setIsCustomPhaseMode(false);
+    }
+  }, [templatePhases, headerInfo?.phase]);
 
   useEffect(() => {
     if (!rankDropdownOpen && !phaseDropdownOpen) return;
@@ -455,8 +482,10 @@ export default function PTMHeader({
                 <td className="px-2 py-1.5 align-middle bg-white relative">
                   {(() => {
                     const currentPhase = String(headerInfo.phase || '').trim();
-                    const isPreset = HEADER_PHASE_OPTIONS.slice(0, -1).includes(currentPhase);
-                    const isTemplateCapablePhase = HEADER_PHASE_OPTIONS.slice(0, 5).includes(currentPhase);
+                    const templatePhaseLabels = templatePhases.map((p) => p.label);
+                    const phaseOptions = [...templatePhaseLabels, 'Not - Applicable', 'Other'];
+                    const isPreset = phaseOptions.slice(0, -1).includes(currentPhase);
+                    const isTemplateCapablePhase = templatePhaseLabels.includes(currentPhase);
                     const displayPhase = isCustomPhaseMode
                       ? 'Other (Manual Input)'
                       : (isPreset ? currentPhase : 'Select Phase...');
@@ -472,7 +501,7 @@ export default function PTMHeader({
                         if (onBulkFillPhase && opt) {
                           onBulkFillPhase(opt);
                         }
-                        if (!HEADER_PHASE_OPTIONS.slice(0, 5).includes(opt)) {
+                        if (!templatePhaseLabels.includes(opt)) {
                           setPhaseDropdownOpen(false);
                         }
                       }
@@ -508,7 +537,7 @@ export default function PTMHeader({
                             </div>
 
                             <div className="p-1.5 space-y-0.5 max-h-64 overflow-y-auto">
-                              {HEADER_PHASE_OPTIONS.map((opt, idx) => {
+                              {phaseOptions.map((opt, idx) => {
                                 const isSelected = opt === 'Other' ? isCustomPhaseMode : (!isCustomPhaseMode && currentPhase === opt);
                                 const phaseNumMatch = opt.match(/^(\d+)\s*:\s*(.+)$/);
                                 const isDividerBefore = opt === 'Not - Applicable';

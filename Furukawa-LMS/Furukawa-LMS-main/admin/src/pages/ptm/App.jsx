@@ -25,7 +25,7 @@ import {
 import { authApi, ptmApi, sheetApi, employeeApi } from './services/api';
 import { initialPTMData } from './data/mockData';
 import { initialHeaderInfo, initialPTMRows } from './data/ptmData';
-import { ChevronDown, Check, Plus, Download, ArrowLeft, Undo2, Redo2, Save, Clock, CheckCircle2, Mail } from 'lucide-react';
+import { ChevronDown, Check, Plus, Download, ArrowLeft, Undo2, Redo2, Clock, CheckCircle2, Mail } from 'lucide-react';
 
 const ProcessAudit = lazy(() => import('../process-audit/ProcessAudit'));
 const VALID_UNITS = ['Bawal', 'Gujrat', 'All'];
@@ -724,8 +724,17 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
       );
       if (hasContent) {
         const endPlanVal = String(r.endDatePlan ?? '').trim();
-        if (!endPlanVal || endPlanVal === '—' || endPlanVal === '-') {
+        if (!endPlanVal || endPlanVal === '—' || endPlanVal === '-' || endPlanVal === 'N/A') {
           showToast(`⚠️ Row ${i + 1}: End Date (Plan) is mandatory.`);
+          return false;
+        }
+        const hasStaff = Boolean(
+          String(r.staffName ?? '').trim() ||
+          String(r.staffEmployee ?? '').trim() ||
+          (Array.isArray(r.staffEmployees) && r.staffEmployees.length > 0)
+        );
+        if (!hasStaff) {
+          showToast(`⚠️ Row ${i + 1}: Staff Name is mandatory.`);
           return false;
         }
         const revVal = String(r.noOfTimesRevised ?? '').trim();
@@ -752,30 +761,12 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
     return true;
   };
 
-  const handleSendMailClick = () => {
-    const currentSnapshot = JSON.stringify(formStateRef.current);
-    if (savedSnapshotRef.current && currentSnapshot !== savedSnapshotRef.current) {
-      showToast('⚠️ Please save the sheet before sending mail.');
-      return;
-    }
-    const currentRows = formStateRef.current.ptmRows || [];
-    if (!validatePtmRowsForSave(currentRows)) {
-      return;
-    }
-    setIsSendMailOpen(true);
-  };
-
-  const saveFormChanges = async () => {
+  const persistFormChanges = async ({ silent = true } = {}) => {
     if (!selectedUnit) return;
-
-    // Validate mandatory fields
     const currentRows = formStateRef.current.ptmRows || [];
-    if (!validatePtmRowsForSave(currentRows)) {
-      return;
-    }
+    const currentHeader = formStateRef.current.headerInfo || {};
 
-    // Persist per-sheet suggestion dropdown entries when saving this sheet
-    const prevSuggestions = formStateRef.current.headerInfo?.savedColumnSuggestions || {};
+    const prevSuggestions = currentHeader?.savedColumnSuggestions || {};
     const collectSavedCol = (colKey) => [
       ...new Set([
         ...(Array.isArray(prevSuggestions[colKey]) ? prevSuggestions[colKey] : []),
@@ -783,43 +774,73 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
       ]),
     ];
     const updatedHeaderInfo = {
-      ...formStateRef.current.headerInfo,
+      ...currentHeader,
       savedColumnSuggestions: {
         reqName: collectSavedCol('reqName'),
         customerEvent: collectSavedCol('customerEvent'),
         activity: collectSavedCol('activity'),
       },
     };
-    formStateRef.current = {
-      ...formStateRef.current,
-      headerInfo: updatedHeaderInfo,
-    };
-    setHeaderInfo(updatedHeaderInfo);
 
     try {
       const isCustomItem = selectedTopicItem?.isBlankPTM || (selectedTopicItem?.id && localStorage.getItem(`ptm_rows_item_${selectedTopicItem.id}`));
       const sheetKey = isCustomItem ? `item_${selectedTopicItem.id}` : `unit_${selectedUnit}`;
 
       if (isCustomItem) {
-        localStorage.setItem(`ptm_header_info_item_${selectedTopicItem.id}`, JSON.stringify(formStateRef.current.headerInfo));
-        localStorage.setItem(`ptm_rows_item_${selectedTopicItem.id}`, JSON.stringify(formStateRef.current.ptmRows));
+        localStorage.setItem(`ptm_header_info_item_${selectedTopicItem.id}`, JSON.stringify(updatedHeaderInfo));
+        localStorage.setItem(`ptm_rows_item_${selectedTopicItem.id}`, JSON.stringify(currentRows));
       } else {
-        localStorage.setItem(`ptm_header_info_${selectedUnit}`, JSON.stringify(formStateRef.current.headerInfo));
-        localStorage.setItem(`ptm_rows_data_${selectedUnit}`, JSON.stringify(formStateRef.current.ptmRows));
+        localStorage.setItem(`ptm_header_info_${selectedUnit}`, JSON.stringify(updatedHeaderInfo));
+        localStorage.setItem(`ptm_rows_data_${selectedUnit}`, JSON.stringify(currentRows));
       }
 
       await sheetApi.save(sheetKey, {
-        headerInfo: formStateRef.current.headerInfo,
-        rows: formStateRef.current.ptmRows,
+        headerInfo: updatedHeaderInfo,
+        rows: currentRows,
       });
 
       savedSnapshotRef.current = JSON.stringify(formStateRef.current);
-      showToast('Changes saved successfully.');
+      if (!silent) showToast('Changes saved successfully.');
     } catch (error) {
       console.warn('Could not save PTM form changes', error);
       savedSnapshotRef.current = JSON.stringify(formStateRef.current);
-      showToast('Changes saved locally.');
+      if (!silent) showToast('Changes saved locally.');
     }
+  };
+
+  useEffect(() => {
+    if (currentView !== 'form' || !hasFullSheetAccess) return undefined;
+    const currentSnapshot = JSON.stringify(formStateRef.current);
+    if (currentSnapshot === savedSnapshotRef.current) return undefined;
+
+    const timer = setTimeout(() => {
+      persistFormChanges({ silent: true });
+    }, 650);
+
+    return () => clearTimeout(timer);
+  }, [ptmRows, headerInfo, currentView, hasFullSheetAccess, selectedUnit, selectedTopicItem?.id]);
+
+  const handleSendMailClick = async () => {
+    const missingHeader = [];
+    if (!String(headerInfo?.model || '').trim()) missingHeader.push('Model');
+    if (!String(headerInfo?.apqpLeader || '').trim()) missingHeader.push('APQP Leader');
+    if (!String(headerInfo?.projectLeader || '').trim()) missingHeader.push('Project Leader');
+    if (!String(headerInfo?.reviewDate || '').trim()) missingHeader.push('Review Date');
+    if (!String(headerInfo?.rank || '').trim()) missingHeader.push('Rank');
+    if (!String(headerInfo?.phase || '').trim()) missingHeader.push('Phase');
+
+    if (missingHeader.length > 0) {
+      showToast(`⚠️ Please fill mandatory header fields before sending mail: ${missingHeader.join(', ')}`);
+      return;
+    }
+
+    const currentRows = formStateRef.current.ptmRows || [];
+    if (!validatePtmRowsForSave(currentRows)) {
+      return;
+    }
+
+    await persistFormChanges({ silent: true });
+    setIsSendMailOpen(true);
   };
 
   const handleSelectUnit = (unit) => {
@@ -1456,15 +1477,6 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
               >
                 <Redo2 className="h-4 w-4" />
               </button>
-              <button
-                type="button"
-                onClick={saveFormChanges}
-                className="flex items-center gap-1.5 rounded-lg bg-[#2563EB] px-3 py-1.5 text-sm font-bold text-white hover:bg-blue-700 cursor-pointer"
-                title="Save all current form changes"
-              >
-                <Save className="h-4 w-4" />
-                <span>Save</span>
-              </button>
               {hasFullSheetAccess && (
                 <button
                   type="button"
@@ -1489,7 +1501,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
               <button
                 type="button"
                 onClick={handleSendMailClick}
-                title="Send PTM report by email (Requires sheet to be saved and mandatory columns filled)"
+                title="Send PTM report by email (Requires all mandatory header & row fields filled)"
                 className="ml-auto flex items-center gap-1.5 rounded-lg border border-blue-600 bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-700 hover:bg-blue-100 cursor-pointer transition-colors"
               >
                 <Mail className="h-4 w-4 text-blue-600" />

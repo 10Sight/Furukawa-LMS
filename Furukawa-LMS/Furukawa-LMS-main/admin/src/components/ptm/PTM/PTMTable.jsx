@@ -669,8 +669,8 @@ export default function PTMTable({
   );
 
   const canEditCell = useCallback(
-    (row, colKey) => isHeaderComplete && canUserEditPtmRowColumn(row, colKey, currentUser, hasFullSheetAccess),
-    [isHeaderComplete, currentUser, hasFullSheetAccess]
+    (row, colKey) => canUserEditPtmRowColumn(row, colKey, currentUser, hasFullSheetAccess),
+    [currentUser, hasFullSheetAccess]
   );
 
   useEffect(() => {
@@ -1356,7 +1356,7 @@ export default function PTMTable({
 
   /* ── Cycle Rank: ■ (applicable) -> □ (if_required) -> '' (none) ── */
   const cycleRank = (rowIndex, rankKey) => {
-    if (!isHeaderComplete || !isRankColumnActive(rankKey)) return;
+    if (!isRankColumnActive(rankKey)) return;
     if (!canEditCell(rows[rowIndex], rankKey)) return;
     setRows((prev) => {
       const updated = [...prev];
@@ -2213,15 +2213,10 @@ export default function PTMTable({
     ? [...new Set(savedColumnSuggestions.reqName.map((v) => String(v || '').trim()).filter(Boolean))]
     : [];
   return (
-    <div className={`ptm-data-table bg-white select-none ${isMerged ? '' : 'rounded-xl border border-[#64748B] shadow-sm overflow-hidden'}`}>
-      {!isHeaderComplete && (
-        <div className="bg-amber-50 border-b border-amber-300 px-4 py-2 text-xs font-bold text-amber-900 flex items-center gap-2">
-          <span>⚠️ Please fill all mandatory header fields (Model, APQP Leader, Project Leader, Review Date, Rank, Phase) to unlock sheet editing.</span>
-        </div>
-      )}
+    <div className={`ptm-data-table min-w-max w-full bg-white select-none ${isMerged ? '' : 'rounded-xl border border-[#64748B] shadow-sm overflow-hidden'}`}>
       <div className={isMerged ? 'w-full' : 'overflow-x-auto max-h-[calc(100vh-140px)]'} ref={tableRef} onInput={handleTableInput}>
         <ManualInputOptionsContext.Provider value={manualOptionsByColumn}>
-          <table className="w-full border-collapse text-xs">
+          <table className="w-full border-collapse border-b border-[#64748B] text-xs">
             <colgroup>
               <col
                 style={{
@@ -2582,7 +2577,7 @@ export default function PTMTable({
             {/* ══════════════════════════════════════════════════════════════════
               TABLE BODY: EVERY CELL HAS DROPDOWN / MANUAL INPUT AS SHOWN IN IMAGE
               ══════════════════════════════════════════════════════════════════ */}
-            <tbody className={`divide-y divide-[#64748B] bg-white ${!isHeaderComplete ? 'pointer-events-none opacity-60 select-none' : ''}`}>
+            <tbody className="divide-y divide-[#64748B] border-b border-[#64748B] bg-white">
               {filteredRows.length === 0 ? (
                 <tr>
                   <td
@@ -3120,16 +3115,26 @@ export default function PTMTable({
                         </td>
 
                         {/* 23. End Date (Plan) — Vertical stacked date history with strikethrough on previous dates */}
-                        <td className="p-0 text-center w-auto min-w-[116px] whitespace-nowrap align-middle">
-                          <EndDatePlanCell
-                            row={row}
-                            rowIndex={originalIndex}
-                            isAdmin={isAdmin}
-                            disabled={!canEditCell(row, 'endDatePlan')}
-                            onSelectDate={(newDate) => handleSelectEndDatePlan(originalIndex, newDate)}
-                            onRemoveBeforeDate={(prevIdx) => handleRemoveBeforeDate(originalIndex, prevIdx)}
-                          />
-                        </td>
+                        {(() => {
+                          const hasRowContent = Boolean(
+                            row.phaseName || row.reqNo || row.customerEvent || row.activity || row.deliverable ||
+                            row.startDatePlan || row.endDatePlan || row.startDateActual || row.endDateActual
+                          );
+                          const endPlanVal = String(row.endDatePlan ?? '').trim();
+                          const isMissingEndPlan = hasRowContent && (!endPlanVal || endPlanVal === '—' || endPlanVal === '-' || endPlanVal === 'N/A');
+                          return (
+                            <td className={`p-0 text-center w-auto min-w-[116px] whitespace-nowrap align-middle ${isMissingEndPlan ? 'bg-red-50/70 ring-1 ring-inset ring-red-400' : ''}`}>
+                              <EndDatePlanCell
+                                row={row}
+                                rowIndex={originalIndex}
+                                isAdmin={isAdmin}
+                                disabled={!canEditCell(row, 'endDatePlan')}
+                                onSelectDate={(newDate) => handleSelectEndDatePlan(originalIndex, newDate)}
+                                onRemoveBeforeDate={(prevIdx) => handleRemoveBeforeDate(originalIndex, prevIdx)}
+                              />
+                            </td>
+                          );
+                        })()}
 
                         {/* 24. End Date (Actual) */}
                         <td className={`p-0 text-center w-auto min-w-[116px] whitespace-nowrap ${!canEditCell(row, 'endDateActual') ? 'pointer-events-none opacity-75' : ''}`}>
@@ -3658,7 +3663,19 @@ export default function PTMTable({
                               </td>
 
                               {/* Staff Name in Responsible Person */}
-                              <td className={`p-0 align-middle text-center bg-white group-hover/row:bg-[#F8FAFC] w-[160px] min-w-[150px] ${respDisabledClass}`}>
+                              {(() => {
+                                const hasRowContent = Boolean(
+                                  row.phaseName || row.reqNo || row.customerEvent || row.activity || row.deliverable ||
+                                  row.startDatePlan || row.endDatePlan || row.startDateActual || row.endDateActual
+                                );
+                                const hasStaff = Boolean(
+                                  String(row.staffName ?? '').trim() ||
+                                  String(row.staffEmployee ?? '').trim() ||
+                                  (Array.isArray(row.staffEmployees) && row.staffEmployees.length > 0)
+                                );
+                                const isMissingStaff = hasRowContent && !hasStaff;
+                                return (
+                                  <td className={`p-0 align-middle text-center group-hover/row:bg-[#F8FAFC] w-[160px] min-w-[150px] ${isMissingStaff ? 'bg-red-50/70 ring-1 ring-inset ring-red-400' : 'bg-white'} ${respDisabledClass}`}>
                                 {units.length === 0 ? (
                                   (() => {
                                     const assignedEmps = row.staffEmployees || [];
@@ -3801,6 +3818,8 @@ export default function PTMTable({
                                   );
                                 })()}
                               </td>
+                                );
+                              })()}
                             </>
                           );
                         })()}
@@ -4176,18 +4195,8 @@ export default function PTMTable({
         }}
       />
 
-      {/* Table Footer: Total Rows & Add Row button */}
+      {/* Table Footer: Total Rows */}
       <div className="bg-[#FAFBFD] border-t border-[#64748B] p-2 px-4 flex flex-wrap items-center justify-start gap-3 text-xs text-slate-600">
-        {hasFullSheetAccess && (
-          <button
-            disabled={!isHeaderComplete}
-            onClick={() => addNewRow()}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#2563EB] hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
-          >
-            <Plus className="w-4 h-4 stroke-[2.5]" />
-            <span>+ Add New Row</span>
-          </button>
-        )}
         <div className="flex items-center gap-3">
           <span className="font-bold text-slate-800">
             Total Rows: {rows.length} {filteredRows.length !== rows.length && `(Filtered: ${filteredRows.length})`}

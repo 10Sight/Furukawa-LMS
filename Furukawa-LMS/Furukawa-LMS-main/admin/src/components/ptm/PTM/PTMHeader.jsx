@@ -337,7 +337,7 @@ export default function PTMHeader({
                       type="text"
                       value={headerInfo.model || ''}
                       onChange={(e) => handleChange('model', e.target.value)}
-                      className="font-bold text-slate-900 outline-none bg-transparent text-sm min-w-0 flex-1 px-1 py-0.5 rounded focus:bg-white focus:ring-1 focus:ring-blue-400"
+                      className={`font-bold text-slate-900 outline-none text-sm min-w-0 flex-1 px-1.5 py-0.5 rounded focus:bg-white focus:ring-1 focus:ring-blue-400 ${!String(headerInfo.model || '').trim() ? 'bg-red-50/70 ring-1 ring-inset ring-red-400 placeholder:text-red-400' : 'bg-transparent'}`}
                       placeholder="Required..."
                     />
                   </div>
@@ -385,7 +385,7 @@ export default function PTMHeader({
                           aria-expanded={rankDropdownOpen}
                           onClick={() => setRankDropdownOpen((prev) => !prev)}
                           title={selectedRanks.length ? selectedRanks.join(', ') : 'Select Rank'}
-                          className="w-full flex items-center justify-between gap-1 cursor-pointer font-bold text-[#975A16] outline-none bg-transparent text-sm px-1 py-0.5 rounded focus:bg-white focus:ring-1 focus:ring-amber-400"
+                          className={`w-full flex items-center justify-between gap-1 cursor-pointer font-bold text-[#975A16] outline-none text-sm px-1.5 py-0.5 rounded focus:bg-white focus:ring-1 focus:ring-amber-400 ${!selectedRanks.length ? 'bg-red-50/70 ring-1 ring-inset ring-red-400' : 'bg-transparent'}`}
                         >
                           <span className="truncate">{selectedRanks.length ? selectedRanks.join(', ') : '—'}</span>
                           <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-slate-500 transition-transform ${rankDropdownOpen ? 'rotate-180' : ''}`} />
@@ -469,7 +469,7 @@ export default function PTMHeader({
                       onChange={(e) => handleChange('apqpLeader', e.target.value)}
                       options={projectLeaderOptions}
                       id="apqp-leader"
-                      className="w-full select-text cursor-text font-bold text-slate-900 outline-none bg-transparent text-sm min-w-0 px-1 py-0.5 rounded focus:bg-white focus:ring-1 focus:ring-blue-400"
+                      className={`w-full select-text cursor-text font-bold text-slate-900 outline-none text-sm min-w-0 px-1.5 py-0.5 rounded focus:bg-white focus:ring-1 focus:ring-blue-400 ${!String(headerInfo.apqpLeader || '').trim() ? 'bg-red-50/70 ring-1 ring-inset ring-red-400 placeholder:text-red-400' : 'bg-transparent'}`}
                       placeholder="Required..."
                     />
                   </div>
@@ -588,7 +588,9 @@ export default function PTMHeader({
                             className={`w-full flex items-center justify-between gap-1.5 cursor-pointer font-bold outline-none text-xs px-1.5 py-1 rounded-md transition-colors ${
                               phaseDropdownOpen
                                 ? 'bg-blue-50/80 ring-1 ring-blue-400 !text-blue-800'
-                                : 'bg-transparent hover:bg-slate-50 text-slate-900 focus:bg-white focus:ring-1 focus:ring-blue-400'
+                                : !currentPhase
+                                  ? 'bg-red-50/70 ring-1 ring-inset ring-red-400 text-red-700 hover:bg-red-50'
+                                  : 'bg-transparent hover:bg-slate-50 text-slate-900 focus:bg-white focus:ring-1 focus:ring-blue-400'
                             }`}
                           >
                             <span className="truncate">{displayPhase}</span>
@@ -722,7 +724,7 @@ export default function PTMHeader({
                       onChange={(e) => handleChange('projectLeader', e.target.value)}
                       options={projectLeaderOptions}
                       id="project-leader"
-                      className="w-full select-text cursor-text font-bold text-slate-900 outline-none bg-transparent text-sm min-w-0 px-1 py-0.5 rounded focus:bg-white focus:ring-1 focus:ring-blue-400"
+                      className={`w-full select-text cursor-text font-bold text-slate-900 outline-none text-sm min-w-0 px-1.5 py-0.5 rounded focus:bg-white focus:ring-1 focus:ring-blue-400 ${!String(headerInfo.projectLeader || '').trim() ? 'bg-red-50/70 ring-1 ring-inset ring-red-400 placeholder:text-red-400' : 'bg-transparent'}`}
                       placeholder="Required..."
                     />
                   </div>
@@ -740,7 +742,7 @@ export default function PTMHeader({
                       value={headerInfo.reviewDate || ''}
                       onChange={(e) => handleChange('reviewDate', e.target.value)}
                       containerClassName="w-fit flex-none"
-                      className="w-[15ch] font-semibold text-slate-800 outline-none bg-transparent text-sm px-1 py-0.5 rounded focus:bg-white focus:ring-1 focus:ring-blue-400"
+                      className={`w-[15ch] font-semibold text-slate-800 outline-none text-sm px-1.5 py-0.5 rounded focus:bg-white focus:ring-1 focus:ring-blue-400 ${!String(headerInfo.reviewDate || '').trim() ? 'bg-red-50/70 ring-1 ring-inset ring-red-400' : 'bg-transparent'}`}
                       placeholder=""
                     />
                   </div>

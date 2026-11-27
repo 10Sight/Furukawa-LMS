@@ -153,7 +153,7 @@ export function evaluatePtmRowStatus(row, currentDate = new Date()) {
     } else if (startActual) {
       // Start date actual selected and not missed
       hitMiss = '';
-      status = isManuallyDone ? 'Done' : 'Not-Started';
+      status = isManuallyDone ? 'Done' : 'In-Progress';
     } else {
       hitMiss = '';
       status = isManuallyDone ? 'Done' : 'Not-Started';

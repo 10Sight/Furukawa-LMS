@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Check, UserCheck } from 'lucide-react';
+import { PTM_DEPARTMENTS_LIST } from '../../../pages/ptm/data/ptmRecordFilters';
 
 const getTodayIso = () => {
   const now = new Date();
@@ -220,7 +221,41 @@ export default function AddPTMModal({ isOpen, onClose, onAdd, editData, onUpdate
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            {field('Department', 'department', 'text', 'e.g. C&C Quality', currentUser ? 'From Login' : '')}
+            {(() => {
+              const departmentOptions = [
+                ...new Set(
+                  [
+                    currentUser?.department,
+                    formData.department,
+                    ...PTM_DEPARTMENTS_LIST,
+                  ]
+                    .map((d) => String(d || '').trim())
+                    .filter(Boolean)
+                ),
+              ];
+              return (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-slate-700">Department</label>
+                    {currentUser && (
+                      <span className="text-[10px] text-blue-600 font-medium">From Login</span>
+                    )}
+                  </div>
+                  <select
+                    value={formData.department}
+                    onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                    className="w-full text-sm border border-slate-300 rounded-xl px-3 py-2.5 bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none font-medium cursor-pointer"
+                  >
+                    <option value="">Select Department...</option>
+                    {departmentOptions.map((dept) => (
+                      <option key={dept} value={dept}>
+                        {dept}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })()}
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Date</label>
               <div className="relative">

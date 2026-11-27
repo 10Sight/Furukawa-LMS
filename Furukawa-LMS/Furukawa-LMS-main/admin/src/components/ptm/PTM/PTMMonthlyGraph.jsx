@@ -9,6 +9,7 @@ import {
   CalendarRange,
   Columns,
   EyeOff,
+  Users,
   X
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/common/ui/card.jsx';
@@ -320,6 +321,7 @@ export default function PTMMonthlyGraph({
 
   const [selectedYear, setSelectedYear] = useState(preferredYearMonth.year);
   const [selectedMonth, setSelectedMonth] = useState(preferredYearMonth.month);
+  const [staffMode, setStaffMode] = useState(false);
   const userChangedPeriodRef = useRef(false);
 
   // Reset manual flag when switching sheets
@@ -487,19 +489,69 @@ export default function PTMMonthlyGraph({
     return data.filter(entry => entry.total > 0);
   }, [activeItems, availableYears]);
 
+  // Staff-wise statistics from Responsible Person -> Staff Name across all rows in the sheet
+  const staffStats = useMemo(() => {
+    const cleanStaffName = (raw) =>
+      String(raw || '')
+        .replace(/\s*\([^)]*\)\s*$/, '')
+        .trim();
+
+    const byStaff = new Map();
+    (rows || []).forEach((r) => {
+      if (!r) return;
+      const names = [];
+      if (Array.isArray(r.staffEmployees) && r.staffEmployees.length > 0) {
+        r.staffEmployees.forEach((emp) => {
+          const n = cleanStaffName(emp?.name || emp?.label || '');
+          if (n) names.push(n);
+        });
+      }
+      if (names.length === 0) {
+        const fallbackName = cleanStaffName(r.staffName || r.staffEmployee || '');
+        if (fallbackName) names.push(fallbackName);
+      }
+      if (names.length === 0) return;
+
+      const explicitStatus = String(r.status || '').trim();
+      const rawStatus = explicitStatus
+        ? normalizePtmStatus(explicitStatus)
+        : normalizePtmStatus(evaluatePtmRowStatus(r).status || 'Not-Started');
+
+      let category = 'notStarted';
+      if (rawStatus === 'Done') category = 'done';
+      else if (rawStatus === 'In-Progress' || rawStatus === 'In- Progress') category = 'inProgress';
+      else if (rawStatus === 'Delay') category = 'delay';
+
+      const uniqueNames = [...new Set(names)];
+      uniqueNames.forEach((staffName) => {
+        if (!byStaff.has(staffName)) {
+          byStaff.set(staffName, {
+            label: staffName,
+            fullDateStr: staffName,
+            ...emptyCounts(),
+          });
+        }
+        addToBucket(byStaff.get(staffName), category);
+      });
+    });
+
+    return [...byStaff.values()].sort((a, b) => a.label.localeCompare(b.label));
+  }, [rows]);
+
   // Live cumulative (sum of all months) for selectedYear — used by the side table
   const allMonthsCumulativeTotal = useMemo(
     () => monthlyStats.reduce((acc, m) => acc + m.total, 0),
     [monthlyStats]
   );
 
-  const hasCumulSlots = viewTimeframe !== 'yearly';
+  const hasCumulSlots = !staffMode && viewTimeframe !== 'yearly';
 
   const currentDataset = useMemo(() => {
+    if (staffMode) return staffStats;
     const base =
       viewTimeframe === 'daily' ? dailyStats : viewTimeframe === 'monthly' ? monthlyDataset : yearlyStats;
     return base.filter(d => !d.cumulKind || visibleCumul[d.cumulKind]);
-  }, [viewTimeframe, dailyStats, monthlyDataset, yearlyStats, visibleCumul]);
+  }, [staffMode, staffStats, viewTimeframe, dailyStats, monthlyDataset, yearlyStats, visibleCumul]);
 
   // Index of the last leading cumulative slot (a separator is drawn after it)
   const lastCumulIndex = currentDataset.reduce((acc, d, i) => (d.cumulKind ? i : acc), -1);
@@ -530,6 +582,7 @@ export default function PTMMonthlyGraph({
   };
 
   const getItemTitle = (item) => {
+    if (staffMode) return item.label;
     if (item.cumulKind) return item.fullDateStr;
     if (viewTimeframe === 'daily') return `${FULL_MONTH_NAMES[selectedMonth]} ${item.day}, ${selectedYear}`;
     if (viewTimeframe === 'monthly') return `${item.fullName} ${selectedYear}`;
@@ -552,10 +605,10 @@ export default function PTMMonthlyGraph({
   // SVG Chart Geometry
   const slotCount = currentDataset.length;
   const safeSlotCount = Math.max(1, slotCount);
-  const minSlotWidth = viewTimeframe === 'daily' ? 118 : viewTimeframe === 'monthly' ? 124 : 180;
+  const minSlotWidth = staffMode ? 145 : viewTimeframe === 'daily' ? 118 : viewTimeframe === 'monthly' ? 124 : 180;
   const padding = { top: 34, right: 25, bottom: 70, left: 52 };
   // Size chart to natural content width when there are only a few data-wise slots
-  const isCompactChart = viewTimeframe === 'yearly' || safeSlotCount * minSlotWidth < 880;
+  const isCompactChart = (!staffMode && viewTimeframe === 'yearly') || safeSlotCount * minSlotWidth < 880;
   const graphWidth = isCompactChart
     ? Math.max(300, safeSlotCount * minSlotWidth)
     : Math.max(880, safeSlotCount * minSlotWidth);
@@ -664,10 +717,11 @@ export default function PTMMonthlyGraph({
             {TIMEFRAMES.map(tf => (
               <Button
                 key={tf.key}
-                variant={viewTimeframe === tf.key ? 'default' : 'outline'}
+                variant={!staffMode && viewTimeframe === tf.key ? 'default' : 'outline'}
                 size="sm"
                 className="h-8 px-3 text-xs"
                 onClick={() => {
+                  setStaffMode(false);
                   setViewTimeframe(tf.key);
                   setHoveredIndex(null);
                 }}
@@ -760,6 +814,24 @@ export default function PTMMonthlyGraph({
                   </button>
                 </>
               )}
+
+              <span className="hidden sm:block w-px h-6 bg-slate-200" aria-hidden="true" />
+              <button
+                type="button"
+                onClick={() => {
+                  setStaffMode((prev) => !prev);
+                  setHoveredIndex(null);
+                }}
+                className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-sm font-bold transition-all cursor-pointer ${
+                  staffMode
+                    ? 'bg-blue-600 text-white border border-blue-600 shadow-xs'
+                    : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-100'
+                }`}
+                title="View status breakdown by Staff Name"
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>Staff</span>
+              </button>
             </div>
 
             <div className="flex flex-col md:flex-row items-stretch gap-3">
@@ -927,7 +999,9 @@ export default function PTMMonthlyGraph({
                           textAnchor="middle"
                           className="text-[13px] fill-slate-400 font-semibold"
                         >
-                          No dated data available for {periodLabel}
+                          {staffMode
+                            ? 'No staff assigned in Responsible Person column'
+                            : `No dated data available for ${periodLabel}`}
                         </text>
                       )}
 

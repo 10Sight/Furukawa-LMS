@@ -1464,6 +1464,7 @@ export default function PTMTable({
 
       // Automated Status and HIT/MISS lifecycle evaluation
       if (
+        field === 'startDatePlan' ||
         field === 'startDateActual' ||
         field === 'endDatePlan' ||
         field === 'endDateActual' ||

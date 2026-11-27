@@ -2355,9 +2355,9 @@ export default function LpaPdcaSheet({
 
               {/* Table Rows */}
               <tbody className="bg-white">
-                {filteredRows.map((row) => {
+                {filteredRows.map((row, visibleIdx) => {
                   const idx = row.originalIndex;
-                  const sNo = idx + 1;
+                  const sNo = visibleIdx + 1;
                   const isResponsiblePerson = isUserResponsibleForRow(row, effectiveUser);
                   const isDeptMember = isUserInResponsibleDepartment(row, effectiveUser);
                   const isRowResponsible = isResponsiblePerson || (isDeptMember && !isAssignedStaffAnywhere);

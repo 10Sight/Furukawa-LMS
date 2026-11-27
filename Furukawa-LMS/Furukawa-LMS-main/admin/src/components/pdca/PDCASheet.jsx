@@ -6476,6 +6476,7 @@ export default function PDCASheet({
               {/* Table Rows with thin bordered cells matching reference style */}
               <tbody className="bg-white">
                 {(() => {
+                  let visibleSerialNo = 0;
                   const renderedRows = rows.map((row, idx) => {
                     const isDone = normalizePDCAStatus(row.status) === 'Done';
                     if (!showDoneRows && isDone) return null;
@@ -6506,7 +6507,8 @@ export default function PDCASheet({
                       if (!matches) return null;
                     }
 
-                    const sNo = idx + 1;
+                    visibleSerialNo += 1;
+                    const sNo = visibleSerialNo;
                     const isResponsiblePerson = isUserResponsibleForRow(row, effectiveUser);
                     const isDeptMember = isUserInResponsibleDepartment(row, effectiveUser);
                     const isRowResponsible = isResponsiblePerson || (isDeptMember && !isAssignedStaffAnywhere);

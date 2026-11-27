@@ -587,12 +587,35 @@ export default function PTMTable({
   savedColumnSuggestions = null,
   isHeaderComplete = true,
   selectedHeaderRank = '',
+  selectedHeaderPhase = '',
   onRequestAddPhaseAtRow,
   templateMode = false,
 }) {
   const tableRef = useRef(null);
   const activeResizeRef = useRef(null);
   const [actionsCollapsed, setActionsCollapsed] = useState(false);
+  const [ranksCollapsed, setRanksCollapsed] = useState(false);
+  const [phaseCollapsed, setPhaseCollapsed] = useState(false);
+
+  const isHeaderRankNotApplicable =
+    String(selectedHeaderRank || '').trim().toLowerCase() === 'not - applicable';
+  const isHeaderPhaseNotApplicable =
+    String(selectedHeaderPhase || '').trim().toLowerCase() === 'not - applicable';
+
+  const isRanksCollapsed = isHeaderRankNotApplicable && ranksCollapsed;
+  const isPhaseCollapsed = isHeaderPhaseNotApplicable && phaseCollapsed;
+
+  useEffect(() => {
+    if (!isHeaderRankNotApplicable && ranksCollapsed) {
+      setRanksCollapsed(false);
+    }
+  }, [isHeaderRankNotApplicable, ranksCollapsed]);
+
+  useEffect(() => {
+    if (!isHeaderPhaseNotApplicable && phaseCollapsed) {
+      setPhaseCollapsed(false);
+    }
+  }, [isHeaderPhaseNotApplicable, phaseCollapsed]);
   const [colWidths, setColWidths] = useState({
     phaseName: 240,
     customerEvent: 120,
@@ -2291,27 +2314,56 @@ export default function PTMTable({
                   rowSpan={2}
                   className="relative py-2 px-2 bg-[#EEF4FA] text-[#2C5282] text-left whitespace-normal leading-tight"
                   style={{
-                    width: `${colWidths.phaseName}px`,
-                    minWidth: `${colWidths.phaseName}px`,
+                    width: `${isPhaseCollapsed ? 38 : colWidths.phaseName}px`,
+                    minWidth: `${isPhaseCollapsed ? 38 : colWidths.phaseName}px`,
                   }}
                 >
-                  <div className="flex items-center justify-between gap-1 pr-2">
-                    <span>Phase No. / Name</span>
-                    {renderHeaderFilterButton('phaseName', 'Phase No. / Name')}
-                  </div>
+                  {isPhaseCollapsed ? (
+                    <div className="flex items-center justify-center">
+                      <button
+                        type="button"
+                        onClick={() => setPhaseCollapsed(false)}
+                        title="Expand Phase No. / Name column"
+                        aria-label="Expand Phase No. / Name column"
+                        className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-white border border-slate-300 shadow-xs text-slate-600 hover:text-blue-600 hover:bg-blue-50 cursor-pointer"
+                      >
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between gap-1 pr-2">
+                        <span>Phase No. / Name</span>
+                        <div className="flex items-center gap-0.5 shrink-0">
+                          {isHeaderPhaseNotApplicable && (
+                            <button
+                              type="button"
+                              onClick={() => setPhaseCollapsed(true)}
+                              title="Collapse Phase No. / Name column"
+                              aria-label="Collapse Phase No. / Name column"
+                              className="p-0.5 rounded text-slate-500 hover:text-blue-600 hover:bg-white/80 cursor-pointer"
+                            >
+                              <ChevronLeft className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {renderHeaderFilterButton('phaseName', 'Phase No. / Name')}
+                        </div>
+                      </div>
 
-                  <span
-                    role="separator"
-                    aria-label="Resize Phase Name column"
-                    title="Drag to resize Phase Name column"
-                    onPointerDown={(event) => startColResize(event, 'phaseName')}
-                    onPointerMove={continueResize}
-                    onPointerUp={finishResize}
-                    onPointerCancel={finishResize}
-                    className="group absolute inset-y-0 right-0 z-20 flex w-2 cursor-col-resize touch-none items-center justify-center focus:outline-none"
-                  >
-                    <span className="h-4 w-0.5 rounded-full bg-slate-300 group-hover:bg-blue-500" />
-                  </span>
+                      <span
+                        role="separator"
+                        aria-label="Resize Phase Name column"
+                        title="Drag to resize Phase Name column"
+                        onPointerDown={(event) => startColResize(event, 'phaseName')}
+                        onPointerMove={continueResize}
+                        onPointerUp={finishResize}
+                        onPointerCancel={finishResize}
+                        className="group absolute inset-y-0 right-0 z-20 flex w-2 cursor-col-resize touch-none items-center justify-center focus:outline-none"
+                      >
+                        <span className="h-4 w-0.5 rounded-full bg-slate-300 group-hover:bg-blue-500" />
+                      </span>
+                    </>
+                  )}
                 </th>
                 <th rowSpan={2} className="py-2 px-2 min-w-[190px] w-48 bg-[#EEF4FA] text-[#2C5282] text-left whitespace-normal leading-tight">
                   AIAG APQP Requirements
@@ -2343,6 +2395,20 @@ export default function PTMTable({
                 </th>
 
                 {/* Group 2 Columns (Pale Yellow tint) - compact */}
+                {isRanksCollapsed ? (
+                  <th rowSpan={2} className="py-2 px-1 w-9 min-w-[34px] max-w-[38px] bg-[#FFF9E6] text-[#975A16] text-center align-middle">
+                    <button
+                      type="button"
+                      onClick={() => setRanksCollapsed(false)}
+                      title="Expand Rank columns"
+                      aria-label="Expand Rank columns"
+                      className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-white border border-amber-300 shadow-xs text-[#975A16] hover:bg-amber-50 cursor-pointer"
+                    >
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </th>
+                ) : (
+                  <>
                 <th rowSpan={2} className={`py-2 px-1 w-9 min-w-[34px] max-w-[38px] bg-[#FFF9E6] text-[#975A16] whitespace-normal leading-tight text-center transition-all ${!isRankColumnActive('rankA') ? 'opacity-75 blur-[0.4px] bg-slate-100/50 pointer-events-none select-none' : ''}`}>
                   <div className="flex flex-col items-center gap-0.5">
                     <span>Rank A</span>
@@ -2361,12 +2427,27 @@ export default function PTMTable({
                     {renderHeaderFilterButton('rankC', 'Rank C1 & C2')}
                   </div>
                 </th>
-                <th rowSpan={2} className={`py-2 px-1 w-9 min-w-[34px] max-w-[38px] bg-[#FFF9E6] text-[#975A16] whitespace-normal leading-tight text-center transition-all ${!isRankColumnActive('rankS') ? 'opacity-75 blur-[0.4px] bg-slate-100/50 pointer-events-none select-none' : ''}`}>
+                <th rowSpan={2} className={`relative py-2 px-1 w-9 min-w-[34px] max-w-[38px] bg-[#FFF9E6] text-[#975A16] whitespace-normal leading-tight text-center transition-all ${!isRankColumnActive('rankS') ? 'opacity-75 blur-[0.4px] bg-slate-100/50 select-none' : ''}`}>
                   <div className="flex flex-col items-center gap-0.5">
                     <span>Rank S</span>
-                    {renderHeaderFilterButton('rankS', 'Rank S')}
+                    <div className="flex items-center justify-center gap-0.5">
+                      {renderHeaderFilterButton('rankS', 'Rank S')}
+                      {isHeaderRankNotApplicable && (
+                        <button
+                          type="button"
+                          onClick={() => setRanksCollapsed(true)}
+                          title="Collapse Rank columns"
+                          aria-label="Collapse Rank columns"
+                          className="p-0.5 rounded bg-white/90 border border-amber-300 text-[#975A16] hover:bg-amber-100 cursor-pointer pointer-events-auto"
+                        >
+                          <ChevronLeft className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </th>
+                  </>
+                )}
 
                 {/* Group 3 Columns (Slate tint) */}
                 <th rowSpan={2} className="py-2 px-1 w-14 min-w-[50px] max-w-[56px] bg-[#F8F9FA] text-[#4A5568] whitespace-normal leading-tight text-center">
@@ -2581,7 +2662,7 @@ export default function PTMTable({
               {filteredRows.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={(templateMode ? 11 : 26) + DEPARTMENTS.length}
+                    colSpan={(templateMode ? 11 : 26) + DEPARTMENTS.length - (isRanksCollapsed ? 3 : 0)}
                     className="py-12 text-center text-slate-400 font-medium"
                   >
                     No matching rows found.
@@ -2708,11 +2789,13 @@ export default function PTMTable({
                             <td
                               className={`p-0 relative ${!canEditCell(row, 'phaseName') ? 'pointer-events-none opacity-75' : ''}`}
                               style={{
-                                width: `${colWidths.phaseName}px`,
-                                minWidth: `${colWidths.phaseName}px`,
+                                width: `${isPhaseCollapsed ? 38 : colWidths.phaseName}px`,
+                                minWidth: `${isPhaseCollapsed ? 38 : colWidths.phaseName}px`,
                               }}
                             >
-                              {(() => {
+                              {isPhaseCollapsed ? (
+                                <div className="py-2 px-1 text-center text-slate-300 text-xs select-none">•</div>
+                              ) : (() => {
                                 const PRESET_PHASES = [
                                   '1: Plan & Define',
                                   '2: Product & Process Design',
@@ -2850,6 +2933,13 @@ export default function PTMTable({
                           />
                         </td>
 
+                        {/* 5. Rank A..S — Interactive checkboxes or collapsed */}
+                        {isRanksCollapsed ? (
+                          <td className="py-1 px-1 text-center bg-slate-50/40 text-slate-300 text-xs select-none">
+                            •
+                          </td>
+                        ) : (
+                          <>
                         {/* 5. Rank A — Interactive checkbox */}
                         <td
                           onClick={() => cycleRank(originalIndex, 'rankA')}
@@ -2941,6 +3031,8 @@ export default function PTMTable({
                             {!row.rankS && <span className="text-slate-300 text-sm">—</span>}
                           </div>
                         </td>
+                          </>
+                        )}
 
                         {/* 8. Critical Activity — Yes/No dropdown with automatic symbol */}
                         <td className={`p-1 text-center ${!canEditCell(row, 'critical') ? 'pointer-events-none opacity-75' : ''}`}>

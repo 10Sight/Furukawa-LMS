@@ -96,10 +96,30 @@ export function initDatabase() {
       phase_no TEXT NOT NULL,
       label TEXT NOT NULL,
       sort_order INTEGER NOT NULL DEFAULT 0,
+      created_by TEXT DEFAULT '',
+      created_date TEXT DEFAULT '',
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS ptm_template_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      action_type TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_name TEXT DEFAULT '',
+      details TEXT DEFAULT '',
+      performed_by TEXT NOT NULL DEFAULT 'Admin',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
   `);
+
+  // Safe migration for existing databases that created ptm_phases before created_by / created_date
+  try {
+    db.exec(`ALTER TABLE ptm_phases ADD COLUMN created_by TEXT DEFAULT ''`);
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE ptm_phases ADD COLUMN created_date TEXT DEFAULT ''`);
+  } catch {}
 
   seedInitialData();
 }

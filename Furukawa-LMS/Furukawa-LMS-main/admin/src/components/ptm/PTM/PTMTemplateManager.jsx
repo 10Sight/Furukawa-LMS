@@ -12,6 +12,8 @@ import {
   Lock,
   Upload,
   Download,
+  History,
+  RefreshCw,
 } from 'lucide-react';
 import { ptmTemplateApi } from '../../../pages/ptm/services/api';
 import {
@@ -41,15 +43,20 @@ export default function PTMTemplateManager({
 
   // Add Phase Modal state
   const [isAddPhaseModalOpen, setIsAddPhaseModalOpen] = useState(false);
-  const [newPhasePageName, setNewPhasePageName] = useState('');
   const [newPhaseLabel, setNewPhaseLabel] = useState('');
+  const [newPhaseCreatedDate, setNewPhaseCreatedDate] = useState(getTodayISO());
   const [phaseSaving, setPhaseSaving] = useState(false);
 
   // Edit Phase Popup state (right-click on phase button)
   const [editingPhase, setEditingPhase] = useState(null);
-  const [editPhasePageName, setEditPhasePageName] = useState('');
   const [editPhaseLabel, setEditPhaseLabel] = useState('');
+  const [editPhaseCreatedDate, setEditPhaseCreatedDate] = useState(getTodayISO());
   const [confirmDeletePhase, setConfirmDeletePhase] = useState(null);
+
+  // Edit Template Meta Popup state (right-click on template row)
+  const [editingTemplateMeta, setEditingTemplateMeta] = useState(null);
+  const [editTemplateMetaName, setEditTemplateMetaName] = useState('');
+  const [editTemplateMetaPhaseKey, setEditTemplateMetaPhaseKey] = useState('');
 
   // Add Template Modal state
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -58,6 +65,15 @@ export default function PTMTemplateManager({
   const [importedRows, setImportedRows] = useState([]);
   const [importedFileName, setImportedFileName] = useState('');
   const excelInputRef = useRef(null);
+  const sheetExcelInputRef = useRef(null);
+
+  // History Page state
+  const [showHistoryView, setShowHistoryView] = useState(false);
+  const [historyItems, setHistoryItems] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyFilter, setHistoryFilter] = useState('all'); // 'all' | 'phase' | 'template' | 'sheet'
+
+  const loggedInCreatorName = currentUser?.name || currentUser?.userName || 'Admin';
 
   // Active template editor / viewer state
   const [activeTemplate, setActiveTemplate] = useState(null);
@@ -78,6 +94,22 @@ export default function PTMTemplateManager({
       }
     } catch (err) {
       console.warn('Failed to load phases:', err);
+    }
+  };
+
+  const loadHistory = async () => {
+    setHistoryLoading(true);
+    try {
+      const res = await ptmTemplateApi.getHistory();
+      if (res?.success && Array.isArray(res.data)) {
+        setHistoryItems(res.data);
+      } else {
+        setHistoryItems([]);
+      }
+    } catch {
+      setHistoryItems([]);
+    } finally {
+      setHistoryLoading(false);
     }
   };
 
@@ -116,24 +148,25 @@ export default function PTMTemplateManager({
       showToast('❌ Only Admin can add phases');
       return;
     }
-    setNewPhasePageName('');
     setNewPhaseLabel('');
+    setNewPhaseCreatedDate(getTodayISO());
     setIsAddPhaseModalOpen(true);
   };
 
   const handleCreatePhase = async (e) => {
     e.preventDefault();
-    const trimmedPageName = newPhasePageName.trim();
     const trimmedLabel = newPhaseLabel.trim();
-    if (!trimmedPageName || !trimmedLabel) {
-      showToast('⚠️ Please enter both Phase Button Name and Phase Title');
+    if (!trimmedLabel) {
+      showToast('⚠️ Please enter Phase Title / Label');
       return;
     }
     try {
       setPhaseSaving(true);
       const res = await ptmTemplateApi.createPhase({
-        pageName: trimmedPageName,
+        pageName: trimmedLabel,
         label: trimmedLabel,
+        createdBy: loggedInCreatorName,
+        createdDate: newPhaseCreatedDate || getTodayISO(),
       });
       if (!res?.success || !res?.data) {
         showToast(res?.message || '❌ Failed to create phase');
@@ -142,7 +175,7 @@ export default function PTMTemplateManager({
       setIsAddPhaseModalOpen(false);
       await loadPhases();
       setSelectedPhaseKey(res.data.key);
-      showToast(`✓ Phase "${res.data.pageName}" created`);
+      showToast(`✓ Phase "${res.data.label}" created`);
     } catch {
       showToast('❌ Could not create phase');
     } finally {
@@ -157,24 +190,25 @@ export default function PTMTemplateManager({
       return;
     }
     setEditingPhase(phase);
-    setEditPhasePageName(phase.pageName || '');
     setEditPhaseLabel(phase.label || '');
+    setEditPhaseCreatedDate(phase.createdDate || getTodayISO());
   };
 
   const handleUpdatePhase = async (e) => {
     e.preventDefault();
     if (!editingPhase || !isAdmin) return;
-    const trimmedPageName = editPhasePageName.trim();
     const trimmedLabel = editPhaseLabel.trim();
-    if (!trimmedPageName || !trimmedLabel) {
-      showToast('⚠️ Phase Button Name and Phase Title cannot be empty');
+    if (!trimmedLabel) {
+      showToast('⚠️ Phase Title / Label cannot be empty');
       return;
     }
     try {
       setPhaseSaving(true);
       const res = await ptmTemplateApi.updatePhase(editingPhase.key, {
-        pageName: trimmedPageName,
+        pageName: trimmedLabel,
         label: trimmedLabel,
+        createdDate: editPhaseCreatedDate || getTodayISO(),
+        performedBy: loggedInCreatorName,
       });
       if (!res?.success || !res?.data) {
         showToast(res?.message || '❌ Failed to update phase');
@@ -186,11 +220,66 @@ export default function PTMTemplateManager({
       if (selectedPhaseKey === updatedKey) {
         await loadTemplates(updatedKey);
       }
-      showToast(`✓ Phase "${res.data.pageName}" updated`);
+      showToast(`✓ Phase "${res.data.label}" updated`);
     } catch {
       showToast('❌ Could not update phase');
     } finally {
       setPhaseSaving(false);
+    }
+  };
+
+  const handleTemplateContextMenu = (e, tpl) => {
+    e.preventDefault();
+    if (!isAdmin) {
+      showToast('❌ Only Admin can edit templates');
+      return;
+    }
+    setEditingTemplateMeta(tpl);
+    setEditTemplateMetaName(tpl.templateName || '');
+    setEditTemplateMetaPhaseKey(tpl.phaseKey || selectedPhaseMeta.key);
+  };
+
+  const handleUpdateTemplateMeta = async (e) => {
+    e.preventDefault();
+    if (!editingTemplateMeta || !isAdmin) return;
+    const trimmedName = editTemplateMetaName.trim();
+    if (!trimmedName) {
+      showToast('⚠️ Template Name cannot be empty');
+      return;
+    }
+    const targetPhase = phases.find((p) => p.key === editTemplateMetaPhaseKey) || selectedPhaseMeta;
+    try {
+      setSaving(true);
+      const res = await ptmTemplateApi.update(editingTemplateMeta.id, {
+        templateName: trimmedName,
+        phaseKey: targetPhase.key,
+        phaseLabel: targetPhase.label,
+        performedBy: loggedInCreatorName,
+      });
+      if (!res?.success) {
+        showToast(res?.message || '❌ Failed to update template');
+        return;
+      }
+      setEditingTemplateMeta(null);
+      await loadTemplates(selectedPhaseKey);
+      showToast('✓ Template updated');
+    } catch {
+      showToast('❌ Could not update template');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSheetExcelImport = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const parsed = await parseTemplateExcelFile(file, selectedPhaseMeta);
+      setDraftRows(parsed);
+      showToast(`✓ Imported ${parsed.length} rows from ${file.name} (click Save Template to save)`);
+    } catch (err) {
+      showToast(`❌ ${err?.message || 'Failed to import Excel file'}`);
     }
   };
 
@@ -200,7 +289,7 @@ export default function PTMTemplateManager({
     const deletedName = confirmDeletePhase.pageName || confirmDeletePhase.label;
     try {
       setPhaseSaving(true);
-      const res = await ptmTemplateApi.deletePhase(deletedKey);
+      const res = await ptmTemplateApi.deletePhase(deletedKey, loggedInCreatorName);
       if (!res?.success) {
         showToast(res?.message || '❌ Failed to remove phase');
         return;
@@ -319,6 +408,7 @@ export default function PTMTemplateManager({
         templateName: draftName.trim(),
         templateDate: draftDate || getTodayISO(),
         rows: draftRows,
+        performedBy: loggedInCreatorName,
       });
       if (!res?.success) {
         showToast(res?.message || '❌ Failed to save template');
@@ -341,7 +431,7 @@ export default function PTMTemplateManager({
     }
     if (!window.confirm(`Delete template "${tpl.templateName}"?`)) return;
     try {
-      const res = await ptmTemplateApi.delete(tpl.id);
+      const res = await ptmTemplateApi.delete(tpl.id, loggedInCreatorName);
       if (res?.success) {
         showToast('✓ Template deleted');
         await loadTemplates(selectedPhaseKey);
@@ -377,7 +467,7 @@ export default function PTMTemplateManager({
               className="flex items-center gap-1.5 rounded-xl bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200 cursor-pointer"
             >
               <ArrowLeft className="w-4 h-4" />
-              <span>Back to {selectedPhaseMeta.pageName}</span>
+              <span>Back to {selectedPhaseMeta.label}</span>
             </button>
 
             <div className="flex items-center gap-1.5 rounded-xl bg-slate-100 border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700">
@@ -429,6 +519,22 @@ export default function PTMTemplateManager({
             </button>
             {!isReadOnly && (
               <>
+                <input
+                  ref={sheetExcelInputRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  onChange={handleSheetExcelImport}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => sheetExcelInputRef.current?.click()}
+                  className="flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3.5 py-2 text-sm font-bold text-emerald-700 hover:bg-emerald-100 cursor-pointer"
+                  title="Import Excel (.xlsx, .xls, .csv) directly into this template sheet"
+                >
+                  <Upload className="w-4 h-4" />
+                  <span>Import Excel</span>
+                </button>
                 <button
                   type="button"
                   onClick={handleAddEditorRow}
@@ -465,6 +571,149 @@ export default function PTMTemplateManager({
     );
   }
 
+  // ── History Page View ──
+  if (showHistoryView) {
+    const filteredHistory = historyItems.filter((item) => {
+      if (historyFilter === 'all') return true;
+      return item.entityType === historyFilter;
+    });
+
+    const formatHistoryDateTime = (raw) => {
+      if (!raw) return '—';
+      const iso = String(raw).includes('T') ? raw : `${String(raw).replace(' ', 'T')}Z`;
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return String(raw);
+      return d.toLocaleString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      });
+    };
+
+    const getActionBadge = (actionType) => {
+      if (actionType?.includes('CREATED')) return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+      if (actionType?.includes('UPDATED')) return 'bg-blue-50 text-blue-700 border-blue-200';
+      if (actionType?.includes('DELETED')) return 'bg-rose-50 text-rose-700 border-rose-200';
+      if (actionType === 'TEMPLATE_APPLIED') return 'bg-purple-50 text-purple-700 border-purple-200';
+      return 'bg-slate-100 text-slate-700 border-slate-200';
+    };
+
+    const getActionLabel = (actionType) => {
+      switch (actionType) {
+        case 'PHASE_CREATED': return 'Phase Created';
+        case 'PHASE_UPDATED': return 'Phase Edited';
+        case 'PHASE_DELETED': return 'Phase Deleted';
+        case 'TEMPLATE_CREATED': return 'Template Created';
+        case 'TEMPLATE_UPDATED': return 'Template Edited';
+        case 'TEMPLATE_DELETED': return 'Template Deleted';
+        case 'TEMPLATE_APPLIED': return 'Added to Sheet';
+        default: return actionType || 'Activity';
+      }
+    };
+
+    return (
+      <div className="space-y-4">
+        <div className="bg-white rounded-2xl p-3.5 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-[#ECEFF3] flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setShowHistoryView(false)}
+              className="flex items-center gap-1.5 rounded-xl bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200 cursor-pointer"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Back to Templates</span>
+            </button>
+            <div className="flex items-center gap-2">
+              <History className="w-5 h-5 text-blue-600" />
+              <h2 className="text-base font-extrabold text-slate-900">Template &amp; Phase History</h2>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {[
+              { id: 'all', label: 'All' },
+              { id: 'phase', label: 'Phases' },
+              { id: 'template', label: 'Templates' },
+              { id: 'sheet', label: 'Added to Sheet' },
+            ].map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setHistoryFilter(f.id)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-colors ${
+                  historyFilter === f.id
+                    ? 'bg-[#2563EB] text-white'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={loadHistory}
+              disabled={historyLoading}
+              className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${historyLoading ? 'animate-spin' : ''}`} />
+              <span>Refresh</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-[#ECEFF3] shadow-sm overflow-hidden">
+          {historyLoading ? (
+            <div className="p-10 text-center text-sm font-medium text-slate-500">
+              Loading history...
+            </div>
+          ) : filteredHistory.length === 0 ? (
+            <div className="p-10 text-center text-sm font-medium text-slate-500">
+              No history records found yet.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-sm">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-xs font-bold uppercase tracking-wider text-slate-500">
+                    <th className="py-3 px-4 w-14">S.No</th>
+                    <th className="py-3 px-4 whitespace-nowrap">Date &amp; Time</th>
+                    <th className="py-3 px-4">User Name</th>
+                    <th className="py-3 px-4">Action</th>
+                    <th className="py-3 px-4">Details</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredHistory.map((item, idx) => (
+                    <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3 px-4 font-semibold text-slate-600">{idx + 1}</td>
+                      <td className="py-3 px-4 text-xs font-mono font-semibold text-slate-600 whitespace-nowrap">
+                        {formatHistoryDateTime(item.createdAt)}
+                      </td>
+                      <td className="py-3 px-4 font-bold text-slate-900 whitespace-nowrap">
+                        {item.performedBy || 'Admin'}
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border ${getActionBadge(item.actionType)}`}>
+                          {getActionLabel(item.actionType)}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-slate-700 font-medium">
+                        {item.details}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   // ── Phase Selector + Template List View ──
   return (
     <div className="space-y-4">
@@ -485,22 +734,35 @@ export default function PTMTemplateManager({
                   : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                   }`}
               >
-                {phase.pageName}
+                {phase.label}
               </button>
             );
           })}
         </div>
 
-        {isAdmin && (
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
-            onClick={handleOpenAddPhaseModal}
-            className="flex items-center gap-1.5 rounded-xl bg-[#2563EB] px-4 py-2 text-sm font-bold text-white hover:bg-blue-700 shadow-sm cursor-pointer shrink-0"
+            onClick={() => {
+              setShowHistoryView(true);
+              loadHistory();
+            }}
+            className="flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 shadow-xs cursor-pointer shrink-0"
           >
-            <Plus className="w-4 h-4" />
-            <span>Add Phase</span>
+            <History className="w-4 h-4 text-blue-600" />
+            <span>History</span>
           </button>
-        )}
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={handleOpenAddPhaseModal}
+              className="flex items-center gap-1.5 rounded-xl bg-[#2563EB] px-4 py-2 text-sm font-bold text-white hover:bg-blue-700 shadow-sm cursor-pointer shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Phase</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Templates Table for Selected Phase */}
@@ -509,7 +771,7 @@ export default function PTMTemplateManager({
           <div className="flex items-center gap-2">
             <FileSpreadsheet className="w-5 h-5 text-blue-600" />
             <h2 className="text-base font-bold text-slate-900">
-              {selectedPhaseMeta.pageName} — {selectedPhaseMeta.label}
+              {selectedPhaseMeta.label}
             </h2>
           </div>
           <div className="flex items-center gap-3 shrink-0">
@@ -548,18 +810,27 @@ export default function PTMTemplateManager({
                   <th className="py-3 px-4">Phase</th>
                   <th className="py-3 px-4">Date</th>
                   <th className="py-3 px-4">Rows</th>
+                  <th className="py-3 px-4">Creator</th>
                   <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {templates.map((tpl, index) => (
-                  <tr key={tpl.id} className="hover:bg-slate-50/80 transition-colors">
+                  <tr
+                    key={tpl.id}
+                    onContextMenu={(e) => handleTemplateContextMenu(e, tpl)}
+                    title={isAdmin ? 'Right-click to edit Template Name or Phase' : ''}
+                    className="hover:bg-slate-50/80 transition-colors"
+                  >
                     <td className="py-3 px-4 font-semibold text-slate-600">{index + 1}</td>
                     <td className="py-3 px-4 font-bold text-slate-900">{tpl.templateName}</td>
                     <td className="py-3 px-4 text-slate-600 font-medium">{tpl.phaseLabel}</td>
                     <td className="py-3 px-4 text-slate-600 font-medium">{tpl.templateDate}</td>
                     <td className="py-3 px-4 text-slate-600 font-semibold">
                       {Array.isArray(tpl.rows) ? tpl.rows.length : 0}
+                    </td>
+                    <td className="py-3 px-4 text-slate-600 font-medium">
+                      {tpl.createdBy || '—'}
                     </td>
                     <td className="py-3 px-4">
                       <div className="flex items-center justify-end gap-2">
@@ -731,21 +1002,6 @@ export default function PTMTemplateManager({
             <form onSubmit={handleCreatePhase} className="p-5 space-y-4">
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                  Phase Button Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newPhasePageName}
-                  onChange={(e) => setNewPhasePageName(e.target.value)}
-                  placeholder="e.g. Phase 6"
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-                  autoFocus
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
                   Phase Title / Label <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -754,6 +1010,31 @@ export default function PTMTemplateManager({
                   value={newPhaseLabel}
                   onChange={(e) => setNewPhaseLabel(e.target.value)}
                   placeholder="e.g. 6: Custom Phase"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                  Creator
+                </label>
+                <input
+                  type="text"
+                  readOnly
+                  value={loggedInCreatorName}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 outline-none cursor-default"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                  Created When
+                </label>
+                <input
+                  type="date"
+                  value={newPhaseCreatedDate}
+                  onChange={(e) => setNewPhaseCreatedDate(e.target.value)}
                   className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
@@ -797,21 +1078,6 @@ export default function PTMTemplateManager({
             <form onSubmit={handleUpdatePhase} className="p-5 space-y-4">
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                  Phase Button Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={editPhasePageName}
-                  onChange={(e) => setEditPhasePageName(e.target.value)}
-                  placeholder="e.g. Phase 1"
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-                  autoFocus
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
                   Phase Title / Label <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -820,6 +1086,31 @@ export default function PTMTemplateManager({
                   value={editPhaseLabel}
                   onChange={(e) => setEditPhaseLabel(e.target.value)}
                   placeholder="e.g. 1: Plan & Define"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                  Creator
+                </label>
+                <input
+                  type="text"
+                  readOnly
+                  value={editingPhase.createdBy || '—'}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 outline-none cursor-default"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                  Created When
+                </label>
+                <input
+                  type="date"
+                  value={editPhaseCreatedDate}
+                  onChange={(e) => setEditPhaseCreatedDate(e.target.value)}
                   className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
@@ -899,6 +1190,75 @@ export default function PTMTemplateManager({
                 {phaseSaving ? 'Deleting...' : 'Confirm Delete'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Template Name / Phase Popup (Right-Click on Template Row) */}
+      {editingTemplateMeta && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="px-5 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <h3 className="text-sm font-extrabold text-slate-800">Edit Template Details</h3>
+              <button
+                type="button"
+                onClick={() => setEditingTemplateMeta(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateTemplateMeta} className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                  Template Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editTemplateMetaName}
+                  onChange={(e) => setEditTemplateMetaName(e.target.value)}
+                  placeholder="Enter template name..."
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                  Phase <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={editTemplateMetaPhaseKey}
+                  onChange={(e) => setEditTemplateMetaPhaseKey(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-900 bg-white outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
+                >
+                  {phases.map((p) => (
+                    <option key={p.key} value={p.key}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingTemplateMeta(null)}
+                  className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="rounded-xl bg-[#2563EB] px-4 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-60 cursor-pointer"
+                >
+                  {saving ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

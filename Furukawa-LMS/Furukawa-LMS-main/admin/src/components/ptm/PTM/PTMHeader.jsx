@@ -114,16 +114,35 @@ const getMilestoneCellAutoWidthPx = (value) => {
   return Math.max(96, Math.ceil(longestLineChars * 7.6) + 32);
 };
 
+const formatDDMMYYYYFromIso = (isoDate) => {
+  if (!isoDate) return '';
+  const [year, month, day] = isoDate.split('-');
+  return `${day}-${month}-${year}`;
+};
+
+const stripDateTokenFromMilestoneText = (value) => {
+  const raw = String(value || '');
+  const dateTokenRegex = /\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}[-./]\d{1,2}[-./](?:\d{2}|\d{4})|\d{1,2}-[A-Za-z]{3}-\d{2,4})\b/;
+  if (!dateTokenRegex.test(raw)) return raw;
+  return raw
+    .replace(dateTokenRegex, '')
+    .replace(/^\s*\n/, '')
+    .trimStart();
+};
+
 function MilestoneDateTextCell({ value = '', onChange, ariaLabel, rowIdx, colKey }) {
   const pickerRef = useRef(null);
   const textareaRef = useRef(null);
+  const isoDate = extractDateForPicker(value);
+  const displayDate = formatDDMMYYYYFromIso(isoDate);
+  const noteText = stripDateTokenFromMilestoneText(value);
   const autoWidthPx = getMilestoneCellAutoWidthPx(value);
 
   const adjustHeight = () => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${Math.max(24, el.scrollHeight)}px`;
+    el.style.height = `${Math.max(22, el.scrollHeight)}px`;
   };
 
   useLayoutEffect(() => {
@@ -133,17 +152,17 @@ function MilestoneDateTextCell({ value = '', onChange, ariaLabel, rowIdx, colKey
   const handleKeyDown = (e) => {
     if (e.key === ' ') {
       const el = e.currentTarget;
-      const selectionStart = el.selectionStart ?? String(value).length;
+      const selectionStart = el.selectionStart ?? String(noteText).length;
       const selectionEnd = el.selectionEnd ?? selectionStart;
-      const lastNewlineIdx = String(value).lastIndexOf('\n', Math.max(0, selectionStart - 1));
-      const lineBeforeCursor = String(value).slice(lastNewlineIdx + 1, selectionStart);
+      const lastNewlineIdx = String(noteText).lastIndexOf('\n', Math.max(0, selectionStart - 1));
+      const lineBeforeCursor = String(noteText).slice(lastNewlineIdx + 1, selectionStart);
       const wordsOnCurrentLine = lineBeforeCursor.trim().split(/\s+/).filter(Boolean);
 
       // After 3 words on the current line, pressing Space navigates directly to the next line
       if (wordsOnCurrentLine.length >= 3) {
         e.preventDefault();
-        const nextValue = `${String(value).slice(0, selectionStart)}\n${String(value).slice(selectionEnd)}`;
-        onChange(nextValue);
+        const nextNote = `${String(noteText).slice(0, selectionStart)}\n${String(noteText).slice(selectionEnd)}`;
+        onChange(displayDate ? `${displayDate}\n${nextNote}` : nextNote);
         requestAnimationFrame(() => {
           if (textareaRef.current) {
             const nextCursorPos = selectionStart + 1;
@@ -156,7 +175,6 @@ function MilestoneDateTextCell({ value = '', onChange, ariaLabel, rowIdx, colKey
       }
     }
     if (e.key === 'Enter' && e.shiftKey) {
-      // Allow Shift + Enter to insert a newline (\n) and move cursor to the next line
       return;
     }
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -172,45 +190,86 @@ function MilestoneDateTextCell({ value = '', onChange, ariaLabel, rowIdx, colKey
     }
   };
 
+  const openDatePicker = () => {
+    const el = pickerRef.current;
+    if (!el) return;
+    if (typeof el.showPicker === 'function') {
+      el.showPicker();
+    } else {
+      el.click();
+    }
+  };
+
   return (
     <div
-      className="relative flex flex-col items-center justify-start gap-1 w-full h-full min-h-[56px] py-1 px-1"
+      className="relative flex flex-col items-stretch justify-start w-full h-full min-h-[56px] py-0.5 px-1"
       style={{ width: `${autoWidthPx}px`, minWidth: `${autoWidthPx}px` }}
     >
-      <div className="relative inline-flex items-center justify-center h-5 w-6 shrink-0">
-        <CalendarDays
-          aria-hidden="true"
-          className="pointer-events-none h-3.5 w-3.5 text-slate-400"
-        />
+      {/* Top Date Row + Horizontal Divider */}
+      <div className="relative flex items-center justify-center gap-1 min-h-[22px] pb-0.5 border-b border-slate-300">
         <input
           ref={pickerRef}
           type="date"
-          value={extractDateForPicker(value)}
-          onClick={(event) => event.currentTarget.showPicker?.()}
+          value={isoDate}
           onChange={(event) => {
             const nextVal = mergePickerDateWithText(event.target.value, value);
             onChange(nextVal);
           }}
           aria-label={`${ariaLabel} calendar picker`}
-          title="Select date from calendar (can be combined with manual text)"
-          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+          className="sr-only"
           tabIndex={-1}
         />
+        {displayDate ? (
+          <>
+            <button
+              type="button"
+              onClick={openDatePicker}
+              title="Click date to change"
+              className="text-[11px] font-bold font-mono text-slate-900 hover:text-blue-700 hover:underline cursor-pointer leading-tight"
+            >
+              {displayDate}
+            </button>
+            <button
+              type="button"
+              onClick={() => onChange(noteText)}
+              title="Remove date"
+              aria-label={`Remove date for ${ariaLabel}`}
+              className="p-0.5 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer leading-none shrink-0"
+            >
+              <X className="w-2.5 h-2.5" />
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={openDatePicker}
+            title="Select date from calendar"
+            aria-label={`Select date for ${ariaLabel}`}
+            className="inline-flex items-center justify-center h-5 w-6 rounded hover:bg-slate-100 cursor-pointer"
+          >
+            <CalendarDays
+              aria-hidden="true"
+              className="h-3.5 w-3.5 text-slate-400"
+            />
+          </button>
+        )}
       </div>
+
+      {/* Bottom Input Text */}
       <textarea
         ref={textareaRef}
         rows={1}
-        value={value}
+        value={noteText}
         onChange={(e) => {
-          const formatted = formatThreeWordsPerLine(e.target.value);
-          onChange(formatted);
+          const formattedNote = formatThreeWordsPerLine(e.target.value);
+          onChange(displayDate ? (formattedNote ? `${displayDate}\n${formattedNote}` : displayDate) : formattedNote);
           adjustHeight();
         }}
         onKeyDown={handleKeyDown}
         data-milestone-row={rowIdx}
         data-milestone-col={colKey}
         aria-label={ariaLabel}
-        className="w-full bg-transparent outline-none text-slate-900 text-center focus:bg-blue-50/50 rounded px-1 py-0.5 text-[11.5px] font-medium resize-none overflow-hidden whitespace-pre-wrap break-words leading-snug"
+        className="w-full bg-transparent outline-none text-slate-900 text-center focus:bg-blue-50/50 rounded px-1 pt-0.5 text-[11.5px] font-medium resize-none overflow-hidden whitespace-pre-wrap break-words leading-snug"
       />
     </div>
   );

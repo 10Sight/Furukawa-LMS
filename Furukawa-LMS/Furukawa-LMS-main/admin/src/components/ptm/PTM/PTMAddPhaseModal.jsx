@@ -120,11 +120,7 @@ export default function PTMAddPhaseModal({
                             : 'border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-slate-50'
                         }`}
                       >
-                        <span className="truncate">
-                          <span className="font-extrabold">{phase.pageName}</span>
-                          <span className="text-slate-400 mx-1.5">—</span>
-                          <span>{phase.label}</span>
-                        </span>
+                        <span className="truncate font-semibold">{phase.label}</span>
                         {isSelected && <Check className="w-4 h-4 text-blue-600 shrink-0" />}
                       </button>
                     );

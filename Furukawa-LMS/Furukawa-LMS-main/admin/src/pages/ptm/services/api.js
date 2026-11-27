@@ -204,8 +204,9 @@ export const ptmTemplateApi = {
       body: JSON.stringify(payload),
     });
   },
-  delete: async (id) => {
-    return request(`/ptm/templates/${encodeURIComponent(id)}`, {
+  delete: async (id, performedBy = '') => {
+    const query = performedBy ? `?performedBy=${encodeURIComponent(performedBy)}` : '';
+    return request(`/ptm/templates/${encodeURIComponent(id)}${query}`, {
       method: 'DELETE',
     });
   },
@@ -224,9 +225,19 @@ export const ptmTemplateApi = {
       body: JSON.stringify(payload),
     });
   },
-  deletePhase: async (key) => {
-    return request(`/ptm/templates/phases/${encodeURIComponent(key)}`, {
+  deletePhase: async (key, performedBy = '') => {
+    const query = performedBy ? `?performedBy=${encodeURIComponent(performedBy)}` : '';
+    return request(`/ptm/templates/phases/${encodeURIComponent(key)}${query}`, {
       method: 'DELETE',
+    });
+  },
+  getHistory: async () => {
+    return request('/ptm/templates/history');
+  },
+  logHistory: async (payload) => {
+    return request('/ptm/templates/history', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   },
 };

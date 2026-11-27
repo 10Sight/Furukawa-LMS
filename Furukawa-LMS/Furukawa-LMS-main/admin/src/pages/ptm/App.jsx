@@ -597,6 +597,15 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
     updatePtmRows(mappedRows.length > 0 ? mappedRows : createDefaultBlankRows(10, unitForRow));
     setPhaseAttachmentModalPhase('');
     showToast(`✓ Loaded template "${template.templateName}" into PTM Sheet`);
+    const actorName = currentUser?.name || currentUser?.userName || 'Admin';
+    const sheetLabel = headerInfo?.model || selectedTopicItem?.topic || selectedUnit || 'PTM Sheet';
+    ptmTemplateApi.logHistory({
+      actionType: 'TEMPLATE_APPLIED',
+      entityType: 'sheet',
+      entityName: template.templateName,
+      details: `${actorName} added template "${template.templateName}" (${template.phaseLabel || 'Phase'}) to PTM Sheet "${sheetLabel}"`,
+      performedBy: actorName,
+    }).catch(() => {});
   };
 
   const appendPhaseToHeader = (phaseLabel) => {
@@ -693,6 +702,15 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
     appendPhaseToHeader(cleanPhase);
     setAddPhaseModalRowIndex(null);
     showToast(`✓ Added phase "${cleanPhase}" from template "${template.templateName}"`);
+    const actorName = currentUser?.name || currentUser?.userName || 'Admin';
+    const sheetLabel = headerInfo?.model || selectedTopicItem?.topic || selectedUnit || 'PTM Sheet';
+    ptmTemplateApi.logHistory({
+      actionType: 'TEMPLATE_APPLIED',
+      entityType: 'sheet',
+      entityName: template.templateName,
+      details: `${actorName} added template "${template.templateName}" (${cleanPhase}) to PTM Sheet "${sheetLabel}"`,
+      performedBy: actorName,
+    }).catch(() => {});
   };
 
   const undoFormChange = () => {
@@ -1497,16 +1515,18 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
                 <Download className="h-4 w-4 text-slate-500" />
                 <span>Export CSV</span>
               </button>
-              <FormZoomControls selector=".ptm-zoom-surface" rootSelector="main" />
               <button
                 type="button"
                 onClick={handleSendMailClick}
                 title="Send PTM report by email (Requires all mandatory header & row fields filled)"
-                className="ml-auto flex items-center gap-1.5 rounded-lg border border-blue-600 bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-700 hover:bg-blue-100 cursor-pointer transition-colors"
+                className="flex items-center gap-1.5 rounded-lg border border-blue-600 bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-700 hover:bg-blue-100 cursor-pointer transition-colors"
               >
                 <Mail className="h-4 w-4 text-blue-600" />
                 <span>Send Mail</span>
               </button>
+              <div className="ml-auto">
+                <FormZoomControls selector=".ptm-zoom-surface" rootSelector="main" />
+              </div>
             </div>
 
             {/* Scrollable body: graph + sheet scroll under the fixed toolbar */}
@@ -1555,6 +1575,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
                       savedColumnSuggestions={headerInfo.savedColumnSuggestions}
                       isHeaderComplete={isHeaderComplete}
                       selectedHeaderRank={headerInfo?.rank || ''}
+                      selectedHeaderPhase={headerInfo?.phase || ''}
                       onRequestAddPhaseAtRow={(rowIdx) => setAddPhaseModalRowIndex(rowIdx)}
                     />
                   </div>

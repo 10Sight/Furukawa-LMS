@@ -9,9 +9,14 @@ import {
   createPhase,
   updatePhase,
   deletePhase,
+  getTemplateHistory,
+  recordTemplateHistory,
 } from '../controllers/templateController.js';
 
 const router = express.Router();
+
+router.get('/history', getTemplateHistory);
+router.post('/history', recordTemplateHistory);
 
 router.get('/phases', getPhases);
 router.post('/phases', createPhase);

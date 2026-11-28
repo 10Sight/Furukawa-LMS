@@ -563,7 +563,7 @@ export default function PTMMonthlyGraph({
   const toSheetPct = (count) => {
     const total = sheetCumulativeStats.total;
     if (!total) return 0;
-    return Math.round((count / total) * 1000) / 10;
+    return Math.round((count / total) * 100);
   };
   const formatMetricVal = (val) => (isStaffPct ? `${val}%` : val);
 

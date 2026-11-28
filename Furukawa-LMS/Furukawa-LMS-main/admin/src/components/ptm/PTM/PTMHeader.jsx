@@ -292,6 +292,9 @@ export default function PTMHeader({
   const rankDropdownRef = useRef(null);
   const [phaseDropdownOpen, setPhaseDropdownOpen] = useState(false);
   const phaseDropdownRef = useRef(null);
+  const [isProjectLeaderOpen, setIsProjectLeaderOpen] = useState(false);
+  const [projectLeaderSearch, setProjectLeaderSearch] = useState('');
+  const projectLeaderDropdownRef = useRef(null);
   const [templatePhases, setTemplatePhases] = useState(PTM_TEMPLATE_PHASES);
   const [isCustomPhaseMode, setIsCustomPhaseMode] = useState(() => {
     const p = String(headerInfo?.phase || '').trim();
@@ -323,7 +326,7 @@ export default function PTMHeader({
   }, [templatePhases, headerInfo?.phase]);
 
   useEffect(() => {
-    if (!rankDropdownOpen && !phaseDropdownOpen) return;
+    if (!rankDropdownOpen && !phaseDropdownOpen && !isProjectLeaderOpen) return;
     const handleOutside = (e) => {
       if (rankDropdownRef.current && !rankDropdownRef.current.contains(e.target)) {
         setRankDropdownOpen(false);
@@ -331,10 +334,13 @@ export default function PTMHeader({
       if (phaseDropdownRef.current && !phaseDropdownRef.current.contains(e.target)) {
         setPhaseDropdownOpen(false);
       }
+      if (projectLeaderDropdownRef.current && !projectLeaderDropdownRef.current.contains(e.target)) {
+        setIsProjectLeaderOpen(false);
+      }
     };
     document.addEventListener('mousedown', handleOutside);
     return () => document.removeEventListener('mousedown', handleOutside);
-  }, [rankDropdownOpen, phaseDropdownOpen]);
+  }, [rankDropdownOpen, phaseDropdownOpen, isProjectLeaderOpen]);
 
   const handleChange = (field, val) => {
     if (readOnly) return;
@@ -521,7 +527,7 @@ export default function PTMHeader({
                 <td className="px-2.5 py-1.5 align-middle bg-white" colSpan={2}>
                   <div className="flex items-baseline gap-1.5">
                     <span className="font-bold text-[#2C5282] text-xs sm:text-[13px] whitespace-nowrap">
-                      APQP Leader: <span className="text-red-500 font-bold">*</span>
+                      APQP / Activity Leader: <span className="text-red-500 font-bold">*</span>
                     </span>
                     <SearchableLeaderInput
                       value={headerInfo.apqpLeader || ''}
@@ -771,22 +777,114 @@ export default function PTMHeader({
                 </td>
               </tr>
 
-              {/* Row: Project Leader (inline, full width) */}
+              {/* Row: Project Leader (checkbox multi-select, full width) */}
               <tr className="border-b border-[#64748B]">
                 <td className="px-2.5 py-1.5 align-middle bg-white" colSpan={4}>
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="font-bold text-[#2C5282] text-xs sm:text-[13px] whitespace-nowrap">
-                      Project Leader: <span className="text-red-500 font-bold">*</span>
-                    </span>
-                    <SearchableLeaderInput
-                      value={headerInfo.projectLeader || ''}
-                      onChange={(e) => handleChange('projectLeader', e.target.value)}
-                      options={projectLeaderOptions}
-                      id="project-leader"
-                      className={`w-full select-text cursor-text font-bold text-slate-900 outline-none text-sm min-w-0 px-1.5 py-0.5 rounded focus:bg-white focus:ring-1 focus:ring-blue-400 ${!String(headerInfo.projectLeader || '').trim() ? 'bg-red-50/70 ring-1 ring-inset ring-red-400 placeholder:text-red-400' : 'bg-transparent'}`}
-                      placeholder="Required..."
-                    />
-                  </div>
+                  {(() => {
+                    const selectedLeaders = Array.isArray(headerInfo.projectLeaders) && headerInfo.projectLeaders.length > 0
+                      ? headerInfo.projectLeaders.map((l) => String(l || '').trim()).filter(Boolean)
+                      : String(headerInfo.projectLeader || '')
+                          .split(',')
+                          .map((s) => s.trim())
+                          .filter(Boolean);
+
+                    const uniqueOptions = [...new Set([
+                      ...selectedLeaders,
+                      ...(Array.isArray(projectLeaderOptions) ? projectLeaderOptions : []),
+                    ].map((o) => String(o || '').trim()).filter(Boolean))];
+
+                    const q = projectLeaderSearch.trim().toLowerCase();
+                    const filteredLeaderOptions = q
+                      ? uniqueOptions.filter((o) => o.toLowerCase().includes(q))
+                      : uniqueOptions;
+
+                    const toggleLeader = (leaderName) => {
+                      const exists = selectedLeaders.includes(leaderName);
+                      const nextLeaders = exists
+                        ? selectedLeaders.filter((l) => l !== leaderName)
+                        : [...selectedLeaders, leaderName];
+                      setHeaderInfo((prev) => ({
+                        ...prev,
+                        projectLeaders: nextLeaders,
+                        projectLeader: nextLeaders.join(', '),
+                      }));
+                    };
+
+                    return (
+                      <div ref={projectLeaderDropdownRef} className="relative flex items-center gap-1.5">
+                        <span className="font-bold text-[#2C5282] text-xs sm:text-[13px] whitespace-nowrap">
+                          Project Leader: <span className="text-red-500 font-bold">*</span>
+                        </span>
+                        <button
+                          type="button"
+                          id="project-leader"
+                          disabled={readOnly}
+                          onClick={() => !readOnly && setIsProjectLeaderOpen((prev) => !prev)}
+                          className={`flex-1 min-w-0 flex items-center justify-between gap-2 text-left font-bold text-slate-900 text-sm px-2 py-1 rounded border transition-colors ${
+                            readOnly
+                              ? 'border-transparent bg-transparent cursor-default'
+                              : !selectedLeaders.length
+                                ? 'bg-red-50/70 border-red-300 text-red-500 cursor-pointer'
+                                : 'bg-white border-slate-300 hover:border-blue-400 cursor-pointer'
+                          }`}
+                        >
+                          <span className="truncate">
+                            {selectedLeaders.length > 0 ? selectedLeaders.join(', ') : 'Select Project Leader(s)...'}
+                          </span>
+                          {!readOnly && <ChevronDown className="w-3.5 h-3.5 text-slate-500 shrink-0" />}
+                        </button>
+
+                        {isProjectLeaderOpen && !readOnly && (
+                          <div className="absolute left-28 top-full mt-1 z-50 w-72 bg-white rounded-xl shadow-xl border border-slate-200 p-2.5 text-xs">
+                            <input
+                              type="text"
+                              value={projectLeaderSearch}
+                              onChange={(e) => setProjectLeaderSearch(e.target.value)}
+                              placeholder="Search project leader..."
+                              className="w-full mb-2 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 outline-none focus:border-blue-500 focus:bg-white"
+                            />
+                            <div className="max-h-48 overflow-y-auto space-y-1 pr-0.5">
+                              {filteredLeaderOptions.map((opt) => {
+                                const checked = selectedLeaders.includes(opt);
+                                return (
+                                  <label
+                                    key={opt}
+                                    className={`flex items-center gap-2 px-2 py-1 rounded-md cursor-pointer select-none ${
+                                      checked ? 'bg-blue-50 text-blue-800 font-semibold' : 'text-slate-700 hover:bg-slate-50'
+                                    }`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={() => toggleLeader(opt)}
+                                      className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                    />
+                                    <span className="truncate">{opt}</span>
+                                  </label>
+                                );
+                              })}
+                              {filteredLeaderOptions.length === 0 && (
+                                <div className="py-2 text-center text-slate-400">No leaders found</div>
+                              )}
+                            </div>
+                            {selectedLeaders.length > 0 && (
+                              <div className="pt-2 mt-1.5 border-t border-slate-100 flex justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setHeaderInfo((prev) => ({ ...prev, projectLeaders: [], projectLeader: '' }));
+                                  }}
+                                  className="text-[11px] font-semibold text-slate-500 hover:text-rose-600 cursor-pointer"
+                                >
+                                  Clear All
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </td>
               </tr>
 

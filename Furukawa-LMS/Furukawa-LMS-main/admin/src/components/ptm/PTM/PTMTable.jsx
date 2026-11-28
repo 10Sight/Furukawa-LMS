@@ -599,6 +599,8 @@ export default function PTMTable({
   selectedUnit,
   isMerged = false,
   isAdmin = false,
+  canDeleteRows = isAdmin,
+  canMarkDone = isAdmin,
   dbEmployees: externalDbEmployees = [],
   currentUser = null,
   hasFullSheetAccess = true,
@@ -664,6 +666,8 @@ export default function PTMTable({
   const [deliverablePreviewModal, setDeliverablePreviewModal] = useState({
     isOpen: false,
     file: null,
+    rowIndex: null,
+    fileIndex: null,
   });
   const [watchModal, setWatchModal] = useState({
     isOpen: false,
@@ -1770,6 +1774,25 @@ export default function PTMTable({
     }
   };
 
+  const handleSaveEditedDeliverableFile = (updatedFile) => {
+    const { rowIndex, fileIndex } = deliverablePreviewModal;
+    if (rowIndex === null || fileIndex === null) return;
+    if (!canEditCell(rows[rowIndex], 'deliverableRequired')) return;
+    setRows((prev) => {
+      const updated = [...prev];
+      const currentRow = updated[rowIndex];
+      const existingFiles = getRowDeliverableFiles(currentRow);
+      const nextFiles = existingFiles.map((item, idx) => (idx === fileIndex ? updatedFile : item));
+      updated[rowIndex] = {
+        ...currentRow,
+        deliverableFiles: nextFiles,
+        deliverableFile: nextFiles[0] || null,
+      };
+      return updated;
+    });
+    if (showToast) showToast(`✓ Saved changes to ${updatedFile.name}`);
+  };
+
   const handleRemoveDeliverableFile = (rowIndex, fileIndex = 0) => {
     if (!canEditCell(rows[rowIndex], 'deliverableRequired')) return;
     setRows((prev) => {
@@ -1848,11 +1871,8 @@ export default function PTMTable({
       if (showToast) showToast('⚠️ This parent already has 9 child rows. Add a new parent row.');
       return;
     }
-    const parentIndex = rows.findIndex((row) => row.id === parentRow.id);
-    const phaseNumber = Number(parentRow.phaseNo);
-    const childReqNo = Number.isInteger(phaseNumber) && phaseNumber > 0
-      ? `${phaseNumber}.${childSerialNo}`
-      : '';
+    const parentReqNo = String(parentRow.reqNo || '').trim();
+    const childReqNo = parentReqNo ? `${parentReqNo}.${childSerialNo}` : '';
 
     // A child added from a parent is appended after that parent's existing children.
     if (anchorRow && isParentRow(anchorRow)) {
@@ -1870,7 +1890,7 @@ export default function PTMTable({
       unit: selectedUnit || 'Both',
       phaseNo: '',
       phaseName: '',
-      reqNo: '',
+      reqNo: childReqNo,
       reqName: '',
       customerEvent: '',
       rankA: '',
@@ -2042,8 +2062,8 @@ export default function PTMTable({
 
   /* ── Delete Row ── */
   const deleteRow = (rowIndex) => {
-    if (!isAdmin) {
-      if (showToast) showToast('❌ Only Admin can delete rows');
+    if (!canDeleteRows) {
+      if (showToast) showToast('❌ Only Admin or Sheet Creator can delete rows');
       return;
     }
     if (rows.length <= 1) {
@@ -2789,7 +2809,7 @@ export default function PTMTable({
                               >
                                 +S
                               </button>
-                              {isAdmin && (
+                              {canDeleteRows && (
                                 <button
                                   type="button"
                                   onClick={() => deleteRow(originalIndex)}
@@ -2940,29 +2960,16 @@ export default function PTMTable({
                           />
                           <div className="flex h-full min-h-full min-w-0 items-stretch">
                             <div className="h-full w-10 shrink-0">
-                              {isChildRow(row) ? (
-                                <ManualInputBox
-                                  value={getRowSerial(row, originalIndex)}
-                                  onKeyDown={(e) => handleKeyDown(e, originalIndex, 'reqNo')}
-                                  data-row={originalIndex}
-                                  data-col="reqNo"
-                                  readOnly
-                                  noDropdown={true}
-                                  aria-label={`Child row number ${getRowSerial(row, originalIndex)}`}
-                                  className="w-full text-center py-2 px-1 text-slate-700 font-mono bg-transparent outline-none focus:bg-slate-50 text-sm cursor-default"
-                                />
-                              ) : (
-                                <ManualInputBox
-                                  value={row.reqNo || ''}
-                                  noDropdown={true}
-                                  onChange={(e) => handleCellChange(originalIndex, 'reqNo', e.target.value)}
-                                  onKeyDown={(e) => handleKeyDown(e, originalIndex, 'reqNo')}
-                                  data-row={originalIndex}
-                                  data-col="reqNo"
-                                  placeholder="No."
-                                  className="w-full text-center py-2 px-1 text-slate-700 font-mono bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm"
-                                />
-                              )}
+                              <ManualInputBox
+                                value={row.reqNo || ''}
+                                noDropdown={true}
+                                onChange={(e) => handleCellChange(originalIndex, 'reqNo', e.target.value)}
+                                onKeyDown={(e) => handleKeyDown(e, originalIndex, 'reqNo')}
+                                data-row={originalIndex}
+                                data-col="reqNo"
+                                placeholder={isChildRow(row) ? '' : 'No.'}
+                                className="w-full text-center py-2 px-1 text-slate-700 font-mono bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm"
+                              />
                             </div>
                             <div className="h-full min-w-0 flex-1">
                               <ManualInputBox
@@ -3197,7 +3204,7 @@ export default function PTMTable({
                                         >
                                           <button
                                             type="button"
-                                            onClick={() => setDeliverablePreviewModal({ isOpen: true, file: fileItem })}
+                                            onClick={() => setDeliverablePreviewModal({ isOpen: true, file: fileItem, rowIndex: originalIndex, fileIndex: fileIdx })}
                                             className="flex items-center gap-1 min-w-0 max-w-[90px] truncate cursor-pointer text-left"
                                           >
                                             {fileItem.type === 'pdf' ? (
@@ -4028,7 +4035,14 @@ export default function PTMTable({
                                 <select
                                   disabled={!hasFullSheetAccess}
                                   value={currentStatus}
-                                  onChange={(e) => handleCellChange(originalIndex, 'status', e.target.value)}
+                                  onChange={(e) => {
+                                    const nextStatus = e.target.value;
+                                    if (nextStatus === 'Done' && !canMarkDone) {
+                                      if (showToast) showToast('❌ Only Sheet Creator or Admin can mark status as Done');
+                                      return;
+                                    }
+                                    handleCellChange(originalIndex, 'status', nextStatus);
+                                  }}
                                   className={`appearance-none w-full whitespace-nowrap py-1 pr-5 pl-2 rounded text-center text-xs sm:text-sm font-semibold outline-none border transition-colors ${!hasFullSheetAccess ? 'pointer-events-none cursor-default select-none' : 'cursor-pointer hover:opacity-90'
                                     } ${currentStatus === 'Done'
                                       ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
@@ -4045,7 +4059,12 @@ export default function PTMTable({
                                   }
                                 >
                                   {PTM_STATUS_OPTIONS.map((opt) => (
-                                    <option key={opt.value} value={opt.value} className={opt.color}>
+                                    <option
+                                      key={opt.value}
+                                      value={opt.value}
+                                      disabled={opt.value === 'Done' && !canMarkDone}
+                                      className={opt.color}
+                                    >
                                       {opt.label}
                                     </option>
                                   ))}
@@ -4106,7 +4125,13 @@ export default function PTMTable({
       <PTMDeliverablePreviewModal
         isOpen={deliverablePreviewModal.isOpen}
         file={deliverablePreviewModal.file}
-        onClose={() => setDeliverablePreviewModal({ isOpen: false, file: null })}
+        readOnly={
+          deliverablePreviewModal.rowIndex !== null
+            ? !canEditCell(rows[deliverablePreviewModal.rowIndex], 'deliverableRequired')
+            : false
+        }
+        onSaveFile={handleSaveEditedDeliverableFile}
+        onClose={() => setDeliverablePreviewModal({ isOpen: false, file: null, rowIndex: null, fileIndex: null })}
       />
 
       {/* Column Header Filter Popover Portal */}

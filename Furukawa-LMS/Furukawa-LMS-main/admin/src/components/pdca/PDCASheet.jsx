@@ -6104,8 +6104,8 @@ export default function PDCASheet({
                       <span className="h-4 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 transition-opacity" />
                     </span>
                   </th>
-                  <th rowSpan={2} className="py-1.5 px-0.5 w-[44px] min-w-[38px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[11px]">
-                    <div className="flex items-center justify-center gap-0.5">
+                  <th rowSpan={2} className="py-1.5 px-1 w-[68px] min-w-[64px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[12px] whitespace-normal">
+                    <div className="flex flex-wrap items-center justify-center gap-0.5 leading-tight">
                       <span>Shift</span> <span className="text-red-500 font-bold">*</span>
                       {renderColFilterButton('shift', 'Shift')}
                     </div>
@@ -6711,7 +6711,7 @@ export default function PDCASheet({
                         </td>
 
                         {/* 2. Shift (Single letter A/B/C/G, centered in cell) */}
-                        <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[38px] min-w-[34px] focus-within:bg-blue-50/30">
+                        <td className="p-1 align-middle text-center border-r border-b border-[#64748B] bg-white group-hover/row:bg-[#F8FAFC] w-[68px] min-w-[64px] focus-within:bg-blue-50/30">
                           <div className="relative w-full flex items-center justify-center">
                             <select
                               disabled={!canEditEntireRow}

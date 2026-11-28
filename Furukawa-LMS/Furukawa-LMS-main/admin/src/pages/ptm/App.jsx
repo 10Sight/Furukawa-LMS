@@ -21,6 +21,7 @@ import {
   filterPTMRecordsBySection,
   getPTMSectionCounts,
   canUserFullEditPtmSheet,
+  isPtmRecordCreator,
 } from './data/ptmRecordFilters';
 import { authApi, ptmApi, sheetApi, employeeApi } from './services/api';
 import { initialPTMData } from './data/mockData';
@@ -98,13 +99,17 @@ function createDefaultBlankRows(count = 10, unit = 'Both') {
   return Array.from({ length: count }, (_, idx) => createBlankRow(idx, unit));
 }
 
-function createBlankHeaderInfo(item) {
+function createBlankHeaderInfo(item, user = null) {
+  const autoApqpLeader = user
+    ? String(user.name || user.fullName || user.username || '').trim()
+    : String(item?.createdBy?.name || '').trim();
   return {
     model: '',
     rank: '',
-    apqpLeader: '',
+    apqpLeader: autoApqpLeader,
     phase: '',
     projectLeader: '',
+    projectLeaders: [],
     reviewDate: '',
     formTitle: 'FRM-WH-DD-006 Project Tracking Matrix Rev. 17',
     tabName: 'PTM - Final Latest Rev. 17',
@@ -440,9 +445,16 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
   });
 
   const hasFullSheetAccess = useMemo(
-    () => canUserFullEditPtmSheet(selectedTopicItem, currentUser, ptmRows),
-    [selectedTopicItem, currentUser, ptmRows]
+    () => canUserFullEditPtmSheet(selectedTopicItem, currentUser, ptmRows, headerInfo),
+    [selectedTopicItem, currentUser, ptmRows, headerInfo]
   );
+
+  const canDeleteOrMarkDone = useMemo(() => {
+    if (!currentUser) return true;
+    if (isAdmin) return true;
+    if (selectedTopicItem && isPtmRecordCreator(selectedTopicItem, currentUser)) return true;
+    return false;
+  }, [currentUser, isAdmin, selectedTopicItem]);
 
   const formStateRef = useRef({ headerInfo, ptmRows });
   const savedSnapshotRef = useRef('');
@@ -966,11 +978,18 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
     if (!nextRows || !nextHeaderInfo) {
       if (hasCustomItemSheet) {
         nextRows = nextRows || getStoredJson(`ptm_rows_item_${item.id}`, createDefaultBlankRows(10, item.plant));
-        nextHeaderInfo = nextHeaderInfo || getStoredJson(`ptm_header_info_item_${item.id}`, createBlankHeaderInfo(item));
+        nextHeaderInfo = nextHeaderInfo || getStoredJson(`ptm_header_info_item_${item.id}`, createBlankHeaderInfo(item, currentUser));
       } else {
         const targetUnit = selectedUnit === 'All Units' ? (item?.plant || 'All Units') : selectedUnit;
         nextRows = nextRows || loadUnitRows(targetUnit);
         nextHeaderInfo = nextHeaderInfo || loadUnitHeaderInfo(targetUnit);
+      }
+    }
+
+    if (currentUser && !String(nextHeaderInfo?.apqpLeader || '').trim()) {
+      const loginName = String(currentUser.name || currentUser.fullName || currentUser.username || '').trim();
+      if (loginName) {
+        nextHeaderInfo = { ...nextHeaderInfo, apqpLeader: loginName };
       }
     }
 
@@ -990,7 +1009,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
     const prepared = items.map((newItem) => {
       const itemWithBlankSheet = { ...newItem, isBlankPTM: true };
       const blankRows = createDefaultBlankRows(10, newItem.plant);
-      const blankHeader = createBlankHeaderInfo(newItem);
+      const blankHeader = createBlankHeaderInfo(newItem, currentUser);
       try {
         localStorage.setItem(`ptm_rows_item_${newItem.id}`, JSON.stringify(blankRows));
         localStorage.setItem(`ptm_header_info_item_${newItem.id}`, JSON.stringify(blankHeader));
@@ -1587,6 +1606,8 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
                       onAddNewRow={handleAddRowFromTop}
                       isMerged={true}
                       isAdmin={isAdmin}
+                      canDeleteRows={canDeleteOrMarkDone}
+                      canMarkDone={canDeleteOrMarkDone}
                       dbEmployees={dbEmployees}
                       currentUser={currentUser}
                       hasFullSheetAccess={hasFullSheetAccess}

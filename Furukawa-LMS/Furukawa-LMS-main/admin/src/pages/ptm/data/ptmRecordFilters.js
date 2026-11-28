@@ -423,9 +423,35 @@ export const PTM_RESPONSIBLE_EDITABLE_COLUMNS = [
   'actionTaken',
 ];
 
-export function canUserFullEditPtmSheet(sheetItem, currentUser, rows = []) {
+export function isUserPtmProjectLeader(headerInfo, currentUser) {
+  if (!headerInfo || !currentUser) return false;
+  const rawList = Array.isArray(headerInfo.projectLeaders) && headerInfo.projectLeaders.length > 0
+    ? headerInfo.projectLeaders
+    : String(headerInfo.projectLeader || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+  if (rawList.length === 0) return false;
+
+  const userName = String(currentUser.name || currentUser.fullName || currentUser.username || '').trim().toLowerCase();
+  const userCode = String(currentUser.employeeId || currentUser.empId || currentUser.code || '').trim().toLowerCase();
+
+  return rawList.some((entry) => {
+    const raw = String(entry || '').trim();
+    if (!raw) return false;
+    const cleanName = raw.replace(/\s*\([^)]*\)\s*$/, '').trim().toLowerCase();
+    const idMatch = raw.match(/\(([^)]+)\)/);
+    const entryCode = idMatch ? idMatch[1].trim().toLowerCase() : '';
+    if (userCode && entryCode && userCode === entryCode) return true;
+    if (userName && cleanName && (cleanName === userName || raw.toLowerCase() === userName)) return true;
+    return false;
+  });
+}
+
+export function canUserFullEditPtmSheet(sheetItem, currentUser, rows = [], headerInfo = null) {
   if (!currentUser) return true;
   if (sheetItem && isPtmRecordCreator(sheetItem, currentUser)) return true;
+  if (headerInfo && isUserPtmProjectLeader(headerInfo, currentUser)) return true;
 
   const isAssignedStaff = Array.isArray(rows) && rows.some((r) => doesPtmRowBelongToUser(r, currentUser));
   if (isAssignedStaff) {

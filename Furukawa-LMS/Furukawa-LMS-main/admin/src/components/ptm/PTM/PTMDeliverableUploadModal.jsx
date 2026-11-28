@@ -21,36 +21,46 @@ export default function PTMDeliverableUploadModal({
     return () => imagePreviews.forEach((preview) => URL.revokeObjectURL(preview.url));
   }, [imagePreviews]);
 
-  const processFile = useCallback((file, type) => {
-    if (!file) return;
-    const MAX_SIZE = 25 * 1024 * 1024; // 25 MB limit
-    if (file.size > MAX_SIZE) {
-      window.alert(`File "${file.name}" exceeds the maximum allowed limit of 25 MB.`);
-      return;
-    }
-
+  const readFileAsAttachment = (file, type) => new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = (evt) => {
-      onUploadSuccess?.({
+      resolve({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         name: file.name,
         type,
         size: file.size,
         url: evt.target.result,
         lastModified: file.lastModified
       });
-      onClose();
     };
     reader.onerror = () => {
-      onUploadSuccess?.({
+      resolve({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         name: file.name,
         type,
         size: file.size,
         url: URL.createObjectURL(file),
         lastModified: file.lastModified
       });
-      onClose();
     };
     reader.readAsDataURL(file);
+  });
+
+  const processFiles = useCallback(async (filesWithTypes) => {
+    if (!filesWithTypes.length) return;
+    const MAX_SIZE = 25 * 1024 * 1024; // 25 MB limit
+    const valid = [];
+    for (const { file, type } of filesWithTypes) {
+      if (file.size > MAX_SIZE) {
+        window.alert(`File "${file.name}" exceeds the maximum allowed limit of 25 MB.`);
+        continue;
+      }
+      valid.push({ file, type });
+    }
+    if (!valid.length) return;
+    const uploaded = await Promise.all(valid.map(({ file, type }) => readFileAsAttachment(file, type)));
+    onUploadSuccess?.(uploaded);
+    onClose();
   }, [onUploadSuccess, onClose]);
 
   const handleDrop = useCallback((e) => {
@@ -58,17 +68,20 @@ export default function PTMDeliverableUploadModal({
     setIsDragOver(false);
     const files = Array.from(e.dataTransfer.files || []);
     if (!files.length) return;
-    const file = files[0];
-    if (file.type.startsWith('image/') || /\.(jpe?g|png|webp|svg)$/i.test(file.name)) {
-      processFile(file, 'image');
-    } else if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
-      processFile(file, 'pdf');
-    } else if (/\.(xlsx?|csv)$/i.test(file.name) || file.type.includes('excel') || file.type.includes('spreadsheet') || file.type.includes('csv')) {
-      processFile(file, 'excel');
-    } else {
-      window.alert(`Unsupported file format: "${file.name}". Please upload an Image, PDF, or Excel file.`);
+    const classified = [];
+    for (const file of files) {
+      if (file.type.startsWith('image/') || /\.(jpe?g|png|webp|svg)$/i.test(file.name)) {
+        classified.push({ file, type: 'image' });
+      } else if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
+        classified.push({ file, type: 'pdf' });
+      } else if (/\.(xlsx?|csv)$/i.test(file.name) || file.type.includes('excel') || file.type.includes('spreadsheet') || file.type.includes('csv')) {
+        classified.push({ file, type: 'excel' });
+      } else {
+        window.alert(`Unsupported file format: "${file.name}". Please upload an Image, PDF, or Excel file.`);
+      }
     }
-  }, [processFile]);
+    if (classified.length) processFiles(classified);
+  }, [processFiles]);
 
   if (!isOpen) return null;
 
@@ -112,39 +125,39 @@ export default function PTMDeliverableUploadModal({
   ];
 
   const handleFileChange = (opt, e) => {
-    const rawFiles = e.target.files;
-    if (!rawFiles || rawFiles.length === 0) return;
-    const file = rawFiles[0];
+    const rawFiles = Array.from(e.target.files || []);
+    if (rawFiles.length === 0) return;
 
-    if (opt.id === 'image') {
-      const isValid = file.type.startsWith('image/') || /\.(jpe?g|png|webp|svg)$/i.test(file.name);
-      if (!isValid) {
-        window.alert(`Invalid file type: "${file.name}". Please select image files only (JPG, JPEG, PNG, WEBP, SVG).`);
-        e.target.value = '';
-        return;
+    const validFiles = [];
+    for (const file of rawFiles) {
+      if (opt.id === 'image') {
+        const isValid = file.type.startsWith('image/') || /\.(jpe?g|png|webp|svg)$/i.test(file.name);
+        if (!isValid) {
+          window.alert(`Invalid file type: "${file.name}". Please select image files only (JPG, JPEG, PNG, WEBP, SVG).`);
+          continue;
+        }
+        validFiles.push({ file, type: 'image' });
+      } else if (opt.id === 'pdf') {
+        const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+        if (!isPdf) {
+          window.alert(`Invalid file type: "${file.name}". Please select a valid PDF document (.pdf).`);
+          continue;
+        }
+        validFiles.push({ file, type: 'pdf' });
+      } else if (opt.id === 'excel') {
+        const isExcel =
+          /\.(xlsx?|csv)$/i.test(file.name) ||
+          file.type.includes('excel') ||
+          file.type.includes('spreadsheet') ||
+          file.type.includes('csv');
+        if (!isExcel) {
+          window.alert(`Invalid file type: "${file.name}". Please select a valid spreadsheet file (.xlsx, .xls, .csv).`);
+          continue;
+        }
+        validFiles.push({ file, type: 'excel' });
       }
-      processFile(file, 'image');
-    } else if (opt.id === 'pdf') {
-      const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
-      if (!isPdf) {
-        window.alert(`Invalid file type: "${file.name}". Please select a valid PDF document (.pdf).`);
-        e.target.value = '';
-        return;
-      }
-      processFile(file, 'pdf');
-    } else if (opt.id === 'excel') {
-      const isExcel =
-        /\.(xlsx?|csv)$/i.test(file.name) ||
-        file.type.includes('excel') ||
-        file.type.includes('spreadsheet') ||
-        file.type.includes('csv');
-      if (!isExcel) {
-        window.alert(`Invalid file type: "${file.name}". Please select a valid spreadsheet file (.xlsx, .xls, .csv).`);
-        e.target.value = '';
-        return;
-      }
-      processFile(file, 'excel');
     }
+    if (validFiles.length) processFiles(validFiles);
     e.target.value = '';
   };
 
@@ -218,6 +231,7 @@ export default function PTMDeliverableUploadModal({
                 >
                   <input
                     type="file"
+                    multiple
                     accept={opt.accept}
                     className="hidden"
                     onChange={(e) => handleFileChange(opt, e)}

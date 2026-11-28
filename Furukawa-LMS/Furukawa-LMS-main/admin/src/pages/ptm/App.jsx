@@ -827,7 +827,8 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
   };
 
   useEffect(() => {
-    if (currentView !== 'form' || !hasFullSheetAccess) return undefined;
+    if (currentView !== 'form') return undefined;
+    formStateRef.current = { headerInfo, ptmRows };
     const currentSnapshot = JSON.stringify(formStateRef.current);
     if (currentSnapshot === savedSnapshotRef.current) return undefined;
 
@@ -836,7 +837,7 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
     }, 650);
 
     return () => clearTimeout(timer);
-  }, [ptmRows, headerInfo, currentView, hasFullSheetAccess, selectedUnit, selectedTopicItem?.id]);
+  }, [ptmRows, headerInfo, currentView, selectedUnit, selectedTopicItem?.id]);
 
   const handleSendMailClick = async () => {
     const missingHeader = [];
@@ -982,25 +983,38 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
     showToast(`Opening PTM Form for: ${item.topic}`);
   };
 
-  const handleAddListItem = async (newItem) => {
-    const itemWithBlankSheet = { ...newItem, isBlankPTM: true };
-    const blankRows = createDefaultBlankRows(10, newItem.plant);
-    const blankHeader = createBlankHeaderInfo(newItem);
-    try {
-      localStorage.setItem(`ptm_rows_item_${newItem.id}`, JSON.stringify(blankRows));
-      localStorage.setItem(`ptm_header_info_item_${newItem.id}`, JSON.stringify(blankHeader));
-    } catch (e) {
-      console.warn('Could not initialize blank PTM sheet in localStorage', e);
-    }
-    setListItems([itemWithBlankSheet, ...listItems]);
-    showToast('✓ New PTM item created with 10 blank rows');
+  const handleAddListItem = async (newItemOrItems) => {
+    const items = Array.isArray(newItemOrItems) ? newItemOrItems : [newItemOrItems];
+    if (items.length === 0) return;
+
+    const prepared = items.map((newItem) => {
+      const itemWithBlankSheet = { ...newItem, isBlankPTM: true };
+      const blankRows = createDefaultBlankRows(10, newItem.plant);
+      const blankHeader = createBlankHeaderInfo(newItem);
+      try {
+        localStorage.setItem(`ptm_rows_item_${newItem.id}`, JSON.stringify(blankRows));
+        localStorage.setItem(`ptm_header_info_item_${newItem.id}`, JSON.stringify(blankHeader));
+      } catch (e) {
+        console.warn('Could not initialize blank PTM sheet in localStorage', e);
+      }
+      return { newItem, itemWithBlankSheet, blankRows, blankHeader };
+    });
+
+    setListItems((prev) => [...prepared.map((p) => p.itemWithBlankSheet), ...prev]);
+    showToast(
+      prepared.length > 1
+        ? `✓ Created ${prepared.length} PTM sheets (${prepared.map((p) => p.newItem.plant).join(' & ')})`
+        : '✓ New PTM item created with 10 blank rows'
+    );
 
     // Sync to SQLite backend API
-    try {
-      await ptmApi.create(newItem);
-      await sheetApi.save(`item_${newItem.id}`, { headerInfo: blankHeader, rows: blankRows });
-    } catch (e) {
-      console.warn('Could not sync created PTM item to backend API', e);
+    for (const { newItem, blankRows, blankHeader } of prepared) {
+      try {
+        await ptmApi.create(newItem);
+        await sheetApi.save(`item_${newItem.id}`, { headerInfo: blankHeader, rows: blankRows });
+      } catch (e) {
+        console.warn('Could not sync created PTM item to backend API', e);
+      }
     }
   };
 
@@ -1279,7 +1293,10 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
             currentUser={currentUser}
             onLogout={handleLogout}
             onExport={handleExportList}
-            onBackToList={() => setCurrentView('list')}
+            onBackToList={async () => {
+              await persistFormChanges({ silent: true });
+              setCurrentView('list');
+            }}
           />
         )}
 
@@ -1468,7 +1485,8 @@ export default function App({ embedded = false, cmsIntegration = false, activeSe
             <div className="ptm-top-toolbar fixed inset-x-0 top-0 z-[60] flex min-h-12 w-full flex-wrap items-center gap-2 border-b border-slate-300 bg-white px-4 py-2 shadow-sm">
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
+                  await persistFormChanges({ silent: true });
                   setCurrentView('list');
                   setSelectedTopicItem(null);
                 }}

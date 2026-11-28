@@ -36,17 +36,21 @@ export default function AddPTMModal({ isOpen, onClose, onAdd, editData, onUpdate
   const isEditMode = Boolean(editData);
   const dateInputRef = useRef(null);
 
-  const getInitialForm = () => ({
-    topic: editData?.topic || '',
-    description: editData?.description || '',
-    plant: editData?.plant || (defaultUnit && defaultUnit !== 'All Units' ? defaultUnit : 'Bawal'),
-    scope: editData?.scope || 'Company',
-    department: editData?.department || (currentUser?.department || ''),
-    date: editData?.date ? toIsoDateValue(editData.date) : getTodayIso(),
-    time: editData?.time || '09:00 AM',
-    ownerName: editData?.createdBy?.name || (currentUser?.name || currentUser?.username || ''),
-    ownerCode: editData?.createdBy?.code || (currentUser?.employeeId || ''),
-  });
+  const getInitialForm = () => {
+    const initialPlant = editData?.plant || (defaultUnit && defaultUnit !== 'All Units' && defaultUnit !== 'All' ? defaultUnit : 'Bawal');
+    return {
+      topic: editData?.topic || '',
+      description: editData?.description || '',
+      plant: initialPlant,
+      plants: editData?.plant ? [editData.plant] : [initialPlant],
+      scope: editData?.scope || 'Company',
+      department: editData?.department || (currentUser?.department || ''),
+      date: editData?.date ? toIsoDateValue(editData.date) : getTodayIso(),
+      time: editData?.time || '09:00 AM',
+      ownerName: editData?.createdBy?.name || (currentUser?.name || currentUser?.username || ''),
+      ownerCode: editData?.createdBy?.code || (currentUser?.employeeId || ''),
+    };
+  };
 
   const [formData, setFormData] = useState(getInitialForm);
 
@@ -105,11 +109,16 @@ export default function AddPTMModal({ isOpen, onClose, onAdd, editData, onUpdate
         isSelf: formData.scope === 'Self PTM',
       });
     } else {
-      onAdd({
-        id: `PTM-${formData.plant === 'Gujrat' ? 'GJ' : 'BW'}-${Math.floor(100 + Math.random() * 900)}`,
+      const selectedUnits = Array.isArray(formData.plants) && formData.plants.length > 0
+        ? formData.plants
+        : [];
+      if (selectedUnits.length === 0) return;
+
+      const itemsToCreate = selectedUnits.map((unitName) => ({
+        id: `PTM-${unitName === 'Gujrat' ? 'GJ' : 'BW'}-${Math.floor(100 + Math.random() * 900)}`,
         topic: formData.topic,
         description: formData.description,
-        plant: formData.plant,
+        plant: unitName,
         scope: 'Company',
         department: formData.department,
         date: dateStr,
@@ -121,7 +130,9 @@ export default function AddPTMModal({ isOpen, onClose, onAdd, editData, onUpdate
           initials: getInitials(formData.ownerName || 'SP'),
         },
         isSelf: false,
-      });
+      }));
+
+      onAdd(itemsToCreate.length === 1 ? itemsToCreate[0] : itemsToCreate);
     }
 
     onClose();
@@ -217,7 +228,46 @@ export default function AddPTMModal({ isOpen, onClose, onAdd, editData, onUpdate
           </div>
 
           <div>
-            {selectField('Unit *', 'plant', ['Bawal', 'Gujrat'])}
+            {isEditMode ? (
+              selectField('Unit *', 'plant', ['Bawal', 'Gujrat'])
+            ) : (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Unit * <span className="text-[11px] font-normal text-slate-400">(Select one or both units)</span>
+                </label>
+                <div className="flex items-center gap-4 rounded-xl border border-slate-300 px-3.5 py-2.5 bg-white">
+                  {['Bawal', 'Gujrat'].map((unitName) => {
+                    const checked = (formData.plants || []).includes(unitName);
+                    return (
+                      <label key={unitName} className="inline-flex items-center gap-2 cursor-pointer select-none text-sm font-medium text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            setFormData((prev) => {
+                              const current = Array.isArray(prev.plants) ? prev.plants : [];
+                              const nextPlants = checked
+                                ? current.filter((u) => u !== unitName)
+                                : [...current, unitName];
+                              return {
+                                ...prev,
+                                plants: nextPlants,
+                                plant: nextPlants[0] || '',
+                              };
+                            });
+                          }}
+                          className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        />
+                        <span>{unitName}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                {(!formData.plants || formData.plants.length === 0) && (
+                  <p className="text-[11px] text-rose-600 mt-1 font-medium">Please select at least one unit.</p>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">

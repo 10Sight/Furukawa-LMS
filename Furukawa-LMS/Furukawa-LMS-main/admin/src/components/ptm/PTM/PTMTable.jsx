@@ -19,6 +19,24 @@ import {
 } from '../../../pages/pdca/data/pdcaConstants.js';
 import { apqpApi, employeeApi } from '../../services/api';
 import PTMDeliverableUploadModal from './PTMDeliverableUploadModal';
+import PTMDeliverablePreviewModal from './PTMDeliverablePreviewModal';
+
+const COLLAPSE_PREFS_STORAGE_KEY = 'ptm_table_collapse_prefs';
+
+const readCollapsePrefs = () => {
+  try {
+    const raw = localStorage.getItem(COLLAPSE_PREFS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        actions: Boolean(parsed?.actions),
+        ranks: Boolean(parsed?.ranks),
+        phase: Boolean(parsed?.phase),
+      };
+    }
+  } catch { }
+  return { actions: false, ranks: false, phase: false };
+};
 import {
   PTM_STATUS_OPTIONS,
   PTM_PHASE_OPTIONS,
@@ -593,9 +611,23 @@ export default function PTMTable({
 }) {
   const tableRef = useRef(null);
   const activeResizeRef = useRef(null);
-  const [actionsCollapsed, setActionsCollapsed] = useState(false);
-  const [ranksCollapsed, setRanksCollapsed] = useState(false);
-  const [phaseCollapsed, setPhaseCollapsed] = useState(false);
+  const initialCollapsePrefs = useMemo(() => readCollapsePrefs(), []);
+  const [actionsCollapsed, setActionsCollapsed] = useState(initialCollapsePrefs.actions);
+  const [ranksCollapsed, setRanksCollapsed] = useState(initialCollapsePrefs.ranks);
+  const [phaseCollapsed, setPhaseCollapsed] = useState(initialCollapsePrefs.phase);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        COLLAPSE_PREFS_STORAGE_KEY,
+        JSON.stringify({
+          actions: actionsCollapsed,
+          ranks: ranksCollapsed,
+          phase: phaseCollapsed,
+        })
+      );
+    } catch { }
+  }, [actionsCollapsed, ranksCollapsed, phaseCollapsed]);
 
   const isHeaderRankNotApplicable =
     String(selectedHeaderRank || '').trim().toLowerCase() === 'not - applicable';
@@ -606,16 +638,16 @@ export default function PTMTable({
   const isPhaseCollapsed = isHeaderPhaseNotApplicable && phaseCollapsed;
 
   useEffect(() => {
-    if (!isHeaderRankNotApplicable && ranksCollapsed) {
+    if (selectedHeaderRank && !isHeaderRankNotApplicable && ranksCollapsed) {
       setRanksCollapsed(false);
     }
-  }, [isHeaderRankNotApplicable, ranksCollapsed]);
+  }, [selectedHeaderRank, isHeaderRankNotApplicable, ranksCollapsed]);
 
   useEffect(() => {
-    if (!isHeaderPhaseNotApplicable && phaseCollapsed) {
+    if (selectedHeaderPhase && !isHeaderPhaseNotApplicable && phaseCollapsed) {
       setPhaseCollapsed(false);
     }
-  }, [isHeaderPhaseNotApplicable, phaseCollapsed]);
+  }, [selectedHeaderPhase, isHeaderPhaseNotApplicable, phaseCollapsed]);
   const [colWidths, setColWidths] = useState({
     phaseName: 240,
     customerEvent: 120,
@@ -629,9 +661,14 @@ export default function PTMTable({
     isOpen: false,
     rowIndex: null,
   });
+  const [deliverablePreviewModal, setDeliverablePreviewModal] = useState({
+    isOpen: false,
+    file: null,
+  });
   const [watchModal, setWatchModal] = useState({
     isOpen: false,
     rowIndex: null,
+    field: 'duration',
     value: '',
   });
   const [rowHeights, setRowHeights] = useState({});
@@ -1699,29 +1736,52 @@ export default function PTMTable({
     if (showToast) showToast('No. of Times Revised removed');
   };
 
-  const handleDeliverableUploadSuccess = (rowIndex, fileData) => {
+  const getRowDeliverableFiles = (row) => {
+    if (Array.isArray(row?.deliverableFiles) && row.deliverableFiles.length > 0) {
+      return row.deliverableFiles;
+    }
+    if (row?.deliverableFile) {
+      return [row.deliverableFile];
+    }
+    return [];
+  };
+
+  const handleDeliverableUploadSuccess = (rowIndex, uploadedInput) => {
     if (!canEditCell(rows[rowIndex], 'deliverableRequired')) return;
+    const newFiles = Array.isArray(uploadedInput) ? uploadedInput : [uploadedInput].filter(Boolean);
+    if (newFiles.length === 0) return;
+
     setRows((prev) => {
       const updated = [...prev];
+      const currentRow = updated[rowIndex];
+      const existingFiles = getRowDeliverableFiles(currentRow);
+      const mergedFiles = [...existingFiles, ...newFiles];
       updated[rowIndex] = {
-        ...updated[rowIndex],
-        deliverableFile: fileData,
-        deliverable: fileData?.name || 'Attached',
+        ...currentRow,
+        deliverableFiles: mergedFiles,
+        deliverableFile: mergedFiles[0] || null,
+        deliverable: currentRow.deliverable || newFiles[0]?.name || 'Attached',
         deliverableRequired: 'Yes'
       };
       return updated;
     });
-    if (showToast) showToast(`✓ Attached ${fileData.name}`);
+    if (showToast) {
+      showToast(newFiles.length === 1 ? `✓ Attached ${newFiles[0].name}` : `✓ Attached ${newFiles.length} files`);
+    }
   };
 
-  const handleRemoveDeliverableFile = (rowIndex) => {
+  const handleRemoveDeliverableFile = (rowIndex, fileIndex = 0) => {
     if (!canEditCell(rows[rowIndex], 'deliverableRequired')) return;
     setRows((prev) => {
       const updated = [...prev];
+      const currentRow = updated[rowIndex];
+      const existingFiles = getRowDeliverableFiles(currentRow);
+      const nextFiles = existingFiles.filter((_, idx) => idx !== fileIndex);
       updated[rowIndex] = {
-        ...updated[rowIndex],
-        deliverableFile: null,
-        deliverable: ''
+        ...currentRow,
+        deliverableFiles: nextFiles,
+        deliverableFile: nextFiles[0] || null,
+        deliverable: nextFiles.length === 0 && currentRow.deliverable === existingFiles[fileIndex]?.name ? '' : currentRow.deliverable
       };
       return updated;
     });
@@ -1947,17 +2007,17 @@ export default function PTMTable({
     return Number.isFinite(num) ? num : null;
   };
 
-  const getParentTotalDurationDisplay = (parentRow, allRows = rows) => {
-    const baseHours = parseDurationHours(parentRow?.duration);
+  const getParentTotalDurationDisplay = (parentRow, allRows = rows, field = 'duration') => {
+    const baseHours = parseDurationHours(parentRow?.[field]);
     const childRows = allRows.filter(
       (r) => isChildRow(r) && getParentRowId(r) === parentRow.id
     );
     const childHoursList = childRows
-      .map((c) => parseDurationHours(c.duration))
+      .map((c) => parseDurationHours(c[field]))
       .filter((n) => n !== null);
 
     if (childHoursList.length === 0) {
-      return parentRow?.duration || '—';
+      return parentRow?.[field] || '—';
     }
 
     const total = (baseHours || 0) + childHoursList.reduce((sum, n) => sum + n, 0);
@@ -2522,7 +2582,7 @@ export default function PTMTable({
                 </th>
                 {!templateMode && (
                   <>
-                <th rowSpan={2} className="py-2 px-1.5 w-20 min-w-[76px] bg-[#F1F5F9] text-[#2D3748] whitespace-normal leading-tight text-center">
+                <th colSpan={2} className="py-1 px-1.5 bg-[#F1F5F9] text-[#2D3748] whitespace-normal leading-tight text-center border-b border-[#64748B]">
                   Std. Duration in Hours
                 </th>
 
@@ -2631,9 +2691,15 @@ export default function PTMTable({
                 )}
               </tr>
 
-              {/* Row 2: Sub-columns for Responsible Person */}
+              {/* Row 2: Sub-columns for Std. Duration in Hours & Responsible Person */}
               {!templateMode && (
               <tr className="divide-x divide-[#64748B] text-xs sm:text-[12.5px] font-bold text-center border-b-2 border-slate-400 bg-[#ECEFF1] text-slate-800">
+                <th className="py-1 px-1 text-center w-[72px] min-w-[68px] bg-[#F1F5F9] text-[#2D3748] border-l border-[#64748B]">
+                  Standard
+                </th>
+                <th className="py-1 px-1 text-center w-[72px] min-w-[68px] bg-[#F1F5F9] text-[#2D3748]">
+                  Actual
+                </th>
                 <th className="py-1 px-1 text-center w-[110px] min-w-[100px] border-l border-[#64748B]">
                   <div className="flex items-center justify-center gap-1">
                     <span>Unit</span>
@@ -2663,7 +2729,7 @@ export default function PTMTable({
               {filteredRows.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={(templateMode ? 11 : 26) + DEPARTMENTS.length - (isRanksCollapsed ? 3 : 0)}
+                    colSpan={(templateMode ? 11 : 27) + DEPARTMENTS.length - (isRanksCollapsed ? 3 : 0)}
                     className="py-12 text-center text-slate-400 font-medium"
                   >
                     No matching rows found.
@@ -2899,16 +2965,15 @@ export default function PTMTable({
                               )}
                             </div>
                             <div className="h-full min-w-0 flex-1">
-                              <SearchableApqpDropdown
+                              <ManualInputBox
                                 value={row.reqName || ''}
-                                suggestions={requirementOptions}
-                                onAddNewSuggestion={(newReq) => {
-                                  apqpApi.addSuggestion(newReq).catch(console.warn);
-                                }}
-                                onChange={(event) => handleCellChange(originalIndex, 'reqName', event.target.value)}
-                                onKeyDown={(event) => handleKeyDown(event, originalIndex, 'reqName')}
-                                dataRow={originalIndex}
-                                dataCol="reqName"
+                                noDropdown={false}
+                                onChange={(e) => handleCellChange(originalIndex, 'reqName', e.target.value)}
+                                onKeyDown={(e) => handleKeyDown(e, originalIndex, 'reqName')}
+                                data-row={originalIndex}
+                                data-col="reqName"
+                                placeholder="Requirement..."
+                                className="w-full py-2 px-2 text-slate-700 bg-transparent outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 text-sm"
                               />
                             </div>
                           </div>
@@ -3120,40 +3185,54 @@ export default function PTMTable({
                                   className="min-w-0 flex-1 rounded border border-[#64748B] bg-white px-2 py-1 text-xs font-semibold text-slate-800 placeholder-slate-400 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                                 />
 
-                                {row.deliverableFile ? (
-                                  <div className="flex min-w-0 items-center gap-1 rounded bg-blue-50/90 border border-blue-200 px-1.5 py-0.5" title={row.deliverableFile.name}>
-                                    <div className="flex items-center gap-1 min-w-0 max-w-[80px] truncate">
-                                      {row.deliverableFile.type === 'pdf' ? (
-                                        <FileText className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                                      ) : row.deliverableFile.type === 'excel' ? (
-                                        <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                      ) : (
-                                        <ImageIcon className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                                      )}
-                                      <span className="text-[11px] font-semibold text-blue-700 truncate">
-                                        {row.deliverableFile.name}
-                                      </span>
+                                {(() => {
+                                  const attachedFiles = getRowDeliverableFiles(row);
+                                  return (
+                                    <div className="flex flex-wrap items-center gap-1 min-w-0">
+                                      {attachedFiles.map((fileItem, fileIdx) => (
+                                        <div
+                                          key={fileItem.id || `${fileItem.name}-${fileIdx}`}
+                                          className="flex min-w-0 items-center gap-1 rounded bg-blue-50/90 border border-blue-200 px-1.5 py-0.5 hover:bg-blue-100/80 transition-colors"
+                                          title={`Click to view ${fileItem.name}`}
+                                        >
+                                          <button
+                                            type="button"
+                                            onClick={() => setDeliverablePreviewModal({ isOpen: true, file: fileItem })}
+                                            className="flex items-center gap-1 min-w-0 max-w-[90px] truncate cursor-pointer text-left"
+                                          >
+                                            {fileItem.type === 'pdf' ? (
+                                              <FileText className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                                            ) : fileItem.type === 'excel' ? (
+                                              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                            ) : (
+                                              <ImageIcon className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                                            )}
+                                            <span className="text-[11px] font-semibold text-blue-700 underline decoration-blue-300 truncate">
+                                              {fileItem.name}
+                                            </span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleRemoveDeliverableFile(originalIndex, fileIdx)}
+                                            title="Remove attachment"
+                                            className="p-0.5 rounded text-slate-400 hover:text-rose-600 cursor-pointer shrink-0"
+                                          >
+                                            <X className="w-3 h-3 stroke-[2.5]" />
+                                          </button>
+                                        </div>
+                                      ))}
+                                      <button
+                                        type="button"
+                                        onClick={() => setDeliverableModal({ isOpen: true, rowIndex: originalIndex })}
+                                        className="flex items-center gap-1 px-1.5 py-1 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-[11px] font-semibold cursor-pointer transition-colors shadow-2xs shrink-0"
+                                        title="Upload Deliverable (Image, PDF, Excel)"
+                                      >
+                                        <Upload className="w-3 h-3" />
+                                        <span>{attachedFiles.length > 0 ? 'Add' : 'Upload'}</span>
+                                      </button>
                                     </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleRemoveDeliverableFile(originalIndex)}
-                                      title="Remove attachment"
-                                      className="p-0.5 rounded text-slate-400 hover:text-rose-600 cursor-pointer shrink-0"
-                                    >
-                                      <X className="w-3 h-3 stroke-[2.5]" />
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    onClick={() => setDeliverableModal({ isOpen: true, rowIndex: originalIndex })}
-                                    className="flex items-center gap-1 px-1.5 py-1 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-[11px] font-semibold cursor-pointer transition-colors shadow-2xs shrink-0"
-                                    title="Upload Deliverable (Image, PDF, Excel)"
-                                  >
-                                    <Upload className="w-3 h-3" />
-                                    <span>Upload</span>
-                                  </button>
-                                )}
+                                  );
+                                })()}
                               </div>
                             ) : (
                               <span className="text-xs text-slate-400 italic px-1 flex-1 text-center">Not required</span>
@@ -3163,20 +3242,38 @@ export default function PTMTable({
 
                         {!templateMode && (
                           <>
-                        {/* 20. Std. Duration in Hours — Watch popup modal trigger matching screenshot */}
+                        {/* 20a. Std. Duration in Hours — Standard */}
                         <td
                           className={`p-0 text-center cursor-pointer hover:bg-blue-50/50 transition-colors group/duration ${!canEditCell(row, 'duration') ? 'pointer-events-none opacity-75' : ''}`}
                           onClick={() => {
                             if (canEditCell(row, 'duration')) {
-                              setWatchModal({ isOpen: true, rowIndex: originalIndex, value: row.duration || '' });
+                              setWatchModal({ isOpen: true, rowIndex: originalIndex, field: 'duration', value: row.duration || '' });
                             }
                           }}
-                          title="Click to open Std. Duration Watch"
+                          title="Click to set Standard Duration"
                         >
-                          <div className="flex items-center justify-center gap-1.5 py-1.5 px-2">
+                          <div className="flex items-center justify-center gap-1 py-1.5 px-1.5">
                             <Clock className="w-3.5 h-3.5 text-blue-500 group-hover/duration:text-blue-600 shrink-0" />
-                            <span className="font-mono text-sm font-semibold text-slate-800">
-                              {isParentRow(row) ? getParentTotalDurationDisplay(row, rows) : (row.duration || '—')}
+                            <span className="font-mono text-xs sm:text-sm font-semibold text-slate-800">
+                              {isParentRow(row) ? getParentTotalDurationDisplay(row, rows, 'duration') : (row.duration || '—')}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* 20b. Std. Duration in Hours — Actual */}
+                        <td
+                          className={`p-0 text-center cursor-pointer hover:bg-emerald-50/50 transition-colors group/actual-duration ${!canEditCell(row, 'duration') ? 'pointer-events-none opacity-75' : ''}`}
+                          onClick={() => {
+                            if (canEditCell(row, 'duration')) {
+                              setWatchModal({ isOpen: true, rowIndex: originalIndex, field: 'actualDuration', value: row.actualDuration || '' });
+                            }
+                          }}
+                          title="Click to set Actual Duration"
+                        >
+                          <div className="flex items-center justify-center gap-1 py-1.5 px-1.5">
+                            <Clock className="w-3.5 h-3.5 text-emerald-500 group-hover/actual-duration:text-emerald-600 shrink-0" />
+                            <span className="font-mono text-xs sm:text-sm font-semibold text-slate-800">
+                              {isParentRow(row) ? getParentTotalDurationDisplay(row, rows, 'actualDuration') : (row.actualDuration || '—')}
                             </span>
                           </div>
                         </td>
@@ -3996,12 +4093,20 @@ export default function PTMTable({
       <StdDurationWatchModal
         isOpen={watchModal.isOpen}
         initialValue={watchModal.value}
-        onClose={() => setWatchModal({ isOpen: false, rowIndex: null, value: '' })}
+        title={watchModal.field === 'actualDuration' ? 'Actual Duration Watch' : 'Std. Duration Watch'}
+        onClose={() => setWatchModal({ isOpen: false, rowIndex: null, field: 'duration', value: '' })}
         onSave={(newTime) => {
           if (watchModal.rowIndex !== null) {
-            handleCellChange(watchModal.rowIndex, 'duration', newTime);
+            handleCellChange(watchModal.rowIndex, watchModal.field || 'duration', newTime);
           }
         }}
+      />
+
+      {/* Deliverable Preview Popup Modal */}
+      <PTMDeliverablePreviewModal
+        isOpen={deliverablePreviewModal.isOpen}
+        file={deliverablePreviewModal.file}
+        onClose={() => setDeliverablePreviewModal({ isOpen: false, file: null })}
       />
 
       {/* Column Header Filter Popover Portal */}

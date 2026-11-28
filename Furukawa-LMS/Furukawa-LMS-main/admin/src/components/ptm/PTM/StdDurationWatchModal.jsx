@@ -4,6 +4,7 @@ import { Clock, X, ChevronUp, ChevronDown, Check, RotateCcw } from 'lucide-react
 export default function StdDurationWatchModal({
   isOpen,
   initialValue = '',
+  title = 'Std. Duration Watch',
   onClose,
   onSave,
   anchorPosition = null,
@@ -80,7 +81,7 @@ export default function StdDurationWatchModal({
               <Clock className="w-4 h-4 text-white" />
             </div>
             <div>
-              <h3 className="text-sm font-bold leading-tight">Std. Duration Watch</h3>
+              <h3 className="text-sm font-bold leading-tight">{title}</h3>
               <p className="text-[10px] text-blue-100 font-medium">Max 99:99 hrs</p>
             </div>
           </div>

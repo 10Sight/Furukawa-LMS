@@ -1284,6 +1284,154 @@ export default function PDCASheet({
     return '';
   }, []);
 
+  // Multi-select column header filters for Date, Shift, Unit, Department, Section, Line/Area, Staff Name
+  const [colFilters, setColFilters] = useState({
+    date: [],
+    shift: [],
+    unit: [],
+    department: [],
+    section: [],
+    lineArea: [],
+    staffName: [],
+  });
+  const [openColFilter, setOpenColFilter] = useState(null); // { key, label, left, top }
+  const [colFilterSearch, setColFilterSearch] = useState('');
+  const colFilterMenuRef = useRef(null);
+
+  useEffect(() => {
+    if (!openColFilter) return undefined;
+    const handleOutside = (e) => {
+      if (colFilterMenuRef.current && !colFilterMenuRef.current.contains(e.target)) {
+        setOpenColFilter(null);
+      }
+    };
+    const handleEsc = (e) => {
+      if (e.key === 'Escape') setOpenColFilter(null);
+    };
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('keydown', handleEsc);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('keydown', handleEsc);
+    };
+  }, [openColFilter]);
+
+  const getRowFilterValues = useCallback((row, key) => {
+    if (!row) return [];
+    const cleanList = (arr) =>
+      [...new Set(arr.map((v) => String(v || '').trim()).filter(Boolean))];
+    switch (key) {
+      case 'date':
+        return row.date ? [String(row.date).trim()] : [];
+      case 'shift':
+        return row.shift ? [String(row.shift).trim()] : [];
+      case 'unit':
+        return cleanList(
+          Array.isArray(row.units) && row.units.length
+            ? row.units
+            : row.unit
+              ? [row.unit]
+              : []
+        );
+      case 'department':
+        return cleanList(
+          Array.isArray(row.departments) && row.departments.length
+            ? row.departments
+            : row.department
+              ? String(row.department).split(/[,;]/)
+              : []
+        );
+      case 'section':
+        return cleanList(
+          Array.isArray(row.sections) && row.sections.length
+            ? row.sections
+            : row.section
+              ? String(row.section).split(/[,;]/)
+              : []
+        );
+      case 'lineArea':
+        return cleanList(
+          Array.isArray(row.lineAreas) && row.lineAreas.length
+            ? row.lineAreas
+            : row.lineArea
+              ? String(row.lineArea).split(/[,;]/)
+              : []
+        );
+      case 'staffName': {
+        if (Array.isArray(row.staffEmployees) && row.staffEmployees.length > 0) {
+          return cleanList(
+            row.staffEmployees.map((emp) =>
+              String(emp?.name || emp?.label || '').replace(/\s*\([^)]*\)\s*$/, '')
+            )
+          );
+        }
+        const raw = row.staffName || row.staffEmployee || '';
+        return cleanList(
+          String(raw)
+            .split(/[,;]/)
+            .map((s) => s.replace(/\s*\([^)]*\)\s*$/, ''))
+        );
+      }
+      default:
+        return [];
+    }
+  }, []);
+
+  const colFilterOptionsMap = useMemo(() => {
+    const keys = ['date', 'shift', 'unit', 'department', 'section', 'lineArea', 'staffName'];
+    const map = {};
+    keys.forEach((key) => {
+      const set = new Set();
+      (rows || []).forEach((r) => {
+        getRowFilterValues(r, key).forEach((v) => set.add(v));
+      });
+      map[key] = Array.from(set).sort((a, b) => a.localeCompare(b));
+    });
+    return map;
+  }, [rows, getRowFilterValues]);
+
+  const hasActiveColFilters = useMemo(
+    () => Object.values(colFilters).some((arr) => Array.isArray(arr) && arr.length > 0),
+    [colFilters]
+  );
+
+  const renderColFilterButton = (key, label) => {
+    const activeCount = (colFilters[key] || []).length;
+    return (
+      <span className="inline-flex items-center gap-0.5">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (openColFilter?.key === key) {
+              setOpenColFilter(null);
+              return;
+            }
+            const rect = e.currentTarget.getBoundingClientRect();
+            const menuW = 224;
+            const left = Math.max(8, Math.min(rect.left + rect.width / 2 - menuW / 2, window.innerWidth - menuW - 8));
+            const top = Math.min(rect.bottom + 4, window.innerHeight - 280);
+            setColFilterSearch('');
+            setOpenColFilter({ key, label, left, top });
+          }}
+          title={activeCount > 0 ? `Filtered by: ${(colFilters[key] || []).join(', ')}` : `Filter by ${label}`}
+          className={`ml-0.5 p-0.5 rounded transition-colors cursor-pointer flex items-center justify-center ${
+            activeCount > 0
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'text-slate-500 hover:text-blue-600 hover:bg-slate-200/70'
+          }`}
+        >
+          <Filter className="w-3 h-3 stroke-[2.5]" />
+        </button>
+        {activeCount > 0 && (
+          <span className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold text-white bg-blue-600 rounded-full">
+            {activeCount}
+          </span>
+        )}
+      </span>
+    );
+  };
+
   // Evidence Viewer Modal state (Multiple Images for Before / After): { isOpen, rowIndex, field }
   const [evidenceModal, setEvidenceModal] = useState({
     isOpen: false,
@@ -5934,6 +6082,7 @@ export default function PDCASheet({
                   >
                     <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-1">
                       <span>Date</span> <span className="text-red-500 font-bold">*</span>
+                      {renderColFilterButton('date', 'Date')}
                     </div>
                     <span
                       role="separator"
@@ -5955,8 +6104,11 @@ export default function PDCASheet({
                       <span className="h-4 w-0.5 rounded-full bg-slate-400 opacity-0 group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 transition-opacity" />
                     </span>
                   </th>
-                  <th rowSpan={2} className="py-1.5 px-0.5 w-[38px] min-w-[34px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[11px]">
-                    <span>Shift</span> <span className="text-red-500 font-bold">*</span>
+                  <th rowSpan={2} className="py-1.5 px-0.5 w-[44px] min-w-[38px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[11px]">
+                    <div className="flex items-center justify-center gap-0.5">
+                      <span>Shift</span> <span className="text-red-500 font-bold">*</span>
+                      {renderColFilterButton('shift', 'Shift')}
+                    </div>
                   </th>
                   <th rowSpan={2} className="py-1.5 px-0.5 w-[34px] min-w-[30px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[11px]">
                     S.No
@@ -6061,7 +6213,10 @@ export default function PDCASheet({
                     )}
                   </th>
                   <th rowSpan={2} className="py-1.5 px-1 w-[115px] min-w-[100px] text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px]">
-                    <span>Unit</span> <span className="text-red-500 font-bold">*</span>
+                    <div className="flex items-center justify-center gap-1 font-bold text-slate-800">
+                      <span>Unit</span> <span className="text-red-500 font-bold">*</span>
+                      {renderColFilterButton('unit', 'Unit')}
+                    </div>
                   </th>
                   <th
                     rowSpan={2}
@@ -6070,6 +6225,7 @@ export default function PDCASheet({
                   >
                     <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-1">
                       <span>Department</span> <span className="text-red-500 font-bold">*</span>
+                      {renderColFilterButton('department', 'Department')}
                     </div>
                     <span
                       role="separator"
@@ -6101,6 +6257,7 @@ export default function PDCASheet({
                   >
                     <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-1">
                       <span>Section</span>
+                      {renderColFilterButton('section', 'Section')}
                     </div>
                     <span
                       role="separator"
@@ -6132,6 +6289,7 @@ export default function PDCASheet({
                   >
                     <div className="flex items-center justify-center gap-1 font-bold text-slate-800 pr-1">
                       <span>Line/Area</span>
+                      {renderColFilterButton('lineArea', 'Line/Area')}
                     </div>
                     <span
                       role="separator"
@@ -6465,7 +6623,10 @@ export default function PDCASheet({
                     )}
                   </th>
                   <th className="py-1 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 w-[160px] min-w-[150px]">
-                    <span>Staff Name</span> <span className="text-red-500 font-bold">*</span>
+                    <div className="flex items-center justify-center gap-1">
+                      <span>Staff Name</span> <span className="text-red-500 font-bold">*</span>
+                      {renderColFilterButton('staffName', 'Staff Name')}
+                    </div>
                   </th>
                   <th className="py-1 px-1 text-center border-r border-b-2 border-[#475569] bg-[#ECEFF1] text-[14px] font-bold text-slate-800 w-[120px] min-w-[110px]">
                     CFT
@@ -6505,6 +6666,14 @@ export default function PDCASheet({
                       const rowDepts = getRowResponsibleDepartments(row);
                       const matches = rowDepts.some((d) => respDeptFilters.includes(d));
                       if (!matches) return null;
+                    }
+
+                    // Column Header Filters (Date, Shift, Unit, Department, Section, Line/Area, Staff Name)
+                    for (const [filterKey, selectedVals] of Object.entries(colFilters)) {
+                      if (selectedVals && selectedVals.length > 0) {
+                        const rowVals = getRowFilterValues(row, filterKey);
+                        if (!rowVals.some((v) => selectedVals.includes(v))) return null;
+                      }
                     }
 
                     visibleSerialNo += 1;
@@ -7954,6 +8123,26 @@ export default function PDCASheet({
                       );
                     }
 
+                    if (hasActiveColFilters && candidateRows.length > 0) {
+                      return (
+                        <tr>
+                          <td colSpan={totalCols} className="py-8 text-center text-slate-500 bg-slate-50/50">
+                            <div className="flex flex-col items-center justify-center gap-2">
+                              <Filter className="w-8 h-8 text-blue-500" />
+                              <span className="font-semibold text-slate-700">No PDCA points match the selected column filters.</span>
+                              <button
+                                type="button"
+                                onClick={() => setColFilters({ date: [], shift: [], unit: [], department: [], section: [], lineArea: [], staffName: [] })}
+                                className="mt-1 px-3 py-1 text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 cursor-pointer"
+                              >
+                                Clear Column Filters
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    }
+
                     if (candidateRows.length === 0) {
                       const message = isSelfView
                         ? `No assigned PDCA points for ${effectiveUser?.name || 'this user'} in this sheet.`
@@ -8047,6 +8236,100 @@ export default function PDCASheet({
             />
           </div>
         </div>,
+        document.body
+      )}
+
+      {/* Column Header Filter Popover Portal (Date, Shift, Unit, Department, Section, Line/Area, Staff Name) */}
+      {openColFilter && createPortal(
+        (() => {
+          const allOptions = colFilterOptionsMap[openColFilter.key] || [];
+          const q = colFilterSearch.trim().toLowerCase();
+          const visibleOptions = q
+            ? allOptions.filter((opt) => opt.toLowerCase().includes(q))
+            : allOptions;
+          const selectedValues = colFilters[openColFilter.key] || [];
+
+          return (
+            <div
+              ref={colFilterMenuRef}
+              onClick={(e) => e.stopPropagation()}
+              style={{ position: 'fixed', left: `${openColFilter.left}px`, top: `${openColFilter.top}px`, width: '224px' }}
+              className="z-[9999] bg-white rounded-xl shadow-xl border border-slate-200 p-2.5 text-left text-xs font-normal"
+            >
+              <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-slate-100">
+                <span className="font-bold text-slate-800 text-[12px] flex items-center gap-1">
+                  <Filter className="w-3 h-3 text-blue-600" /> Filter {openColFilter.label}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setOpenColFilter(null)}
+                  className="text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <div className="relative mb-2">
+                <Search className="w-3 h-3 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={colFilterSearch}
+                  onChange={(e) => setColFilterSearch(e.target.value)}
+                  placeholder={`Search ${openColFilter.label.toLowerCase()}...`}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-md pl-6 pr-2 py-1 text-[11px] text-slate-700 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500"
+                />
+              </div>
+
+              <div className="space-y-1 py-1 max-h-48 overflow-y-auto pr-0.5">
+                {visibleOptions.map((opt) => {
+                  const isChecked = selectedValues.includes(opt);
+                  return (
+                    <label
+                      key={opt}
+                      className={`flex items-center gap-2 px-1.5 py-1 rounded-md cursor-pointer select-none transition-colors ${
+                        isChecked ? 'bg-blue-50 text-blue-800 font-semibold' : 'text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => {
+                          setColFilters((prev) => {
+                            const cur = prev[openColFilter.key] || [];
+                            const next = isChecked ? cur.filter((v) => v !== opt) : [...cur, opt];
+                            return { ...prev, [openColFilter.key]: next };
+                          });
+                        }}
+                        className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      />
+                      <span className="text-[12px] truncate">{opt}</span>
+                    </label>
+                  );
+                })}
+                {visibleOptions.length === 0 && (
+                  <div className="py-2 text-center text-slate-400 text-[11px]">No values found</div>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between pt-2 mt-1 border-t border-slate-100 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setColFilters((prev) => ({ ...prev, [openColFilter.key]: [...allOptions] }))}
+                  className="text-blue-600 hover:text-blue-800 font-semibold cursor-pointer"
+                >
+                  Select All
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setColFilters((prev) => ({ ...prev, [openColFilter.key]: [] }))}
+                  className="text-slate-500 hover:text-slate-800 font-semibold cursor-pointer"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          );
+        })(),
         document.body
       )}
 

@@ -322,6 +322,7 @@ export default function PTMMonthlyGraph({
   const [selectedYear, setSelectedYear] = useState(preferredYearMonth.year);
   const [selectedMonth, setSelectedMonth] = useState(preferredYearMonth.month);
   const [staffMode, setStaffMode] = useState(false);
+  const [staffPercentageMode, setStaffPercentageMode] = useState(false);
   const userChangedPeriodRef = useRef(false);
 
   // Reset manual flag when switching sheets
@@ -538,6 +539,57 @@ export default function PTMMonthlyGraph({
     return [...byStaff.values()].sort((a, b) => a.label.localeCompare(b.label));
   }, [rows]);
 
+  // Sheet-level Cumulative across all rows in the current sheet (used in Staff Graph)
+  const sheetCumulativeStats = useMemo(() => {
+    const counts = emptyCounts();
+    (rows || []).forEach((r) => {
+      if (!r) return;
+      const explicitStatus = String(r.status || '').trim();
+      const rawStatus = explicitStatus
+        ? normalizePtmStatus(explicitStatus)
+        : normalizePtmStatus(evaluatePtmRowStatus(r).status || 'Not-Started');
+
+      let category = 'notStarted';
+      if (rawStatus === 'Done') category = 'done';
+      else if (rawStatus === 'In-Progress' || rawStatus === 'In- Progress') category = 'inProgress';
+      else if (rawStatus === 'Delay') category = 'delay';
+
+      addToBucket(counts, category);
+    });
+    return counts;
+  }, [rows]);
+
+  const isStaffPct = staffMode && staffPercentageMode;
+  const toSheetPct = (count) => {
+    const total = sheetCumulativeStats.total;
+    if (!total) return 0;
+    return Math.round((count / total) * 1000) / 10;
+  };
+  const formatMetricVal = (val) => (isStaffPct ? `${val}%` : val);
+
+  const staffDataset = useMemo(() => {
+    const mapBucket = (bucket) => {
+      if (!staffPercentageMode) return bucket;
+      return {
+        ...bucket,
+        total: toSheetPct(bucket.total),
+        inProgress: toSheetPct(bucket.inProgress),
+        done: toSheetPct(bucket.done),
+        delay: toSheetPct(bucket.delay),
+        notStarted: toSheetPct(bucket.notStarted),
+      };
+    };
+
+    const sheetCumulSlot = {
+      label: 'Cumulative',
+      fullDateStr: 'Sheet Cumulative',
+      cumulKind: 'live',
+      ...mapBucket(sheetCumulativeStats),
+    };
+
+    return [sheetCumulSlot, ...staffStats.map(mapBucket)];
+  }, [staffStats, sheetCumulativeStats, staffPercentageMode]);
+
   // Live cumulative (sum of all months) for selectedYear — used by the side table
   const allMonthsCumulativeTotal = useMemo(
     () => monthlyStats.reduce((acc, m) => acc + m.total, 0),
@@ -547,24 +599,33 @@ export default function PTMMonthlyGraph({
   const hasCumulSlots = !staffMode && viewTimeframe !== 'yearly';
 
   const currentDataset = useMemo(() => {
-    if (staffMode) return staffStats;
+    if (staffMode) return staffDataset;
     const base =
       viewTimeframe === 'daily' ? dailyStats : viewTimeframe === 'monthly' ? monthlyDataset : yearlyStats;
     return base.filter(d => !d.cumulKind || visibleCumul[d.cumulKind]);
-  }, [staffMode, staffStats, viewTimeframe, dailyStats, monthlyDataset, yearlyStats, visibleCumul]);
+  }, [staffMode, staffDataset, viewTimeframe, dailyStats, monthlyDataset, yearlyStats, visibleCumul]);
 
   // Index of the last leading cumulative slot (a separator is drawn after it)
   const lastCumulIndex = currentDataset.reduce((acc, d, i) => (d.cumulKind ? i : acc), -1);
 
   // Overall KPIs for the current view (cumulative slots excluded)
   const kpis = useMemo(() => {
+    if (isStaffPct) {
+      return {
+        total: toSheetPct(sheetCumulativeStats.total),
+        inProgress: toSheetPct(sheetCumulativeStats.inProgress),
+        done: toSheetPct(sheetCumulativeStats.done),
+        delay: toSheetPct(sheetCumulativeStats.delay),
+        notStarted: toSheetPct(sheetCumulativeStats.notStarted),
+      };
+    }
     const totals = emptyCounts();
     currentDataset.forEach(d => {
       if (d.cumulKind) return;
       SERIES.forEach(s => { totals[s.key] += d[s.key]; });
     });
     return totals;
-  }, [currentDataset]);
+  }, [currentDataset, isStaffPct, sheetCumulativeStats]);
 
   // Period labels
   const periodLabel =
@@ -591,6 +652,7 @@ export default function PTMMonthlyGraph({
 
   // Max value for chart Y-axis scaling (includes visible cumulative slots)
   const maxChartValue = useMemo(() => {
+    if (isStaffPct) return 100;
     let max = 0;
     currentDataset.forEach(item => {
       SERIES.forEach(s => {
@@ -600,7 +662,7 @@ export default function PTMMonthlyGraph({
     if (max <= 4) return 5;
     // Headroom for the value label above the tallest bar, rounded to a multiple of 5
     return Math.ceil((max * 1.08) / 5) * 5;
-  }, [currentDataset, visibleSeries]);
+  }, [currentDataset, visibleSeries, isStaffPct]);
 
   // SVG Chart Geometry
   const slotCount = currentDataset.length;
@@ -778,7 +840,7 @@ export default function PTMMonthlyGraph({
                   >
                     <span className={`w-2.5 h-2.5 rounded-xs ${s.swatch}`} />
                     <span>{s.label}</span>
-                    <span className={`text-xs font-black font-mono px-1.5 py-0.5 rounded ${badgeClass}`}>{kpis[s.key]}</span>
+                    <span className={`text-xs font-black font-mono px-1.5 py-0.5 rounded ${badgeClass}`}>{formatMetricVal(kpis[s.key])}</span>
                   </button>
                 );
               })}
@@ -832,6 +894,24 @@ export default function PTMMonthlyGraph({
                 <Users className="w-3.5 h-3.5" />
                 <span>Staff</span>
               </button>
+              {staffMode && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStaffPercentageMode((prev) => !prev);
+                    setHoveredIndex(null);
+                  }}
+                  className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-sm font-bold transition-all cursor-pointer ${
+                    staffPercentageMode
+                      ? 'bg-emerald-600 text-white border border-emerald-600 shadow-xs'
+                      : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-100'
+                  }`}
+                  title="Show Sheet Cumulative & Staff breakdown in Percentage (%)"
+                >
+                  <span>%</span>
+                  <span>Percentage</span>
+                </button>
+              )}
             </div>
 
             <div className="flex flex-col md:flex-row items-stretch gap-3">
@@ -850,18 +930,18 @@ export default function PTMMonthlyGraph({
                       Cumulative
                     </span>
                     <span className="mt-auto text-[11px] font-mono font-bold px-1 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
-                      {allMonthsCumulativeTotal}
+                      {staffMode ? formatMetricVal(isStaffPct ? toSheetPct(sheetCumulativeStats.total) : sheetCumulativeStats.total) : allMonthsCumulativeTotal}
                     </span>
                   </button>
                 ) : (
                   <div className="w-full md:w-52 lg:w-56 shrink-0 bg-white rounded-lg border border-slate-200 shadow-2xs flex flex-col overflow-hidden animate-in fade-in duration-150">
                     <div className="px-2.5 py-1.5 bg-slate-100/90 border-b border-slate-200 flex items-center justify-between gap-2">
                       <span className="min-w-0 truncate text-xs font-bold text-slate-700 uppercase tracking-wide">
-                        Cumulative
+                        {staffMode ? 'Sheet Cumulative' : 'Cumulative'}
                       </span>
                       <div className="flex shrink-0 items-center gap-1">
                         <span className="text-[11px] font-bold font-mono px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
-                          {selectedYear}
+                          {staffMode ? (staffPercentageMode ? '%' : 'Sheet') : selectedYear}
                         </span>
                         <button
                           type="button"
@@ -882,6 +962,62 @@ export default function PTMMonthlyGraph({
                         </button>
                       </div>
                     </div>
+                    {staffMode ? (
+                      <>
+                        <div className="grid grid-cols-2 gap-2 px-2.5 py-1 bg-slate-50/80 border-b border-slate-200/70 text-[11px] font-bold text-slate-500 uppercase tracking-wide">
+                          <span>Status / Staff</span>
+                          <span className="text-right">{staffPercentageMode ? '%' : 'Count'}</span>
+                        </div>
+                        <div className="flex-1 divide-y divide-slate-100 text-sm overflow-y-auto max-h-[260px] md:max-h-none">
+                          {SERIES.filter((s) => s.key !== 'total').map((s) => {
+                            const val = isStaffPct ? toSheetPct(sheetCumulativeStats[s.key]) : sheetCumulativeStats[s.key];
+                            return (
+                              <div key={s.key} className="grid grid-cols-2 px-2.5 py-1 items-center text-slate-700">
+                                <span className="text-xs font-semibold flex items-center gap-1.5 truncate">
+                                  <span className={`w-2 h-2 rounded-xs shrink-0 ${s.swatch}`} />
+                                  {s.label}
+                                </span>
+                                <span className={`text-right font-mono text-xs font-bold ${s.valueClass}`}>
+                                  {formatMetricVal(val)}
+                                </span>
+                              </div>
+                            );
+                          })}
+                          {staffDataset.filter((d) => !d.cumulKind).length > 0 && (
+                            <div className="px-2.5 py-1 bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                              By Staff
+                            </div>
+                          )}
+                          {staffDataset.filter((d) => !d.cumulKind).map((st) => (
+                            <div
+                              key={st.label}
+                              className="px-2.5 py-1.5 hover:bg-slate-50"
+                              title={`${st.label}: Total ${formatMetricVal(st.total)}, Done ${formatMetricVal(st.done)}, In-Progress ${formatMetricVal(st.inProgress)}, Delay ${formatMetricVal(st.delay)}, Not-Started ${formatMetricVal(st.notStarted)}`}
+                            >
+                              <div className="grid grid-cols-2 items-center">
+                                <span className="text-xs font-semibold text-slate-800 truncate">{st.label}</span>
+                                <span className="text-right font-mono text-xs font-bold text-indigo-700">
+                                  {formatMetricVal(st.total)}
+                                </span>
+                              </div>
+                              <div className="flex flex-wrap gap-x-2 gap-y-0.5 mt-0.5 text-[10px] text-slate-500 font-mono">
+                                {st.done > 0 && <span className="text-emerald-700">D:{formatMetricVal(st.done)}</span>}
+                                {st.inProgress > 0 && <span className="text-amber-700">IP:{formatMetricVal(st.inProgress)}</span>}
+                                {st.delay > 0 && <span className="text-rose-700">DL:{formatMetricVal(st.delay)}</span>}
+                                {st.notStarted > 0 && <span className="text-blue-700">NS:{formatMetricVal(st.notStarted)}</span>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="grid grid-cols-2 px-2.5 py-1.5 bg-slate-100 border-t border-slate-200 text-sm font-bold text-slate-800">
+                          <span>Total</span>
+                          <span className="text-right font-mono text-indigo-700">
+                            {formatMetricVal(isStaffPct ? toSheetPct(sheetCumulativeStats.total) : sheetCumulativeStats.total)}
+                          </span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
                     <div className="grid grid-cols-2 gap-2 px-2.5 py-1 bg-slate-50/80 border-b border-slate-200/70 text-[11px] font-bold text-slate-500 uppercase tracking-wide">
                       <span>Month</span>
                       <span className="text-right">Cumulative</span>
@@ -924,6 +1060,8 @@ export default function PTMMonthlyGraph({
                       <span>Total</span>
                       <span className="text-right font-mono text-indigo-700">{allMonthsCumulativeTotal}</span>
                     </div>
+                      </>
+                    )}
                   </div>
                 )
               )}
@@ -985,7 +1123,7 @@ export default function PTMMonthlyGraph({
                               textAnchor="end"
                               className="text-[13px] fill-slate-500 font-mono font-semibold"
                             >
-                              {val}
+                              {isStaffPct ? `${val}%` : val}
                             </text>
                           </g>
                         );
@@ -1101,7 +1239,7 @@ export default function PTMMonthlyGraph({
                                     textAnchor="middle"
                                     className={`text-[15px] font-black ${b.textClass} font-mono`}
                                   >
-                                    {b.val}
+                                    {formatMetricVal(b.val)}
                                   </text>
                                 </g>
                               );
@@ -1177,7 +1315,7 @@ export default function PTMMonthlyGraph({
                                   {l.label}
                                 </text>
                                 <text x={tipX + tipW - 12} y={tipY + 50 + i * rowH} textAnchor="end" className="text-[14px] font-bold font-mono fill-slate-800">
-                                  {l.val}
+                                  {formatMetricVal(l.val)}
                                 </text>
                               </g>
                             ))}
